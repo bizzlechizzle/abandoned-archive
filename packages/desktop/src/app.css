@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  :root {
+    --color-accent: #b9975c;
+    --color-background: #fffbf7;
+    --color-foreground: #454545;
+  }
+}
+
 body {
   margin: 0;
   padding: 0;
@@ -10,4 +18,6 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
 }
