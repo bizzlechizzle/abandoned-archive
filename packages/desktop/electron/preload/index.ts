@@ -282,4 +282,4 @@ const api = {
 
 contextBridge.exposeInMainWorld('electronAPI', api);
 
-export type ElectronAPI = typeof api;
+// Type definition is in src/types/electron.d.ts for renderer process type safety
