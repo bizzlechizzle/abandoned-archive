@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import type { Location, LocationInput } from '@au-archive/core';
 
   interface Props {
@@ -8,6 +9,8 @@
   }
 
   let { location, onSave, onCancel }: Props = $props();
+
+  let allLocations = $state<Location[]>([]);
 
   let formData = $state({
     locnam: location.locnam,
@@ -26,10 +29,24 @@
     address_zipcode: location.address?.zipcode || '',
     gps_lat: location.gps?.lat?.toString() || '',
     gps_lng: location.gps?.lng?.toString() || '',
+    is_sublocation: !!location.sub12,
+    parent_locid: '',
+    primary_sublocation: false,
   });
 
   let saving = $state(false);
   let error = $state<string | null>(null);
+
+  onMount(async () => {
+    try {
+      // Load all locations for parent selector
+      const locations = await window.electronAPI.locations.findAll();
+      // Filter out the current location to prevent self-parenting
+      allLocations = locations.filter(loc => loc.locid !== location.locid);
+    } catch (err) {
+      console.error('Error loading locations:', err);
+    }
+  });
 
   async function handleSubmit() {
     try {
@@ -120,6 +137,64 @@
           class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
         />
       </div>
+
+      <div class="md:col-span-2">
+        <div class="flex items-center mb-2">
+          <input
+            type="checkbox"
+            bind:checked={formData.is_sublocation}
+            id="is_sublocation"
+            class="mr-2"
+          />
+          <label for="is_sublocation" class="text-sm font-medium text-gray-700">
+            This is a sub-location
+          </label>
+        </div>
+        <p class="text-xs text-gray-500">
+          Sub-locations are places within a larger location (e.g., "East Wing" within "Abandoned Hospital")
+        </p>
+      </div>
+
+      {#if formData.is_sublocation}
+        <div class="md:col-span-2 p-4 bg-blue-50 border border-blue-200 rounded">
+          <h4 class="text-sm font-semibold text-blue-900 mb-3">Sub-Location Details</h4>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label for="parent_locid" class="block text-sm font-medium text-gray-700 mb-1">
+                Parent Location <span class="text-red-500">*</span>
+              </label>
+              <select
+                id="parent_locid"
+                bind:value={formData.parent_locid}
+                required={formData.is_sublocation}
+                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+              >
+                <option value="">Select parent location...</option>
+                {#each allLocations as parentLoc}
+                  <option value={parentLoc.locid}>
+                    {parentLoc.locnam} {parentLoc.address?.state ? `(${parentLoc.address.state})` : ''}
+                  </option>
+                {/each}
+              </select>
+              <p class="text-xs text-gray-500 mt-1">
+                The main location this sub-location belongs to
+              </p>
+            </div>
+
+            <div class="flex items-center">
+              <input
+                type="checkbox"
+                bind:checked={formData.primary_sublocation}
+                id="primary_sublocation"
+                class="mr-2"
+              />
+              <label for="primary_sublocation" class="text-sm text-gray-700">
+                Primary sub-location
+              </label>
+            </div>
+          </div>
+        </div>
+      {/if}
 
       <div>
         <label for="type" class="block text-sm font-medium text-gray-700 mb-1">

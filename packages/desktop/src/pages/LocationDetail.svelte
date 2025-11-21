@@ -260,6 +260,36 @@
         </div>
       </div>
 
+      {#if location.sublocs && location.sublocs.length > 0}
+        <div class="mt-6 bg-white rounded-lg shadow p-6">
+          <h2 class="text-xl font-semibold mb-4 text-foreground">Sub-Locations ({location.sublocs.length})</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {#each location.sublocs as sublocId}
+              <div class="p-4 bg-gray-50 rounded border border-gray-200">
+                <p class="text-sm text-gray-600">Sub-location: {sublocId.slice(0, 12)}</p>
+                <p class="text-xs text-gray-400 mt-1">Full backend integration pending</p>
+              </div>
+            {/each}
+          </div>
+          <p class="text-xs text-gray-500 mt-4">
+            Note: Sub-location details will be fully implemented in the backend.
+          </p>
+        </div>
+      {/if}
+
+      {#if location.sub12}
+        <div class="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-6">
+          <div class="flex items-center gap-2 mb-2">
+            <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <h3 class="text-sm font-semibold text-blue-900">Sub-Location</h3>
+          </div>
+          <p class="text-sm text-blue-800">This is a sub-location of a larger location.</p>
+          <p class="text-xs text-blue-600 mt-2">Parent location ID: {location.sub12}</p>
+        </div>
+      {/if}
+
       <div class="mt-6 bg-white rounded-lg shadow p-6">
         <h2 class="text-xl font-semibold mb-4 text-foreground">Media</h2>
 
