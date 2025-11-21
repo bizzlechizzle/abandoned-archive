@@ -1,4 +1,4 @@
-import { ipcMain, shell } from 'electron';
+import { ipcMain, shell, dialog } from 'electron';
 import { getDatabase } from './database';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
 import { LocationInputSchema } from '@au-archive/core';
@@ -275,6 +275,26 @@ export function registerIpcHandlers() {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
+      throw error;
+    }
+  });
+
+  // Dialog operations
+  ipcMain.handle('dialog:selectFolder', async () => {
+    try {
+      const result = await dialog.showOpenDialog({
+        properties: ['openDirectory', 'createDirectory'],
+        title: 'Select Archive Folder',
+        buttonLabel: 'Select Folder',
+      });
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return null;
+      }
+
+      return result.filePaths[0];
+    } catch (error) {
+      console.error('Error selecting folder:', error);
       throw error;
     }
   });

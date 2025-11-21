@@ -24,7 +24,14 @@
   }
 
   async function selectArchiveFolder() {
-    console.log('Open folder dialog');
+    try {
+      const folder = await window.electronAPI.dialog.selectFolder();
+      if (folder) {
+        archivePath = folder;
+      }
+    } catch (error) {
+      console.error('Error selecting folder:', error);
+    }
   }
 
   async function saveSettings() {

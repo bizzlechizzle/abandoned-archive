@@ -54,6 +54,11 @@ const api = {
     openExternal: (url: string): Promise<void> =>
       ipcRenderer.invoke('shell:openExternal', url),
   },
+
+  dialog: {
+    selectFolder: (): Promise<string | null> =>
+      ipcRenderer.invoke('dialog:selectFolder'),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);
