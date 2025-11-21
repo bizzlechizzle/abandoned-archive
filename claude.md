@@ -1,64 +1,104 @@
-# Abandoned Upstate Archive - Technical Specification
+# AU Archive Desktop App - Technical Specification
 
-**Version:** 0.1.0
-**Last Updated:** 2025-11-21
-**Status:** Pre-Development / Architecture Phase
-
----
-
-## 🎯 Project Overview
-
-**Abandoned Upstate Archive** is a desktop application for documenting and cataloging abandoned locations across the United States. The application provides a GPS-first workflow for archiving locations, media (images, videos, documents, maps), and associated metadata with an interactive mapping interface.
-
-### Core Principles
-
-1. **GPS-First**: Pin location on map is the source of truth
-2. **Local-First**: All data stored locally, user owns their data
-3. **Offline-Capable**: Full functionality without internet connection
-4. **Media Archival**: Automatic organization with SHA256 deduplication
-5. **Metadata Preservation**: Extract and store EXIF/FFmpeg metadata
+Version: 0.1.0
+Last Updated: 2025-11-21
+Status: Pre-Development / Architecture Phase
 
 ---
 
-## 🏗️ Architecture
+## Project Overview
+
+AU Archive Desktop App is an all-in-one tool that manages abandoned locations. It organizes, imports, and catalogs abandoned locations with media (images, videos, documents, maps) and associated metadata.
+
+### Current Objective (v0.1.0)
+
+Desktop application for documenting abandoned locations:
+- Import and organize media files
+- GPS-based location management
+- Metadata extraction and storage
+- Interactive mapping interface
+- Local-first data ownership
+
+### Future Objective (v1.0+)
+
+Enable anyone to become a historian for abandoned locations:
+- Full research capabilities with citation management
+- Wikipedia-style or blog post generation for location histories
+- Web scraping for images, videos, and documents
+- Collaborative research tools
+- Export to multiple formats (PDF, HTML, Markdown)
+
+---
+
+## Development Rules
+
+### Golden Rule: LILBITS
+One Script = One Function
+Maximum 300 lines of code per script
+Break up larger scripts into smaller, focused modules
+Document each script in lilbits.md
+
+### Core Rules
+
+- KISS: Keep It Simple, Stupid
+- FAANG PE: Facebook/Amazon/Apple/Netflix/Google-level engineering for small teams
+- BPL: Bulletproof Long-Term (reliable for 3-10+ years for non-API components)
+- BPA: Best Practices Always (check up-to-date docs for all tools)
+- NME: No Emojis Ever
+- WWYDD: What Would You Do Differently (suggest improvements early)
+- DRETW: Don't Re-Invent The Wheel (check GitHub, Reddit for existing solutions)
+- PRISONMIKE: Don't mention Claude/AI tools in documentation
+- WLO: We Love Open Source
+- URBFH: Understand Roadmap But Focus Here
+- DAFIDFAF: Don't Add Features I Didn't Ask For
+
+### Core Process
+
+1. Read user prompt, claude.md, techguide.md, lilbits.md
+2. Search for and read referenced files/folders or related files in techguide.md
+3. Make a plan (fix, troubleshoot, code, brainstorm, optimize, audit, or WWYDD)
+4. Audit the plan based on steps 1-2, update plan
+5. Write implementation guide for inexperienced developer
+6. Write/update/create code/plan based on implementation guide
+7. Update techguide.md and lilbits.md with what changed and why
+
+---
+
+## Architecture
 
 ### Architecture Pattern
 
-**Clean Architecture (3 Layers)**
+Clean Architecture (3 Layers):
 
 ```
-┌─────────────────────────────────────────┐
-│   PRESENTATION LAYER                    │
-│   - Svelte 5 Components                 │
-│   - Electron Renderer Process           │
-│   - UI/UX Logic                         │
-└─────────────────────────────────────────┘
-              ↕ IPC
-┌─────────────────────────────────────────┐
-│   INFRASTRUCTURE LAYER                  │
-│   - Electron Main Process               │
-│   - SQLite Database                     │
-│   - File System Operations              │
-│   - External Tools (ExifTool, FFmpeg)   │
-└─────────────────────────────────────────┘
-              ↕
-┌─────────────────────────────────────────┐
-│   CORE BUSINESS LOGIC                   │
-│   - Domain Models                       │
-│   - Services                            │
-│   - Repository Interfaces               │
-│   - Framework-Agnostic                  │
-└─────────────────────────────────────────┘
+PRESENTATION LAYER
+- Svelte 5 Components
+- Electron Renderer Process
+- UI/UX Logic
+    |
+    v (IPC)
+INFRASTRUCTURE LAYER
+- Electron Main Process
+- SQLite Database
+- File System Operations
+- External Tools (ExifTool, FFmpeg)
+    |
+    v
+CORE BUSINESS LOGIC
+- Domain Models
+- Services
+- Repository Interfaces
+- Framework-Agnostic
 ```
 
 ### Project Structure (Monorepo)
 
 ```
-abandoned-upstate-archive/
+au-archive/
 ├── packages/
 │   ├── core/                    # Shared business logic
 │   │   ├── src/
-│   │   │   ├── domain/          # Entities: Location, Image, Video, etc.
+│   │   │   ├── domain/          # Entities: Location, Image, Video
 │   │   │   ├── services/        # Business logic services
 │   │   │   ├── repositories/    # Data access interfaces
 │   │   │   └── utils/           # Shared utilities
@@ -82,16 +122,20 @@ abandoned-upstate-archive/
 │
 ├── resources/                   # Electron builder resources
 │   ├── icons/
-│   └── bin/                     # Bundled binaries (exiftool, ffmpeg)
+│   └── bin/                     # Bundled binaries
 │
+├── scripts/                     # Build and utility scripts
 ├── pnpm-workspace.yaml
 ├── package.json
+├── claude.md                    # This file
+├── techguide.md                 # Technical implementation guide
+├── lilbits.md                   # Script documentation
 └── README.md
 ```
 
 ---
 
-## 💻 Technology Stack
+## Technology Stack
 
 ### Core Technologies
 
@@ -99,8 +143,8 @@ abandoned-upstate-archive/
 |-----------|-----------|---------|-----------|
 | Desktop Framework | Electron | 28+ | Cross-platform, web tech, mature ecosystem |
 | Frontend Framework | Svelte | 5 | Lightweight, performant, minimal boilerplate |
-| Language | TypeScript | 5.3+ | Type safety, better DX, prevents bugs |
-| Build Tool | Vite | 5+ | Fast HMR, modern bundling, Svelte support |
+| Language | TypeScript | 5.3+ | Type safety, prevents bugs, better DX |
+| Build Tool | Vite | 5+ | Fast HMR, modern bundling |
 | Package Manager | pnpm | 8+ | Fast, efficient, monorepo support |
 
 ### Data Layer
@@ -116,7 +160,7 @@ abandoned-upstate-archive/
 | Component | Technology | Rationale |
 |-----------|-----------|-----------|
 | CSS Framework | Tailwind CSS | Utility-first, customizable, fast |
-| Component Library | Skeleton UI | Svelte-native, Tailwind-based, beautiful |
+| Component Library | Skeleton UI | Svelte-native, Tailwind-based |
 | Forms | Superforms + Zod | Type-safe forms, validation |
 
 ### Mapping
@@ -132,7 +176,7 @@ abandoned-upstate-archive/
 
 | Component | Technology | Rationale |
 |-----------|-----------|-----------|
-| EXIF Extraction | exiftool-vendored | Node wrapper for ExifTool (Perl) |
+| EXIF Extraction | exiftool-vendored | Node wrapper for ExifTool |
 | Video Metadata | fluent-ffmpeg | Node wrapper for FFmpeg |
 | Image Processing | sharp | Fast image resizing/thumbnails |
 | File Hashing | Node crypto (SHA256) | Built-in, secure, fast |
@@ -146,15 +190,14 @@ abandoned-upstate-archive/
 | Linting | ESLint + TypeScript ESLint |
 | Formatting | Prettier |
 | Git Hooks | Husky (optional) |
-| CI/CD | GitHub Actions (future) |
 
 ---
 
-## 🗄️ Database Schema
+## Database Schema
 
 ### Core Tables
 
-#### `locs` (Locations)
+#### locs (Locations)
 
 Primary table for abandoned locations.
 
@@ -209,9 +252,8 @@ CREATE TABLE locs (
 
   -- Regions
   regions TEXT,                        -- JSON array of region tags
-  state TEXT,                          -- State postal code (redundant with address_state, for backward compat)
+  state TEXT,                          -- State postal code (legacy field)
 
-  -- Indexes
   UNIQUE(slocnam)
 );
 
@@ -221,7 +263,7 @@ CREATE INDEX idx_locs_gps ON locs(gps_lat, gps_lng) WHERE gps_lat IS NOT NULL;
 CREATE INDEX idx_locs_loc12 ON locs(loc12);
 ```
 
-#### `slocs` (Sub-Locations)
+#### slocs (Sub-Locations)
 
 Sub-locations within a parent location (e.g., "Building 3" inside "Factory Complex").
 
@@ -240,7 +282,7 @@ CREATE TABLE slocs (
 CREATE INDEX idx_slocs_locid ON slocs(locid);
 ```
 
-#### `imgs` (Images)
+#### imgs (Images)
 
 ```sql
 CREATE TABLE imgs (
@@ -273,7 +315,7 @@ CREATE INDEX idx_imgs_subid ON imgs(subid);
 CREATE INDEX idx_imgs_sha ON imgs(imgsha);
 ```
 
-#### `vids` (Videos)
+#### vids (Videos)
 
 ```sql
 CREATE TABLE vids (
@@ -305,7 +347,7 @@ CREATE INDEX idx_vids_locid ON vids(locid);
 CREATE INDEX idx_vids_subid ON vids(subid);
 ```
 
-#### `docs` (Documents)
+#### docs (Documents)
 
 ```sql
 CREATE TABLE docs (
@@ -332,7 +374,7 @@ CREATE TABLE docs (
 CREATE INDEX idx_docs_locid ON docs(locid);
 ```
 
-#### `maps` (Maps/Historical Maps)
+#### maps (Maps/Historical Maps)
 
 ```sql
 CREATE TABLE maps (
@@ -361,47 +403,47 @@ CREATE INDEX idx_maps_locid ON maps(locid);
 
 ---
 
-## 🎨 User Interface
+## User Interface
 
 ### Pages (Left Menu Navigation)
 
-1. **Dashboard** (`/dashboard`)
+1. Dashboard (/dashboard)
    - Recent locations (last 5)
    - Top 5 states by location count
    - Top 5 types by count
    - Recent imports
    - Quick actions: Random location, Favorites, Undocumented locations
 
-2. **Locations** (`/locations`)
+2. Locations (/locations)
    - List view with filters (state, type, condition, status)
    - Search by name
    - Sortable columns
-   - Click location → Location detail page
+   - Click location to open detail page
 
-3. **Atlas** (`/atlas`) ⭐ **Primary Interface**
+3. Atlas (/atlas) - PRIMARY INTERFACE
    - Full-screen map view
    - Default: Satellite layer (ESRI World Imagery)
    - Show all locations with GPS data
    - Marker clustering (Supercluster)
-   - Click pin → Location detail page
-   - Right-click map → "Add Location Here"
+   - Click pin to open location detail page
+   - Right-click map to add location
    - Layer switcher (Street, Satellite, Topo, Labels)
    - Filter overlay (by state, type, status)
 
-4. **Imports** (`/imports`)
+4. Imports (/imports)
    - Drag & drop area for files/folders
    - Select location dropdown (with autofill)
    - Import queue status
    - Recent imports history
 
-5. **Settings** (`/settings`)
+5. Settings (/settings)
    - User preferences
    - Archive folder location
    - Delete original files on import (on/off)
    - Database backup
    - Map tile cache settings
 
-6. **Location Detail** (`/location/:id`)
+6. Location Detail (/location/:id)
    - Hero image (first image or logo placeholder)
    - Location name, type, status
    - Address, GPS coordinates
@@ -414,25 +456,23 @@ CREATE INDEX idx_maps_locid ON maps(locid);
 
 ### Design System
 
-**Brand Colors:**
-- Accent: `#b9975c` (Gold)
-- Background: `#fffbf7` (Cream)
-- Text/Foreground: `#454545` (Dark Gray)
+Brand Colors:
+- Accent: #b9975c (Gold)
+- Background: #fffbf7 (Cream)
+- Text/Foreground: #454545 (Dark Gray)
 
-**Assets:**
-- Logo: `abandoned-upstate-logo.png`
-- Icon: `abandoned-upstate-icon.png`
+Assets:
+- Logo: abandoned-upstate-logo.png
+- Icon: abandoned-upstate-icon.png
 
-**Typography:**
-- System fonts (TBD - match website later)
+Typography: System fonts (TBD - match website later)
 
 ---
 
-## 🗺️ GPS-First Workflow
+## GPS-First Workflow
 
 ### Primary Workflow: Map-First Location Creation
 
-```
 1. User opens Atlas page
 2. User switches to Satellite layer (default)
 3. User navigates to building location
@@ -460,11 +500,9 @@ CREATE INDEX idx_maps_locid ON maps(locid);
 10. Location saved to database
 11. Pin appears on map
 12. Success notification
-```
 
 ### Secondary Workflow: Form-First with Map Confirmation
 
-```
 1. User clicks "Add Location" from Locations page
 2. Form opens
 3. User enters location name, state
@@ -477,16 +515,14 @@ CREATE INDEX idx_maps_locid ON maps(locid);
 10. gps_verified_on_map = true
 11. User completes form
 12. Location created
-```
 
 ### GPS Data Flow
 
-```
 GPS Source Priority:
-1. User map click (verified on satellite) → HIGHEST CONFIDENCE
-2. Photo EXIF GPS → HIGH CONFIDENCE (if accuracy < 10m)
-3. Geocoded address → MEDIUM CONFIDENCE
-4. Manual lat/lng entry → LOW CONFIDENCE
+1. User map click (verified on satellite) - HIGHEST CONFIDENCE
+2. Photo EXIF GPS - HIGH CONFIDENCE (if accuracy < 10m)
+3. Geocoded address - MEDIUM CONFIDENCE
+4. Manual lat/lng entry - LOW CONFIDENCE
 
 GPS Confidence Levels:
 - verified: Map-clicked + user confirmed on satellite
@@ -494,11 +530,10 @@ GPS Confidence Levels:
 - medium: Geocoded from address
 - low: Manual entry or poor accuracy
 - none: No GPS data
-```
 
 ---
 
-## 📁 File Organization System
+## File Organization System
 
 ### Folder Structure
 
@@ -530,7 +565,7 @@ Original: IMG_1234.jpg
 New: a3d5e8f9c1b2d4e6f8a0c2d4e6f8a0c2d4e6f8a0c2d4e6f8a0c2d4e6f8a0c2d4.jpg
 ```
 
-**Benefits:**
+Benefits:
 - Deduplication (same file = same hash)
 - Integrity verification
 - Avoid filename collisions
@@ -538,11 +573,10 @@ New: a3d5e8f9c1b2d4e6f8a0c2d4e6f8a0c2d4e6f8a0c2d4e6f8a0c2d4e6f8a0c2d4.jpg
 
 ---
 
-## 🔄 Import Pipeline
+## Import Pipeline
 
 ### Import Workflow
 
-```
 1. User selects files/folder + target location
 2. For each file:
    a. Calculate SHA256 hash
@@ -558,11 +592,10 @@ New: a3d5e8f9c1b2d4e6f8a0c2d4e6f8a0c2d4e6f8a0c2d4e6f8a0c2d4e6f8a0c2d4.jpg
       vii. If deleteOnImport=true: delete original
 3. Show import summary
 4. Generate thumbnails (background job)
-```
 
 ### Metadata Extraction
 
-**Images:**
+Images:
 ```typescript
 // Using exiftool-vendored
 const exif = await exiftool.read(filePath);
@@ -580,11 +613,10 @@ const metadata = {
     altitude: exif.GPSAltitude,
     accuracy: exif.GPSHPositioningError,
   } : null,
-  // ... all other EXIF fields
 };
 ```
 
-**Videos:**
+Videos:
 ```typescript
 // Using fluent-ffmpeg
 const metadata = await new Promise((resolve, reject) => {
@@ -600,8 +632,7 @@ const videoInfo = {
   width: metadata.streams[0].width,
   height: metadata.streams[0].height,
   codec: metadata.streams[0].codec_name,
-  fps: eval(metadata.streams[0].r_frame_rate), // e.g., "30/1" → 30
-  // ... other metadata
+  fps: eval(metadata.streams[0].r_frame_rate),
 };
 ```
 
@@ -639,22 +670,22 @@ if (!locationGPS && photoGPS) {
 
 ---
 
-## 🌐 Mapping Configuration
+## Mapping Configuration
 
 ### Tile Layers
 
-**Base Layers:**
+Base Layers:
 ```typescript
 const baseLayers = {
   'Satellite': {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     attribution: 'ESRI World Imagery',
     maxZoom: 19,
-    default: true // ← DEFAULT LAYER
+    default: true // DEFAULT LAYER
   },
   'Street': {
     url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '© OpenStreetMap contributors',
+    attribution: 'OpenStreetMap contributors',
     maxZoom: 19
   },
   'Topographic': {
@@ -718,18 +749,18 @@ function getMarkerIcon(location: Location): L.Icon {
 
   return L.divIcon({
     className: 'custom-marker',
-    html: `<div style="background: ${colors[confidence]}; ...">📍</div>`
+    html: `<div style="background: ${colors[confidence]}">PIN</div>`
   });
 }
 ```
 
 ---
 
-## 🔌 IPC Architecture (Electron)
+## IPC Architecture (Electron)
 
 ### IPC Channels
 
-**Database Operations:**
+Database Operations:
 ```typescript
 // Main Process (electron/main/ipc/database.ts)
 ipcMain.handle('db:location:create', async (event, data) => {
@@ -749,7 +780,7 @@ export const dbApi = {
 };
 ```
 
-**File Operations:**
+File Operations:
 ```typescript
 ipcMain.handle('file:import', async (event, { filePath, locId }) => {
   return await fileImportService.import(filePath, locId);
@@ -760,7 +791,7 @@ ipcMain.handle('file:calculateSHA256', async (event, filePath) => {
 });
 ```
 
-**Metadata Extraction:**
+Metadata Extraction:
 ```typescript
 ipcMain.handle('metadata:extractExif', async (event, filePath) => {
   return await exiftoolService.extract(filePath);
@@ -771,7 +802,7 @@ ipcMain.handle('metadata:extractVideo', async (event, filePath) => {
 });
 ```
 
-**Geocoding:**
+Geocoding:
 ```typescript
 ipcMain.handle('geocode:reverse', async (event, { lat, lng }) => {
   return await geocodingService.reverseGeocode(lat, lng);
@@ -789,9 +820,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     location: {
       create: (data) => ipcRenderer.invoke('db:location:create', data),
       findAll: (filters) => ipcRenderer.invoke('db:location:findAll', filters),
-      // ... other methods
     },
-    // ... other tables
   },
   file: {
     import: (filePath, locId) => ipcRenderer.invoke('file:import', { filePath, locId }),
@@ -809,14 +838,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
 ---
 
-## 🧪 Testing Strategy
+## Testing Strategy
 
 ### Coverage Goals
 
-- **Core Business Logic**: 70%+ (domain models, services)
-- **Repository Layer**: 60%+ (database operations)
-- **UI Components**: 40%+ (critical paths only)
-- **E2E**: Key workflows (import, location creation)
+- Core Business Logic: 70%+ (domain models, services)
+- Repository Layer: 60%+ (database operations)
+- UI Components: 40%+ (critical paths only)
+- E2E: Key workflows (import, location creation)
 
 ### Test Structure
 
@@ -855,11 +884,11 @@ tests/
 
 ---
 
-## 🚀 Deployment & Distribution
+## Deployment & Distribution
 
 ### Build Configuration
 
-**Electron Builder:**
+Electron Builder:
 ```json
 {
   "build": {
@@ -904,67 +933,68 @@ resources/
     └── ffprobe            # FFprobe binary
 ```
 
-**Platform-specific binaries:**
+Platform-specific binaries:
 - macOS: Universal binary (x64 + arm64)
 - Linux: x64
 - Windows: (future) x64
 
 ---
 
-## 📋 Feature Roadmap
+## Feature Roadmap
 
 ### v0.1 (MVP - Weeks 1-4)
-- ✅ SQLite database setup
-- ✅ Location CRUD operations
-- ✅ Basic location form
-- ✅ File import with SHA256
-- ✅ Folder organization
-- ✅ Location list page
-- ✅ Settings page
+- SQLite database setup
+- Location CRUD operations
+- Basic location form
+- File import with SHA256
+- Folder organization
+- Location list page
+- Settings page
 
 ### v0.2 (Media & Metadata - Weeks 5-7)
-- ✅ ExifTool integration
-- ✅ FFmpeg integration
-- ✅ Thumbnail generation
-- ✅ Image gallery
-- ✅ Metadata viewer
+- ExifTool integration
+- FFmpeg integration
+- Thumbnail generation
+- Image gallery
+- Metadata viewer
 
 ### v0.3 (Mapping - Weeks 8-10)
-- ✅ Leaflet integration
-- ✅ Show locations on map
-- ✅ Satellite layer (default)
-- ✅ Click pin → location detail
-- ✅ Tile layer switching
-- ✅ Marker clustering
+- Leaflet integration
+- Show locations on map
+- Satellite layer (default)
+- Click pin to location detail
+- Tile layer switching
+- Marker clustering
 
 ### v0.4 (GPS-First - Weeks 11-12)
-- ✅ Right-click to add location
-- ✅ Reverse-geocoding
-- ✅ GPS confidence indicators
-- ✅ Photo GPS extraction
-- ✅ GPS mismatch detection
+- Right-click to add location
+- Reverse-geocoding
+- GPS confidence indicators
+- Photo GPS extraction
+- GPS mismatch detection
 
 ### v0.5 (Polish - Weeks 13-14)
-- ✅ Dashboard implementation
-- ✅ Search & filters
-- ✅ Sub-location support
-- ✅ Export functionality
+- Dashboard implementation
+- Search & filters
+- Sub-location support
+- Export functionality
 
 ### v1.0 (Future)
+- Web scraping for images/videos/documents
+- Research tools with citations
+- Wikipedia/blog post generation
+- Collaborative features
 - Advanced analytics
-- Cloud sync (optional)
-- Mobile companion app
-- Collaboration features
 
 ---
 
-## 🔒 Security & Privacy
+## Security & Privacy
 
 ### Data Security
 
-- **Local-First**: All data stored locally, no cloud by default
-- **No Telemetry**: No tracking, analytics, or data collection
-- **User Data Ownership**: User owns all data, can export/backup anytime
+- Local-First: All data stored locally, no cloud by default
+- No Telemetry: No tracking, analytics, or data collection
+- User Data Ownership: User owns all data, can export/backup anytime
 
 ### Input Validation
 
@@ -981,52 +1011,55 @@ resources/
 
 ---
 
-## 📖 Development Guidelines
+## Development Guidelines
 
 ### Code Style
 
-- **TypeScript**: Strict mode enabled
-- **Naming**: camelCase for variables/functions, PascalCase for classes/components
-- **Formatting**: Prettier with 2-space indentation
-- **Linting**: ESLint with TypeScript rules
+- TypeScript: Strict mode enabled
+- Naming: camelCase for variables/functions, PascalCase for classes/components
+- Formatting: Prettier with 2-space indentation
+- Linting: ESLint with TypeScript rules
 
 ### Git Workflow
 
-- **Main Branch**: `main` (protected)
-- **Feature Branches**: `feature/description`
-- **Commit Messages**: Conventional Commits format
-  - `feat:` New feature
-  - `fix:` Bug fix
-  - `refactor:` Code refactoring
-  - `docs:` Documentation
-  - `test:` Tests
-  - `chore:` Build/tooling
+- Main Branch: main (protected)
+- Feature Branches: feature/description
+- Commit Messages: Conventional Commits format
+  - feat: New feature
+  - fix: Bug fix
+  - refactor: Code refactoring
+  - docs: Documentation
+  - test: Tests
+  - chore: Build/tooling
 
 ### Performance Targets
 
-- **App Launch**: < 3 seconds
-- **Database Query**: < 100ms for 10k locations
-- **File Import**: Real-time progress feedback
-- **Map Rendering**: 60fps with 1000+ markers (clustered)
+- App Launch: < 3 seconds
+- Database Query: < 100ms for 10k locations
+- File Import: Real-time progress feedback
+- Map Rendering: 60fps with 1000+ markers (clustered)
 
 ---
 
-## 📞 Support & Documentation
+## Documentation Files
 
-### User Documentation (Future)
+### claude.md (this file)
+Technical specification and architecture overview
 
-- Getting Started Guide
-- Import Workflow Tutorial
-- Map Interface Guide
-- Database Backup Instructions
+### techguide.md
+Detailed technical implementation guide
+- Component implementation details
+- API documentation
+- Configuration examples
+- Troubleshooting guide
 
-### Developer Documentation
-
-- Architecture Decision Records (ADRs)
-- API Reference (IPC channels)
-- Database Schema Documentation
-- Build & Deployment Guide
+### lilbits.md
+Script-by-script documentation
+- Purpose of each script
+- Function signatures
+- Usage examples
+- Dependencies
 
 ---
 
-**End of Specification**
+End of Specification
