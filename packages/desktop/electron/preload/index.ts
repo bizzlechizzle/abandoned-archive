@@ -282,4 +282,5 @@ const api = {
 
 contextBridge.exposeInMainWorld('electronAPI', api);
 
-export type ElectronAPI = typeof api;
+// Type is exported from a separate .d.ts file to avoid CJS compilation issues
+// See: electron/preload/types.d.ts

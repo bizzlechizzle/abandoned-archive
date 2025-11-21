@@ -27,13 +27,15 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron/preload',
             rollupOptions: {
-              external: ['electron'],
+              external: ['electron', '@au-archive/core'],
               output: {
                 format: 'cjs',
                 // Ensure proper CommonJS interop
                 interop: 'auto',
                 // Use .js extension for CommonJS
                 entryFileNames: '[name].js',
+                // Prevent exports - preload scripts should not export anything
+                exports: 'none',
               },
             },
           },
