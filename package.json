@@ -13,14 +13,16 @@
       "better-sqlite3",
       "esbuild",
       "sharp",
-      "7zip-bin"
+      "7zip-bin",
+      "@electron/rebuild"
     ]
   },
   "scripts": {
-    "postinstall": "pnpm --filter core build",
+    "postinstall": "pnpm --filter core build && pnpm --filter desktop rebuild",
     "dev": "pnpm --filter desktop dev",
     "build": "pnpm --filter core build && pnpm --filter desktop build",
     "build:core": "pnpm --filter core build",
+    "rebuild": "pnpm --filter desktop rebuild",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "format": "prettier --write \"**/*.{ts,tsx,svelte,json,md}\"",
