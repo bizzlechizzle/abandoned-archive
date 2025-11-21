@@ -34,10 +34,10 @@
   }
 </script>
 
-<nav class="w-64 h-screen bg-gray-800 text-white flex flex-col">
-  <div class="p-4 border-b border-gray-700">
-    <img src={logo} alt="Abandoned Upstate" class="h-12 w-auto mb-1" />
-    <p class="text-xs text-gray-400">Archive</p>
+<nav class="w-64 h-screen bg-background text-foreground flex flex-col border-r border-gray-200">
+  <div class="p-6 border-b border-gray-200 text-center">
+    <img src={logo} alt="Abandoned Upstate" class="h-20 w-auto mx-auto mb-2" />
+    <p class="text-sm font-heading font-semibold text-accent tracking-wide">Archive Tool</p>
   </div>
 
   <div class="flex-1 overflow-y-auto">
@@ -46,7 +46,7 @@
         <li>
           <button
             onclick={() => navigate(item.path)}
-            class="w-full px-6 py-3 text-left hover:bg-gray-700 transition-colors {isActive(item.path) ? 'bg-gray-700 border-l-4 border-accent' : ''}"
+            class="w-full px-6 py-3 text-left hover:bg-gray-100 transition-colors {isActive(item.path) ? 'bg-gray-100 border-l-4 border-accent' : ''}"
           >
             <span class="text-sm font-medium">{item.label}</span>
           </button>
@@ -55,7 +55,7 @@
     </ul>
   </div>
 
-  <div class="p-4 border-t border-gray-700 text-xs text-gray-400">
+  <div class="p-4 border-t border-gray-200 text-xs text-gray-400">
     v0.1.0
   </div>
 </nav>
