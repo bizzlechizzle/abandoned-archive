@@ -12,6 +12,7 @@
   import LocationDetail from './pages/LocationDetail.svelte';
   import Projects from './pages/Projects.svelte';
   import ProjectDetail from './pages/ProjectDetail.svelte';
+import Bookmarks from './pages/Bookmarks.svelte';
   import Setup from './pages/Setup.svelte';
 
   let currentRoute = $state({ path: '/dashboard', params: {} });

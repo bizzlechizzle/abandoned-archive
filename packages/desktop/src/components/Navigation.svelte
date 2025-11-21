@@ -16,6 +16,7 @@
     { path: '/projects', label: 'Projects', icon: 'folder' },
     { path: '/atlas', label: 'Atlas', icon: 'map' },
     { path: '/browser', label: 'Browser', icon: 'globe' },
+    { path: '/bookmarks', label: 'Bookmarks', icon: 'bookmark' },
     { path: '/imports', label: 'Imports', icon: 'upload' },
     { path: '/search', label: 'Search', icon: 'search' },
     { path: '/settings', label: 'Settings', icon: 'cog' }
