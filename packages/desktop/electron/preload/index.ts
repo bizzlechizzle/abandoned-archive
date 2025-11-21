@@ -85,6 +85,27 @@ const api = {
     getTotalMediaCount: (): Promise<{ images: number; videos: number; documents: number; maps: number }> =>
       ipcRenderer.invoke('imports:getTotalMediaCount'),
   },
+
+  media: {
+    selectFiles: (): Promise<string[] | null> =>
+      ipcRenderer.invoke('media:selectFiles'),
+    import: (input: {
+      files: Array<{ filePath: string; originalName: string }>;
+      locid: string;
+      subid?: string | null;
+      auth_imp: string | null;
+      deleteOriginals: boolean;
+    }): Promise<unknown> =>
+      ipcRenderer.invoke('media:import', input),
+    findByLocation: (locid: string): Promise<{
+      images: unknown[];
+      videos: unknown[];
+      documents: unknown[];
+    }> =>
+      ipcRenderer.invoke('media:findByLocation', locid),
+    openFile: (filePath: string): Promise<void> =>
+      ipcRenderer.invoke('media:openFile', filePath),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

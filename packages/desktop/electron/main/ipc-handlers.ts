@@ -2,6 +2,11 @@ import { ipcMain, shell, dialog } from 'electron';
 import { getDatabase, getDatabasePath } from './database';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
 import { SQLiteImportRepository } from '../repositories/sqlite-import-repository';
+import { SQLiteMediaRepository } from '../repositories/sqlite-media-repository';
+import { CryptoService } from '../services/crypto-service';
+import { ExifToolService } from '../services/exiftool-service';
+import { FFmpegService } from '../services/ffmpeg-service';
+import { FileImportService } from '../services/file-import-service';
 import { LocationInputSchema } from '@au-archive/core';
 import type { LocationInput, LocationFilters } from '@au-archive/core';
 import { z } from 'zod';
@@ -11,6 +16,12 @@ export function registerIpcHandlers() {
   const db = getDatabase();
   const locationRepo = new SQLiteLocationRepository(db);
   const importRepo = new SQLiteImportRepository(db);
+  const mediaRepo = new SQLiteMediaRepository(db);
+
+  // Initialize services
+  const cryptoService = new CryptoService();
+  const exifToolService = new ExifToolService();
+  const ffmpegService = new FFmpegService();
 
   // Location queries
   ipcMain.handle('location:findAll', async (_event, filters?: LocationFilters) => {
@@ -362,6 +373,120 @@ export function registerIpcHandlers() {
       return await importRepo.getTotalMediaCount();
     } catch (error) {
       console.error('Error getting total media count:', error);
+      throw error;
+    }
+  });
+
+  // Media operations
+  ipcMain.handle('media:selectFiles', async () => {
+    try {
+      const result = await dialog.showOpenDialog({
+        properties: ['openFile', 'multiSelections'],
+        title: 'Select Media Files',
+        filters: [
+          { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp'] },
+          { name: 'Videos', extensions: ['mp4', 'mov', 'avi', 'mkv', 'wmv', 'flv', 'webm'] },
+          { name: 'Documents', extensions: ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      });
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return null;
+      }
+
+      return result.filePaths;
+    } catch (error) {
+      console.error('Error selecting files:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('media:import', async (_event, input: unknown) => {
+    try {
+      const ImportInputSchema = z.object({
+        files: z.array(
+          z.object({
+            filePath: z.string(),
+            originalName: z.string(),
+          })
+        ),
+        locid: z.string().uuid(),
+        subid: z.string().uuid().nullable().optional(),
+        auth_imp: z.string().nullable(),
+        deleteOriginals: z.boolean().default(false),
+      });
+
+      const validatedInput = ImportInputSchema.parse(input);
+
+      // Get archive path from settings
+      const archivePath = await db
+        .selectFrom('settings')
+        .select('value')
+        .where('key', '=', 'archive_folder')
+        .executeTakeFirst();
+
+      if (!archivePath?.value) {
+        throw new Error('Archive folder not configured. Please set it in Settings.');
+      }
+
+      // Initialize FileImportService
+      const fileImportService = new FileImportService(
+        cryptoService,
+        exifToolService,
+        ffmpegService,
+        mediaRepo,
+        importRepo,
+        archivePath.value
+      );
+
+      // Prepare files for import
+      const filesForImport = validatedInput.files.map((f) => ({
+        filePath: f.filePath,
+        originalName: f.originalName,
+        locid: validatedInput.locid,
+        subid: validatedInput.subid || null,
+        auth_imp: validatedInput.auth_imp,
+      }));
+
+      // Import files
+      const result = await fileImportService.importFiles(
+        filesForImport,
+        validatedInput.deleteOriginals
+      );
+
+      return result;
+    } catch (error) {
+      console.error('Error importing media:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('media:findByLocation', async (_event, locid: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(locid);
+      return await mediaRepo.findAllMediaByLocation(validatedId);
+    } catch (error) {
+      console.error('Error finding media by location:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('media:openFile', async (_event, filePath: unknown) => {
+    try {
+      const validatedPath = z.string().parse(filePath);
+      await shell.openPath(validatedPath);
+    } catch (error) {
+      console.error('Error opening file:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
       throw error;
     }
   });
