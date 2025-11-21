@@ -6,6 +6,8 @@ export interface LocationFilters {
   hasGPS?: boolean;
   documented?: boolean;
   search?: string;
+  historic?: boolean;
+  favorite?: boolean;
 }
 
 export interface LocationRepository {

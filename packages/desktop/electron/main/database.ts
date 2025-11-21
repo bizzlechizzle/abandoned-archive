@@ -198,6 +198,12 @@ CREATE TABLE IF NOT EXISTS maps (
 );
 
 CREATE INDEX IF NOT EXISTS idx_maps_locid ON maps(locid);
+
+-- Settings table (key-value store)
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `;
 
 /**
@@ -368,7 +374,21 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration completed: bookmarks table created');
     }
 
-    // Migration 6: Create users table if it doesn't exist
+    // Migration 6: Create settings table if it doesn't exist
+    const hasSettings = tableNames.includes('settings');
+
+    if (!hasSettings) {
+      console.log('Running migration: Creating settings table');
+      sqlite.exec(`
+        CREATE TABLE settings (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        );
+      `);
+      console.log('Migration completed: settings table created');
+    }
+
+    // Migration 7: Create users table if it doesn't exist
     const hasUsers = tableNames.includes('users');
 
     if (!hasUsers) {
@@ -383,13 +403,13 @@ function runMigrations(sqlite: Database.Database): void {
         CREATE INDEX idx_users_username ON users(username);
       `);
 
-      // Create default user
+      // Create default user using parameterized query (NOT template literals)
       const defaultUserId = 'default-user-id';
       const defaultDate = new Date().toISOString();
-      sqlite.exec(`
-        INSERT INTO users (user_id, username, display_name, created_date)
-        VALUES ('${defaultUserId}', 'default', 'Default User', '${defaultDate}');
-      `);
+      const insertStmt = sqlite.prepare(
+        'INSERT INTO users (user_id, username, display_name, created_date) VALUES (?, ?, ?, ?)'
+      );
+      insertStmt.run(defaultUserId, 'default', 'Default User', defaultDate);
 
       console.log('Migration completed: users table created with default user');
     }

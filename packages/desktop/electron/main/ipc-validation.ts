@@ -42,7 +42,7 @@ export const PaginationSchema = z.object({
   offset: OffsetSchema,
 });
 
-// Settings validation
+// Settings validation - whitelist of allowed setting keys
 export const SettingKeySchema = z.enum([
   'theme',
   'defaultView',
@@ -51,6 +51,9 @@ export const SettingKeySchema = z.enum([
   'enableBackups',
   'backupInterval',
   'maxBackups',
+  'archive_folder',
+  'default_user',
+  'last_backup_date',
 ]);
 
 export const SettingValueSchema = z.union([

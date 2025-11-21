@@ -22,7 +22,7 @@ import { LocationInputSchema } from '@au-archive/core';
 import type { LocationInput, LocationFilters } from '@au-archive/core';
 import { z } from 'zod';
 import fs from 'fs/promises';
-import { validate, UuidSchema, LimitSchema, FilePathSchema, UrlSchema } from './ipc-validation';
+import { validate, UuidSchema, LimitSchema, FilePathSchema, UrlSchema, SettingKeySchema } from './ipc-validation';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
@@ -145,18 +145,8 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('location:historical', async () => {
     try {
-      const results = await db
-        .selectFrom('locs')
-        .selectAll()
-        .where('historic', '=', 1)
-        .execute();
-
-      const locations = [];
-      for (const row of results) {
-        const loc = await locationRepo.findById(row.locid);
-        if (loc) locations.push(loc);
-      }
-      return locations;
+      // Use a single query instead of N+1 queries via findById loop
+      return await locationRepo.findAll({ historic: true });
     } catch (error) {
       console.error('Error getting historical locations:', error);
       throw error;
@@ -165,19 +155,8 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('location:favorites', async () => {
     try {
-      const results = await db
-        .selectFrom('locs')
-        .selectAll()
-        .where('favorite', '=', 1)
-        .orderBy('locup', 'desc')
-        .execute();
-
-      const locations = [];
-      for (const row of results) {
-        const loc = await locationRepo.findById(row.locid);
-        if (loc) locations.push(loc);
-      }
-      return locations;
+      // Use a single query instead of N+1 queries via findById loop
+      return await locationRepo.findAll({ favorite: true });
     } catch (error) {
       console.error('Error getting favorite locations:', error);
       throw error;
@@ -277,7 +256,8 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('settings:set', async (_event, key: unknown, value: unknown) => {
     try {
-      const validatedKey = z.string().min(1).parse(key);
+      // Security: Only allow whitelisted settings keys
+      const validatedKey = SettingKeySchema.parse(key);
       const validatedValue = z.string().parse(value);
       await db
         .insertInto('settings')
@@ -355,9 +335,10 @@ export function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle('imports:findRecent', async (_event, limit: number = 5) => {
+  ipcMain.handle('imports:findRecent', async (_event, limit: unknown = 5) => {
     try {
-      return await importRepo.findRecent(limit);
+      const validatedLimit = validate(LimitSchema, limit);
+      return await importRepo.findRecent(validatedLimit);
     } catch (error) {
       console.error('Error finding recent imports:', error);
       throw error;
@@ -505,7 +486,28 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('media:openFile', async (_event, filePath: unknown) => {
     try {
-      const validatedPath = z.string().parse(filePath);
+      const validatedPath = z.string().min(1).max(4096).parse(filePath);
+
+      // Security: Only allow opening files from the archive folder
+      const archivePath = await db
+        .selectFrom('settings')
+        .select('value')
+        .where('key', '=', 'archive_folder')
+        .executeTakeFirst();
+
+      if (!archivePath?.value) {
+        throw new Error('Archive folder not configured');
+      }
+
+      // Normalize paths and check if file is within archive folder
+      const path = await import('path');
+      const normalizedFilePath = path.resolve(validatedPath);
+      const normalizedArchivePath = path.resolve(archivePath.value);
+
+      if (!normalizedFilePath.startsWith(normalizedArchivePath + path.sep)) {
+        throw new Error('Access denied: file is outside the archive folder');
+      }
+
       await shell.openPath(validatedPath);
     } catch (error) {
       console.error('Error opening file:', error);
@@ -563,9 +565,10 @@ export function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle('notes:findRecent', async (_event, limit: number = 10) => {
+  ipcMain.handle('notes:findRecent', async (_event, limit: unknown = 10) => {
     try {
-      return await notesRepo.findRecent(limit);
+      const validatedLimit = validate(LimitSchema, limit);
+      return await notesRepo.findRecent(validatedLimit);
     } catch (error) {
       console.error('Error finding recent notes:', error);
       throw error;
@@ -671,18 +674,20 @@ export function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle('projects:findRecent', async (_event, limit: number = 5) => {
+  ipcMain.handle('projects:findRecent', async (_event, limit: unknown = 5) => {
     try {
-      return await projectsRepo.findRecent(limit);
+      const validatedLimit = validate(LimitSchema, limit);
+      return await projectsRepo.findRecent(validatedLimit);
     } catch (error) {
       console.error('Error finding recent projects:', error);
       throw error;
     }
   });
 
-  ipcMain.handle('projects:findTopByLocationCount', async (_event, limit: number = 5) => {
+  ipcMain.handle('projects:findTopByLocationCount', async (_event, limit: unknown = 5) => {
     try {
-      return await projectsRepo.findTopByLocationCount(limit);
+      const validatedLimit = validate(LimitSchema, limit);
+      return await projectsRepo.findTopByLocationCount(validatedLimit);
     } catch (error) {
       console.error('Error finding top projects:', error);
       throw error;
@@ -823,9 +828,10 @@ export function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle('bookmarks:findRecent', async (_event, limit: number = 10) => {
+  ipcMain.handle('bookmarks:findRecent', async (_event, limit: unknown = 10) => {
     try {
-      return await bookmarksRepo.findRecent(limit);
+      const validatedLimit = validate(LimitSchema, limit);
+      return await bookmarksRepo.findRecent(validatedLimit);
     } catch (error) {
       console.error('Error finding recent bookmarks:', error);
       throw error;

@@ -105,6 +105,14 @@ export class SQLiteLocationRepository implements LocationRepository {
       query = query.where('documentation', '=', 'No Visit / Keyboard Scout');
     }
 
+    if (filters?.historic === true) {
+      query = query.where('historic', '=', 1);
+    }
+
+    if (filters?.favorite === true) {
+      query = query.where('favorite', '=', 1);
+    }
+
     query = query.orderBy('locadd', 'desc');
 
     const rows = await query.execute();
