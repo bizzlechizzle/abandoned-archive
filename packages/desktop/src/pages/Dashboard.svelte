@@ -36,6 +36,76 @@
   let totalCount = $state(0);
   let loading = $state(true);
 
+  // New location form state
+  let showNewLocationForm = $state(false);
+  let newLocName = $state('');
+  let newLocState = $state('');
+  let newLocCity = $state('');
+  let newLocType = $state('');
+  let creatingLocation = $state(false);
+  let createError = $state('');
+  let createSuccess = $state('');
+
+  async function handleCreateLocation() {
+    if (!newLocName.trim()) {
+      createError = 'Location name is required';
+      return;
+    }
+
+    try {
+      creatingLocation = true;
+      createError = '';
+      createSuccess = '';
+
+      const newLocation = await window.electronAPI.locations.create({
+        locnam: newLocName.trim(),
+        type: newLocType.trim() || undefined,
+        address: {
+          state: newLocState.trim() || undefined,
+          city: newLocCity.trim() || undefined,
+        },
+      });
+
+      // Reset form
+      newLocName = '';
+      newLocState = '';
+      newLocCity = '';
+      newLocType = '';
+      showNewLocationForm = false;
+      createSuccess = 'Location created successfully!';
+
+      // Refresh dashboard data
+      const [locations, count] = await Promise.all([
+        window.electronAPI.locations.findAll(),
+        window.electronAPI.locations.count(),
+      ]);
+      recentLocations = locations.slice(0, 5);
+      totalCount = count;
+
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        createSuccess = '';
+      }, 3000);
+
+      // Navigate to the new location
+      router.navigate(`/location/${newLocation.locid}`);
+    } catch (error) {
+      console.error('Error creating location:', error);
+      createError = error instanceof Error ? error.message : 'Failed to create location';
+    } finally {
+      creatingLocation = false;
+    }
+  }
+
+  function cancelNewLocation() {
+    showNewLocationForm = false;
+    newLocName = '';
+    newLocState = '';
+    newLocCity = '';
+    newLocType = '';
+    createError = '';
+  }
+
   onMount(async () => {
     try {
       if (!window.electronAPI?.locations) {
@@ -308,10 +378,23 @@
 
   <div class="mt-8">
     <h2 class="text-xl font-semibold mb-4 text-foreground">Quick Actions</h2>
-    <div class="flex gap-4">
+
+    {#if createSuccess}
+      <div class="mb-4 p-3 bg-green-50 border border-green-200 rounded text-green-700 text-sm">
+        {createSuccess}
+      </div>
+    {/if}
+
+    <div class="flex gap-4 flex-wrap">
+      <button
+        onclick={() => (showNewLocationForm = !showNewLocationForm)}
+        class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition"
+      >
+        {showNewLocationForm ? 'Cancel' : '+ New Location'}
+      </button>
       <button
         onclick={() => router.navigate('/atlas')}
-        class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition"
+        class="px-4 py-2 bg-gray-200 text-foreground rounded hover:bg-gray-300 transition"
       >
         Open Atlas
       </button>
@@ -328,5 +411,91 @@
         Import Media
       </button>
     </div>
+
+    {#if showNewLocationForm}
+      <div class="mt-4 max-w-xl bg-white rounded-lg shadow p-6">
+        <h3 class="text-lg font-semibold text-foreground mb-4">Create New Location</h3>
+
+        {#if createError}
+          <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+            {createError}
+          </div>
+        {/if}
+
+        <div class="space-y-4">
+          <div>
+            <label for="new-loc-name" class="block text-sm font-medium text-gray-700 mb-1">
+              Location Name <span class="text-red-500">*</span>
+            </label>
+            <input
+              id="new-loc-name"
+              type="text"
+              bind:value={newLocName}
+              placeholder="e.g., Smith Farm, Downtown Mill"
+              disabled={creatingLocation}
+              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
+            />
+          </div>
+
+          <div>
+            <label for="new-loc-type" class="block text-sm font-medium text-gray-700 mb-1">
+              Type
+            </label>
+            <input
+              id="new-loc-type"
+              type="text"
+              bind:value={newLocType}
+              placeholder="e.g., Factory, School, Hospital"
+              disabled={creatingLocation}
+              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
+            />
+          </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label for="new-loc-city" class="block text-sm font-medium text-gray-700 mb-1">City</label>
+              <input
+                id="new-loc-city"
+                type="text"
+                bind:value={newLocCity}
+                placeholder="City (optional)"
+                disabled={creatingLocation}
+                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
+              />
+            </div>
+            <div>
+              <label for="new-loc-state" class="block text-sm font-medium text-gray-700 mb-1">State</label>
+              <input
+                id="new-loc-state"
+                type="text"
+                bind:value={newLocState}
+                placeholder="e.g., TX, CA"
+                disabled={creatingLocation}
+                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
+              />
+            </div>
+          </div>
+
+          <div class="flex gap-3 pt-2">
+            <button
+              type="button"
+              onclick={handleCreateLocation}
+              disabled={creatingLocation || !newLocName.trim()}
+              class="flex-1 px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+            >
+              {creatingLocation ? 'Creating...' : 'Create Location'}
+            </button>
+            <button
+              type="button"
+              onclick={cancelNewLocation}
+              disabled={creatingLocation}
+              class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    {/if}
   </div>
 </div>
