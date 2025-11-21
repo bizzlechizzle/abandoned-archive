@@ -134,6 +134,27 @@ function runMigrations(sqlite: Database.Database): void {
       `);
       console.log('Migration completed: projects tables created');
     }
+
+    // Migration 5: Create bookmarks table if it doesn't exist
+    const hasBookmarks = tables.some(t => t.name === 'bookmarks');
+
+    if (!hasBookmarks) {
+      console.log('Running migration: Creating bookmarks table');
+      sqlite.exec(`
+        CREATE TABLE bookmarks (
+          bookmark_id TEXT PRIMARY KEY,
+          url TEXT NOT NULL,
+          title TEXT,
+          locid TEXT REFERENCES locs(locid) ON DELETE SET NULL,
+          bookmark_date TEXT NOT NULL,
+          auth_imp TEXT,
+          thumbnail_path TEXT
+        );
+        CREATE INDEX idx_bookmarks_date ON bookmarks(bookmark_date DESC);
+        CREATE INDEX idx_bookmarks_locid ON bookmarks(locid);
+      `);
+      console.log('Migration completed: bookmarks table created');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

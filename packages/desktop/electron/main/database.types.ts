@@ -12,6 +12,7 @@ export interface Database {
   notes: NotesTable;
   projects: ProjectsTable;
   project_locations: ProjectLocationsTable;
+  bookmarks: BookmarksTable;
 }
 
 // Locations table
@@ -218,4 +219,15 @@ export interface ProjectLocationsTable {
   project_id: string;
   locid: string;
   added_date: string;
+}
+
+// Bookmarks table
+export interface BookmarksTable {
+  bookmark_id: string;
+  url: string;
+  title: string | null;
+  locid: string | null;
+  bookmark_date: string;
+  auth_imp: string | null;
+  thumbnail_path: string | null;
 }

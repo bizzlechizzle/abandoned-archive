@@ -165,6 +165,38 @@ const api = {
     isLocationInProject: (project_id: string, locid: string): Promise<boolean> =>
       ipcRenderer.invoke('projects:isLocationInProject', project_id, locid),
   },
+
+  bookmarks: {
+    create: (input: {
+      url: string;
+      title?: string | null;
+      locid?: string | null;
+      auth_imp?: string | null;
+      thumbnail_path?: string | null;
+    }): Promise<unknown> =>
+      ipcRenderer.invoke('bookmarks:create', input),
+    findById: (bookmark_id: string): Promise<unknown> =>
+      ipcRenderer.invoke('bookmarks:findById', bookmark_id),
+    findByLocation: (locid: string): Promise<unknown[]> =>
+      ipcRenderer.invoke('bookmarks:findByLocation', locid),
+    findRecent: (limit?: number): Promise<unknown[]> =>
+      ipcRenderer.invoke('bookmarks:findRecent', limit),
+    findAll: (): Promise<unknown[]> =>
+      ipcRenderer.invoke('bookmarks:findAll'),
+    update: (bookmark_id: string, updates: {
+      url?: string;
+      title?: string | null;
+      locid?: string | null;
+      thumbnail_path?: string | null;
+    }): Promise<unknown> =>
+      ipcRenderer.invoke('bookmarks:update', bookmark_id, updates),
+    delete: (bookmark_id: string): Promise<void> =>
+      ipcRenderer.invoke('bookmarks:delete', bookmark_id),
+    count: (): Promise<number> =>
+      ipcRenderer.invoke('bookmarks:count'),
+    countByLocation: (locid: string): Promise<number> =>
+      ipcRenderer.invoke('bookmarks:countByLocation', locid),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

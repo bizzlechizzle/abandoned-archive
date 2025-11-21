@@ -5,6 +5,7 @@ import { SQLiteImportRepository } from '../repositories/sqlite-import-repository
 import { SQLiteMediaRepository } from '../repositories/sqlite-media-repository';
 import { SQLiteNotesRepository } from '../repositories/sqlite-notes-repository';
 import { SQLiteProjectsRepository } from '../repositories/sqlite-projects-repository';
+import { SQLiteBookmarksRepository } from '../repositories/sqlite-bookmarks-repository';
 import { CryptoService } from '../services/crypto-service';
 import { ExifToolService } from '../services/exiftool-service';
 import { FFmpegService } from '../services/ffmpeg-service';
@@ -21,6 +22,7 @@ export function registerIpcHandlers() {
   const mediaRepo = new SQLiteMediaRepository(db);
   const notesRepo = new SQLiteNotesRepository(db);
   const projectsRepo = new SQLiteProjectsRepository(db);
+  const bookmarksRepo = new SQLiteBookmarksRepository(db);
 
   // Initialize services
   const cryptoService = new CryptoService();
@@ -747,6 +749,127 @@ export function registerIpcHandlers() {
       return await projectsRepo.isLocationInProject(validatedProjectId, validatedLocId);
     } catch (error) {
       console.error('Error checking if location is in project:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  // Bookmarks operations
+  ipcMain.handle('bookmarks:create', async (_event, input: unknown) => {
+    try {
+      const BookmarkInputSchema = z.object({
+        url: z.string().url(),
+        title: z.string().nullable().optional(),
+        locid: z.string().uuid().nullable().optional(),
+        auth_imp: z.string().nullable().optional(),
+        thumbnail_path: z.string().nullable().optional(),
+      });
+
+      const validatedInput = BookmarkInputSchema.parse(input);
+      return await bookmarksRepo.create(validatedInput);
+    } catch (error) {
+      console.error('Error creating bookmark:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('bookmarks:findById', async (_event, bookmark_id: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(bookmark_id);
+      return await bookmarksRepo.findById(validatedId);
+    } catch (error) {
+      console.error('Error finding bookmark:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('bookmarks:findByLocation', async (_event, locid: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(locid);
+      return await bookmarksRepo.findByLocation(validatedId);
+    } catch (error) {
+      console.error('Error finding bookmarks by location:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('bookmarks:findRecent', async (_event, limit: number = 10) => {
+    try {
+      return await bookmarksRepo.findRecent(limit);
+    } catch (error) {
+      console.error('Error finding recent bookmarks:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('bookmarks:findAll', async () => {
+    try {
+      return await bookmarksRepo.findAll();
+    } catch (error) {
+      console.error('Error finding all bookmarks:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('bookmarks:update', async (_event, bookmark_id: unknown, updates: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(bookmark_id);
+      const BookmarkUpdateSchema = z.object({
+        url: z.string().url().optional(),
+        title: z.string().nullable().optional(),
+        locid: z.string().uuid().nullable().optional(),
+        thumbnail_path: z.string().nullable().optional(),
+      });
+      const validatedUpdates = BookmarkUpdateSchema.parse(updates);
+      return await bookmarksRepo.update(validatedId, validatedUpdates);
+    } catch (error) {
+      console.error('Error updating bookmark:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('bookmarks:delete', async (_event, bookmark_id: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(bookmark_id);
+      await bookmarksRepo.delete(validatedId);
+    } catch (error) {
+      console.error('Error deleting bookmark:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('bookmarks:count', async () => {
+    try {
+      return await bookmarksRepo.count();
+    } catch (error) {
+      console.error('Error counting bookmarks:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('bookmarks:countByLocation', async (_event, locid: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(locid);
+      return await bookmarksRepo.countByLocation(validatedId);
+    } catch (error) {
+      console.error('Error counting bookmarks by location:', error);
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
