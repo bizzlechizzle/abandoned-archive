@@ -2,7 +2,6 @@ import { app } from 'electron';
 import { join } from 'path';
 import { promises as fs } from 'fs';
 import { existsSync } from 'fs';
-import { getLogger } from './logger-service';
 
 export interface AppConfig {
   backup: {
@@ -60,6 +59,7 @@ export class ConfigService {
 
   /**
    * Load configuration from disk or create with defaults
+   * Note: Uses console.log during load since logger depends on config
    */
   async load(): Promise<AppConfig> {
     try {
@@ -70,7 +70,8 @@ export class ConfigService {
         // Merge with defaults (in case new config keys were added)
         this.config = this.mergeWithDefaults(loaded);
 
-        getLogger().info('ConfigService', 'Configuration loaded', {
+        // Use console during load to avoid circular dependency with logger
+        console.log('[ConfigService] Configuration loaded', {
           path: this.configPath,
         });
       } else {
@@ -78,14 +79,14 @@ export class ConfigService {
         this.config = { ...DEFAULT_CONFIG };
         await this.save();
 
-        getLogger().info('ConfigService', 'Created default configuration', {
+        console.log('[ConfigService] Created default configuration', {
           path: this.configPath,
         });
       }
 
       return this.config;
     } catch (error) {
-      getLogger().error('ConfigService', 'Failed to load configuration, using defaults', error as Error);
+      console.error('[ConfigService] Failed to load configuration, using defaults', error);
       this.config = { ...DEFAULT_CONFIG };
       return this.config;
     }
@@ -93,6 +94,7 @@ export class ConfigService {
 
   /**
    * Save configuration to disk
+   * Note: Uses console.log to avoid circular dependency with logger
    */
   async save(): Promise<void> {
     if (!this.config) {
@@ -102,11 +104,11 @@ export class ConfigService {
     try {
       await fs.writeFile(this.configPath, JSON.stringify(this.config, null, 2), 'utf-8');
 
-      getLogger().info('ConfigService', 'Configuration saved', {
+      console.log('[ConfigService] Configuration saved', {
         path: this.configPath,
       });
     } catch (error) {
-      getLogger().error('ConfigService', 'Failed to save configuration', error as Error);
+      console.error('[ConfigService] Failed to save configuration', error);
       throw error;
     }
   }
@@ -139,7 +141,7 @@ export class ConfigService {
   async reset(): Promise<void> {
     this.config = { ...DEFAULT_CONFIG };
     await this.save();
-    getLogger().info('ConfigService', 'Configuration reset to defaults');
+    console.log('[ConfigService] Configuration reset to defaults');
   }
 
   /**

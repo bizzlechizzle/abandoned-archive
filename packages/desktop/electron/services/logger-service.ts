@@ -19,6 +19,12 @@ export interface LogEntry {
   stack?: string;
 }
 
+// Default logging configuration (used before config is loaded)
+const DEFAULT_LOG_CONFIG = {
+  MAX_FILE_SIZE: 10 * 1024 * 1024, // 10MB
+  MAX_FILES: 7,
+};
+
 /**
  * Structured logging service with automatic rotation
  * Keeps last N days, max configurable MB per file
@@ -28,18 +34,24 @@ export class Logger {
   private currentLogFile: string;
 
   private getLogConfig() {
-    const config = getConfigService().get();
-    return {
-      MAX_FILE_SIZE: config.logging.maxFileSizeMB * 1024 * 1024,
-      MAX_FILES: config.logging.maxFiles,
-    };
+    try {
+      const config = getConfigService().get();
+      return {
+        MAX_FILE_SIZE: config.logging.maxFileSizeMB * 1024 * 1024,
+        MAX_FILES: config.logging.maxFiles,
+      };
+    } catch {
+      // Config not loaded yet, use defaults
+      return DEFAULT_LOG_CONFIG;
+    }
   }
 
   constructor() {
     this.logDir = path.join(app.getPath('userData'), 'logs');
     this.currentLogFile = path.join(this.logDir, 'au-archive.log');
     this.ensureLogDirectory();
-    this.rotateIfNeeded();
+    // Don't rotate in constructor - config may not be loaded yet
+    // Rotation will happen on first write if needed
   }
 
   private ensureLogDirectory(): void {
