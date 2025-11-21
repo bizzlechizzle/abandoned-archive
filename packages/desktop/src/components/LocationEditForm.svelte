@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import type { Location, LocationInput } from '@au-archive/core';
+  import AutocompleteInput from './AutocompleteInput.svelte';
 
   interface Props {
     location: Location;
@@ -11,6 +12,9 @@
   let { location, onSave, onCancel }: Props = $props();
 
   let allLocations = $state<Location[]>([]);
+  let typeSuggestions = $state<string[]>([]);
+  let subtypeSuggestions = $state<string[]>([]);
+  let authorSuggestions = $state<string[]>([]);
 
   let formData = $state({
     locnam: location.locnam,
@@ -39,10 +43,25 @@
 
   onMount(async () => {
     try {
-      // Load all locations for parent selector
+      // Load all locations for parent selector and suggestions
       const locations = await window.electronAPI.locations.findAll();
       // Filter out the current location to prevent self-parenting
       allLocations = locations.filter(loc => loc.locid !== location.locid);
+
+      // Extract unique values for autocomplete suggestions
+      const types = new Set<string>();
+      const subtypes = new Set<string>();
+      const authors = new Set<string>();
+
+      locations.forEach(loc => {
+        if (loc.type) types.add(loc.type);
+        if (loc.stype) subtypes.add(loc.stype);
+        if (loc.auth_imp) authors.add(loc.auth_imp);
+      });
+
+      typeSuggestions = Array.from(types).sort();
+      subtypeSuggestions = Array.from(subtypes).sort();
+      authorSuggestions = Array.from(authors).sort();
     } catch (err) {
       console.error('Error loading locations:', err);
     }
@@ -200,24 +219,34 @@
         <label for="type" class="block text-sm font-medium text-gray-700 mb-1">
           Type
         </label>
-        <input
-          id="type"
-          type="text"
+        <AutocompleteInput
           bind:value={formData.type}
+          onchange={(val) => formData.type = val}
+          suggestions={typeSuggestions}
+          id="type"
+          placeholder="e.g., Hospital, Factory, School..."
           class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
         />
+        <p class="text-xs text-gray-500 mt-1">
+          Start typing to see suggestions from existing locations
+        </p>
       </div>
 
       <div>
         <label for="stype" class="block text-sm font-medium text-gray-700 mb-1">
           Sub-Type
         </label>
-        <input
-          id="stype"
-          type="text"
+        <AutocompleteInput
           bind:value={formData.stype}
+          onchange={(val) => formData.stype = val}
+          suggestions={subtypeSuggestions}
+          id="stype"
+          placeholder="e.g., Psychiatric, Manufacturing..."
           class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
         />
+        <p class="text-xs text-gray-500 mt-1">
+          Start typing to see suggestions
+        </p>
       </div>
 
       <div>
