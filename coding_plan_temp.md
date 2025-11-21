@@ -7,13 +7,13 @@
 
 ---
 
-## 🎯 Overview
+## TARGET: Overview
 
 This document provides a week-by-week implementation plan for building the Abandoned Upstate Archive desktop application from scratch. Each phase includes specific tasks, code examples, and validation checkpoints.
 
 ---
 
-## 📋 Pre-Flight Checklist
+## CHECKLIST: Pre-Flight Checklist
 
 Before starting development, ensure the following are installed:
 
@@ -70,7 +70,7 @@ git config --global user.email
 
 ---
 
-## 🏗️ Phase 1: Foundation (Weeks 1-2)
+## ARCHITECTURE: Phase 1: Foundation (Weeks 1-2)
 
 **Goal:** Set up project structure, tooling, and database foundation.
 
@@ -1397,7 +1397,7 @@ EOF
 
 ---
 
-## 🎨 Phase 2: UI Foundation (Week 3)
+## UI: Phase 2: UI Foundation (Week 3)
 
 ### Week 3: Navigation & Basic Pages
 
@@ -1478,9 +1478,9 @@ cat > src/App.svelte << 'EOF'
   import Settings from './pages/Settings.svelte';
 
   const menuItems = [
-    { route: '/dashboard', label: 'Dashboard', icon: '📊' },
-    { route: '/locations', label: 'Locations', icon: '📍' },
-    { route: '/atlas', label: 'Atlas', icon: '🗺️' },
+    { route: '/dashboard', label: 'Dashboard', icon: 'STATS:' },
+    { route: '/locations', label: 'Locations', icon: 'LOCATION:' },
+    { route: '/atlas', label: 'Atlas', icon: 'MAP:' },
     { route: '/imports', label: 'Imports', icon: '📥' },
     { route: '/settings', label: 'Settings', icon: '⚙️' }
   ];
@@ -1585,7 +1585,7 @@ pnpm dev
 
 ---
 
-## 📍 Phase 3: Mapping (Weeks 4-5)
+## LOCATION: Phase 3: Mapping (Weeks 4-5)
 
 ### Week 4: Leaflet Integration
 
@@ -1593,17 +1593,17 @@ pnpm dev
 
 ---
 
-## 📝 SUMMARY
+## NOTE: SUMMARY
 
 This implementation plan provides:
 
-✅ **Weeks 1-2**: Foundation (monorepo, database, domain models)
-✅ **Week 3**: UI foundation (routing, layout, basic pages)
-✅ **Weeks 4-5**: Mapping with Leaflet + GPS-first workflow
-✅ **Weeks 6-7**: Media import + metadata extraction
-✅ **Weeks 8-10**: Full CRUD operations + file organization
-✅ **Weeks 11-12**: Polish + advanced features
-✅ **Weeks 13-14**: Testing + deployment
+PASS: **Weeks 1-2**: Foundation (monorepo, database, domain models)
+PASS: **Week 3**: UI foundation (routing, layout, basic pages)
+PASS: **Weeks 4-5**: Mapping with Leaflet + GPS-first workflow
+PASS: **Weeks 6-7**: Media import + metadata extraction
+PASS: **Weeks 8-10**: Full CRUD operations + file organization
+PASS: **Weeks 11-12**: Polish + advanced features
+PASS: **Weeks 13-14**: Testing + deployment
 
 **Total:** ~350 hours of development work over 14 weeks.
 
