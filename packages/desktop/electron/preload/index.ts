@@ -59,6 +59,32 @@ const api = {
     selectFolder: (): Promise<string | null> =>
       ipcRenderer.invoke('dialog:selectFolder'),
   },
+
+  database: {
+    backup: (): Promise<{ success: boolean; path?: string; message?: string }> =>
+      ipcRenderer.invoke('database:backup'),
+  },
+
+  imports: {
+    create: (input: {
+      locid: string | null;
+      auth_imp: string | null;
+      img_count?: number;
+      vid_count?: number;
+      doc_count?: number;
+      map_count?: number;
+      notes?: string | null;
+    }): Promise<unknown> =>
+      ipcRenderer.invoke('imports:create', input),
+    findRecent: (limit?: number): Promise<unknown[]> =>
+      ipcRenderer.invoke('imports:findRecent', limit),
+    findByLocation: (locid: string): Promise<unknown[]> =>
+      ipcRenderer.invoke('imports:findByLocation', locid),
+    findAll: (): Promise<unknown[]> =>
+      ipcRenderer.invoke('imports:findAll'),
+    getTotalMediaCount: (): Promise<{ images: number; videos: number; documents: number; maps: number }> =>
+      ipcRenderer.invoke('imports:getTotalMediaCount'),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

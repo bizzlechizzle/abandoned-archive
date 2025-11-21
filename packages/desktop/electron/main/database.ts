@@ -15,7 +15,7 @@ let db: Kysely<DatabaseSchema> | null = null;
  * Get the database file path
  * Uses userData directory for production, current directory for development
  */
-function getDatabasePath(): string {
+export function getDatabasePath(): string {
   const userDataPath = app.getPath('userData');
   const dbDir = path.join(userDataPath, 'data');
 
@@ -61,6 +61,30 @@ function runMigrations(sqlite: Database.Database): void {
       sqlite.exec('ALTER TABLE locs ADD COLUMN favorite INTEGER DEFAULT 0');
       sqlite.exec('CREATE INDEX IF NOT EXISTS idx_locs_favorite ON locs(favorite) WHERE favorite = 1');
       console.log('Migration completed: favorite column added');
+    }
+
+    // Migration 2: Create imports table if it doesn't exist
+    const tables = sqlite.pragma('table_list') as Array<{ name: string }>;
+    const hasImports = tables.some(t => t.name === 'imports');
+
+    if (!hasImports) {
+      console.log('Running migration: Creating imports table');
+      sqlite.exec(`
+        CREATE TABLE imports (
+          import_id TEXT PRIMARY KEY,
+          locid TEXT REFERENCES locs(locid) ON DELETE CASCADE,
+          import_date TEXT NOT NULL,
+          auth_imp TEXT,
+          img_count INTEGER DEFAULT 0,
+          vid_count INTEGER DEFAULT 0,
+          doc_count INTEGER DEFAULT 0,
+          map_count INTEGER DEFAULT 0,
+          notes TEXT
+        );
+        CREATE INDEX idx_imports_date ON imports(import_date DESC);
+        CREATE INDEX idx_imports_locid ON imports(locid);
+      `);
+      console.log('Migration completed: imports table created');
     }
   } catch (error) {
     console.error('Error running migrations:', error);

@@ -7,6 +7,8 @@
   let loading = $state(true);
   let saving = $state(false);
   let saveMessage = $state('');
+  let backupMessage = $state('');
+  let backingUp = $state(false);
 
   async function loadSettings() {
     try {
@@ -58,7 +60,30 @@
   }
 
   async function backupDatabase() {
-    console.log('Backup database');
+    try {
+      backingUp = true;
+      backupMessage = '';
+
+      const result = await window.electronAPI.database.backup();
+
+      if (result.success) {
+        backupMessage = `Database backed up successfully to: ${result.path}`;
+      } else {
+        backupMessage = result.message || 'Backup canceled';
+      }
+
+      setTimeout(() => {
+        backupMessage = '';
+      }, 5000);
+    } catch (error) {
+      console.error('Error backing up database:', error);
+      backupMessage = 'Error backing up database';
+      setTimeout(() => {
+        backupMessage = '';
+      }, 5000);
+    } finally {
+      backingUp = false;
+    }
   }
 
   onMount(() => {
@@ -146,13 +171,19 @@
         <h2 class="text-lg font-semibold mb-4 text-foreground">Database</h2>
         <button
           onclick={backupDatabase}
-          class="px-4 py-2 bg-gray-200 text-foreground rounded hover:bg-gray-300 transition"
+          disabled={backingUp}
+          class="px-4 py-2 bg-gray-200 text-foreground rounded hover:bg-gray-300 transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Backup Database
+          {backingUp ? 'Backing up...' : 'Backup Database'}
         </button>
         <p class="text-xs text-gray-500 mt-2">
           Create a backup of your location database
         </p>
+        {#if backupMessage}
+          <p class="text-sm mt-2 {backupMessage.includes('Error') || backupMessage.includes('canceled') ? 'text-red-600' : 'text-green-600'}">
+            {backupMessage}
+          </p>
+        {/if}
       </div>
 
       <div class="flex justify-end items-center gap-4">

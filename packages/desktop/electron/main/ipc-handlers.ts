@@ -1,13 +1,16 @@
 import { ipcMain, shell, dialog } from 'electron';
-import { getDatabase } from './database';
+import { getDatabase, getDatabasePath } from './database';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
+import { SQLiteImportRepository } from '../repositories/sqlite-import-repository';
 import { LocationInputSchema } from '@au-archive/core';
 import type { LocationInput, LocationFilters } from '@au-archive/core';
 import { z } from 'zod';
+import fs from 'fs/promises';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
   const locationRepo = new SQLiteLocationRepository(db);
+  const importRepo = new SQLiteImportRepository(db);
 
   // Location queries
   ipcMain.handle('location:findAll', async (_event, filters?: LocationFilters) => {
@@ -295,6 +298,103 @@ export function registerIpcHandlers() {
       return result.filePaths[0];
     } catch (error) {
       console.error('Error selecting folder:', error);
+      throw error;
+    }
+  });
+
+  // Import operations
+  ipcMain.handle('imports:create', async (_event, input: unknown) => {
+    try {
+      const ImportInputSchema = z.object({
+        locid: z.string().uuid().nullable(),
+        auth_imp: z.string().nullable(),
+        img_count: z.number().int().min(0).optional(),
+        vid_count: z.number().int().min(0).optional(),
+        doc_count: z.number().int().min(0).optional(),
+        map_count: z.number().int().min(0).optional(),
+        notes: z.string().nullable().optional(),
+      });
+
+      const validatedInput = ImportInputSchema.parse(input);
+      return await importRepo.create(validatedInput);
+    } catch (error) {
+      console.error('Error creating import record:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('imports:findRecent', async (_event, limit: number = 5) => {
+    try {
+      return await importRepo.findRecent(limit);
+    } catch (error) {
+      console.error('Error finding recent imports:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('imports:findByLocation', async (_event, locid: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(locid);
+      return await importRepo.findByLocation(validatedId);
+    } catch (error) {
+      console.error('Error finding imports by location:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('imports:findAll', async () => {
+    try {
+      return await importRepo.findAll();
+    } catch (error) {
+      console.error('Error finding all imports:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('imports:getTotalMediaCount', async () => {
+    try {
+      return await importRepo.getTotalMediaCount();
+    } catch (error) {
+      console.error('Error getting total media count:', error);
+      throw error;
+    }
+  });
+
+  // Database operations
+  ipcMain.handle('database:backup', async () => {
+    try {
+      const dbPath = getDatabasePath();
+
+      // Create timestamped filename
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const defaultFilename = `au-archive-backup-${timestamp}.db`;
+
+      // Show save dialog
+      const result = await dialog.showSaveDialog({
+        title: 'Backup Database',
+        defaultPath: defaultFilename,
+        filters: [
+          { name: 'SQLite Database', extensions: ['db'] },
+          { name: 'All Files', extensions: ['*'] }
+        ],
+      });
+
+      if (result.canceled || !result.filePath) {
+        return { success: false, message: 'Backup canceled' };
+      }
+
+      // Copy database file to selected location
+      await fs.copyFile(dbPath, result.filePath);
+
+      return { success: true, path: result.filePath };
+    } catch (error) {
+      console.error('Error backing up database:', error);
       throw error;
     }
   });

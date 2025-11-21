@@ -3,7 +3,22 @@
   import { router } from '../stores/router';
   import type { Location } from '@au-archive/core';
 
+  interface ImportRecord {
+    import_id: string;
+    locid: string | null;
+    import_date: string;
+    auth_imp: string | null;
+    img_count: number;
+    vid_count: number;
+    doc_count: number;
+    map_count: number;
+    notes: string | null;
+    locnam?: string;
+    address_state?: string;
+  }
+
   let recentLocations = $state<Location[]>([]);
+  let recentImports = $state<ImportRecord[]>([]);
   let topStates = $state<Array<{ state: string; count: number }>>([]);
   let topTypes = $state<Array<{ type: string; count: number }>>([]);
   let totalCount = $state(0);
@@ -11,14 +26,16 @@
 
   onMount(async () => {
     try {
-      const [locations, states, types, count] = await Promise.all([
+      const [locations, imports, states, types, count] = await Promise.all([
         window.electronAPI.locations.findAll(),
+        window.electronAPI.imports.findRecent(5) as Promise<ImportRecord[]>,
         window.electronAPI.stats.topStates(5),
         window.electronAPI.stats.topTypes(5),
         window.electronAPI.locations.count(),
       ]);
 
       recentLocations = locations.slice(0, 5);
+      recentImports = imports;
       topStates = states;
       topTypes = types;
       totalCount = count;
@@ -28,6 +45,11 @@
       loading = false;
     }
   });
+
+  function formatDate(isoDate: string): string {
+    const date = new Date(isoDate);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
 </script>
 
 <div class="p-8">
@@ -66,15 +88,46 @@
       <div class="bg-white rounded-lg shadow p-6">
         <h3 class="text-lg font-semibold mb-2 text-foreground">Recent Imports</h3>
         <p class="text-gray-500 text-sm mb-4">Latest media imports</p>
-        <div class="text-center text-gray-400 py-4">
-          <p class="text-sm">No imports yet</p>
-          <button
-            onclick={() => router.navigate('/imports')}
-            class="mt-2 text-xs text-accent hover:underline"
-          >
-            Import Media
-          </button>
-        </div>
+        {#if recentImports.length > 0}
+          <ul class="space-y-2">
+            {#each recentImports as importRecord}
+              <li class="text-sm">
+                {#if importRecord.locid && importRecord.locnam}
+                  <button
+                    onclick={() => router.navigate(`/location/${importRecord.locid}`)}
+                    class="text-accent hover:underline"
+                  >
+                    {importRecord.locnam}
+                  </button>
+                {:else}
+                  <span class="text-gray-600">Import #{importRecord.import_id.slice(0, 8)}</span>
+                {/if}
+                <div class="text-xs text-gray-400 mt-1">
+                  <span>{formatDate(importRecord.import_date)}</span>
+                  {#if importRecord.img_count > 0}
+                    <span class="ml-2">{importRecord.img_count} img</span>
+                  {/if}
+                  {#if importRecord.vid_count > 0}
+                    <span class="ml-2">{importRecord.vid_count} vid</span>
+                  {/if}
+                  {#if importRecord.doc_count > 0}
+                    <span class="ml-2">{importRecord.doc_count} doc</span>
+                  {/if}
+                </div>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <div class="text-center text-gray-400 py-4">
+            <p class="text-sm">No imports yet</p>
+            <button
+              onclick={() => router.navigate('/imports')}
+              class="mt-2 text-xs text-accent hover:underline"
+            >
+              Import Media
+            </button>
+          </div>
+        {/if}
       </div>
 
       <div class="bg-white rounded-lg shadow p-6">

@@ -8,6 +8,7 @@ export interface Database {
   docs: DocsTable;
   maps: MapsTable;
   settings: SettingsTable;
+  imports: ImportsTable;
 }
 
 // Locations table
@@ -175,4 +176,17 @@ export interface MapsTable {
 export interface SettingsTable {
   key: string;
   value: string;
+}
+
+// Imports table
+export interface ImportsTable {
+  import_id: string;
+  locid: string | null;
+  import_date: string;
+  auth_imp: string | null;
+  img_count: number;
+  vid_count: number;
+  doc_count: number;
+  map_count: number;
+  notes: string | null;
 }
