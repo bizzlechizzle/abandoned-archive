@@ -4,8 +4,6 @@ import { promises as fs } from 'fs';
 import { existsSync } from 'fs';
 import { getLogger } from './logger-service';
 
-const logger = getLogger();
-
 export interface AppConfig {
   backup: {
     enabled: boolean;
@@ -72,7 +70,7 @@ export class ConfigService {
         // Merge with defaults (in case new config keys were added)
         this.config = this.mergeWithDefaults(loaded);
 
-        logger.info('ConfigService', 'Configuration loaded', {
+        getLogger().info('ConfigService', 'Configuration loaded', {
           path: this.configPath,
         });
       } else {
@@ -80,14 +78,14 @@ export class ConfigService {
         this.config = { ...DEFAULT_CONFIG };
         await this.save();
 
-        logger.info('ConfigService', 'Created default configuration', {
+        getLogger().info('ConfigService', 'Created default configuration', {
           path: this.configPath,
         });
       }
 
       return this.config;
     } catch (error) {
-      logger.error('ConfigService', 'Failed to load configuration, using defaults', error as Error);
+      getLogger().error('ConfigService', 'Failed to load configuration, using defaults', error as Error);
       this.config = { ...DEFAULT_CONFIG };
       return this.config;
     }
@@ -104,11 +102,11 @@ export class ConfigService {
     try {
       await fs.writeFile(this.configPath, JSON.stringify(this.config, null, 2), 'utf-8');
 
-      logger.info('ConfigService', 'Configuration saved', {
+      getLogger().info('ConfigService', 'Configuration saved', {
         path: this.configPath,
       });
     } catch (error) {
-      logger.error('ConfigService', 'Failed to save configuration', error as Error);
+      getLogger().error('ConfigService', 'Failed to save configuration', error as Error);
       throw error;
     }
   }
@@ -141,7 +139,7 @@ export class ConfigService {
   async reset(): Promise<void> {
     this.config = { ...DEFAULT_CONFIG };
     await this.save();
-    logger.info('ConfigService', 'Configuration reset to defaults');
+    getLogger().info('ConfigService', 'Configuration reset to defaults');
   }
 
   /**

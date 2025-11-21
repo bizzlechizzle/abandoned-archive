@@ -10,13 +10,16 @@ import { getLogger } from '../services/logger-service';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const logger = getLogger();
 
 const isDev = process.env.NODE_ENV === 'development';
 
 // Crash handlers - log errors before exiting
 process.on('uncaughtException', (error: Error) => {
-  logger.error('Main', 'Uncaught exception', error);
+  try {
+    getLogger().error('Main', 'Uncaught exception', error);
+  } catch {
+    // Logger might not be initialized yet
+  }
   console.error('Uncaught exception:', error);
 
   dialog.showErrorBox(
@@ -29,7 +32,11 @@ process.on('uncaughtException', (error: Error) => {
 
 process.on('unhandledRejection', (reason: unknown) => {
   const error = reason instanceof Error ? reason : new Error(String(reason));
-  logger.error('Main', 'Unhandled promise rejection', error);
+  try {
+    getLogger().error('Main', 'Unhandled promise rejection', error);
+  } catch {
+    // Logger might not be initialized yet
+  }
   console.error('Unhandled rejection:', reason);
 
   dialog.showErrorBox(
@@ -94,6 +101,7 @@ function createWindow() {
  */
 async function startupOrchestrator(): Promise<void> {
   const startTime = Date.now();
+  const logger = getLogger();
   logger.info('Main', 'Starting application initialization');
 
   try {

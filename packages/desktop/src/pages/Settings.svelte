@@ -143,16 +143,18 @@
       <DatabaseSettings />
 
       <HealthMonitoring />
-          </span>
-        {/if}
-        <button
-          onclick={saveSettings}
-          disabled={saving}
-          class="px-6 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : 'Save Settings'}
-        </button>
-      </div>
+
+      <button
+        onclick={saveSettings}
+        disabled={saving}
+        class="px-6 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+      >
+        {saving ? 'Saving...' : 'Save Settings'}
+      </button>
+    </div>
+  {:else}
+    <div class="text-center p-8">
+      <p class="text-gray-600">Loading settings...</p>
     </div>
   {/if}
       <!-- User Management Section -->

@@ -43,6 +43,7 @@ describe('LocationEntity', () => {
           verifiedOnMap: true
         },
         historic: false,
+        favorite: false,
         sublocs: [],
         regions: [],
         locadd: new Date().toISOString()
@@ -64,6 +65,7 @@ describe('LocationEntity', () => {
           accuracy: 5
         },
         historic: false,
+        favorite: false,
         sublocs: [],
         regions: [],
         locadd: new Date().toISOString()
@@ -84,6 +86,7 @@ describe('LocationEntity', () => {
           verifiedOnMap: false
         },
         historic: false,
+        favorite: false,
         sublocs: [],
         regions: [],
         locadd: new Date().toISOString()
@@ -98,6 +101,7 @@ describe('LocationEntity', () => {
         loc12: '550e8400e29b',
         locnam: 'Test Location',
         historic: false,
+        favorite: false,
         sublocs: [],
         regions: [],
         locadd: new Date().toISOString()
@@ -120,6 +124,7 @@ describe('LocationEntity', () => {
           verifiedOnMap: true
         },
         historic: false,
+        favorite: false,
         sublocs: [],
         regions: [],
         locadd: new Date().toISOString()
@@ -140,6 +145,7 @@ describe('LocationEntity', () => {
           verifiedOnMap: true
         },
         historic: false,
+        favorite: false,
         sublocs: [],
         regions: [],
         locadd: new Date().toISOString()
@@ -154,6 +160,7 @@ describe('LocationEntity', () => {
         loc12: '550e8400e29b',
         locnam: 'Test Location',
         historic: false,
+        favorite: false,
         sublocs: [],
         regions: [],
         locadd: new Date().toISOString()
