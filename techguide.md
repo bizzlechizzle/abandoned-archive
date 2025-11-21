@@ -42,24 +42,83 @@ au-archive/
 
 ### Prerequisites
 
-Node.js 20+ LTS
-pnpm 8+
-Git
-ExifTool (install during development)
-FFmpeg (install during development)
+| Requirement | Version | Notes |
+|-------------|---------|-------|
+| Node.js | 20+ LTS (22+ recommended) | Use nvm for version management |
+| pnpm | 8+ (10+ recommended) | Install via `npm install -g pnpm` or corepack |
+| Git | 2.x+ | Required for version control |
+| ExifTool | Latest | Optional for dev, bundled in production |
+| FFmpeg | Latest | Optional for dev, bundled in production |
 
 ### Installation
 
 ```bash
 # Clone repository
-git clone <repo-url>
+git clone https://github.com/bizzlechizzle/au-archive.git
 cd au-archive
 
-# Install dependencies
+# Install dependencies (automatically builds core package via postinstall)
 pnpm install
 
 # Start development
 pnpm dev
+```
+
+**Note:** The `postinstall` script automatically runs `pnpm --filter core build` after installation.
+
+### pnpm v10+ Native Module Build Scripts
+
+pnpm v10+ blocks native module build scripts by default for security. This project has pre-configured approval in `package.json`:
+
+```json
+{
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "better-sqlite3",
+      "esbuild",
+      "sharp",
+      "7zip-bin"
+    ]
+  }
+}
+```
+
+If you see "Ignored build scripts" warnings, run:
+```bash
+rm -rf node_modules packages/*/node_modules
+pnpm install
+```
+
+### Common Installation Issues
+
+**Issue: "vite: command not found"**
+```bash
+# node_modules not installed
+pnpm install
+```
+
+**Issue: "Electron failed to install correctly"**
+```bash
+# Build scripts were blocked - clean reinstall
+pnpm reinstall
+# Or manually:
+rm -rf node_modules packages/*/node_modules
+pnpm install
+```
+
+**Issue: "Failed to resolve entry for package @au-archive/core"**
+```bash
+# Core package not built (postinstall may have failed)
+pnpm build:core
+# Or reinstall completely:
+pnpm reinstall
+```
+
+**Issue: "Missing X server or $DISPLAY" (Linux/CI)**
+```bash
+# Normal in headless environments - Electron needs a display
+# For CI, use xvfb-run: xvfb-run pnpm dev
 ```
 
 ### Development Commands
@@ -372,6 +431,39 @@ Outputs platform-specific installers:
 ---
 
 ## Troubleshooting
+
+### Installation Issues
+
+**Issue: "Ignored build scripts: better-sqlite3, electron, esbuild, sharp"**
+- Cause: pnpm v10+ blocks native module build scripts by default
+- Solution: This project has pre-configured approval in package.json. If you still see this:
+```bash
+rm -rf node_modules packages/*/node_modules
+pnpm install
+```
+
+**Issue: "Electron failed to install correctly"**
+- Cause: Electron's post-install script was blocked
+- Solution: Clean reinstall (see above)
+
+**Issue: "Failed to resolve entry for package @au-archive/core"**
+- Cause: The core package hasn't been built yet
+- Solution: Build it before running dev:
+```bash
+pnpm --filter core build
+```
+
+**Issue: "vite: command not found"**
+- Cause: Dependencies not installed
+- Solution: `pnpm install`
+
+**Issue: "Missing X server or $DISPLAY" (Linux)**
+- Cause: Electron requires a display server
+- Solution: Use xvfb for headless environments: `xvfb-run pnpm dev`
+
+**Issue: peer dependency warnings (@skeletonlabs/skeleton)**
+- Cause: Skeleton UI expects Tailwind CSS 4.x, we use 3.x
+- Solution: Safe to ignore - app functions correctly with Tailwind 3.x
 
 ### Database Issues
 
