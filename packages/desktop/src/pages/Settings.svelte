@@ -202,4 +202,5 @@
       </div>
     </div>
   {/if}
+      <!-- User Management Section -->
 </div>
