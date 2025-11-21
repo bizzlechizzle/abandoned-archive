@@ -9,9 +9,10 @@
     locations?: Location[];
     onLocationClick?: (location: Location) => void;
     onMapClick?: (lat: number, lng: number) => void;
+    onMapRightClick?: (lat: number, lng: number) => void;
   }
 
-  let { locations = [], onLocationClick, onMapClick }: Props = $props();
+  let { locations = [], onLocationClick, onMapClick, onMapRightClick }: Props = $props();
 
   /**
    * Escape HTML to prevent XSS attacks
@@ -74,6 +75,13 @@
       map.on('click', (e) => {
         if (onMapClick) {
           onMapClick(e.latlng.lat, e.latlng.lng);
+        }
+      });
+
+      // Right-click to add new location per page_atlas.md spec
+      map.on('contextmenu', (e) => {
+        if (onMapRightClick) {
+          onMapRightClick(e.latlng.lat, e.latlng.lng);
         }
       });
 
