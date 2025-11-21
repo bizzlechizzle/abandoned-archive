@@ -13,6 +13,7 @@ export interface Database {
   projects: ProjectsTable;
   project_locations: ProjectLocationsTable;
   bookmarks: BookmarksTable;
+  users: UsersTable;
 }
 
 // Locations table
@@ -230,4 +231,12 @@ export interface BookmarksTable {
   bookmark_date: string;
   auth_imp: string | null;
   thumbnail_path: string | null;
+}
+
+// Users table
+export interface UsersTable {
+  user_id: string;
+  username: string;
+  display_name: string | null;
+  created_date: string;
 }

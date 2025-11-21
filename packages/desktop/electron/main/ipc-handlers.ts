@@ -6,6 +6,7 @@ import { SQLiteMediaRepository } from '../repositories/sqlite-media-repository';
 import { SQLiteNotesRepository } from '../repositories/sqlite-notes-repository';
 import { SQLiteProjectsRepository } from '../repositories/sqlite-projects-repository';
 import { SQLiteBookmarksRepository } from '../repositories/sqlite-bookmarks-repository';
+import { SQLiteUsersRepository } from '../repositories/sqlite-users-repository';
 import { CryptoService } from '../services/crypto-service';
 import { ExifToolService } from '../services/exiftool-service';
 import { FFmpegService } from '../services/ffmpeg-service';
@@ -23,6 +24,7 @@ export function registerIpcHandlers() {
   const notesRepo = new SQLiteNotesRepository(db);
   const projectsRepo = new SQLiteProjectsRepository(db);
   const bookmarksRepo = new SQLiteBookmarksRepository(db);
+  const usersRepo = new SQLiteUsersRepository(db);
 
   // Initialize services
   const cryptoService = new CryptoService();
@@ -878,6 +880,56 @@ export function registerIpcHandlers() {
   });
 
   // Database operations
+  // Users operations
+  ipcMain.handle('users:create', async (_event, input: unknown) => {
+    try {
+      const UserInputSchema = z.object({
+        username: z.string().min(1),
+        display_name: z.string().nullable().optional(),
+      });
+      const validatedInput = UserInputSchema.parse(input);
+      return await usersRepo.create(validatedInput);
+    } catch (error) {
+      console.error('Error creating user:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('users:findAll', async () => {
+    try {
+      return await usersRepo.findAll();
+    } catch (error) {
+      console.error('Error finding users:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('users:findByUsername', async (_event, username: unknown) => {
+    try {
+      const validatedUsername = z.string().parse(username);
+      return await usersRepo.findByUsername(validatedUsername);
+    } catch (error) {
+      console.error('Error finding user by username:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('users:delete', async (_event, user_id: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(user_id);
+      await usersRepo.delete(validatedId);
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
   ipcMain.handle('database:backup', async () => {
     try {
       const dbPath = getDatabasePath();

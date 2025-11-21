@@ -197,6 +197,19 @@ const api = {
     countByLocation: (locid: string): Promise<number> =>
       ipcRenderer.invoke('bookmarks:countByLocation', locid),
   },
+  users: {
+    create: (input: {
+      username: string;
+      display_name?: string | null;
+    }): Promise<unknown> =>
+      ipcRenderer.invoke('users:create', input),
+    findAll: (): Promise<unknown[]> =>
+      ipcRenderer.invoke('users:findAll'),
+    findByUsername: (username: string): Promise<unknown | null> =>
+      ipcRenderer.invoke('users:findByUsername', username),
+    delete: (user_id: string): Promise<void> =>
+      ipcRenderer.invoke('users:delete', user_id),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

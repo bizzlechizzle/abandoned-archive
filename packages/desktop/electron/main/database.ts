@@ -155,6 +155,32 @@ function runMigrations(sqlite: Database.Database): void {
       `);
       console.log('Migration completed: bookmarks table created');
     }
+
+    // Migration 6: Create users table if it doesn't exist
+    const hasUsers = tables.some(t => t.name === 'users');
+
+    if (!hasUsers) {
+      console.log('Running migration: Creating users table');
+      sqlite.exec(`
+        CREATE TABLE users (
+          user_id TEXT PRIMARY KEY,
+          username TEXT NOT NULL UNIQUE,
+          display_name TEXT,
+          created_date TEXT NOT NULL
+        );
+        CREATE INDEX idx_users_username ON users(username);
+      `);
+
+      // Create default user
+      const defaultUserId = 'default-user-id';
+      const defaultDate = new Date().toISOString();
+      sqlite.exec(`
+        INSERT INTO users (user_id, username, display_name, created_date)
+        VALUES ('${defaultUserId}', 'default', 'Default User', '${defaultDate}');
+      `);
+
+      console.log('Migration completed: users table created with default user');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;
