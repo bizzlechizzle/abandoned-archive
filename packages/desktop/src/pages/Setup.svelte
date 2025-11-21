@@ -1,5 +1,6 @@
 <script lang="ts">
   import { router } from '../stores/router';
+  import logo from '../assets/abandoned-upstate-logo.png';
 
   let currentStep = $state(1);
   const totalSteps = 3;
@@ -75,8 +76,8 @@
   <div class="max-w-2xl w-full">
     <!-- Logo and Title -->
     <div class="text-center mb-8">
-      <h1 class="text-4xl font-bold text-foreground mb-2">AU Archive</h1>
-      <p class="text-gray-600">Abandoned Location Documentation System</p>
+      <img src={logo} alt="Abandoned Upstate" class="h-16 w-auto mx-auto mb-4" />
+      <p class="text-gray-600">Archive Setup</p>
     </div>
 
     <!-- Progress Indicator -->

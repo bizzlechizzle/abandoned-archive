@@ -1,5 +1,6 @@
 <script lang="ts">
   import { router } from '../stores/router';
+  import logo from '../assets/abandoned-upstate-logo.png';
 
   let currentRoute = $state('/dashboard');
 
@@ -35,8 +36,8 @@
 
 <nav class="w-64 h-screen bg-gray-800 text-white flex flex-col">
   <div class="p-4 border-b border-gray-700">
-    <h1 class="text-xl font-bold" style="color: #b9975c;">AU Archive</h1>
-    <p class="text-xs text-gray-400">Abandoned Locations</p>
+    <img src={logo} alt="Abandoned Upstate" class="h-12 w-auto mb-1" />
+    <p class="text-xs text-gray-400">Archive</p>
   </div>
 
   <div class="flex-1 overflow-y-auto">
