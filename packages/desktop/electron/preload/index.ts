@@ -210,6 +210,35 @@ const api = {
     delete: (user_id: string): Promise<void> =>
       ipcRenderer.invoke('users:delete', user_id),
   },
+
+  health: {
+    getDashboard: (): Promise<unknown> =>
+      ipcRenderer.invoke('health:getDashboard'),
+    getStatus: (): Promise<unknown> =>
+      ipcRenderer.invoke('health:getStatus'),
+    runCheck: (): Promise<unknown> =>
+      ipcRenderer.invoke('health:runCheck'),
+    createBackup: (): Promise<unknown> =>
+      ipcRenderer.invoke('health:createBackup'),
+    getBackupStats: (): Promise<unknown> =>
+      ipcRenderer.invoke('health:getBackupStats'),
+    getDiskSpace: (): Promise<unknown> =>
+      ipcRenderer.invoke('health:getDiskSpace'),
+    checkIntegrity: (): Promise<unknown> =>
+      ipcRenderer.invoke('health:checkIntegrity'),
+    runMaintenance: (): Promise<unknown> =>
+      ipcRenderer.invoke('health:runMaintenance'),
+    getMaintenanceSchedule: (): Promise<unknown> =>
+      ipcRenderer.invoke('health:getMaintenanceSchedule'),
+    getMetrics: (): Promise<unknown> =>
+      ipcRenderer.invoke('health:getMetrics'),
+    getSlowOperations: (limit?: number): Promise<unknown> =>
+      ipcRenderer.invoke('health:getSlowOperations', limit),
+    getRecoveryState: (): Promise<unknown> =>
+      ipcRenderer.invoke('health:getRecoveryState'),
+    attemptRecovery: (): Promise<unknown> =>
+      ipcRenderer.invoke('health:attemptRecovery'),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

@@ -3,6 +3,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { getDatabase, closeDatabase } from './database';
 import { registerIpcHandlers } from './ipc-handlers';
+import { getHealthMonitor } from '../services/health-monitor';
+import { getRecoverySystem } from '../services/recovery-system';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,13 +41,33 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Initialize database
   try {
     getDatabase();
     console.log('Database initialized successfully');
   } catch (error) {
     console.error('Failed to initialize database:', error);
+  }
+
+  // Initialize health monitoring system
+  try {
+    const healthMonitor = getHealthMonitor();
+    await healthMonitor.initialize();
+    console.log('Health monitoring initialized successfully');
+
+    // Check database health and attempt recovery if needed
+    const recoverySystem = getRecoverySystem();
+    const recoveryResult = await recoverySystem.checkAndRecover();
+
+    if (recoveryResult) {
+      console.log('Recovery performed:', recoveryResult.action);
+      if (!recoveryResult.success) {
+        await recoverySystem.showRecoveryDialog(recoveryResult);
+      }
+    }
+  } catch (error) {
+    console.error('Failed to initialize health monitoring:', error);
   }
 
   // Register IPC handlers
@@ -66,6 +88,15 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', async () => {
+  // Shutdown health monitoring
+  try {
+    const healthMonitor = getHealthMonitor();
+    await healthMonitor.shutdown();
+    console.log('Health monitoring shut down successfully');
+  } catch (error) {
+    console.error('Failed to shutdown health monitoring:', error);
+  }
+
   closeDatabase();
 });
