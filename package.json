@@ -1,0 +1,22 @@
+{
+  "name": "au-archive",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop application for archiving abandoned locations",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bizzlechizzle/au-archive.git"
+  },
+  "scripts": {
+    "dev": "pnpm --filter desktop dev",
+    "build": "pnpm --filter core build && pnpm --filter desktop build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "format": "prettier --write \"**/*.{ts,tsx,svelte,json,md}\""
+  },
+  "devDependencies": {
+    "prettier": "^3.1.1",
+    "prettier-plugin-svelte": "^3.1.2",
+    "typescript": "^5.3.3"
+  }
+}
