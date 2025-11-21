@@ -237,11 +237,46 @@ const api = {
       ipcRenderer.invoke('health:runMaintenance'),
     getMaintenanceSchedule: (): Promise<unknown> =>
       ipcRenderer.invoke('health:getMaintenanceSchedule'),
-    // Note: getMetrics and getSlowOperations removed - metrics service deleted
     getRecoveryState: (): Promise<unknown> =>
       ipcRenderer.invoke('health:getRecoveryState'),
     attemptRecovery: (): Promise<unknown> =>
       ipcRenderer.invoke('health:attemptRecovery'),
+  },
+
+  browser: {
+    navigate: (url: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('browser:navigate', url),
+    show: (bounds: { x: number; y: number; width: number; height: number }): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('browser:show', bounds),
+    hide: (): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('browser:hide'),
+    getUrl: (): Promise<string> =>
+      ipcRenderer.invoke('browser:getUrl'),
+    getTitle: (): Promise<string> =>
+      ipcRenderer.invoke('browser:getTitle'),
+    goBack: (): Promise<boolean> =>
+      ipcRenderer.invoke('browser:goBack'),
+    goForward: (): Promise<boolean> =>
+      ipcRenderer.invoke('browser:goForward'),
+    reload: (): Promise<void> =>
+      ipcRenderer.invoke('browser:reload'),
+    captureScreenshot: (): Promise<string | null> =>
+      ipcRenderer.invoke('browser:captureScreenshot'),
+    onNavigated: (callback: (url: string) => void) => {
+      const listener = (_event: unknown, url: string) => callback(url);
+      ipcRenderer.on('browser:navigated', listener);
+      return () => ipcRenderer.removeListener('browser:navigated', listener);
+    },
+    onTitleChanged: (callback: (title: string) => void) => {
+      const listener = (_event: unknown, title: string) => callback(title);
+      ipcRenderer.on('browser:titleChanged', listener);
+      return () => ipcRenderer.removeListener('browser:titleChanged', listener);
+    },
+    onLoadingChanged: (callback: (loading: boolean) => void) => {
+      const listener = (_event: unknown, loading: boolean) => callback(loading);
+      ipcRenderer.on('browser:loadingChanged', listener);
+      return () => ipcRenderer.removeListener('browser:loadingChanged', listener);
+    },
   },
 };
 

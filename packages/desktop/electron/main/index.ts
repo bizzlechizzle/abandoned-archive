@@ -7,6 +7,7 @@ import { getHealthMonitor } from '../services/health-monitor';
 import { getRecoverySystem } from '../services/recovery-system';
 import { getConfigService } from '../services/config-service';
 import { getLogger } from '../services/logger-service';
+import { initBrowserViewManager, destroyBrowserViewManager } from '../services/browser-view-manager';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -162,9 +163,18 @@ app.whenReady().then(async () => {
 
   createWindow();
 
+  // Initialize browser view manager for embedded web browser
+  if (mainWindow) {
+    initBrowserViewManager(mainWindow);
+    getLogger().info('Main', 'Browser view manager initialized');
+  }
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
+      if (mainWindow) {
+        initBrowserViewManager(mainWindow);
+      }
     }
   });
 });
@@ -176,6 +186,14 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async () => {
+  // Destroy browser view manager
+  try {
+    destroyBrowserViewManager();
+    console.log('Browser view manager destroyed successfully');
+  } catch (error) {
+    console.error('Failed to destroy browser view manager:', error);
+  }
+
   // Shutdown health monitoring
   try {
     const healthMonitor = getHealthMonitor();

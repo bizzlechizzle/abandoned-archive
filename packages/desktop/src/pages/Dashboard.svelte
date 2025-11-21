@@ -1,4 +1,14 @@
 <script lang="ts">
+  /**
+   * Dashboard.svelte - Main dashboard per page_dashboard.md spec
+   *
+   * Per spec:
+   * - projects - recents (means pinned/favorites and recents sections)
+   * - imports (show top 5 recent imports)
+   * - recents (show top 5 recently interacted with)
+   * - states - types (show top 5 states and types by locations)
+   * - recents rows/buttons: favorites, random, un-documented, historical
+   */
   import { onMount } from 'svelte';
   import { router } from '../stores/router';
   import type { Location } from '@au-archive/core';
@@ -17,15 +27,10 @@
     address_state?: string;
   }
 
-  interface Project {
-    project_id: string;
-    project_name: string;
-    location_count?: number;
-  }
-
   let recentLocations = $state<Location[]>([]);
   let recentImports = $state<ImportRecord[]>([]);
-  let topProjects = $state<Project[]>([]);
+  // Per spec: "projects" means pinned/favorite items
+  let pinnedLocations = $state<Location[]>([]);
   let topStates = $state<Array<{ state: string; count: number }>>([]);
   let topTypes = $state<Array<{ type: string; count: number }>>([]);
   let totalCount = $state(0);
@@ -37,10 +42,11 @@
         console.error('Electron API not available - preload script may have failed to load');
         return;
       }
-      const [locations, imports, projects, states, types, count] = await Promise.all([
+      // Per spec: projects means favorites/pinned, not a separate projects entity
+      const [locations, imports, favorites, states, types, count] = await Promise.all([
         window.electronAPI.locations.findAll(),
         window.electronAPI.imports.findRecent(5) as Promise<ImportRecord[]>,
-        window.electronAPI.projects.findTopByLocationCount(5) as Promise<Project[]>,
+        window.electronAPI.locations.favorites(),
         window.electronAPI.stats.topStates(5),
         window.electronAPI.stats.topTypes(5),
         window.electronAPI.locations.count(),
@@ -48,7 +54,7 @@
 
       recentLocations = locations.slice(0, 5);
       recentImports = imports;
-      topProjects = projects;
+      pinnedLocations = favorites.slice(0, 5);
       topStates = states;
       topTypes = types;
       totalCount = count;
@@ -80,33 +86,36 @@
     </div>
   {:else}
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+      <!-- Per spec: "projects" means pinned/favorite items -->
       <div class="bg-white rounded-lg shadow p-6">
-        <h3 class="text-lg font-semibold mb-2 text-foreground">Top Projects</h3>
-        <p class="text-gray-500 text-sm mb-4">By location count</p>
-        {#if topProjects.length > 0}
+        <h3 class="text-lg font-semibold mb-2 text-foreground">Pinned</h3>
+        <p class="text-gray-500 text-sm mb-4">Favorite locations</p>
+        {#if pinnedLocations.length > 0}
           <ul class="space-y-2">
-            {#each topProjects as project}
+            {#each pinnedLocations as location}
               <li class="text-sm">
                 <button
-                  onclick={() => router.navigate(`/project/${project.project_id}`)}
+                  onclick={() => router.navigate(`/location/${location.locid}`)}
                   class="text-accent hover:underline"
                 >
-                  {project.project_name}
+                  {location.locnam}
                 </button>
-                <span class="text-xs text-gray-400 ml-2">
-                  ({project.location_count || 0} locations)
-                </span>
+                {#if location.address?.state}
+                  <span class="text-xs text-gray-400 ml-2">
+                    {location.address.state}
+                  </span>
+                {/if}
               </li>
             {/each}
           </ul>
           <button
-            onclick={() => router.navigate('/projects')}
+            onclick={() => router.navigate('/locations')}
             class="mt-4 text-sm text-accent hover:underline"
           >
-            View All Projects →
+            View All Favorites →
           </button>
         {:else}
-          <p class="text-sm text-gray-400">No projects yet</p>
+          <p class="text-sm text-gray-400">No pinned locations yet</p>
         {/if}
       </div>
 

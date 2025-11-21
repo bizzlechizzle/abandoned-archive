@@ -30,8 +30,17 @@ export default defineConfig({
               external: ['electron'],
               output: {
                 format: 'cjs',
+                // Ensure proper CommonJS interop
+                interop: 'auto',
+                // Use .js extension for CommonJS
+                entryFileNames: '[name].js',
               },
             },
+          },
+          // Force esbuild to output CommonJS
+          esbuild: {
+            format: 'cjs',
+            platform: 'node',
           },
         },
       },

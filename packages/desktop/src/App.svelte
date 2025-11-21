@@ -1,4 +1,15 @@
 <script lang="ts">
+  /**
+   * App.svelte - Main application component
+   *
+   * Per spec in desktop_app.md, pages are:
+   * - page_dashboard, page_locations, page_web-browser, page_imports,
+   *   page_search, page_settings, page_atlas
+   * - page_location, page_sublocation, page_hostlocation
+   *
+   * Note: "Projects" in the dashboard spec means pinned/favorite items,
+   * NOT a separate Projects page. Favorites are accessed via locations.
+   */
   import { onMount } from 'svelte';
   import { router } from './stores/router';
   import Layout from './components/Layout.svelte';
@@ -10,9 +21,6 @@
   import Search from './pages/Search.svelte';
   import WebBrowser from './pages/WebBrowser.svelte';
   import LocationDetail from './pages/LocationDetail.svelte';
-  import Projects from './pages/Projects.svelte';
-  import ProjectDetail from './pages/ProjectDetail.svelte';
-import Bookmarks from './pages/Bookmarks.svelte';
   import Setup from './pages/Setup.svelte';
 
   let currentRoute = $state({ path: '/dashboard', params: {} });
@@ -72,10 +80,6 @@ import Bookmarks from './pages/Bookmarks.svelte';
         <Atlas />
       {:else if currentRoute.path === '/imports'}
         <Imports />
-      {:else if currentRoute.path === '/projects'}
-        <Projects />
-      {:else if currentRoute.path === '/project/:id'}
-        <ProjectDetail projectId={currentRoute.params?.id || ''} />
       {:else if currentRoute.path === '/search'}
         <Search />
       {:else if currentRoute.path === '/browser'}

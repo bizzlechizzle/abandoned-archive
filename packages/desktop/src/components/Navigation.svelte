@@ -10,16 +10,18 @@
     return () => unsubscribe();
   });
 
+  // Per spec in desktop_app.md: left menu items
+  // #page_dashboard, #page_locations, #page_web-browser, #page_imports, #page_search, #page_settings, #page_atlas
+  // Note: "Projects" in dashboard spec means pinned/favorite items shown on dashboard, not a separate section
+  // Note: Bookmarks are part of the browser sidebar per page_web-browser.md spec
   const menuItems = [
     { path: '/dashboard', label: 'Dashboard', icon: 'grid' },
     { path: '/locations', label: 'Locations', icon: 'list' },
-    { path: '/projects', label: 'Projects', icon: 'folder' },
-    { path: '/atlas', label: 'Atlas', icon: 'map' },
     { path: '/browser', label: 'Browser', icon: 'globe' },
-    { path: '/bookmarks', label: 'Bookmarks', icon: 'bookmark' },
     { path: '/imports', label: 'Imports', icon: 'upload' },
     { path: '/search', label: 'Search', icon: 'search' },
-    { path: '/settings', label: 'Settings', icon: 'cog' }
+    { path: '/settings', label: 'Settings', icon: 'cog' },
+    { path: '/atlas', label: 'Atlas', icon: 'map' }
   ];
 
   function navigate(path: string) {
