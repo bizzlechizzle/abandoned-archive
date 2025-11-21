@@ -235,11 +235,36 @@ function initializeSchema(sqlite: Database.Database): void {
 }
 
 /**
+ * Check if the database has the required schema tables
+ * Returns true if core tables exist, false if schema needs initialization
+ */
+function hasSchema(sqlite: Database.Database): boolean {
+  const tables = sqlite.pragma('table_list') as Array<{ name: string }>;
+  const tableNames = tables.map(t => t.name);
+
+  // Check for core tables that must exist
+  const requiredTables = ['locs', 'slocs', 'imgs', 'vids', 'docs', 'maps'];
+  const hasAllRequired = requiredTables.every(t => tableNames.includes(t));
+
+  return hasAllRequired;
+}
+
+/**
  * Run database migrations for existing databases
  * Checks for missing columns and adds them
+ * Safe to call on databases that already have all migrations applied
  */
 function runMigrations(sqlite: Database.Database): void {
   try {
+    // Get current table list for migration checks
+    const tables = sqlite.pragma('table_list') as Array<{ name: string }>;
+    const tableNames = tables.map(t => t.name);
+
+    // Safety check: core tables must exist before running migrations
+    if (!tableNames.includes('locs')) {
+      throw new Error('Core table "locs" missing - schema initialization required');
+    }
+
     // Migration 1: Add favorite column if it doesn't exist
     const columns = sqlite.pragma('table_info(locs)') as Array<{ name: string }>;
     const hasFavorite = columns.some(col => col.name === 'favorite');
@@ -252,8 +277,7 @@ function runMigrations(sqlite: Database.Database): void {
     }
 
     // Migration 2: Create imports table if it doesn't exist
-    const tables = sqlite.pragma('table_list') as Array<{ name: string }>;
-    const hasImports = tables.some(t => t.name === 'imports');
+    const hasImports = tableNames.includes('imports');
 
     if (!hasImports) {
       console.log('Running migration: Creating imports table');
@@ -276,7 +300,7 @@ function runMigrations(sqlite: Database.Database): void {
     }
 
     // Migration 3: Create notes table if it doesn't exist
-    const hasNotes = tables.some(t => t.name === 'notes');
+    const hasNotes = tableNames.includes('notes');
 
     if (!hasNotes) {
       console.log('Running migration: Creating notes table');
@@ -296,7 +320,7 @@ function runMigrations(sqlite: Database.Database): void {
     }
 
     // Migration 4: Create projects tables if they don't exist
-    const hasProjects = tables.some(t => t.name === 'projects');
+    const hasProjects = tableNames.includes('projects');
 
     if (!hasProjects) {
       console.log('Running migration: Creating projects tables');
@@ -324,7 +348,7 @@ function runMigrations(sqlite: Database.Database): void {
     }
 
     // Migration 5: Create bookmarks table if it doesn't exist
-    const hasBookmarks = tables.some(t => t.name === 'bookmarks');
+    const hasBookmarks = tableNames.includes('bookmarks');
 
     if (!hasBookmarks) {
       console.log('Running migration: Creating bookmarks table');
@@ -345,7 +369,7 @@ function runMigrations(sqlite: Database.Database): void {
     }
 
     // Migration 6: Create users table if it doesn't exist
-    const hasUsers = tables.some(t => t.name === 'users');
+    const hasUsers = tableNames.includes('users');
 
     if (!hasUsers) {
       console.log('Running migration: Creating users table');
@@ -378,6 +402,7 @@ function runMigrations(sqlite: Database.Database): void {
 /**
  * Get or create the database instance
  * Initializes the database on first run
+ * FIX: Checks for TABLE existence, not just FILE existence
  */
 export function getDatabase(): Kysely<DatabaseSchema> {
   if (db) {
@@ -385,7 +410,7 @@ export function getDatabase(): Kysely<DatabaseSchema> {
   }
 
   const dbPath = getDatabasePath();
-  const isNewDatabase = !fs.existsSync(dbPath);
+  const fileExists = fs.existsSync(dbPath);
 
   const sqlite = new Database(dbPath, {
     verbose: process.env.NODE_ENV === 'development' ? console.log : undefined,
@@ -394,13 +419,23 @@ export function getDatabase(): Kysely<DatabaseSchema> {
   sqlite.pragma('journal_mode = WAL');
   sqlite.pragma('foreign_keys = ON');
 
-  if (isNewDatabase) {
-    console.log('Creating new database at:', dbPath);
+  // Check if schema exists (tables present), not just if file exists
+  // This fixes boot loops caused by empty database files
+  const schemaExists = hasSchema(sqlite);
+
+  if (!schemaExists) {
+    if (fileExists) {
+      console.log('Database file exists but has no schema, reinitializing:', dbPath);
+    } else {
+      console.log('Creating new database at:', dbPath);
+    }
     initializeSchema(sqlite);
   } else {
     console.log('Using existing database at:', dbPath);
-    runMigrations(sqlite);
   }
+
+  // Always run migrations to ensure all tables exist
+  runMigrations(sqlite);
 
   const dialect = new SqliteDialect({
     database: sqlite,

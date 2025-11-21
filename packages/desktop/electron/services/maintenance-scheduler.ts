@@ -4,6 +4,7 @@ import { join } from 'path';
 import { promises as fs } from 'fs';
 import { existsSync, statSync } from 'fs';
 import { getLogger } from './logger-service';
+import { getDatabasePath } from '../main/database';
 
 const logger = getLogger();
 
@@ -28,16 +29,19 @@ export interface MaintenanceHistory {
  * Simplified Maintenance Scheduler
  * Manual VACUUM and ANALYZE operations only
  * No automatic scheduling
+ * FIX: Uses canonical getDatabasePath() instead of hardcoded path
  */
 export class MaintenanceScheduler {
   private readonly HISTORY_FILE = 'maintenance-history.json';
 
-  private dbPath: string;
   private historyFilePath: string;
   private isRunningMaintenance = false;
 
+  private get dbPath(): string {
+    return getDatabasePath();
+  }
+
   constructor() {
-    this.dbPath = join(app.getPath('userData'), 'au-archive.db');
     this.historyFilePath = join(app.getPath('userData'), this.HISTORY_FILE);
   }
 

@@ -1,10 +1,10 @@
 import { app, dialog } from 'electron';
-import { join } from 'path';
 import { promises as fs } from 'fs';
 import { existsSync } from 'fs';
 import { getLogger } from './logger-service';
 import { getIntegrityChecker } from './integrity-checker';
 import { getBackupScheduler } from './backup-scheduler';
+import { getDatabasePath } from '../main/database';
 
 const logger = getLogger();
 
@@ -18,12 +18,11 @@ export interface RecoveryResult {
 /**
  * Simplified Recovery System
  * Detects corruption → Shows dialog → Restores from backup
+ * FIX: Uses canonical getDatabasePath() instead of hardcoded path
  */
 export class RecoverySystem {
-  private dbPath: string;
-
-  constructor() {
-    this.dbPath = join(app.getPath('userData'), 'au-archive.db');
+  private get dbPath(): string {
+    return getDatabasePath();
   }
 
   /**

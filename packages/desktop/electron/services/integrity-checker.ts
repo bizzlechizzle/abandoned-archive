@@ -13,12 +13,35 @@ export interface IntegrityResult {
 }
 
 /**
+ * Required tables that must exist for a healthy database
+ */
+const REQUIRED_TABLES = ['locs', 'slocs', 'imgs', 'vids', 'docs', 'maps'];
+
+/**
  * Database integrity verification service
  * Runs PRAGMA integrity_check and foreign_key_check
+ * FIX: Also verifies required tables exist (empty DB = unhealthy)
  */
 export class IntegrityChecker {
   private lastCheckTime: Date | null = null;
   private lastResult: IntegrityResult | null = null;
+
+  /**
+   * Check if required schema tables exist
+   */
+  private checkRequiredTables(db: Database.Database): string[] {
+    const errors: string[] = [];
+    const tables = db.pragma('table_list') as Array<{ name: string }>;
+    const tableNames = tables.map(t => t.name);
+
+    for (const required of REQUIRED_TABLES) {
+      if (!tableNames.includes(required)) {
+        errors.push(`Required table "${required}" is missing`);
+      }
+    }
+
+    return errors;
+  }
 
   async runFullCheck(): Promise<IntegrityResult> {
     const startTime = Date.now();
@@ -32,6 +55,10 @@ export class IntegrityChecker {
       const db = new Database(dbPath, { readonly: true });
 
       try {
+        // Check required tables exist first
+        const tableErrors = this.checkRequiredTables(db);
+        errors.push(...tableErrors);
+
         // Run integrity check
         const integrityResults = db.pragma('integrity_check') as Array<{ integrity_check: string }>;
 
@@ -123,6 +150,10 @@ export class IntegrityChecker {
       const db = new Database(dbPath, { readonly: true });
 
       try {
+        // Check required tables exist first
+        const tableErrors = this.checkRequiredTables(db);
+        errors.push(...tableErrors);
+
         // Quick integrity check (first 100 pages)
         const result = db.pragma('quick_check(100)', { simple: true }) as string;
 
