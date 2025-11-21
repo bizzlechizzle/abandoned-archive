@@ -24,6 +24,14 @@ function createRouter() {
       };
     }
 
+    const projectMatch = path.match(/^\/project\/([^/]+)$/);
+    if (projectMatch) {
+      return {
+        path: '/project/:id',
+        params: { id: projectMatch[1] }
+      };
+    }
+
     return { path };
   }
 

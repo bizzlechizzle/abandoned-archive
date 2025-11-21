@@ -13,6 +13,7 @@
   const menuItems = [
     { path: '/dashboard', label: 'Dashboard', icon: 'grid' },
     { path: '/locations', label: 'Locations', icon: 'list' },
+    { path: '/projects', label: 'Projects', icon: 'folder' },
     { path: '/atlas', label: 'Atlas', icon: 'map' },
     { path: '/browser', label: 'Browser', icon: 'globe' },
     { path: '/imports', label: 'Imports', icon: 'upload' },

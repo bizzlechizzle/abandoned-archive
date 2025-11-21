@@ -17,8 +17,15 @@
     address_state?: string;
   }
 
+  interface Project {
+    project_id: string;
+    project_name: string;
+    location_count?: number;
+  }
+
   let recentLocations = $state<Location[]>([]);
   let recentImports = $state<ImportRecord[]>([]);
+  let topProjects = $state<Project[]>([]);
   let topStates = $state<Array<{ state: string; count: number }>>([]);
   let topTypes = $state<Array<{ type: string; count: number }>>([]);
   let totalCount = $state(0);
@@ -26,9 +33,10 @@
 
   onMount(async () => {
     try {
-      const [locations, imports, states, types, count] = await Promise.all([
+      const [locations, imports, projects, states, types, count] = await Promise.all([
         window.electronAPI.locations.findAll(),
         window.electronAPI.imports.findRecent(5) as Promise<ImportRecord[]>,
+        window.electronAPI.projects.findTopByLocationCount(5) as Promise<Project[]>,
         window.electronAPI.stats.topStates(5),
         window.electronAPI.stats.topTypes(5),
         window.electronAPI.locations.count(),
@@ -36,6 +44,7 @@
 
       recentLocations = locations.slice(0, 5);
       recentImports = imports;
+      topProjects = projects;
       topStates = states;
       topTypes = types;
       totalCount = count;
@@ -68,21 +77,33 @@
   {:else}
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
       <div class="bg-white rounded-lg shadow p-6">
-        <h3 class="text-lg font-semibold mb-2 text-foreground">Projects</h3>
-        <p class="text-gray-500 text-sm mb-4">Location groupings</p>
-        <div class="space-y-2">
-          <p class="text-xs text-gray-400">Grouped by region</p>
-          {#each recentLocations.slice(0, 3) as location}
-            {#if location.regions && location.regions.length > 0}
-              <div class="text-sm">
-                <span class="font-medium">{location.regions[0]}</span>
-              </div>
-            {/if}
-          {/each}
-          {#if recentLocations.every(l => !l.regions || l.regions.length === 0)}
-            <p class="text-sm text-gray-400">No projects yet</p>
-          {/if}
-        </div>
+        <h3 class="text-lg font-semibold mb-2 text-foreground">Top Projects</h3>
+        <p class="text-gray-500 text-sm mb-4">By location count</p>
+        {#if topProjects.length > 0}
+          <ul class="space-y-2">
+            {#each topProjects as project}
+              <li class="text-sm">
+                <button
+                  onclick={() => router.navigate(`/project/${project.project_id}`)}
+                  class="text-accent hover:underline"
+                >
+                  {project.project_name}
+                </button>
+                <span class="text-xs text-gray-400 ml-2">
+                  ({project.location_count || 0} locations)
+                </span>
+              </li>
+            {/each}
+          </ul>
+          <button
+            onclick={() => router.navigate('/projects')}
+            class="mt-4 text-sm text-accent hover:underline"
+          >
+            View All Projects →
+          </button>
+        {:else}
+          <p class="text-sm text-gray-400">No projects yet</p>
+        {/if}
       </div>
 
       <div class="bg-white rounded-lg shadow p-6">
