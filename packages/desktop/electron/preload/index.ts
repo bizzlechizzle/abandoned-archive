@@ -131,6 +131,40 @@ const api = {
     countByLocation: (locid: string): Promise<number> =>
       ipcRenderer.invoke('notes:countByLocation', locid),
   },
+
+  projects: {
+    create: (input: {
+      project_name: string;
+      description?: string | null;
+      auth_imp?: string | null;
+    }): Promise<unknown> =>
+      ipcRenderer.invoke('projects:create', input),
+    findById: (project_id: string): Promise<unknown> =>
+      ipcRenderer.invoke('projects:findById', project_id),
+    findByIdWithLocations: (project_id: string): Promise<unknown> =>
+      ipcRenderer.invoke('projects:findByIdWithLocations', project_id),
+    findAll: (): Promise<unknown[]> =>
+      ipcRenderer.invoke('projects:findAll'),
+    findRecent: (limit?: number): Promise<unknown[]> =>
+      ipcRenderer.invoke('projects:findRecent', limit),
+    findTopByLocationCount: (limit?: number): Promise<unknown[]> =>
+      ipcRenderer.invoke('projects:findTopByLocationCount', limit),
+    findByLocation: (locid: string): Promise<unknown[]> =>
+      ipcRenderer.invoke('projects:findByLocation', locid),
+    update: (project_id: string, updates: {
+      project_name?: string;
+      description?: string | null;
+    }): Promise<unknown> =>
+      ipcRenderer.invoke('projects:update', project_id, updates),
+    delete: (project_id: string): Promise<void> =>
+      ipcRenderer.invoke('projects:delete', project_id),
+    addLocation: (project_id: string, locid: string): Promise<void> =>
+      ipcRenderer.invoke('projects:addLocation', project_id, locid),
+    removeLocation: (project_id: string, locid: string): Promise<void> =>
+      ipcRenderer.invoke('projects:removeLocation', project_id, locid),
+    isLocationInProject: (project_id: string, locid: string): Promise<boolean> =>
+      ipcRenderer.invoke('projects:isLocationInProject', project_id, locid),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

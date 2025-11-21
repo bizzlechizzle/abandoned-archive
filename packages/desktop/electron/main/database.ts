@@ -106,6 +106,34 @@ function runMigrations(sqlite: Database.Database): void {
       `);
       console.log('Migration completed: notes table created');
     }
+
+    // Migration 4: Create projects tables if they don't exist
+    const hasProjects = tables.some(t => t.name === 'projects');
+
+    if (!hasProjects) {
+      console.log('Running migration: Creating projects tables');
+      sqlite.exec(`
+        CREATE TABLE projects (
+          project_id TEXT PRIMARY KEY,
+          project_name TEXT NOT NULL UNIQUE,
+          description TEXT,
+          created_date TEXT NOT NULL,
+          auth_imp TEXT
+        );
+        CREATE INDEX idx_projects_name ON projects(project_name);
+        CREATE INDEX idx_projects_date ON projects(created_date DESC);
+
+        CREATE TABLE project_locations (
+          project_id TEXT REFERENCES projects(project_id) ON DELETE CASCADE,
+          locid TEXT REFERENCES locs(locid) ON DELETE CASCADE,
+          added_date TEXT NOT NULL,
+          PRIMARY KEY (project_id, locid)
+        );
+        CREATE INDEX idx_project_locations_project ON project_locations(project_id);
+        CREATE INDEX idx_project_locations_location ON project_locations(locid);
+      `);
+      console.log('Migration completed: projects tables created');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

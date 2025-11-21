@@ -10,6 +10,8 @@ export interface Database {
   settings: SettingsTable;
   imports: ImportsTable;
   notes: NotesTable;
+  projects: ProjectsTable;
+  project_locations: ProjectLocationsTable;
 }
 
 // Locations table
@@ -200,4 +202,20 @@ export interface NotesTable {
   note_date: string;
   auth_imp: string | null;
   note_type: string;
+}
+
+// Projects table
+export interface ProjectsTable {
+  project_id: string;
+  project_name: string;
+  description: string | null;
+  created_date: string;
+  auth_imp: string | null;
+}
+
+// Project Locations junction table
+export interface ProjectLocationsTable {
+  project_id: string;
+  locid: string;
+  added_date: string;
 }
