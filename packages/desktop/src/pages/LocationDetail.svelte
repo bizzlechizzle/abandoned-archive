@@ -11,18 +11,60 @@
 
   let { locationId }: Props = $props();
 
+  interface MediaImage {
+    imgsha: string;
+    imgnam: string;
+    imgloc: string;
+    meta_width: number | null;
+    meta_height: number | null;
+    meta_date_taken: string | null;
+  }
+
+  interface MediaVideo {
+    vidsha: string;
+    vidnam: string;
+    vidloc: string;
+    meta_duration: number | null;
+    meta_width: number | null;
+    meta_height: number | null;
+    meta_codec: string | null;
+  }
+
+  interface MediaDocument {
+    docsha: string;
+    docnam: string;
+    docloc: string;
+  }
+
   let location = $state<Location | null>(null);
+  let images = $state<MediaImage[]>([]);
+  let videos = $state<MediaVideo[]>([]);
+  let documents = $state<MediaDocument[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let isEditing = $state(false);
+  let selectedImage = $state<string | null>(null);
 
   async function loadLocation() {
     try {
       loading = true;
       error = null;
-      location = await window.electronAPI.locations.findById(locationId);
+
+      const [loc, media] = await Promise.all([
+        window.electronAPI.locations.findById(locationId),
+        window.electronAPI.media.findByLocation(locationId),
+      ]);
+
+      location = loc;
       if (!location) {
         error = 'Location not found';
+      }
+
+      // Load media
+      if (media) {
+        images = (media.images as MediaImage[]) || [];
+        videos = (media.videos as MediaVideo[]) || [];
+        documents = (media.documents as MediaDocument[]) || [];
       }
     } catch (err) {
       console.error('Error loading location:', err);
@@ -42,6 +84,34 @@
 
   function handleCancelEdit() {
     isEditing = false;
+  }
+
+  async function openMediaFile(filePath: string) {
+    try {
+      await window.electronAPI.media.openFile(filePath);
+    } catch (error) {
+      console.error('Error opening file:', error);
+    }
+  }
+
+  function openLightbox(imagePath: string) {
+    selectedImage = imagePath;
+  }
+
+  function closeLightbox() {
+    selectedImage = null;
+  }
+
+  function formatDuration(seconds: number | null): string {
+    if (!seconds) return 'Unknown';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  function formatResolution(width: number | null, height: number | null): string {
+    if (!width || !height) return 'Unknown';
+    return `${width}x${height}`;
   }
 
   onMount(() => {
@@ -192,25 +262,104 @@
 
       <div class="mt-6 bg-white rounded-lg shadow p-6">
         <h2 class="text-xl font-semibold mb-4 text-foreground">Media</h2>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div>
-            <h3 class="text-sm font-medium text-gray-500 mb-2">Images</h3>
-            <div class="text-center text-gray-400 py-4 border-2 border-dashed border-gray-200 rounded">
+
+        <!-- Images -->
+        <div class="mb-6">
+          <h3 class="text-sm font-medium text-gray-500 mb-3">Images ({images.length})</h3>
+          {#if images.length > 0}
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {#each images as image}
+                <button
+                  onclick={() => openLightbox(image.imgloc)}
+                  class="aspect-square bg-gray-100 rounded overflow-hidden hover:opacity-90 transition relative group"
+                >
+                  <div class="absolute inset-0 flex items-center justify-center text-gray-400">
+                    <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-2 opacity-0 group-hover:opacity-100 transition">
+                    {#if image.meta_width && image.meta_height}
+                      {formatResolution(image.meta_width, image.meta_height)}
+                    {/if}
+                  </div>
+                </button>
+              {/each}
+            </div>
+          {:else}
+            <div class="text-center text-gray-400 py-8 border-2 border-dashed border-gray-200 rounded">
               <p class="text-sm">No images</p>
             </div>
-          </div>
-          <div>
-            <h3 class="text-sm font-medium text-gray-500 mb-2">Videos</h3>
-            <div class="text-center text-gray-400 py-4 border-2 border-dashed border-gray-200 rounded">
+          {/if}
+        </div>
+
+        <!-- Videos -->
+        <div class="mb-6">
+          <h3 class="text-sm font-medium text-gray-500 mb-3">Videos ({videos.length})</h3>
+          {#if videos.length > 0}
+            <div class="space-y-2">
+              {#each videos as video}
+                <button
+                  onclick={() => openMediaFile(video.vidloc)}
+                  class="w-full flex items-center justify-between p-3 bg-gray-50 rounded hover:bg-gray-100 transition text-left"
+                >
+                  <div class="flex items-center gap-3">
+                    <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    <div>
+                      <p class="text-sm font-medium text-gray-900">{video.vidnam}</p>
+                      <p class="text-xs text-gray-500">
+                        {formatDuration(video.meta_duration)}
+                        {#if video.meta_width && video.meta_height}
+                          · {formatResolution(video.meta_width, video.meta_height)}
+                        {/if}
+                        {#if video.meta_codec}
+                          · {video.meta_codec}
+                        {/if}
+                      </p>
+                    </div>
+                  </div>
+                  <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </button>
+              {/each}
+            </div>
+          {:else}
+            <div class="text-center text-gray-400 py-8 border-2 border-dashed border-gray-200 rounded">
               <p class="text-sm">No videos</p>
             </div>
-          </div>
-          <div>
-            <h3 class="text-sm font-medium text-gray-500 mb-2">Documents</h3>
-            <div class="text-center text-gray-400 py-4 border-2 border-dashed border-gray-200 rounded">
+          {/if}
+        </div>
+
+        <!-- Documents -->
+        <div>
+          <h3 class="text-sm font-medium text-gray-500 mb-3">Documents ({documents.length})</h3>
+          {#if documents.length > 0}
+            <div class="space-y-2">
+              {#each documents as doc}
+                <button
+                  onclick={() => openMediaFile(doc.docloc)}
+                  class="w-full flex items-center justify-between p-3 bg-gray-50 rounded hover:bg-gray-100 transition text-left"
+                >
+                  <div class="flex items-center gap-3">
+                    <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <p class="text-sm font-medium text-gray-900">{doc.docnam}</p>
+                  </div>
+                  <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </button>
+              {/each}
+            </div>
+          {:else}
+            <div class="text-center text-gray-400 py-8 border-2 border-dashed border-gray-200 rounded">
               <p class="text-sm">No documents</p>
             </div>
-          </div>
+          {/if}
         </div>
       </div>
 
@@ -242,6 +391,35 @@
         </div>
       </div>
       {/if}
+    </div>
+  {/if}
+
+  <!-- Image Lightbox -->
+  {#if selectedImage}
+    <div
+      class="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center p-4"
+      onclick={closeLightbox}
+    >
+      <button
+        onclick={closeLightbox}
+        class="absolute top-4 right-4 text-white hover:text-gray-300 transition"
+      >
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+      <button
+        onclick={(e) => { e.stopPropagation(); openMediaFile(selectedImage); }}
+        class="absolute top-4 left-4 px-4 py-2 bg-white bg-opacity-20 text-white rounded hover:bg-opacity-30 transition text-sm"
+      >
+        Open in System Viewer
+      </button>
+      <div class="max-w-7xl max-h-full flex items-center justify-center">
+        <p class="text-white text-center">
+          Image preview not available<br/>
+          <span class="text-sm text-gray-400">Click "Open in System Viewer" to view the image</span>
+        </p>
+      </div>
     </div>
   {/if}
 </div>
