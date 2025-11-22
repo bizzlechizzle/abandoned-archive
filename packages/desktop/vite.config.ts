@@ -26,22 +26,24 @@ export default defineConfig({
         vite: {
           build: {
             outDir: 'dist-electron/preload',
+            // Use lib mode to ensure proper CJS output
+            lib: {
+              entry: 'electron/preload/index.ts',
+              formats: ['cjs'],
+              fileName: () => 'index.cjs',
+            },
             rollupOptions: {
               external: ['electron', '@au-archive/core'],
               output: {
-                format: 'cjs',
-                interop: 'auto',
-                // CRITICAL: Use .cjs extension so Node.js treats it as CommonJS
-                // regardless of "type": "module" in package.json
                 // Electron preload scripts MUST be CommonJS format
-                entryFileNames: '[name].cjs',
-                exports: 'none',
+                // Use .cjs extension so Node.js treats it as CommonJS
+                // regardless of "type": "module" in package.json
+                format: 'cjs',
+                entryFileNames: 'index.cjs',
+                // 'auto' or 'named' allows proper CJS exports conversion
+                exports: 'auto',
               },
             },
-          },
-          esbuild: {
-            format: 'cjs',
-            platform: 'node',
           },
         },
       },
