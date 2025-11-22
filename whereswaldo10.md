@@ -1516,4 +1516,525 @@ After implementing Phase 5, verify:
 
 ---
 
+## PHASE 6: GPS, ADDRESS & MAP SYSTEM
+
+### Overview
+
+Per Logseq specs, AU Archive should be a **premium location-based archive** with:
+- GPS extraction from all media types
+- Address normalization (via libpostal)
+- Comprehensive US location database (address_lookup_us.db)
+- GPS validation and mismatch detection
+- Interactive maps with clustering
+
+### Current State vs Logseq Vision
+
+| Feature | Current | Logseq Spec | Gap |
+|---------|---------|-------------|-----|
+| GPS from images | **YES** | YES | None |
+| GPS from videos | **NO** | YES | Need ExifTool on videos |
+| GPS status tracking | **NO** | `true/false/null/normalized/verified` | Need status field |
+| Reverse geocoding | **YES** (on demand) | During import | Need import integration |
+| Address normalization | Basic regex | libpostal | Major gap |
+| GPS mismatch UI | **NO** | Show both + resolution flow | Missing |
+| Map clustering | **YES** (Supercluster) | YES | None |
+| Heat maps | **NO** | YES | Missing |
+| Proximity search | **NO** | "Find locations within X miles" | Missing |
+| US location database | **NO** | address_lookup_us.db with FTS | Major gap |
+| Trip planning | **NO** | Route optimization | Future feature |
+
+---
+
+### Issue 6.1: GPS Status Tracking
+
+**Logseq Spec** (`gps_status.md`):
+```
+GPS status values:
+- null: No GPS data found
+- true: GPS extracted from media
+- false: GPS manually marked as none
+- normalized: GPS matched to known location
+- verified: GPS verified by user/external source
+```
+
+**Current**: No GPS status field, just lat/lng values
+
+**Fix**: Add `gps_status` column to locations table
+
+```sql
+ALTER TABLE locations ADD COLUMN gps_status TEXT DEFAULT NULL;
+-- Values: null, 'extracted', 'manual', 'normalized', 'verified', 'mismatch'
+```
+
+**Workflow**:
+```
+Import with GPS → gps_status = 'extracted'
+Import without GPS → gps_status = null
+User enters manually → gps_status = 'manual'
+System normalizes → gps_status = 'normalized'
+User verifies → gps_status = 'verified'
+GPS vs address mismatch → gps_status = 'mismatch' (show UI)
+```
+
+---
+
+### Issue 6.2: GPS from Videos
+
+**Problem**: Dashcam/phone videos contain GPS in metadata but not extracted
+
+**Current Code** (`file-import-service.ts`):
+```typescript
+// Only images get ExifTool GPS extraction
+if (type === 'image') {
+  const exifData = await this.exifToolService.extractMetadata(file.filePath);
+  // GPS extracted here
+}
+```
+
+**Fix**: ExifTool works on videos too - just call it
+
+```typescript
+// For BOTH images and videos
+if (type === 'image' || type === 'video') {
+  const exifData = await this.exifToolService.extractMetadata(file.filePath);
+  if (exifData.gps) {
+    // Store GPS for videos too
+    record.meta_gps_lat = exifData.gps.lat;
+    record.meta_gps_lng = exifData.gps.lng;
+  }
+}
+```
+
+**Requires**: Add `meta_gps_lat`, `meta_gps_lng` columns to `vids` table
+
+---
+
+### Issue 6.3: #import_address - During Import
+
+**Logseq Spec** (`import_gps.md`, `auarchive_import.md`):
+```
+Step: #import_address
+When GPS is found, immediately reverse geocode to get address
+Store normalized address components
+```
+
+**Current**: Geocoding only happens when user clicks "Lookup" button
+
+**Fix**: Integrate geocoding into import flow
+
+```typescript
+// In file-import-service.ts, after GPS extraction:
+
+if (metadata?.gps) {
+  try {
+    // Reverse geocode GPS → address
+    const geoResult = await this.geocodingService.reverseGeocode(
+      metadata.gps.lat,
+      metadata.gps.lng
+    );
+
+    if (geoResult) {
+      metadata.extractedAddress = {
+        street: geoResult.address?.road,
+        city: geoResult.address?.city || geoResult.address?.town,
+        county: geoResult.address?.county,
+        state: geoResult.address?.state,
+        zipcode: geoResult.address?.postcode,
+        country: geoResult.address?.country,
+        raw: geoResult.display_name,
+      };
+    }
+  } catch (e) {
+    console.warn('[FileImport] Reverse geocoding failed:', e);
+    // Non-fatal - continue import
+  }
+}
+```
+
+**Rate Limiting**: Nominatim has 1 req/sec limit - batch carefully
+
+---
+
+### Issue 6.4: Address Normalization (libpostal)
+
+**Logseq Spec** (`address.md`):
+```
+Address normalization using libpostal:
+- Parse "123 Main St, Springfield, IL 62701"
+- Extract: house_number, road, city, state, postcode
+- Normalize: "St" → "Street", "IL" → "Illinois"
+- Match against known locations in database
+```
+
+**Current**: Basic regex parsing in `address-normalization-service.ts`
+
+```typescript
+// Current approach - brittle regex
+const normalized = {
+  street: this.normalizeStreet(address.street),
+  city: this.normalizeCity(address.city),
+  state: this.normalizeState(address.state),
+  // ...
+};
+```
+
+**Problem**: Regex can't handle:
+- International addresses
+- Ambiguous formats ("123 Main, Apt 4B")
+- Variations ("Dr." vs "Drive" vs "DR")
+
+**Recommended Fix**: Use `node-postal` (libpostal binding)
+
+```bash
+npm install node-postal
+```
+
+```typescript
+import * as postal from 'node-postal';
+
+export function normalizeAddress(addressString: string) {
+  // Parse address into components
+  const parsed = postal.parser.parse_address(addressString);
+
+  // Expand abbreviations
+  const expanded = postal.expand.expand_address(addressString);
+
+  return {
+    components: parsed,  // {house_number, road, city, state, ...}
+    expanded: expanded,   // ["123 Main Street, Springfield, Illinois 62701"]
+  };
+}
+```
+
+**Note**: libpostal requires ~2GB download for data files on first run
+
+---
+
+### Issue 6.5: US Location Database (address_lookup_us.db)
+
+**Logseq Spec** (`address_lookup_us.md`):
+```
+Comprehensive US location database:
+- All 50 states + territories
+- All 3,143 counties
+- All cities/towns (~35,000)
+- All ZIP codes (~42,000)
+- Geographic regions (Northeast, Midwest, etc.)
+- State/county boundaries (GeoJSON)
+- Full-text search for location matching
+```
+
+**Current**: No pre-built location database
+
+**What This Enables**:
+- Type "Springfield" → see all 35 Springfields with state disambiguation
+- Type "62701" → auto-fill "Springfield, IL"
+- Validate GPS is actually in stated county
+- Proximity search ("other locations within 50 miles")
+- Regional grouping ("show all locations in Midwest")
+
+**Implementation Approach**:
+
+1. **Create database** (`address_lookup_us.db`):
+```sql
+CREATE TABLE states (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  abbrev TEXT NOT NULL,
+  region TEXT,
+  fips TEXT
+);
+
+CREATE TABLE counties (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  state_id TEXT REFERENCES states(id),
+  fips TEXT,
+  centroid_lat REAL,
+  centroid_lng REAL
+);
+
+CREATE TABLE cities (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  county_id TEXT REFERENCES counties(id),
+  state_id TEXT REFERENCES states(id),
+  population INTEGER,
+  lat REAL,
+  lng REAL
+);
+
+CREATE TABLE zipcodes (
+  zipcode TEXT PRIMARY KEY,
+  city_id TEXT REFERENCES cities(id),
+  lat REAL,
+  lng REAL,
+  type TEXT  -- 'standard', 'po_box', 'unique'
+);
+
+-- Full-text search
+CREATE VIRTUAL TABLE cities_fts USING fts5(
+  name, county_name, state_name,
+  content=cities
+);
+```
+
+2. **Data sources** (free/public domain):
+   - US Census Bureau TIGER/Line
+   - USPS ZIP code database
+   - GeoNames.org
+
+3. **Package size**: ~50-100MB SQLite file
+
+---
+
+### Issue 6.6: GPS Mismatch UI
+
+**Logseq Spec** (`gps_status.md`):
+```
+When GPS from photo doesn't match location's address:
+- Show both coordinates on map
+- Ask user to resolve:
+  - "Use GPS from photo" (trust camera)
+  - "Use existing location" (trust address)
+  - "Create new location" (photo is from different place)
+```
+
+**Current**: No mismatch detection or resolution UI
+
+**Fix**: Add validation during import
+
+```typescript
+// After GPS extraction, check against location's stored coordinates
+if (metadata.gps && location.gps_lat && location.gps_lng) {
+  const distance = haversineDistance(
+    metadata.gps.lat, metadata.gps.lng,
+    location.gps_lat, location.gps_lng
+  );
+
+  // More than 1km away = likely mismatch
+  if (distance > 1000) {
+    metadata.gpsMismatch = {
+      extractedLat: metadata.gps.lat,
+      extractedLng: metadata.gps.lng,
+      locationLat: location.gps_lat,
+      locationLng: location.gps_lng,
+      distanceMeters: distance,
+    };
+  }
+}
+```
+
+**UI Component** (`GPSMismatchResolver.svelte`):
+```svelte
+<div class="p-4 bg-yellow-50 rounded">
+  <h3>GPS Mismatch Detected</h3>
+  <p>Photo GPS is {distanceKm}km from location</p>
+
+  <div class="grid grid-cols-2 gap-4">
+    <div>
+      <h4>Photo GPS</h4>
+      <Map center={[photoLat, photoLng]} marker />
+    </div>
+    <div>
+      <h4>Location GPS</h4>
+      <Map center={[locationLat, locationLng]} marker />
+    </div>
+  </div>
+
+  <div class="mt-4 flex gap-2">
+    <button onclick={usePhotoGPS}>Use Photo GPS</button>
+    <button onclick={useLocationGPS}>Keep Location GPS</button>
+    <button onclick={createNewLocation}>New Location</button>
+  </div>
+</div>
+```
+
+---
+
+### Issue 6.7: Proximity Search
+
+**Logseq Spec** (`address_lookup_us.md`):
+```
+"Find all locations within X miles of [location]"
+Uses Haversine formula for great-circle distance
+```
+
+**Current**: `gps-validator.ts` has Haversine function but not exposed for search
+
+**Fix**: Add proximity search IPC handler
+
+```typescript
+// In location repository or service:
+async findNearby(lat: number, lng: number, radiusKm: number): Promise<Location[]> {
+  // Get all locations with GPS
+  const locations = await this.db
+    .selectFrom('locations')
+    .selectAll()
+    .where('gps_lat', 'is not', null)
+    .where('gps_lng', 'is not', null)
+    .execute();
+
+  // Filter by distance
+  return locations.filter(loc => {
+    const distance = haversineDistance(lat, lng, loc.gps_lat!, loc.gps_lng!);
+    return distance <= radiusKm * 1000;  // Convert km to meters
+  }).sort((a, b) => {
+    // Sort by distance
+    const distA = haversineDistance(lat, lng, a.gps_lat!, a.gps_lng!);
+    const distB = haversineDistance(lat, lng, b.gps_lat!, b.gps_lng!);
+    return distA - distB;
+  });
+}
+```
+
+**Preload Addition**:
+```javascript
+locations: {
+  // ... existing
+  findNearby: (lat, lng, radiusKm) => ipcRenderer.invoke('location:findNearby', lat, lng, radiusKm),
+}
+```
+
+---
+
+### Issue 6.8: Heat Maps
+
+**Logseq Spec** (`gps_leaflet.md`):
+```
+Heat map visualization showing density of:
+- Locations per region
+- Photos per location
+- Activity over time
+```
+
+**Current**: Basic clustering with Supercluster, no heat map
+
+**Fix**: Add Leaflet.heat plugin
+
+```bash
+npm install leaflet.heat
+```
+
+```typescript
+import 'leaflet.heat';
+
+// Create heat map layer
+const points = locations.map(loc => [
+  loc.gps_lat,
+  loc.gps_lng,
+  loc.mediaCount / maxMediaCount  // Intensity based on media count
+]);
+
+const heatLayer = L.heatLayer(points, {
+  radius: 25,
+  blur: 15,
+  maxZoom: 10,
+  gradient: {
+    0.4: 'blue',
+    0.6: 'cyan',
+    0.7: 'lime',
+    0.8: 'yellow',
+    1.0: 'red'
+  }
+});
+```
+
+---
+
+## PHASE 6 SUMMARY TABLE
+
+| # | Feature | Priority | Complexity | Status |
+|---|---------|----------|------------|--------|
+| 6.1 | GPS status tracking | HIGH | Low | [ ] TODO |
+| 6.2 | GPS from videos | HIGH | Low | [ ] TODO |
+| 6.3 | #import_address | HIGH | Medium | [ ] TODO |
+| 6.4 | libpostal integration | MEDIUM | High | [ ] TODO |
+| 6.5 | address_lookup_us.db | LOW | Very High | [ ] FUTURE |
+| 6.6 | GPS mismatch UI | MEDIUM | Medium | [ ] TODO |
+| 6.7 | Proximity search | MEDIUM | Low | [ ] TODO |
+| 6.8 | Heat maps | LOW | Low | [ ] TODO |
+
+---
+
+## PHASE 6 IMPLEMENTATION ORDER
+
+```
+HIGH PRIORITY (Do Now):
+  6.1 GPS status tracking    → DB migration + UI update
+  6.2 GPS from videos        → ~5 lines + DB columns
+  6.3 #import_address        → ~30 lines, integrate geocoding
+
+MEDIUM PRIORITY (Do Later):
+  6.6 GPS mismatch UI        → New component + validation logic
+  6.7 Proximity search       → New IPC handler + UI
+  6.4 libpostal              → npm install + refactor normalization
+
+LOW PRIORITY (Future):
+  6.8 Heat maps              → Leaflet plugin
+  6.5 US location database   → Data sourcing + schema + FTS
+```
+
+---
+
+## PHASE 6 FILE LOCATIONS
+
+| File | Path | Changes |
+|------|------|---------|
+| File Import Service | `electron/services/file-import-service.ts` | Add video GPS, import_address |
+| GPS Validator | `electron/services/gps-validator.ts` | Add mismatch detection |
+| Geocoding Service | `electron/services/geocoding-service.ts` | Already exists, use during import |
+| Location Repository | `electron/repositories/location-repository.ts` | Add findNearby |
+| IPC Handlers | `electron/main/ipc-handlers.ts` | Add proximity search handler |
+| Preload | `electron/preload/preload.cjs` | Add findNearby |
+| Map Component | `src/components/Map.svelte` | Add heat layer toggle |
+| Database Migrations | `electron/db/migrations/` | Add gps_status column, video GPS columns |
+
+---
+
+## PHASE 6 VERIFICATION CHECKLIST
+
+After implementing Phase 6:
+
+1. [ ] Import video with GPS → GPS extracted and stored
+2. [ ] Import image with GPS → Address auto-populated from reverse geocoding
+3. [ ] Location has `gps_status` field reflecting extraction source
+4. [ ] GPS mismatch shows resolution UI (if 6.6 implemented)
+5. [ ] "Find nearby" returns locations sorted by distance (if 6.7 implemented)
+6. [ ] Map shows heat layer option (if 6.8 implemented)
+
+---
+
+## WHAT "PREMIUM" LOOKS LIKE
+
+A **premium archive experience** for GPS/Address/Maps means:
+
+### Must-Have (Current Gaps):
+1. **GPS from ALL media** - Images ✓, Videos ✗, Need to fix
+2. **Auto address lookup** - Not just manual "Lookup" button
+3. **Visual feedback** - Show GPS on location card/detail page
+4. **Basic validation** - Flag when GPS is impossible (0,0 or in ocean)
+
+### Nice-to-Have:
+1. **Proximity awareness** - "You have 5 other locations within 10 miles"
+2. **Smart suggestions** - "This GPS matches existing location X"
+3. **Batch operations** - "Fix all locations without GPS in this county"
+
+### Future Vision (Logseq):
+1. **Full US database** - Type city, autocomplete everything
+2. **Regional grouping** - "Show Midwest locations"
+3. **Trip planning** - "Optimal route to visit these 10 locations"
+4. **Timeline** - "Locations visited in 2023"
+
+### Philosophy:
+> "Take what we can get and use it until we get more"
+
+This means:
+- Extract GPS when available, don't require it
+- Use Nominatim (free) now, could add premium geocoder later
+- Basic regex normalization now, libpostal when needed
+- No location database now, build incrementally
+
+---
+
 End of Report
