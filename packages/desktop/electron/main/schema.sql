@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS locs (
   gps_lng REAL,
   gps_accuracy REAL,
   gps_source TEXT,
+  gps_status TEXT,
   gps_verified_on_map INTEGER DEFAULT 0,
   gps_captured_at TEXT,
   gps_leaflet_data TEXT,
@@ -50,6 +51,7 @@ CREATE TABLE IF NOT EXISTS locs (
   locadd TEXT,
   locup TEXT,
   auth_imp TEXT,
+  locloc TEXT,
 
   -- Regions
   regions TEXT,
@@ -184,3 +186,19 @@ CREATE TABLE IF NOT EXISTS maps (
 );
 
 CREATE INDEX IF NOT EXISTS idx_maps_locid ON maps(locid);
+
+-- URLs table (bookmarks/links per location)
+CREATE TABLE IF NOT EXISTS urls (
+  urlid TEXT PRIMARY KEY,
+  locid TEXT NOT NULL REFERENCES locs(locid) ON DELETE CASCADE,
+
+  url TEXT NOT NULL,
+  url_title TEXT,
+  url_description TEXT,
+  url_type TEXT,
+
+  auth_imp TEXT,
+  urladd TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_urls_locid ON urls(locid);

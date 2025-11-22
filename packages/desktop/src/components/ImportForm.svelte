@@ -117,6 +117,16 @@
   let parsedLat = $state<number | null>(null);
   let parsedLng = $state<number | null>(null);
   let gpsParseError = $state('');
+  let gpsVerifiedOnMap = $state(false);
+  let gpsSource = $state('manual_entry');
+
+  // GPS source options per spec (must match core GpsSource type)
+  const GPS_SOURCE_OPTIONS = [
+    { value: 'manual_entry', label: 'Manual Entry' },
+    { value: 'user_map_click', label: 'Map Click' },
+    { value: 'photo_exif', label: 'Photo EXIF' },
+    { value: 'geocoded_address', label: 'Address Geocoded' },
+  ];
 
   // Author
   let newAuthor = $state('');
@@ -295,8 +305,8 @@
         locationData.gps = {
           lat: parsedLat,
           lng: parsedLng,
-          source: 'manual_entry',
-          verifiedOnMap: false,
+          source: gpsSource,
+          verifiedOnMap: gpsVerifiedOnMap,
         };
       }
 
@@ -342,6 +352,8 @@
     parsedLat = null;
     parsedLng = null;
     gpsParseError = '';
+    gpsVerifiedOnMap = false;
+    gpsSource = 'manual_entry';
     newAuthor = '';
     createError = '';
   }
@@ -779,6 +791,37 @@
                   <p class="text-sm text-green-800 font-mono">
                     Parsed: {parsedLat.toFixed(6)}, {parsedLng.toFixed(6)}
                   </p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                  <div>
+                    <label for="gps-source" class="block text-sm font-medium text-gray-700 mb-1">
+                      GPS Source
+                    </label>
+                    <select
+                      id="gps-source"
+                      bind:value={gpsSource}
+                      disabled={creatingLocation}
+                      class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
+                    >
+                      {#each GPS_SOURCE_OPTIONS as option}
+                        <option value={option.value}>{option.label}</option>
+                      {/each}
+                    </select>
+                  </div>
+
+                  <div class="flex items-center pt-6">
+                    <input
+                      type="checkbox"
+                      id="gps-verified"
+                      bind:checked={gpsVerifiedOnMap}
+                      disabled={creatingLocation}
+                      class="mr-2"
+                    />
+                    <label for="gps-verified" class="text-sm text-gray-700">
+                      Verified on map
+                    </label>
+                  </div>
                 </div>
               {/if}
 

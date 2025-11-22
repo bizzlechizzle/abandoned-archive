@@ -7,7 +7,17 @@
   let searchQuery = $state('');
   let filterState = $state('');
   let filterType = $state('');
+  let specialFilter = $state(''); // 'undocumented', 'historical', 'favorites', or ''
   let loading = $state(true);
+
+  // Subscribe to router for query params
+  let routeQuery = $state<Record<string, string>>({});
+  const unsubscribe = router.subscribe((route) => {
+    if (route.query?.filter) {
+      specialFilter = route.query.filter;
+    }
+    routeQuery = route.query || {};
+  });
 
   let filteredLocations = $derived(() => {
     return locations.filter((loc) => {
@@ -16,7 +26,19 @@
         loc.akanam?.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesState = !filterState || loc.address?.state === filterState;
       const matchesType = !filterType || loc.type === filterType;
-      return matchesSearch && matchesState && matchesType;
+
+      // Apply special filters
+      let matchesSpecial = true;
+      if (specialFilter === 'undocumented') {
+        // Locations without documentation status or marked as undocumented
+        matchesSpecial = !loc.documentation || loc.documentation === 'No Visit / Keyboard Scout';
+      } else if (specialFilter === 'historical') {
+        matchesSpecial = loc.historic === true;
+      } else if (specialFilter === 'favorites') {
+        matchesSpecial = loc.favorite === true;
+      }
+
+      return matchesSearch && matchesState && matchesType && matchesSpecial;
     });
   });
 
@@ -29,6 +51,11 @@
     const types = new Set(locations.map(l => l.type).filter(Boolean));
     return Array.from(types).sort();
   });
+
+  function clearSpecialFilter() {
+    specialFilter = '';
+    router.navigate('/locations');
+  }
 
   async function loadLocations() {
     try {
@@ -47,6 +74,7 @@
 
   onMount(() => {
     loadLocations();
+    return () => unsubscribe();
   });
 </script>
 
@@ -55,6 +83,20 @@
     <h1 class="text-3xl font-bold text-foreground mb-2">Locations</h1>
     <p class="text-gray-600">Browse and manage abandoned locations</p>
   </div>
+
+  {#if specialFilter}
+    <div class="mb-4 p-3 bg-accent/10 border border-accent/20 rounded-lg flex items-center justify-between">
+      <span class="text-sm text-foreground">
+        Filtering by: <strong class="capitalize">{specialFilter}</strong>
+      </span>
+      <button
+        onclick={clearSpecialFilter}
+        class="text-sm text-accent hover:underline"
+      >
+        Clear filter
+      </button>
+    </div>
+  {/if}
 
   <div class="bg-white rounded-lg shadow p-6 mb-6">
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">

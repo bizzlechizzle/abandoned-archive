@@ -347,9 +347,7 @@
       </button>
 
       <button
-        onclick={async () => {
-          router.navigate('/locations');
-        }}
+        onclick={() => router.navigate('/locations', undefined, { filter: 'undocumented' })}
         class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
       >
         <div class="text-sm text-gray-500">Undocumented</div>
@@ -357,9 +355,7 @@
       </button>
 
       <button
-        onclick={async () => {
-          router.navigate('/locations');
-        }}
+        onclick={() => router.navigate('/locations', undefined, { filter: 'historical' })}
         class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
       >
         <div class="text-sm text-gray-500">Historical</div>
@@ -367,7 +363,7 @@
       </button>
 
       <button
-        onclick={() => router.navigate('/locations')}
+        onclick={() => router.navigate('/locations', undefined, { filter: 'favorites' })}
         class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
       >
         <div class="text-sm text-gray-500">Favorites</div>

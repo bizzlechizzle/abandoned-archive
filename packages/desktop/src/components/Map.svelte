@@ -3,15 +3,53 @@
   import type { Map as LeafletMap, TileLayer, LayerGroup } from 'leaflet';
   import type { Location } from '@au-archive/core';
   import Supercluster from 'supercluster';
-  import { MAP_CONFIG, TILE_LAYERS, THEME } from '@/lib/constants';
+  import { MAP_CONFIG, TILE_LAYERS, THEME, GPS_CONFIG } from '@/lib/constants';
+
+  /**
+   * Determine GPS confidence level based on location data
+   * Per spec: verified > high > medium > low > none
+   */
+  function getGpsConfidence(location: Location): keyof typeof THEME.GPS_CONFIDENCE_COLORS {
+    if (!location.gps) return 'none';
+
+    // Verified on map is highest confidence
+    if (location.gps.verifiedOnMap) return 'verified';
+
+    // High accuracy from device GPS
+    if (location.gps.accuracy && location.gps.accuracy <= GPS_CONFIG.HIGH_ACCURACY_THRESHOLD_METERS) {
+      return 'high';
+    }
+
+    // Medium accuracy
+    if (location.gps.accuracy && location.gps.accuracy <= GPS_CONFIG.GPS_MISMATCH_THRESHOLD_METERS) {
+      return 'medium';
+    }
+
+    // Low confidence if no accuracy data or high accuracy value
+    return 'low';
+  }
+
+  /**
+   * Create a colored circle marker icon based on GPS confidence
+   */
+  function createConfidenceIcon(L: any, confidence: keyof typeof THEME.GPS_CONFIDENCE_COLORS): any {
+    const color = THEME.GPS_CONFIDENCE_COLORS[confidence];
+    return L.divIcon({
+      html: `<div class="confidence-marker" style="background-color: ${color};"></div>`,
+      className: 'confidence-icon',
+      iconSize: [16, 16],
+      iconAnchor: [8, 8],
+    });
+  }
 
   interface Props {
     locations?: Location[];
     onLocationClick?: (location: Location) => void;
     onMapClick?: (lat: number, lng: number) => void;
+    onMapRightClick?: (lat: number, lng: number) => void;
   }
 
-  let { locations = [], onLocationClick, onMapClick }: Props = $props();
+  let { locations = [], onLocationClick, onMapClick, onMapRightClick }: Props = $props();
 
   /**
    * Escape HTML to prevent XSS attacks
@@ -74,6 +112,12 @@
       map.on('click', (e) => {
         if (onMapClick) {
           onMapClick(e.latlng.lat, e.latlng.lng);
+        }
+      });
+
+      map.on('contextmenu', (e) => {
+        if (onMapRightClick) {
+          onMapRightClick(e.latlng.lat, e.latlng.lng);
         }
       });
 
@@ -147,13 +191,17 @@
         markersLayer.addLayer(marker);
       } else {
         const location = feature.properties.location;
-        const marker = L.marker([lat, lng]);
+        const confidence = getGpsConfidence(location);
+        const icon = createConfidenceIcon(L, confidence);
+        const marker = L.marker([lat, lng], { icon });
 
+        const confidenceLabel = String(confidence).charAt(0).toUpperCase() + String(confidence).slice(1);
         marker.bindPopup(`
           <div>
             <strong>${escapeHtml(location.locnam)}</strong><br/>
             ${escapeHtml(location.type) || 'Unknown Type'}<br/>
             ${location.address?.city ? `${escapeHtml(location.address.city)}, ` : ''}${escapeHtml(location.address?.state) || ''}
+            <br/><span style="color: ${THEME.GPS_CONFIDENCE_COLORS[confidence]};">● ${confidenceLabel} GPS</span>
           </div>
         `);
 
@@ -214,6 +262,19 @@
     font-weight: bold;
     font-size: 14px;
     border: 3px solid rgba(255, 255, 255, 0.8);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  :global(.confidence-icon) {
+    background: transparent;
+    border: none;
+  }
+
+  :global(.confidence-marker) {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid white;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   }
 </style>
