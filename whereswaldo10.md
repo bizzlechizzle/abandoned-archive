@@ -732,4 +732,111 @@ These can all be fixed with targeted changes to ~50 lines of code.
 
 ---
 
+---
+
+## AUDIT: Current Import vs Logseq Spec
+
+### Your Specified Import Steps
+
+```
+1. #import_location    - Location selection
+2. #import_id          - Import ID creation
+3. #import_folder      - Folder organization
+4. #import_files       - File copying
+5. #import_exiftool    - ExifTool metadata extraction
+6. #import_ffmpeg      - FFmpeg for videos
+7. #import_maps        - Map files handling
+8. #import_gps         - GPS extraction
+9. #import_address     - Address handling
+10. #import_verify     - Verification
+11. import_cleanup     - Cleanup
+```
+
+### Implementation Status
+
+| Step | Status | Current Code | Gap |
+|------|--------|--------------|-----|
+| #import_location | **IMPLEMENTED** | `locationRepo.findById()` at Step 0 | None |
+| #import_id | **IMPLEMENTED** | `createImportRecordInTransaction()` | None |
+| #import_folder | **IMPLEMENTED** | `organizeFileWithLocation()` | None |
+| #import_files | **IMPLEMENTED** | `fs.copyFile()` | None |
+| #import_exiftool | **PARTIAL** | Only for images | Missing: documents, videos |
+| #import_ffmpeg | **IMPLEMENTED** | `ffmpegService.extractMetadata()` | None |
+| #import_maps | **PARTIAL** | Files stored | Missing: geo-data parsing |
+| #import_gps | **PARTIAL** | From images only | Missing: from videos, maps |
+| #import_address | **MISSING** | Not implemented | No reverse geocoding |
+| #import_verify | **IMPLEMENTED** | SHA256 after copy | None |
+| import_cleanup | **IMPLEMENTED** | `fs.unlink()` if requested | None |
+
+### Metadata Dump Status
+
+| File Type | ExifTool Dump | FFmpeg Dump | What's Stored |
+|-----------|--------------|-------------|---------------|
+| Images | **YES** `meta_exiftool` | N/A | width, height, date, camera, GPS |
+| Videos | **NO** (null) | **YES** `meta_ffmpeg` | duration, size, codec, fps |
+| Maps | **NO** (null) | N/A | **NOTHING** extracted |
+| Documents | **NO** (null) | N/A | **NOTHING** extracted |
+
+### Missing Per Your Rules
+
+1. **#import_address**: GPS coordinates extracted but NOT reverse geocoded to address
+   - Current: Stores `meta_gps_lat`, `meta_gps_lng`
+   - Missing: Call geocoding service → store street, city, state
+
+2. **#import_maps**: Geo files accepted but not parsed
+   - Current: `.gpx`, `.kml`, `.geojson` stored as files
+   - Missing: Parse coordinates, waypoints, boundaries
+
+3. **Full metadata for all types**:
+   - Documents: Should extract PDF author, title, page count via ExifTool
+   - Videos: Should ALSO run ExifTool for GPS (dashcams embed GPS)
+   - Maps: Should parse geo-metadata from the file content
+
+### Files Copied? Metadata Dumped?
+
+**Assuming import actually completes (fixes bugs first)**:
+
+| What | Happens? | Where |
+|------|----------|-------|
+| File copied | **YES** | `[archive]/locations/[STATE]-[TYPE]/[SLOCNAM]-[LOC12]/org-[type]-[LOC12]/[SHA256].[ext]` |
+| Original path saved | **YES** | `imgloco`, `vidloco`, `docloco`, `maploco` |
+| SHA256 saved | **YES** | `imgsha`, `vidsha`, `docsha`, `mapsha` |
+| Full ExifTool JSON | **IMAGES ONLY** | `meta_exiftool` column |
+| Full FFmpeg JSON | **VIDEOS ONLY** | `meta_ffmpeg` column |
+| GPS coordinates | **IMAGES ONLY** | `meta_gps_lat`, `meta_gps_lng` |
+| Address from GPS | **NO** | Not implemented |
+
+---
+
+## Action Items to Match Your Spec
+
+### Priority 1: Fix Silent Failures (Files Not Importing)
+1. Fix type violation (`'unknown'` → `'document'`)
+2. Add user feedback on errors
+3. Move progress after completion
+
+### Priority 2: Complete Metadata Extraction
+1. Run ExifTool on documents (PDFs have metadata)
+2. Run ExifTool on videos (dashcams have GPS)
+3. Parse map files for coordinates
+
+### Priority 3: Add Missing Steps
+1. **#import_address**: Add reverse geocoding
+   ```typescript
+   if (metadata.gps) {
+     const address = await geocodingService.reverseGeocode(metadata.gps.lat, metadata.gps.lng);
+     // Store in meta_address_* columns
+   }
+   ```
+
+2. **#import_maps**: Parse geo files
+   ```typescript
+   if (type === 'map') {
+     const geoData = await geoParserService.parseGeoFile(file.filePath);
+     // Store bounds, waypoints, etc.
+   }
+   ```
+
+---
+
 End of Report
