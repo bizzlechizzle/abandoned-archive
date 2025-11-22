@@ -23,7 +23,7 @@ export interface ImportFileInput {
 export interface ImportResult {
   success: boolean;
   hash: string;
-  type: 'image' | 'video' | 'document' | 'unknown';
+  type: 'image' | 'video' | 'map' | 'document';  // No 'unknown' - defaults to document
   duplicate: boolean;
   archivePath?: string;
   error?: string;
@@ -49,9 +49,100 @@ export interface ImportSessionResult {
  * Service for importing media files into the archive
  */
 export class FileImportService {
-  private readonly IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp'];
-  private readonly VIDEO_EXTENSIONS = ['.mp4', '.mov', '.avi', '.mkv', '.wmv', '.flv', '.webm'];
-  private readonly DOCUMENT_EXTENSIONS = ['.pdf', '.doc', '.docx', '.txt', '.rtf', '.odt'];
+  // Comprehensive format support based on ExifTool capabilities
+  private readonly IMAGE_EXTENSIONS = [
+    // Standard formats
+    '.jpg', '.jpeg', '.jpe', '.jfif', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp',
+    '.jp2', '.jpx', '.j2k', '.j2c',    // JPEG 2000
+    '.jxl',                            // JPEG XL
+    '.heic', '.heif', '.hif',          // Apple HEIF/HEVC
+    '.avif',                           // AV1 Image
+    '.psd', '.psb',                    // Photoshop
+    '.ai', '.eps', '.epsf',            // Adobe Illustrator/PostScript
+    '.svg', '.svgz',                   // Vector
+    '.ico', '.cur',                    // Icons
+    '.pcx', '.dcx',                    // PC Paintbrush
+    '.ppm', '.pgm', '.pbm', '.pnm',    // Netpbm
+    '.tga', '.icb', '.vda', '.vst',    // Targa
+    '.dds',                            // DirectDraw Surface
+    '.exr',                            // OpenEXR
+    '.hdr',                            // Radiance HDR
+    '.dpx', '.cin',                    // Digital Picture Exchange
+    '.fits', '.fit', '.fts',           // Flexible Image Transport
+    // RAW camera formats (ExifTool supported - comprehensive list)
+    '.nef', '.nrw',                    // Nikon
+    '.cr2', '.cr3', '.crw', '.ciff',   // Canon
+    '.arw', '.arq', '.srf', '.sr2',    // Sony
+    '.dng',                            // Adobe DNG (universal)
+    '.orf', '.ori',                    // Olympus
+    '.raf',                            // Fujifilm
+    '.rw2', '.raw', '.rwl',            // Panasonic/Leica
+    '.pef', '.ptx',                    // Pentax
+    '.srw',                            // Samsung
+    '.x3f',                            // Sigma
+    '.3fr', '.fff',                    // Hasselblad
+    '.dcr', '.k25', '.kdc',            // Kodak
+    '.mef', '.mos',                    // Mamiya/Leaf
+    '.mrw',                            // Minolta
+    '.erf',                            // Epson
+    '.iiq',                            // Phase One
+    '.rwz',                            // Rawzor
+    '.gpr',                            // GoPro RAW
+  ];
+  // Comprehensive video format support based on FFprobe/FFmpeg capabilities
+  private readonly VIDEO_EXTENSIONS = [
+    '.mp4', '.m4v', '.m4p',            // MPEG-4
+    '.mov', '.qt',                     // QuickTime
+    '.avi', '.divx',                   // AVI
+    '.mkv', '.mka', '.mks', '.mk3d',   // Matroska
+    '.webm',                           // WebM
+    '.wmv', '.wma', '.asf',            // Windows Media
+    '.flv', '.f4v', '.f4p', '.f4a', '.f4b', // Flash Video
+    '.mpg', '.mpeg', '.mpe', '.mpv', '.m2v', // MPEG
+    '.ts', '.mts', '.m2ts', '.tsv', '.tsa', // MPEG Transport Stream
+    '.vob', '.ifo',                    // DVD Video
+    '.3gp', '.3g2',                    // 3GPP
+    '.ogv', '.ogg', '.ogm', '.oga', '.ogx', '.spx', '.opus', // Ogg/Vorbis
+    '.rm', '.rmvb', '.rv',             // RealMedia
+    '.dv', '.dif',                     // DV Video
+    '.mxf',                            // Material eXchange Format
+    '.gxf',                            // General eXchange Format
+    '.nut',                            // NUT
+    '.roq',                            // id RoQ
+    '.nsv',                            // Nullsoft
+    '.amv',                            // AMV
+    '.swf',                            // Flash
+    '.yuv', '.y4m',                    // Raw YUV
+    '.bik', '.bk2',                    // Bink
+    '.smk',                            // Smacker
+    '.dpg',                            // Nintendo DS
+    '.pva',                            // TechnoTrend PVA
+  ];
+  private readonly DOCUMENT_EXTENSIONS = [
+    '.pdf',                            // Portable Document Format
+    '.doc', '.docx', '.docm',          // Microsoft Word
+    '.xls', '.xlsx', '.xlsm', '.xlsb', // Microsoft Excel
+    '.ppt', '.pptx', '.pptm',          // Microsoft PowerPoint
+    '.odt', '.ods', '.odp', '.odg',    // OpenDocument
+    '.rtf',                            // Rich Text Format
+    '.txt', '.text', '.log',           // Plain text
+    '.csv', '.tsv',                    // Data files
+    '.epub', '.mobi', '.azw', '.azw3', // E-books
+    '.djvu', '.djv',                   // DjVu
+    '.xps', '.oxps',                   // XML Paper Specification
+  ];
+  // Map-specific extensions (historical maps, floor plans, etc.)
+  // These are images but stored separately for organizational purposes
+  private readonly MAP_EXTENSIONS = [
+    '.geotiff', '.gtiff',              // GeoTIFF
+    '.gpx',                            // GPS Exchange Format
+    '.kml', '.kmz',                    // Google Earth
+    '.shp', '.shx', '.dbf', '.prj',    // Shapefile components
+    '.geojson', '.topojson',           // GeoJSON
+    '.osm',                            // OpenStreetMap
+    '.mbtiles',                        // MapBox Tiles
+    '.sid', '.ecw',                    // MrSID, ECW compressed imagery
+  ];
 
   constructor(
     private readonly db: Kysely<Database>,
@@ -87,8 +178,11 @@ export class FileImportService {
       }
     }
 
+    console.log('[FileImport] Starting batch import of', files.length, 'files');
+
     // Use transaction to ensure atomicity
     return await this.db.transaction().execute(async (trx) => {
+      console.log('[FileImport] Transaction started');
       const results: ImportResult[] = [];
       let imported = 0;
       let duplicates = 0;
@@ -96,6 +190,8 @@ export class FileImportService {
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
+
+        console.log('[FileImport] Processing file', i + 1, 'of', files.length, ':', file.originalName);
 
         // Report progress
         if (onProgress) {
@@ -109,14 +205,17 @@ export class FileImportService {
           if (result.success) {
             if (result.duplicate) {
               duplicates++;
+              console.log('[FileImport] File', i + 1, 'was duplicate');
             } else {
               imported++;
+              console.log('[FileImport] File', i + 1, 'imported successfully');
             }
           } else {
             errors++;
+            console.log('[FileImport] File', i + 1, 'failed');
           }
         } catch (error) {
-          console.error(`Error importing file ${file.originalName}:`, error);
+          console.error('[FileImport] Error importing file', file.originalName, ':', error);
           results.push({
             success: false,
             hash: '',
@@ -127,12 +226,14 @@ export class FileImportService {
           errors++;
         }
       }
+      console.log('[FileImport] Batch processing complete:', imported, 'imported,', duplicates, 'duplicates,', errors, 'errors');
 
       // Create import record within same transaction
       const locid = files[0]?.locid || null;
       const auth_imp = files[0]?.auth_imp || null;
       const imgCount = results.filter((r) => r.type === 'image' && !r.duplicate).length;
       const vidCount = results.filter((r) => r.type === 'video' && !r.duplicate).length;
+      const mapCount = results.filter((r) => r.type === 'map' && !r.duplicate).length;
       const docCount = results.filter((r) => r.type === 'document' && !r.duplicate).length;
 
       // Use transaction context for import record creation
@@ -141,6 +242,7 @@ export class FileImportService {
         auth_imp,
         img_count: imgCount,
         vid_count: vidCount,
+        map_count: mapCount,
         doc_count: docCount,
         notes: `Imported ${imported} files, ${duplicates} duplicates, ${errors} errors`,
       });
@@ -165,29 +267,33 @@ export class FileImportService {
     deleteOriginal: boolean,
     trx: any // Transaction context
   ): Promise<ImportResult> {
+    console.log('[FileImport] === Starting import for:', file.originalName, '===');
+
     // 1. Validate file path security
+    console.log('[FileImport] Step 1: Validating file path...');
     const sanitizedName = PathValidator.sanitizeFilename(file.originalName);
+    console.log('[FileImport] Step 1 complete, sanitized name:', sanitizedName);
 
     // 2. Calculate SHA256 hash (only once)
+    console.log('[FileImport] Step 2: Calculating SHA256 hash...');
+    const hashStart = Date.now();
     const hash = await this.cryptoService.calculateSHA256(file.filePath);
+    console.log('[FileImport] Step 2 complete in', Date.now() - hashStart, 'ms, hash:', hash.substring(0, 16) + '...');
 
-    // 3. Determine file type
+    // 3. Determine file type (image -> video -> map -> document)
+    // We accept ALL files - unknown extensions default to 'document'
     const ext = path.extname(sanitizedName).toLowerCase();
     const type = this.getFileType(ext);
-
-    if (type === 'unknown') {
-      return {
-        success: false,
-        hash,
-        type,
-        duplicate: false,
-        error: `Unsupported file type: ${ext}`,
-      };
-    }
+    console.log('[FileImport] Step 3: File type determined:', type, 'extension:', ext);
 
     // 4. Check for duplicates
+    console.log('[FileImport] Step 4: Checking for duplicates...');
+    const dupStart = Date.now();
     const isDuplicate = await this.checkDuplicateInTransaction(trx, hash, type);
+    console.log('[FileImport] Step 4 complete in', Date.now() - dupStart, 'ms, duplicate:', isDuplicate);
+
     if (isDuplicate) {
+      console.log('[FileImport] File is duplicate, skipping:', file.originalName);
       return {
         success: true,
         hash,
@@ -200,12 +306,18 @@ export class FileImportService {
     let metadata: any = null;
     let gpsWarning: ImportResult['gpsWarning'] = undefined;
 
+    console.log('[FileImport] Step 5: Extracting metadata for', file.originalName, 'type:', type);
+
     try {
       if (type === 'image') {
+        console.log('[FileImport] Calling ExifTool for image...');
+        const exifStart = Date.now();
         metadata = await this.exifToolService.extractMetadata(file.filePath);
+        console.log('[FileImport] ExifTool completed in', Date.now() - exifStart, 'ms');
 
         // CRITICAL: Check GPS mismatch
         if (metadata.gps && GPSValidator.isValidGPS(metadata.gps.lat, metadata.gps.lng)) {
+          console.log('[FileImport] Step 5b: Checking GPS mismatch...');
           const location = await this.locationRepo.findById(file.locid);
 
           if (location && location.gps?.lat && location.gps?.lng) {
@@ -225,19 +337,27 @@ export class FileImportService {
               };
             }
           }
+          console.log('[FileImport] GPS check complete');
         }
       } else if (type === 'video') {
+        console.log('[FileImport] Calling FFmpeg for video...');
         metadata = await this.ffmpegService.extractMetadata(file.filePath);
+        console.log('[FileImport] FFmpeg completed');
       }
     } catch (error) {
-      console.warn('Failed to extract metadata:', error);
+      console.warn('[FileImport] Failed to extract metadata:', error);
       // Continue without metadata
     }
 
     // 6. Organize file to archive (validate path)
+    console.log('[FileImport] Step 6: Organizing file to archive...');
+    const organizeStart = Date.now();
     const archivePath = await this.organizeFile(file, hash, ext, type);
+    console.log('[FileImport] Step 6 complete in', Date.now() - organizeStart, 'ms, path:', archivePath);
 
     // 7. Insert record in database using transaction
+    console.log('[FileImport] Step 7: Inserting database record...');
+    const insertStart = Date.now();
     await this.insertMediaRecordInTransaction(
       trx,
       file,
@@ -247,17 +367,21 @@ export class FileImportService {
       sanitizedName,
       metadata
     );
+    console.log('[FileImport] Step 7 complete in', Date.now() - insertStart, 'ms');
 
     // 8. Delete original if requested (after DB success)
     if (deleteOriginal) {
+      console.log('[FileImport] Step 8: Deleting original file...');
       try {
         await fs.unlink(file.filePath);
+        console.log('[FileImport] Step 8 complete - original deleted');
       } catch (error) {
-        console.warn('Failed to delete original file:', error);
+        console.warn('[FileImport] Failed to delete original file:', error);
         // Don't fail import if deletion fails
       }
     }
 
+    console.log('[FileImport] File import COMPLETE:', file.originalName);
     return {
       success: true,
       hash,
@@ -270,12 +394,15 @@ export class FileImportService {
 
   /**
    * Determine file type from extension
+   * Logic: image -> video -> map -> default to document
+   * We accept ALL files - if it's not image/video/map, catalog it as a document
    */
-  private getFileType(ext: string): 'image' | 'video' | 'document' | 'unknown' {
+  private getFileType(ext: string): 'image' | 'video' | 'map' | 'document' {
     if (this.IMAGE_EXTENSIONS.includes(ext)) return 'image';
     if (this.VIDEO_EXTENSIONS.includes(ext)) return 'video';
-    if (this.DOCUMENT_EXTENSIONS.includes(ext)) return 'document';
-    return 'unknown';
+    if (this.MAP_EXTENSIONS.includes(ext)) return 'map';
+    // Default to document - we accept and catalog everything
+    return 'document';
   }
 
   /**
@@ -284,7 +411,7 @@ export class FileImportService {
   private async checkDuplicateInTransaction(
     trx: any,
     hash: string,
-    type: 'image' | 'video' | 'document'
+    type: 'image' | 'video' | 'map' | 'document'
   ): Promise<boolean> {
     if (type === 'image') {
       const result = await trx
@@ -298,6 +425,13 @@ export class FileImportService {
         .selectFrom('vids')
         .select('vidsha')
         .where('vidsha', '=', hash)
+        .executeTakeFirst();
+      return !!result;
+    } else if (type === 'map') {
+      const result = await trx
+        .selectFrom('maps')
+        .select('mapsha')
+        .where('mapsha', '=', hash)
         .executeTakeFirst();
       return !!result;
     } else if (type === 'document') {
@@ -319,14 +453,18 @@ export class FileImportService {
     file: ImportFileInput,
     hash: string,
     ext: string,
-    type: 'image' | 'video' | 'document'
+    type: 'image' | 'video' | 'map' | 'document'
   ): Promise<string> {
+    console.log('[organizeFile] Starting for:', file.originalName);
+
     // Fetch location data for folder structure
+    console.log('[organizeFile] Fetching location:', file.locid);
     const location = await this.locationRepo.findById(file.locid);
 
     if (!location) {
       throw new Error(`Location not found: ${file.locid}`);
     }
+    console.log('[organizeFile] Location found:', location.locnam);
 
     // Build spec-compliant folder structure
     // [STATE]-[TYPE] folder (use "XX" for unknown state, "Unknown" for unknown type)
@@ -340,7 +478,8 @@ export class FileImportService {
     const locationFolder = `${this.sanitizeFolderName(slocnam)}-${loc12}`;
 
     // org-[type]-[LOC12] folder
-    const typePrefix = type === 'image' ? 'img' : type === 'video' ? 'vid' : 'doc';
+    const typePrefixMap: Record<string, string> = { image: 'img', video: 'vid', map: 'map', document: 'doc' };
+    const typePrefix = typePrefixMap[type] || 'doc';
     const mediaFolder = `org-${typePrefix}-${loc12}`;
 
     // Build full path
@@ -352,26 +491,38 @@ export class FileImportService {
       mediaFolder
     );
     const targetPath = path.join(targetDir, `${hash}${ext}`);
+    console.log('[organizeFile] Target path:', targetPath);
 
     // CRITICAL: Validate target path doesn't escape archive
     if (!PathValidator.validateArchivePath(targetPath, this.archivePath)) {
       throw new Error(`Security: Target path escapes archive directory: ${targetPath}`);
     }
+    console.log('[organizeFile] Path validated');
 
     // Ensure directory exists
+    console.log('[organizeFile] Creating directory:', targetDir);
     await fs.mkdir(targetDir, { recursive: true });
+    console.log('[organizeFile] Directory created');
 
     // Copy file
+    console.log('[organizeFile] Copying file (this may take a while for large files)...');
+    const copyStart = Date.now();
     await fs.copyFile(file.filePath, targetPath);
+    console.log('[organizeFile] File copied in', Date.now() - copyStart, 'ms');
 
     // Verify integrity after copy
+    console.log('[organizeFile] Verifying integrity...');
+    const verifyStart = Date.now();
     const verifyHash = await this.cryptoService.calculateSHA256(targetPath);
+    console.log('[organizeFile] Verification complete in', Date.now() - verifyStart, 'ms');
+
     if (verifyHash !== hash) {
       // Delete corrupted file
       await fs.unlink(targetPath).catch(() => {});
       throw new Error(`Integrity check failed: file corrupted during copy`);
     }
 
+    console.log('[organizeFile] COMPLETE for:', file.originalName);
     return targetPath;
   }
 
@@ -401,7 +552,7 @@ export class FileImportService {
     trx: any,
     file: ImportFileInput,
     hash: string,
-    type: 'image' | 'video' | 'document',
+    type: 'image' | 'video' | 'map' | 'document',
     archivePath: string,
     originalName: string,
     metadata: any
@@ -454,6 +605,26 @@ export class FileImportService {
           meta_date_taken: metadata?.dateTaken || null,
         })
         .execute();
+    } else if (type === 'map') {
+      await trx
+        .insertInto('maps')
+        .values({
+          mapsha: hash,
+          mapnam: path.basename(archivePath),
+          mapnamo: originalName,
+          maploc: archivePath,
+          maploco: file.filePath,
+          locid: file.locid,
+          subid: file.subid || null,
+          auth_imp: file.auth_imp,
+          mapadd: timestamp,
+          meta_exiftool: metadata?.rawExif || null,
+          meta_map: null,
+          reference: null,
+          map_states: null,
+          map_verified: 0,
+        })
+        .execute();
     } else if (type === 'document') {
       await trx
         .insertInto('docs')
@@ -486,6 +657,7 @@ export class FileImportService {
       auth_imp: string | null;
       img_count: number;
       vid_count: number;
+      map_count: number;
       doc_count: number;
       notes: string;
     }
@@ -503,7 +675,7 @@ export class FileImportService {
         img_count: input.img_count,
         vid_count: input.vid_count,
         doc_count: input.doc_count,
-        map_count: 0,
+        map_count: input.map_count,
         notes: input.notes,
       })
       .execute();

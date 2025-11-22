@@ -10,9 +10,11 @@
    * Note: "Projects" in the dashboard spec means pinned/favorite items,
    * NOT a separate Projects page. Favorites are accessed via locations.
    */
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { router } from './stores/router';
+  import { importStore } from './stores/import-store';
   import Layout from './components/Layout.svelte';
+  import ImportProgress from './components/ImportProgress.svelte';
   import Dashboard from './pages/Dashboard.svelte';
   import Locations from './pages/Locations.svelte';
   import Atlas from './pages/Atlas.svelte';
@@ -26,6 +28,9 @@
   let currentRoute = $state({ path: '/dashboard', params: {} });
   let setupComplete = $state(false);
   let checkingSetup = $state(true);
+
+  // Import progress listener
+  let unsubscribeProgress: (() => void) | null = null;
 
   async function checkFirstRun() {
     try {
@@ -50,6 +55,19 @@
   onMount(() => {
     router.init();
     checkFirstRun();
+
+    // Subscribe to import progress events from main process
+    if (window.electronAPI?.media?.onImportProgress) {
+      unsubscribeProgress = window.electronAPI.media.onImportProgress((progress) => {
+        importStore.updateProgress(progress.current, progress.total);
+      });
+    }
+  });
+
+  onDestroy(() => {
+    if (unsubscribeProgress) {
+      unsubscribeProgress();
+    }
   });
 
   $effect(() => {
@@ -93,4 +111,6 @@
       {/if}
     {/snippet}
   </Layout>
+  <!-- Global floating import progress indicator -->
+  <ImportProgress />
 {/if}

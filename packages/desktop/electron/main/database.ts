@@ -4,6 +4,7 @@ import fs from 'fs';
 import Database from 'better-sqlite3';
 import { Kysely, SqliteDialect } from 'kysely';
 import type { Database as DatabaseSchema } from './database.types';
+import { getEffectiveDatabasePath, getDefaultDatabasePath } from '../services/bootstrap-config';
 
 let db: Kysely<DatabaseSchema> | null = null;
 
@@ -208,17 +209,18 @@ CREATE TABLE IF NOT EXISTS settings (
 
 /**
  * Get the database file path
- * Uses userData directory for production, current directory for development
+ * Uses custom path from bootstrap config if set, otherwise userData directory
  */
 export function getDatabasePath(): string {
-  const userDataPath = app.getPath('userData');
-  const dbDir = path.join(userDataPath, 'data');
+  return getEffectiveDatabasePath();
+}
 
-  if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
-  }
-
-  return path.join(dbDir, 'au-archive.db');
+/**
+ * Get the default database path (for display purposes)
+ * This is the path used when no custom path is configured
+ */
+export function getDefaultDbPath(): string {
+  return getDefaultDatabasePath();
 }
 
 /**

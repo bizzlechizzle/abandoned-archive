@@ -11,6 +11,7 @@
    */
   import { onMount } from 'svelte';
   import { router } from '../stores/router';
+  import { importStore, isImporting, importProgress, recentImports as storeRecentImports } from '../stores/import-store';
   import type { Location } from '@au-archive/core';
 
   interface ImportRecord {
@@ -126,6 +127,65 @@
         </button>
       </div>
     </div>
+
+    <!-- Active Import Status -->
+    {#if $isImporting && $importProgress}
+      <div class="mb-6">
+        <div class="bg-white rounded-lg shadow p-6 border-l-4 border-accent">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-3 bg-accent rounded-full animate-pulse"></div>
+              <h3 class="text-lg font-semibold text-foreground">Import In Progress</h3>
+            </div>
+            <span class="text-sm text-gray-500">
+              {$importProgress.current} of {$importProgress.total} files
+            </span>
+          </div>
+          <p class="text-sm text-gray-600 mb-3">
+            Importing to <button onclick={() => router.navigate(`/location/${$importProgress.locid}`)} class="text-accent hover:underline font-medium">{$importProgress.locationName}</button>
+          </p>
+          <div class="w-full bg-gray-200 rounded-full h-3">
+            <div
+              class="bg-accent h-3 rounded-full transition-all duration-300 ease-out"
+              style="width: {$importProgress.percent}%"
+            ></div>
+          </div>
+          <p class="text-xs text-gray-500 mt-2">
+            {$importProgress.percent}% complete - You can continue using the app
+          </p>
+        </div>
+      </div>
+    {/if}
+
+    <!-- Recent Background Imports (from store) -->
+    {#if $storeRecentImports.length > 0}
+      <div class="mb-6">
+        <div class="bg-white rounded-lg shadow p-6">
+          <h3 class="text-lg font-semibold text-foreground mb-3">Recent Background Imports</h3>
+          <div class="space-y-2">
+            {#each $storeRecentImports.slice(0, 3) as job}
+              <div class="flex items-center justify-between text-sm py-2 border-b border-gray-100 last:border-0">
+                <div class="flex items-center gap-2">
+                  <span class={job.status === 'completed' ? 'text-green-500' : 'text-red-500'}>
+                    {job.status === 'completed' ? '✓' : '!'}
+                  </span>
+                  <button onclick={() => router.navigate(`/location/${job.locid}`)} class="text-accent hover:underline">
+                    {job.locationName}
+                  </button>
+                </div>
+                <div class="text-gray-500 text-xs">
+                  {#if job.status === 'completed'}
+                    {job.imported} imported, {job.duplicates} duplicates
+                  {:else}
+                    <span class="text-red-500">{job.error || 'Failed'}</span>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+          </div>
+        </div>
+      </div>
+    {/if}
 
     <!-- Row 2: Pinned (full width) -->
     <div class="mb-6">

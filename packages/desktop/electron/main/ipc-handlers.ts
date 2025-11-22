@@ -1,6 +1,11 @@
-import { ipcMain, shell, dialog } from 'electron';
-import { getDatabase, getDatabasePath } from './database';
+import { ipcMain, shell, dialog, app } from 'electron';
+import { getDatabase, getDatabasePath, getDefaultDbPath, closeDatabase } from './database';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
+import {
+  getCustomDatabasePath,
+  setCustomDatabasePath,
+  getEffectiveDatabasePath,
+} from '../services/bootstrap-config';
 import { SQLiteImportRepository } from '../repositories/sqlite-import-repository';
 import { SQLiteMediaRepository } from '../repositories/sqlite-media-repository';
 import { SQLiteNotesRepository } from '../repositories/sqlite-notes-repository';
@@ -385,9 +390,27 @@ export function registerIpcHandlers() {
         properties: ['openFile', 'multiSelections'],
         title: 'Select Media Files',
         filters: [
-          { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp'] },
-          { name: 'Videos', extensions: ['mp4', 'mov', 'avi', 'mkv', 'wmv', 'flv', 'webm'] },
-          { name: 'Documents', extensions: ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'] },
+          { name: 'Images', extensions: [
+            // Standard + RAW formats (ExifTool supported)
+            'jpg', 'jpeg', 'jpe', 'jfif', 'png', 'gif', 'bmp', 'tiff', 'tif', 'webp',
+            'jp2', 'jpx', 'j2k', 'j2c', 'jxl', 'heic', 'heif', 'hif', 'avif',
+            'psd', 'psb', 'ai', 'eps', 'epsf', 'svg', 'svgz',
+            'nef', 'nrw', 'cr2', 'cr3', 'crw', 'ciff', 'arw', 'arq', 'srf', 'sr2', 'dng',
+            'orf', 'ori', 'raf', 'rw2', 'raw', 'rwl', 'pef', 'ptx', 'srw', 'x3f',
+            '3fr', 'fff', 'dcr', 'k25', 'kdc', 'mef', 'mos', 'mrw', 'erf', 'iiq', 'rwz', 'gpr'
+          ]},
+          { name: 'Videos', extensions: [
+            // FFprobe/FFmpeg supported
+            'mp4', 'm4v', 'm4p', 'mov', 'qt', 'avi', 'divx', 'mkv', 'webm',
+            'wmv', 'asf', 'flv', 'f4v', 'mpg', 'mpeg', 'mpe', 'mpv', 'm2v',
+            'ts', 'mts', 'm2ts', 'vob', '3gp', '3g2', 'ogv', 'ogg', 'rm', 'rmvb',
+            'dv', 'dif', 'mxf', 'gxf'
+          ]},
+          { name: 'Documents', extensions: [
+            'pdf', 'doc', 'docx', 'docm', 'xls', 'xlsx', 'xlsm', 'xlsb',
+            'ppt', 'pptx', 'pptm', 'odt', 'ods', 'odp', 'odg', 'rtf',
+            'txt', 'text', 'log', 'csv', 'tsv', 'epub', 'mobi', 'djvu', 'djv'
+          ]},
           { name: 'All Files', extensions: ['*'] },
         ],
       });
@@ -408,21 +431,108 @@ export function registerIpcHandlers() {
     const PathsSchema = z.array(z.string());
     const validatedPaths = PathsSchema.parse(paths);
 
+    // Comprehensive format support based on ExifTool and FFprobe capabilities
     const supportedExts = new Set([
-      'jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp',
-      'mp4', 'mov', 'avi', 'mkv', 'wmv', 'flv', 'webm',
-      'pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'
+      // === IMAGES (ExifTool supported) ===
+      // Standard formats
+      'jpg', 'jpeg', 'jpe', 'jfif', 'png', 'gif', 'bmp', 'tiff', 'tif', 'webp',
+      'jp2', 'jpx', 'j2k', 'j2c',       // JPEG 2000
+      'jxl',                            // JPEG XL
+      'heic', 'heif', 'hif',            // Apple HEIF/HEVC
+      'avif',                           // AV1 Image
+      'psd', 'psb',                     // Photoshop
+      'ai', 'eps', 'epsf',              // Adobe Illustrator/PostScript
+      'svg', 'svgz',                    // Vector
+      'ico', 'cur',                     // Icons
+      'pcx', 'dcx',                     // PC Paintbrush
+      'ppm', 'pgm', 'pbm', 'pnm',       // Netpbm
+      'tga', 'icb', 'vda', 'vst',       // Targa
+      'dds',                            // DirectDraw Surface
+      'exr',                            // OpenEXR
+      'hdr',                            // Radiance HDR
+      'dpx', 'cin',                     // Digital Picture Exchange
+      'fits', 'fit', 'fts',             // Flexible Image Transport
+      // RAW camera formats (ExifTool supported - comprehensive list)
+      'nef', 'nrw',                     // Nikon
+      'cr2', 'cr3', 'crw', 'ciff',      // Canon
+      'arw', 'arq', 'srf', 'sr2',       // Sony
+      'dng',                            // Adobe DNG (universal)
+      'orf', 'ori',                     // Olympus
+      'raf',                            // Fujifilm
+      'rw2', 'raw', 'rwl',              // Panasonic/Leica
+      'pef', 'ptx',                     // Pentax
+      'srw',                            // Samsung
+      'x3f',                            // Sigma
+      '3fr', 'fff',                     // Hasselblad
+      'dcr', 'k25', 'kdc',              // Kodak
+      'mef', 'mos',                     // Mamiya/Leaf
+      'mrw',                            // Minolta
+      'erf',                            // Epson
+      'iiq',                            // Phase One
+      'rwz',                            // Rawzor
+      'gpr',                            // GoPro RAW
+      // === VIDEOS (FFprobe/FFmpeg supported) ===
+      'mp4', 'm4v', 'm4p',              // MPEG-4
+      'mov', 'qt',                      // QuickTime
+      'avi', 'divx',                    // AVI
+      'mkv', 'mka', 'mks', 'mk3d',      // Matroska
+      'webm',                           // WebM
+      'wmv', 'wma', 'asf',              // Windows Media
+      'flv', 'f4v', 'f4p', 'f4a', 'f4b',// Flash Video
+      'mpg', 'mpeg', 'mpe', 'mpv', 'm2v',// MPEG
+      'ts', 'mts', 'm2ts', 'tsv', 'tsa',// MPEG Transport Stream
+      'vob', 'ifo',                     // DVD Video
+      '3gp', '3g2',                     // 3GPP
+      'ogv', 'ogg', 'ogm', 'oga', 'ogx', 'spx', 'opus', // Ogg/Vorbis
+      'rm', 'rmvb', 'rv',               // RealMedia
+      'dv', 'dif',                      // DV Video
+      'mxf',                            // Material eXchange Format
+      'gxf',                            // General eXchange Format
+      'nut',                            // NUT
+      'roq',                            // id RoQ
+      'nsv',                            // Nullsoft
+      'amv',                            // AMV
+      'swf',                            // Flash
+      'yuv', 'y4m',                     // Raw YUV
+      'bik', 'bk2',                     // Bink
+      'smk',                            // Smacker
+      'dpg',                            // Nintendo DS
+      'pva',                            // TechnoTrend PVA
+      // === DOCUMENTS ===
+      'pdf',                            // Portable Document Format
+      'doc', 'docx', 'docm',            // Microsoft Word
+      'xls', 'xlsx', 'xlsm', 'xlsb',    // Microsoft Excel
+      'ppt', 'pptx', 'pptm',            // Microsoft PowerPoint
+      'odt', 'ods', 'odp', 'odg',       // OpenDocument
+      'rtf',                            // Rich Text Format
+      'txt', 'text', 'log',             // Plain text
+      'csv', 'tsv',                     // Data files
+      'epub', 'mobi', 'azw', 'azw3',    // E-books
+      'djvu', 'djv',                    // DjVu
+      'xps', 'oxps',                    // XML Paper Specification
     ]);
 
     const expandedPaths: string[] = [];
 
+    // System files to always skip (even if visible)
+    const systemFiles = new Set(['thumbs.db', 'desktop.ini', 'icon\r', '.ds_store']);
+
     async function processPath(filePath: string): Promise<void> {
       try {
         const stat = await fs.stat(filePath);
+        const fileName = path.basename(filePath).toLowerCase();
 
         if (stat.isFile()) {
+          // Skip system files
+          if (systemFiles.has(fileName)) return;
+
+          // Check if file has known extension OR accept unknown extensions as documents
+          // The file-import-service will categorize: image -> video -> map -> document (default)
           const ext = path.extname(filePath).toLowerCase().slice(1);
-          if (supportedExts.has(ext)) {
+
+          // Accept all files with extensions (let import service categorize them)
+          // Only reject files with no extension at all (likely system/temp files)
+          if (ext || supportedExts.has(ext)) {
             expandedPaths.push(filePath);
           }
         } else if (stat.isDirectory()) {
@@ -1092,6 +1202,140 @@ export function registerIpcHandlers() {
       };
     } catch (error) {
       console.error('Error restoring database:', error);
+      throw error;
+    }
+  });
+
+  // Get current database location info
+  ipcMain.handle('database:getLocation', async () => {
+    try {
+      const currentPath = getDatabasePath();
+      const defaultPath = getDefaultDbPath();
+      const customPath = getCustomDatabasePath();
+      const isCustom = !!customPath;
+
+      return {
+        currentPath,
+        defaultPath,
+        customPath,
+        isCustom,
+      };
+    } catch (error) {
+      console.error('Error getting database location:', error);
+      throw error;
+    }
+  });
+
+  // Change database location
+  ipcMain.handle('database:changeLocation', async () => {
+    try {
+      // Show folder selection dialog
+      const result = await dialog.showOpenDialog({
+        title: 'Select Database Location',
+        properties: ['openDirectory', 'createDirectory'],
+        message: 'Select a folder where the database file will be stored',
+      });
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return { success: false, message: 'Selection canceled' };
+      }
+
+      const newFolder = result.filePaths[0];
+      const newDbPath = path.join(newFolder, 'au-archive.db');
+      const currentDbPath = getDatabasePath();
+
+      // Check if trying to set same location
+      if (newDbPath === currentDbPath) {
+        return { success: false, message: 'Selected location is the same as current' };
+      }
+
+      // Check if database already exists at new location
+      try {
+        await fs.access(newDbPath);
+        // File exists - ask user what to do
+        const existsResult = await dialog.showMessageBox({
+          type: 'question',
+          buttons: ['Use Existing', 'Replace with Current', 'Cancel'],
+          defaultId: 2,
+          title: 'Database Exists',
+          message: 'A database already exists at this location.',
+          detail: 'Do you want to use the existing database or replace it with your current database?',
+        });
+
+        if (existsResult.response === 2) {
+          return { success: false, message: 'Operation canceled' };
+        }
+
+        if (existsResult.response === 1) {
+          // Replace: copy current database to new location
+          closeDatabase();
+          await fs.copyFile(currentDbPath, newDbPath);
+        }
+        // If response === 0, just use existing (don't copy)
+
+      } catch {
+        // File doesn't exist - copy current database to new location
+        closeDatabase();
+        await fs.copyFile(currentDbPath, newDbPath);
+      }
+
+      // Update bootstrap config with new path
+      setCustomDatabasePath(newDbPath);
+
+      return {
+        success: true,
+        message: 'Database location changed. Please restart the application.',
+        newPath: newDbPath,
+        requiresRestart: true,
+      };
+    } catch (error) {
+      console.error('Error changing database location:', error);
+      throw error;
+    }
+  });
+
+  // Reset database location to default
+  ipcMain.handle('database:resetLocation', async () => {
+    try {
+      const customPath = getCustomDatabasePath();
+
+      if (!customPath) {
+        return { success: false, message: 'Already using default location' };
+      }
+
+      const defaultPath = getDefaultDbPath();
+
+      // Ask user if they want to copy the database back
+      const result = await dialog.showMessageBox({
+        type: 'question',
+        buttons: ['Copy Database', 'Just Reset (Keep Data at Custom Location)', 'Cancel'],
+        defaultId: 0,
+        title: 'Reset Database Location',
+        message: 'Reset to default database location?',
+        detail: `Current: ${customPath}\nDefault: ${defaultPath}\n\nDo you want to copy your database to the default location?`,
+      });
+
+      if (result.response === 2) {
+        return { success: false, message: 'Operation canceled' };
+      }
+
+      if (result.response === 0) {
+        // Copy database to default location
+        closeDatabase();
+        await fs.copyFile(customPath, defaultPath);
+      }
+
+      // Clear custom path from config
+      setCustomDatabasePath(undefined);
+
+      return {
+        success: true,
+        message: 'Database location reset to default. Please restart the application.',
+        newPath: defaultPath,
+        requiresRestart: true,
+      };
+    } catch (error) {
+      console.error('Error resetting database location:', error);
       throw error;
     }
   });

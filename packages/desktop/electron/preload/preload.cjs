@@ -4,11 +4,28 @@
 
 // DEBUG: Check what electron exports
 const electronModule = require("electron");
-console.log("[Preload] Electron module keys:", Object.keys(electronModule));
-console.log("[Preload] webUtils available:", !!electronModule.webUtils);
+const keys = Object.keys(electronModule);
+console.log("[Preload] Electron module keys:", keys.join(", "));
+console.log("[Preload] Electron version:", process.versions.electron);
+console.log("[Preload] webUtils in keys:", keys.includes("webUtils"));
 
-const { contextBridge, ipcRenderer, webUtils } = electronModule;
-console.log("[Preload] Destructured webUtils:", webUtils);
+// Try different ways to access webUtils
+let webUtils = electronModule.webUtils;
+if (!webUtils) {
+  // Try direct require (Electron 28+ preload pattern)
+  try {
+    const { webUtils: wu } = require("electron");
+    webUtils = wu;
+    console.log("[Preload] webUtils via destructure:", !!webUtils);
+  } catch (e) {
+    console.log("[Preload] webUtils destructure failed:", e.message);
+  }
+}
+
+const { contextBridge, ipcRenderer } = electronModule;
+console.log("[Preload] contextBridge available:", !!contextBridge);
+console.log("[Preload] ipcRenderer available:", !!ipcRenderer);
+console.log("[Preload] webUtils final:", !!webUtils);
 
 const api = {
   versions: {

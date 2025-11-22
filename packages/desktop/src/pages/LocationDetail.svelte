@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { router } from '../stores/router';
+  import { importStore, isImporting } from '../stores/import-store';
   import Map from '../components/Map.svelte';
   import LocationEditForm from '../components/LocationEditForm.svelte';
   import NotesSection from '../components/NotesSection.svelte';
@@ -70,7 +71,7 @@
 
   // Import drag-drop state
   let isDragging = $state(false);
-  let isImporting = $state(false);
+  // isImporting is now tracked globally via import-store
   let importProgress = $state('');
 
   // GPS verification state
@@ -283,39 +284,86 @@
     }
   }
 
+  async function handleSelectFiles() {
+    if (!location || !window.electronAPI?.media?.selectFiles) {
+      importProgress = 'File selection not available';
+      setTimeout(() => { importProgress = ''; }, 3000);
+      return;
+    }
+
+    try {
+      const filePaths = await window.electronAPI.media.selectFiles();
+      if (!filePaths || filePaths.length === 0) {
+        return; // User cancelled
+      }
+
+      console.log('[LocationDetail] Selected files via dialog:', filePaths.length);
+
+      // Use main process to expand paths (handles directories recursively)
+      if (window.electronAPI.media.expandPaths) {
+        importProgress = 'Scanning files...';
+        const expandedPaths = await window.electronAPI.media.expandPaths(filePaths);
+        if (expandedPaths.length > 0) {
+          await importFilePaths(expandedPaths);
+        } else {
+          importProgress = 'No supported media files found';
+          setTimeout(() => { importProgress = ''; }, 3000);
+        }
+      } else {
+        // Fallback: import directly without expansion
+        await importFilePaths(filePaths);
+      }
+    } catch (error) {
+      console.error('[LocationDetail] Error selecting files:', error);
+      importProgress = 'Error selecting files';
+      setTimeout(() => { importProgress = ''; }, 3000);
+    }
+  }
+
   async function importFilePaths(filePaths: string[]) {
     if (!location || !window.electronAPI?.media) return;
 
-    try {
-      isImporting = true;
-      importProgress = `Importing ${filePaths.length} file(s)...`;
-
-      const filesForImport = filePaths.map((filePath) => {
-        const parts = filePath.split(/[\\/]/);
-        const fileName = parts[parts.length - 1];
-        return { filePath, originalName: fileName };
-      });
-
-      const result = await window.electronAPI.media.import({
-        files: filesForImport,
-        locid: location.locid,
-        auth_imp: currentUser,
-        deleteOriginals: false,
-      });
-
-      importProgress = `Imported ${result.imported} files, ${result.duplicates} duplicates, ${result.errors} errors`;
-
-      // Reload media to show new imports
-      await loadLocation();
-
-      setTimeout(() => { importProgress = ''; }, 5000);
-    } catch (error) {
-      console.error('Error importing files:', error);
-      importProgress = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
-      setTimeout(() => { importProgress = ''; }, 5000);
-    } finally {
-      isImporting = false;
+    // Check if already importing
+    if ($isImporting) {
+      importProgress = 'An import is already in progress';
+      setTimeout(() => { importProgress = ''; }, 3000);
+      return;
     }
+
+    const filesForImport = filePaths.map((filePath) => {
+      const parts = filePath.split(/[\\/]/);
+      const fileName = parts[parts.length - 1];
+      return { filePath, originalName: fileName };
+    });
+
+    // Start tracking in global store (non-blocking)
+    importStore.startJob(location.locid, location.locnam, filePaths.length);
+    importProgress = `Import started (${filePaths.length} files)`;
+
+    // Fire-and-forget: Start import but don't await it
+    // User can continue using the app while import runs
+    window.electronAPI.media.import({
+      files: filesForImport,
+      locid: location.locid,
+      auth_imp: currentUser,
+      deleteOriginals: false,
+    }).then((result) => {
+      // Import completed successfully
+      importStore.completeJob({
+        imported: result.imported,
+        duplicates: result.duplicates,
+        errors: result.errors,
+      });
+      // Reload location data to show new files
+      loadLocation();
+    }).catch((error) => {
+      // Import failed
+      console.error('Error importing files:', error);
+      importStore.completeJob(undefined, error instanceof Error ? error.message : 'Unknown error');
+    });
+
+    // Clear the local progress message - global progress indicator will show status
+    setTimeout(() => { importProgress = ''; }, 3000);
   }
 
   onMount(async () => {
@@ -659,7 +707,7 @@
         <div
           class="mb-6 p-6 border-2 border-dashed rounded-lg text-center transition-colors {isDragging ? 'border-accent bg-accent/10' : 'border-gray-300 hover:border-gray-400'}"
         >
-          {#if isImporting}
+          {#if $isImporting}
             <div class="text-gray-500">
               <svg class="w-10 h-10 mx-auto mb-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -674,6 +722,12 @@
               {isDragging ? 'Drop files or folders here' : 'Drag & drop files or folders to import'}
             </p>
             <p class="text-xs text-gray-400 mt-1">Supports images, videos, and documents</p>
+            <button
+              onclick={handleSelectFiles}
+              class="mt-3 px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition text-sm"
+            >
+              Select Files
+            </button>
           {/if}
         </div>
 
