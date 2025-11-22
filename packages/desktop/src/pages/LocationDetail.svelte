@@ -53,6 +53,8 @@
   let images = $state<MediaImage[]>([]);
   let videos = $state<MediaVideo[]>([]);
   let documents = $state<MediaDocument[]>([]);
+  // FIX 4.4: Track failed files for retry
+  let failedFiles = $state<Array<{ filePath: string; originalName: string; error: string }>>([]);
   let bookmarks = $state<Bookmark[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -364,15 +366,30 @@
       auth_imp: currentUser,
       deleteOriginals: false,
     }).then((result) => {
+      // FIX 4.4: Track failed files for retry
+      if (result.results) {
+        const newFailedFiles = result.results
+          .map((r: any, idx: number) => ({
+            filePath: filesForImport[idx]?.filePath || '',
+            originalName: filesForImport[idx]?.originalName || '',
+            error: r.error || 'Unknown error',
+            success: r.success,
+          }))
+          .filter((f: any) => !f.success && f.filePath);
+        if (newFailedFiles.length > 0) {
+          failedFiles = newFailedFiles;
+        }
+      }
+
       // FIX 1.3 & 1.5: Check for total failure and show error details
       if (result.imported === 0 && result.errors > 0) {
         // All files failed - this is an error condition, not success
-        const failedFiles = result.results
+        const failedMsgs = result.results
           ?.filter((r: any) => !r.success && r.error)
           .map((r: any) => r.error)
           .slice(0, 3);  // Show first 3 errors
-        const errorMsg = failedFiles?.length
-          ? `Import failed: ${failedFiles.join('; ')}${result.errors > 3 ? ` (+${result.errors - 3} more)` : ''}`
+        const errorMsg = failedMsgs?.length
+          ? `Import failed: ${failedMsgs.join('; ')}${result.errors > 3 ? ` (+${result.errors - 3} more)` : ''}`
           : `Import failed: ${result.errors} files could not be imported`;
 
         importStore.completeJob(undefined, errorMsg);
@@ -394,6 +411,8 @@
         } else if (result.imported > 0) {
           importProgress = `Imported ${result.imported} files successfully`;
           toasts.success(`Successfully imported ${result.imported} files`);
+          // FIX 4.4: Clear failed files on success
+          failedFiles = [];
         } else if (result.duplicates > 0) {
           importProgress = `${result.duplicates} files were already in archive`;
           toasts.info(`${result.duplicates} files were already in archive`);
@@ -413,6 +432,14 @@
 
     // Clear the local progress message after longer delay so user can read it
     setTimeout(() => { importProgress = ''; }, 8000);
+  }
+
+  // FIX 4.4: Retry failed imports
+  async function retryFailedImports() {
+    if (failedFiles.length === 0) return;
+    const pathsToRetry = failedFiles.map(f => f.filePath);
+    failedFiles = []; // Clear before retry
+    await importFilePaths(pathsToRetry);
   }
 
   onMount(async () => {
@@ -771,6 +798,15 @@
           <h2 class="text-xl font-semibold text-foreground">Media</h2>
           {#if importProgress}
             <span class="text-sm text-accent">{importProgress}</span>
+          {/if}
+          <!-- FIX 4.4: Retry failed imports button -->
+          {#if failedFiles.length > 0}
+            <button
+              onclick={retryFailedImports}
+              class="ml-2 text-sm text-red-600 hover:text-red-800 hover:underline"
+            >
+              Retry {failedFiles.length} failed
+            </button>
           {/if}
         </div>
 
