@@ -2258,4 +2258,370 @@ mapPinStyle: 'confidence' | 'accent' | 'type'
 
 ---
 
+## COMPREHENSIVE AUDIT REPORT
+
+Date: 2025-11-22
+
+---
+
+## 1. SPEC-TO-IMPLEMENTATION MAP
+
+### Import Flow (auarchive_import.md)
+
+| Spec Step | File | Function/Line | Status | Evidence |
+|-----------|------|---------------|--------|----------|
+| #import_location | `file-import-service.ts` | `importSingleFile:274-279` | **OK** | Pre-fetches location from locid |
+| #import_id | `crypto-service.ts` | `calculateSHA256` | **OK** | SHA256 used as import ID/filename |
+| #import_folder | `file-import-service.ts` | `organizeFileWithLocation:463-531` | **OK** | Creates STATE-TYPE/SLOCNAM-LOC12/org-type-LOC12 |
+| #import_files | `file-import-service.ts` | `importFiles:163-259` | **PARTIAL** | Copy works, hardlink not implemented |
+| #import_exiftool | `exiftool-service.ts` | `extractMetadata` | **PARTIAL** | Images only, spec says all files |
+| #import_ffmpeg | `ffmpeg-service.ts` | `extractMetadata` | **OK** | Videos processed |
+| #import_maps | `file-import-service.ts` | `getFileType:409-415` | **PARTIAL** | Classified but not parsed |
+| #import_gps | `file-import-service.ts` | `:321-349` | **PARTIAL** | Images only, videos missing |
+| #import_address | N/A | N/A | **MISSING** | Not called during import |
+| #import_verify | `file-import-service.ts` | `:517-527` | **OK** | SHA256 verified after copy |
+| import_cleanup | `file-import-service.ts` | `:382-391` | **OK** | deleteOriginal works |
+
+### Database Schema (database_table_*.md)
+
+| Spec Table | Implementation | Status | Evidence |
+|------------|----------------|--------|----------|
+| locs | `database.types.ts` | **OK** | All columns present |
+| imgs | `database.types.ts` | **OK** | Columns match spec |
+| vids | `database.types.ts` | **PARTIAL** | Missing meta_gps_lat/lng per spec |
+| docs | `database.types.ts` | **OK** | Columns present |
+| maps | `database.types.ts` | **OK** | Columns present |
+
+### GPS System (gps_status.md, import_gps.md)
+
+| Spec Requirement | File | Line | Status | Evidence |
+|------------------|------|------|--------|----------|
+| gps_status values: true/false/null/normalized/verified | N/A | N/A | **MISSING** | No gps_status column in locations |
+| GPS from imgs | `file-import-service.ts` | :321-349 | **OK** | ExifTool extracts GPS |
+| GPS from vids | N/A | N/A | **MISSING** | No ExifTool call for videos |
+| Normalize with geopy.point | N/A | N/A | **MISSING** | Not implemented |
+
+### Address System (address.md)
+
+| Spec Requirement | File | Line | Status | Evidence |
+|------------------|------|------|--------|----------|
+| libpostal normalization | `address-normalization-service.ts` | All | **WRONG** | Uses regex, not libpostal |
+| Components: street/city/state/zip/county | Schema | N/A | **OK** | Address JSON has all fields |
+| Reverse geocoding | `geocoding-service.ts` | All | **PARTIAL** | Exists but not during import |
+
+### Settings (page_settings.md)
+
+| Spec Setting | Implementation | Status | Evidence |
+|--------------|----------------|--------|----------|
+| #deleteonimport | Settings.svelte:146-156 | **OK** | Checkbox present |
+| #loginrequired | Settings.svelte:190-206 | **OK** | Checkbox present |
+| #importmap | Settings.svelte:158-171 | **OK** | Checkbox present |
+| #mapimport | Settings.svelte:173-186 | **OK** | Checkbox present |
+| #backupdatabase | DatabaseSettings.svelte | **OK** | Button present |
+
+### Dashboard (page_dashboard.md)
+
+| Spec Element | Implementation | Status | Evidence |
+|--------------|----------------|--------|----------|
+| projects (top 5) | Dashboard.svelte:158-183 | **OK** | "Pinned Locations" |
+| imports (top 5) | Dashboard.svelte:187-239 | **OK** | "Recent Imports" |
+| recents (top 5) | Dashboard.svelte:241-273 | **OK** | "Recent Locations" |
+| states (top 5) | Dashboard.svelte:311-342 | **OK** | "Top States" |
+| types (top 5) | Dashboard.svelte:278-308 | **OK** | "Top Types" |
+| favorites button | Dashboard.svelte:365-370 | **OK** | "Starred" filter |
+| random button | Dashboard.svelte:373-383 | **OK** | "Surprise Me" |
+| un-documented button | Dashboard.svelte:349-355 | **OK** | "Need Visits" |
+| historical button | Dashboard.svelte:357-363 | **OK** | "Landmarks" |
+
+### Brand Guide (brand_guide.md)
+
+| Spec Element | Implementation | Status | Evidence |
+|--------------|----------------|--------|----------|
+| Accent: #b9975c | constants.ts + tailwind | **OK** | Used throughout |
+| Background: #fffbf7 | tailwind.config.js | **OK** | cream-50 color |
+| Foreground: #454545 | tailwind.config.js | **OK** | foreground color |
+| Logo | public/assets | **OK** | Icons present |
+
+---
+
+## 2. AUDIT FINDINGS (Prioritized)
+
+### CRITICAL
+
+| # | Category | Location | Issue | Risk | Fix |
+|---|----------|----------|-------|------|-----|
+| C1 | Spec | `file-import-service.ts:222` | Type `'unknown'` not in union | TypeScript error, filter breaks | Change to `'document'` |
+| C2 | Logic | `file-import-service.ts:196-199` | Progress before work | UI shows wrong state | Move after try block |
+| C3 | Logic | `ipc-handlers.ts:617-620` | IPC sender not validated | Crash if window closes | Add isDestroyed check |
+| C4 | Spec | `file-import-service.ts:350-354` | No GPS from videos | Per spec, videos need GPS | Call ExifTool for videos |
+
+### HIGH
+
+| # | Category | Location | Issue | Risk | Fix |
+|---|----------|----------|-------|------|-----|
+| H1 | Spec | N/A | #import_address not implemented | No address from GPS | Add geocoding during import |
+| H2 | Spec | Database schema | No gps_status column | Can't track GPS workflow | Add DB migration |
+| H3 | Logic | `file-import-service.ts:184-258` | All files in one transaction | One error rolls back all | Per-file transactions |
+| H4 | Best-Practice | Nominatim calls | No rate limiting | API ban risk | Add 1s delay between calls |
+| H5 | Spec | `backup-scheduler.ts` | No startup backup | Data unprotected | Add backup on app start |
+
+### MEDIUM
+
+| # | Category | Location | Issue | Risk | Fix |
+|---|----------|----------|-------|------|-----|
+| M1 | UX | `LocationDetail.svelte:364-377` | Silent success on failure | User confusion | Add error feedback |
+| M2 | Best-Practice | `file-import-service.ts` | Heavy I/O blocks main | UI freezes | Add setImmediate yields |
+| M3 | Spec | `config-service.ts:27-31` | maxBackups: 10 | Spec says 5 | Change to 5 |
+| M4 | Spec | `address-normalization-service.ts` | Regex not libpostal | Poor normalization | Install node-postal |
+| M5 | Maintainability | ExifTool singleton | Queue exhaustion risk | Hanging imports | Document limitation |
+
+### LOW
+
+| # | Category | Location | Issue | Risk | Fix |
+|---|----------|----------|-------|------|-----|
+| L1 | GUI Scope | Map.svelte popup | No thumbnail | Basic UX | Add lazy thumbnail |
+| L2 | GUI Scope | Map.svelte popup | No media count | Basic UX | Add count to popup |
+| L3 | Spec | Map files | Stored not parsed | No geo data extracted | Add GPX/KML parser |
+| L4 | Maintainability | Multiple services | No DI container | Test difficulty | Document patterns |
+
+---
+
+## 3. PATCH PLAN
+
+### Phase 1: Critical Fixes (No Breaking Changes)
+
+| Step | Goal | Files | Risk | Test |
+|------|------|-------|------|------|
+| 1.1 | Fix type violation | `file-import-service.ts` | None | Import any file, check no TS error |
+| 1.2 | Fix progress timing | `file-import-service.ts` | None | Import 5 files, verify progress % matches |
+| 1.3 | Fix IPC crash | `ipc-handlers.ts` | None | Start import, close window, no crash |
+| 1.4 | Add video GPS | `file-import-service.ts` | Low | Import video with GPS, verify extracted |
+
+### Phase 2: Spec Compliance
+
+| Step | Goal | Files | Risk | Test |
+|------|------|-------|------|------|
+| 2.1 | Add gps_status column | Migration + types | Medium | Check column exists |
+| 2.2 | Add #import_address | `file-import-service.ts` | Medium | Import with GPS, verify address populated |
+| 2.3 | Startup backup | `index.ts` | Low | Start app, check backup created |
+| 2.4 | Change maxBackups to 5 | `config-service.ts` | None | Create 6 backups, verify only 5 remain |
+
+### Phase 3: Performance & UX
+
+| Step | Goal | Files | Risk | Test |
+|------|------|-------|------|------|
+| 3.1 | Per-file transactions | `file-import-service.ts` | Medium | Import 10 files, fail 5th, verify 1-4 saved |
+| 3.2 | Add event loop yields | `file-import-service.ts` | Low | Import 50 files, UI stays responsive |
+| 3.3 | Error feedback UI | `LocationDetail.svelte` | None | Import bad files, see error message |
+
+### Phase 4: Premium Features (Future)
+
+| Step | Goal | Files | Risk | Test |
+|------|------|-------|------|------|
+| 4.1 | libpostal integration | `address-normalization-service.ts` | High | Parse complex address correctly |
+| 4.2 | Popup thumbnails | `Map.svelte` | Low | Click pin, see image |
+| 4.3 | Heat maps | `Map.svelte` | Low | Toggle heat layer on |
+
+---
+
+## 4. IMPLEMENTATION GUIDE
+
+### Fix C1: Type Violation
+
+**File**: `packages/desktop/electron/services/file-import-service.ts`
+**Line**: 222
+
+```typescript
+// BEFORE (line 222)
+type: 'unknown',
+
+// AFTER
+type: 'document',
+```
+
+### Fix C2: Progress Timing
+
+**File**: `packages/desktop/electron/services/file-import-service.ts`
+**Lines**: 196-227
+
+```typescript
+// BEFORE
+for (let i = 0; i < files.length; i++) {
+  const file = files[i];
+  if (onProgress) {
+    onProgress(i + 1, files.length);  // <-- BEFORE work
+  }
+  try {
+    const result = await this.importSingleFile(...);
+    // ...
+  } catch (error) {
+    // ...
+  }
+}
+
+// AFTER
+for (let i = 0; i < files.length; i++) {
+  const file = files[i];
+  try {
+    const result = await this.importSingleFile(...);
+    results.push(result);
+    if (onProgress) {
+      onProgress(i + 1, files.length);  // <-- AFTER success
+    }
+    // ...
+  } catch (error) {
+    // ...
+    if (onProgress) {
+      onProgress(i + 1, files.length);  // <-- AFTER error too
+    }
+  }
+}
+```
+
+### Fix C3: IPC Sender Validation
+
+**File**: `packages/desktop/electron/main/ipc-handlers.ts`
+**Lines**: 617-620
+
+```typescript
+// BEFORE
+(current, total) => {
+  _event.sender.send('media:import:progress', { current, total });
+}
+
+// AFTER
+(current, total) => {
+  try {
+    if (_event.sender && !_event.sender.isDestroyed()) {
+      _event.sender.send('media:import:progress', { current, total });
+    }
+  } catch (e) {
+    console.warn('[media:import] Progress send failed:', e);
+  }
+}
+```
+
+### Fix C4: Video GPS
+
+**File**: `packages/desktop/electron/services/file-import-service.ts`
+**Lines**: 320-354
+
+```typescript
+// BEFORE
+if (type === 'image') {
+  metadata = await this.exifToolService.extractMetadata(file.filePath);
+  // GPS check...
+} else if (type === 'video') {
+  metadata = await this.ffmpegService.extractMetadata(file.filePath);
+}
+
+// AFTER
+if (type === 'image' || type === 'video') {
+  // ExifTool works on videos too (dashcams, phones have GPS)
+  const exifData = await this.exifToolService.extractMetadata(file.filePath);
+
+  if (type === 'image') {
+    metadata = exifData;
+  } else {
+    // Also get FFmpeg data for video-specific info
+    const ffmpegData = await this.ffmpegService.extractMetadata(file.filePath);
+    metadata = { ...ffmpegData, exif: exifData };
+  }
+
+  // GPS check for both types
+  if (metadata?.gps || exifData?.gps) {
+    const gps = metadata?.gps || exifData?.gps;
+    // ... GPS mismatch check
+  }
+}
+```
+
+---
+
+## 5. TEST COVERAGE ANALYSIS
+
+### Existing Tests
+
+| Test File | Coverage | Status |
+|-----------|----------|--------|
+| `crypto-service.test.ts` | SHA256 calculation | **OK** |
+| `gps-validator.test.ts` | GPS validation, Haversine | **OK** |
+| `path-validator.test.ts` | Path security | **OK** |
+| `ipc-validation.test.ts` | Input validation | **OK** |
+| `address-normalizer.test.ts` | Address parsing | **OK** |
+| `media-repository.integration.test.ts` | CRUD operations | **OK** |
+| `location-repository.integration.test.ts` | Location CRUD | **OK** |
+| `location.test.ts` (core) | Domain logic | **OK** |
+
+### Missing Tests (Per Spec)
+
+| Test Needed | Why | Priority |
+|-------------|-----|----------|
+| `file-import-service.test.ts` | Core import flow untested | **CRITICAL** |
+| `backup-scheduler.test.ts` | Backup logic untested | **HIGH** |
+| GPS from videos | New feature | **HIGH** |
+| #import_address flow | New feature | **HIGH** |
+| Error rollback scenarios | Transaction safety | **MEDIUM** |
+| UI toast notifications | UX feature | **LOW** |
+
+### Proposed Test Plan
+
+```typescript
+// file-import-service.test.ts
+describe('FileImportService', () => {
+  it('should import image and extract GPS', async () => {});
+  it('should import video and extract GPS', async () => {});
+  it('should detect duplicate by SHA256', async () => {});
+  it('should rollback on transaction error', async () => {});
+  it('should call progress callback AFTER work', async () => {});
+  it('should default unknown extensions to document', async () => {});
+  it('should verify file integrity after copy', async () => {});
+});
+
+// backup-scheduler.test.ts
+describe('BackupScheduler', () => {
+  it('should create backup on startup', async () => {});
+  it('should enforce retention limit', async () => {});
+  it('should verify backup integrity', async () => {});
+});
+```
+
+---
+
+## 6. FINAL SELF-AUDIT
+
+### Spec Compliance Checklist
+
+| Spec | Compliant | Notes |
+|------|-----------|-------|
+| auarchive_import.md | **NO** | Missing #import_address |
+| import_gps.md | **NO** | Missing video GPS, gps_status |
+| address.md | **NO** | Using regex not libpostal |
+| page_dashboard.md | **YES** | All elements present |
+| page_settings.md | **YES** | All settings present |
+| brand_guide.md | **YES** | Colors and fonts match |
+| gps_status.md | **NO** | Status column not implemented |
+
+### No New Features Beyond Spec
+
+| Area | Status | Evidence |
+|------|--------|----------|
+| Dashboard | **OK** | Only spec elements |
+| Settings | **OK** | Only spec settings |
+| Import | **OK** | Follows spec flow |
+| Map | **OK** | Standard Leaflet features |
+| GPS | **OK** | Spec-defined workflow |
+
+### Remaining Risks
+
+| Risk | Severity | Mitigation |
+|------|----------|------------|
+| ExifTool process hanging | Medium | Add timeout, document |
+| Nominatim rate limiting | Medium | Add delay, cache results |
+| Large file import | Low | Add chunked progress |
+| SQLite lock during import | Medium | Per-file transactions |
+| Backup corruption | Low | Add verification |
+
+---
+
 End of Report
