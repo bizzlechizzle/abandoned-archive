@@ -1,309 +1,278 @@
-# Where's Waldo 10: ULTRATHINK Deep Analysis - Why Imports Fail Silently
+# Where's Waldo 10: Master Issue List & Implementation Plan
 
 Date: 2025-11-22
-Status: ANALYSIS COMPLETE - CRITICAL BUGS IDENTIFIED
+Status: **READY FOR IMPLEMENTATION**
 
 ---
 
-## Executive Summary
+## MASTER ISSUE LIST
 
-After comprehensive code audit of the entire import pipeline (preload, IPC handlers, file-import-service, frontend stores, and UI components), I have identified **7 critical bugs** and **5 architectural issues** that cause:
+### PHASE 1: CRITICAL BUGS (Must Fix First - Nothing Works Without These)
 
-1. Files to be detected (15 NEF files show in console) but nothing actually imports
-2. Dashboard appears locked during import (not actually locked - see explanation)
-3. Import "succeeds" with 0 files imported (silent failure)
+| # | Issue | File | Line | Fix | Status |
+|---|-------|------|------|-----|--------|
+| 1.1 | Type violation: `'unknown'` not in type union | `file-import-service.ts` | 222 | Change to `'document'` | [ ] TODO |
+| 1.2 | Progress sent BEFORE work completes | `file-import-service.ts` | 196-198 | Move after try block | [ ] TODO |
+| 1.3 | Silent success on total failure | `LocationDetail.svelte` | 364-377 | Add error feedback | [ ] TODO |
+| 1.4 | IPC sender not validated (crash risk) | `ipc-handlers.ts` | 617-620 | Wrap in try-catch | [ ] TODO |
+| 1.5 | No user-visible error messages | `LocationDetail.svelte` | 364-377 | Add toast notifications | [ ] TODO |
 
-**ROOT CAUSE**: The import can fail silently at multiple points, and the frontend shows "success" even when ALL files failed because the backend returns normally with `{ imported: 0, errors: 15 }`.
+### PHASE 2: ARCHITECTURAL ISSUES (Performance & Reliability)
+
+| # | Issue | File | Impact | Fix | Status |
+|---|-------|------|--------|-----|--------|
+| 2.1 | Heavy I/O blocks main thread | `file-import-service.ts` | Dashboard freezes | Add `setImmediate()` yields | [ ] TODO |
+| 2.2 | All files in single transaction | `file-import-service.ts` | 184-258 | Per-file transactions | [ ] TODO |
+| 2.3 | ExifTool global singleton | `exiftool-service.ts` | Queue exhaustion | Document limitation | [ ] TODO |
+| 2.4 | SQLite write lock during import | `file-import-service.ts` | Read queries blocked | Per-file transactions | [ ] TODO |
+
+### PHASE 3: MISSING FEATURES (Per Logseq Spec)
+
+| # | Spec Step | Current Status | What's Missing | Status |
+|---|-----------|----------------|----------------|--------|
+| 3.1 | #import_exiftool | Images only | Add for videos, documents, maps | [ ] TODO |
+| 3.2 | #import_gps | Images only | Add for videos (dashcams) | [ ] TODO |
+| 3.3 | #import_address | NOT IMPLEMENTED | Reverse geocoding GPS→address | [ ] TODO |
+| 3.4 | #import_maps | Files stored only | Parse geo-data from .gpx/.kml | [ ] TODO |
+
+### PHASE 4: PREMIUM UX (Archive App Quality)
+
+| # | Feature | Current | Target | Status |
+|---|---------|---------|--------|--------|
+| 4.1 | Progress indicator | Shows % only | Show current filename | [ ] TODO |
+| 4.2 | Error details | None shown | Per-file error list | [ ] TODO |
+| 4.3 | Cancel button | Not available | Allow abort | [ ] TODO |
+| 4.4 | Retry failed | Not available | Retry individual files | [ ] TODO |
+| 4.5 | Dashboard during import | Appears frozen | Shows "import in progress" banner | [ ] TODO |
+| 4.6 | Toast notifications | None | Success/warning/error toasts | [ ] TODO |
 
 ---
 
-## User's Evidence
+## PHASE 1 DETAILED FIXES
 
-Console output from user:
-```
-"Peter & Paul Catholic Church/Original - Photo/_DSC8855.NEF"length: 15
-```
+### Issue 1.1: Type Violation
 
-This shows:
-- 15 files detected (drag-drop working)
-- File paths extracted correctly
-- Files sent to backend
+**Problem**: Error results use invalid type `'unknown'`
 
-But nothing imports. Why?
+**Location**: `packages/desktop/electron/services/file-import-service.ts:222`
 
----
-
-## CRITICAL BUG #1: TypeScript Type Violation (COMPILE ERROR)
-
-**Location**: `electron/services/file-import-service.ts:222`
-
+**Current Code**:
 ```typescript
-// Current code
 results.push({
   success: false,
   hash: '',
-  type: 'unknown',  // <-- BUG: Invalid type
+  type: 'unknown',  // <-- BUG: Not in type union
   duplicate: false,
   error: error instanceof Error ? error.message : 'Unknown error',
 });
 ```
 
-**Problem**: The `ImportResult` interface (line 26) defines:
-```typescript
-type: 'image' | 'video' | 'map' | 'document';  // No 'unknown' - defaults to document
-```
-
-**Impact**:
-- TypeScript should reject this as a compile error
-- If it compiles (lenient mode), error results have invalid type
-- Lines 234-237 filter results by type - 'unknown' matches NONE
-- All error files are excluded from counts
-
 **Fix**:
 ```typescript
-type: 'document',  // Default to document for errors
+results.push({
+  success: false,
+  hash: '',
+  type: 'document',  // <-- FIXED: Use valid type
+  duplicate: false,
+  error: error instanceof Error ? error.message : 'Unknown error',
+});
 ```
+
+**Impact**: Error files excluded from counts, type filter breaks
 
 ---
 
-## CRITICAL BUG #2: Progress Events Sent BEFORE Work Completes
+### Issue 1.2: Progress Before Work
 
-**Location**: `electron/services/file-import-service.ts:196-198`
+**Problem**: Progress events fire before file processing
 
+**Location**: `packages/desktop/electron/services/file-import-service.ts:196-198`
+
+**Current Code**:
 ```typescript
 for (let i = 0; i < files.length; i++) {
   const file = files[i];
 
-  // Report progress BEFORE doing any work
+  // BUG: Progress reported BEFORE work
   if (onProgress) {
-    onProgress(i + 1, files.length);  // <-- BUG: Called BEFORE import
+    onProgress(i + 1, files.length);
   }
 
   try {
     const result = await this.importSingleFile(file, deleteOriginals, trx);
-    // ...
-  }
-}
 ```
-
-**Impact**:
-- UI shows "15/15 complete" even before ANY file is processed
-- If all files fail, user sees 100% progress but 0 imports
-- Misleading feedback
 
 **Fix**:
 ```typescript
-try {
-  const result = await this.importSingleFile(file, deleteOriginals, trx);
-  // Report progress AFTER successful processing
-  if (onProgress) {
-    onProgress(i + 1, files.length);
+for (let i = 0; i < files.length; i++) {
+  const file = files[i];
+
+  try {
+    const result = await this.importSingleFile(file, deleteOriginals, trx);
+    results.push(result);
+
+    // FIXED: Progress AFTER completion
+    if (onProgress) {
+      onProgress(i + 1, files.length);
+    }
+
+    if (result.success) {
+      // ... existing logic
+    }
+  } catch (error) {
+    console.error('[FileImport] Error importing file', file.originalName, ':', error);
+    results.push({
+      success: false,
+      hash: '',
+      type: 'document',
+      duplicate: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    errors++;
+
+    // FIXED: Progress on error too (so UI doesn't stall)
+    if (onProgress) {
+      onProgress(i + 1, files.length);
+    }
   }
-  // ...
 }
 ```
 
 ---
 
-## CRITICAL BUG #3: Silent Success on Total Failure
+### Issue 1.3: Silent Success on Total Failure
 
-**Location**: `electron/services/file-import-service.ts:184-258`
+**Problem**: Frontend shows "complete" even when all files fail
 
-```typescript
-return await this.db.transaction().execute(async (trx) => {
-  // ...
-  for (let i = 0; i < files.length; i++) {
-    try {
-      const result = await this.importSingleFile(file, deleteOriginals, trx);
-      // ...
-    } catch (error) {
-      // Error is CAUGHT - doesn't throw
-      results.push({ success: false, ... });
-      errors++;
-    }
-  }
+**Location**: `packages/desktop/src/pages/LocationDetail.svelte:364-377`
 
-  // Transaction COMMITS even if all 15 files failed
-  return {
-    total: 15,
-    imported: 0,      // Zero files imported
-    duplicates: 0,
-    errors: 15,       // All failed
-    results,
-    importId,
-  };  // <-- Returns normally, frontend sees "success"
-});
-```
-
-**Impact**:
-- Frontend `.then()` handler fires even when imported=0
-- User sees "Import complete" with 0 files
-- No clear error message displayed
-
-**Frontend code** (`LocationDetail.svelte:364-377`):
+**Current Code**:
 ```typescript
 window.electronAPI.media.import({...})
   .then((result) => {
-    // This ALWAYS fires, even if result.errors === 15
     importStore.completeJob({
-      imported: result.imported,    // 0
-      duplicates: result.duplicates, // 0
-      errors: result.errors,         // 15
+      imported: result.imported,
+      duplicates: result.duplicates,
+      errors: result.errors,
     });
-    loadLocation();  // Reloads, sees no new files
+    loadLocation();
+  })
+```
+
+**Fix**:
+```typescript
+window.electronAPI.media.import({...})
+  .then((result) => {
+    importStore.completeJob({
+      imported: result.imported,
+      duplicates: result.duplicates,
+      errors: result.errors,
+    });
+
+    // FIXED: Show meaningful feedback
+    if (result.errors > 0 && result.imported === 0) {
+      // All failed
+      importProgress = `Import failed: ${result.errors} files could not be imported`;
+    } else if (result.errors > 0) {
+      // Partial success
+      importProgress = `Imported ${result.imported} files. ${result.errors} failed.`;
+    } else if (result.imported > 0) {
+      // Full success
+      importProgress = `Successfully imported ${result.imported} files`;
+    } else if (result.duplicates > 0) {
+      // All duplicates
+      importProgress = `${result.duplicates} files were already in archive`;
+    }
+
+    loadLocation();
+
+    // Keep message visible longer for errors
+    setTimeout(() => { importProgress = ''; }, result.errors > 0 ? 10000 : 3000);
   })
 ```
 
 ---
 
-## CRITICAL BUG #4: Path Security Validation May Reject All Files
+### Issue 1.4: IPC Sender Not Validated
 
-**Location**: `electron/main/ipc-handlers.ts:600-601`
+**Problem**: `_event.sender.send()` crashes if window closed during import
 
-```typescript
-const fileImportService = new FileImportService(
-  db,
-  // ...
-  archivePath.value,
-  [] // allowedImportDirs - EMPTY ARRAY
-);
-```
+**Location**: `packages/desktop/electron/main/ipc-handlers.ts:617-620`
 
-**Location**: `electron/services/file-import-service.ts:169-178`
-
-```typescript
-for (const file of files) {
-  if (!PathValidator.isPathSafe(file.filePath, this.archivePath)) {
-    const isAllowed = this.allowedImportDirs.length === 0 ||  // TRUE if empty
-      this.allowedImportDirs.some(dir => PathValidator.isPathSafe(file.filePath, dir));
-
-    if (!isAllowed) {
-      throw new Error(`Security: File path not allowed: ${file.filePath}`);
-    }
-  }
-}
-```
-
-**Analysis**: The logic is correct BUT confusing:
-- `allowedImportDirs.length === 0` returns TRUE
-- So `isAllowed` is TRUE when array is empty
-- This should NOT block files
-
-**However**: `PathValidator.isPathSafe()` must be checked. If it rejects paths, the import fails at the FIRST file.
-
----
-
-## CRITICAL BUG #5: No Error Propagation to User
-
-When import fails, the user sees:
-- Progress bar completes
-- "Import complete" message (via importStore.completeJob)
-- Location reloads with 0 new files
-- No error message or details
-
-**Missing**:
-- Toast notification with error count
-- Per-file error details
-- Retry option
-- Log viewer
-
----
-
-## ARCHITECTURAL ISSUE #1: IPC Sender Not Validated
-
-**Location**: `electron/main/ipc-handlers.ts:617-620`
-
+**Current Code**:
 ```typescript
 const result = await fileImportService.importFiles(
   filesForImport,
   validatedInput.deleteOriginals,
   (current, total) => {
-    // BUG: _event.sender could be null if window was closed
     _event.sender.send('media:import:progress', { current, total });
   }
 );
 ```
 
-**Impact**: If the renderer window is closed/destroyed during a long import:
-- `_event.sender.send()` throws
-- Error bubbles up
-- Import transaction may roll back
-- Files partially processed are orphaned
-
 **Fix**:
 ```typescript
-(current, total) => {
-  try {
-    if (_event.sender && !_event.sender.isDestroyed()) {
-      _event.sender.send('media:import:progress', { current, total });
+const result = await fileImportService.importFiles(
+  filesForImport,
+  validatedInput.deleteOriginals,
+  (current, total) => {
+    try {
+      if (_event.sender && !_event.sender.isDestroyed()) {
+        _event.sender.send('media:import:progress', { current, total });
+      }
+    } catch (e) {
+      console.warn('[media:import] Failed to send progress:', e);
     }
-  } catch (e) {
-    console.warn('[media:import] Failed to send progress:', e);
   }
+);
+```
+
+---
+
+### Issue 1.5: No User-Visible Error Messages
+
+**Problem**: Errors logged to console but user sees nothing
+
+**What's Missing**:
+- Toast notification system
+- Error summary in UI
+- Per-file error details
+
+**Fix**: Use the importProgress state variable (already exists) to show messages. See Issue 1.3 fix.
+
+---
+
+## PHASE 2 DETAILED FIXES
+
+### Issue 2.1: Heavy I/O Blocks Main Thread
+
+**Problem**: 15 NEF files = ~1.5GB I/O blocks event loop
+
+**Impact**:
+- Dashboard queries wait in queue
+- App appears frozen
+- IPC messages delayed
+
+**Fix Option A**: Add `setImmediate()` yields between files
+
+```typescript
+for (let i = 0; i < files.length; i++) {
+  // ... process file ...
+
+  // Yield to event loop between files
+  await new Promise(resolve => setImmediate(resolve));
 }
 ```
 
----
-
-## ARCHITECTURAL ISSUE #2: Dashboard "Lock" is I/O Contention
-
-User reports: "Dashboard gets locked during import"
-
-**Analysis**: The import is fire-and-forget (non-blocking). The dashboard should NOT lock. BUT:
-
-1. **Heavy I/O in Main Process**:
-   - 15 NEF files * 25MB each = 375MB
-   - SHA256 hash: 375MB read
-   - ExifTool: 375MB read (spawns external process)
-   - File copy: 375MB write
-   - SHA256 verify: 375MB read
-   - **Total: ~1.5GB I/O PER IMPORT**
-
-2. **Main Process Event Loop Blocked**:
-   - Node.js crypto.createHash is synchronous in some code paths
-   - Heavy I/O blocks IPC message handling
-   - Dashboard queries wait in queue
-
-3. **SQLite Connection Contention**:
-   - Import runs in transaction
-   - Transaction holds write lock
-   - Dashboard queries (reads) may be blocked
-
-**Result**: Dashboard APPEARS frozen because queries don't return, but it's not actually locked.
+**Fix Option B**: Worker Threads (future enhancement)
 
 ---
 
-## ARCHITECTURAL ISSUE #3: No Worker Thread for Heavy Operations
+### Issue 2.2: All Files in Single Transaction
 
-All import operations run on the main process event loop:
+**Problem**: One transaction for 15 files, any error affects all
 
-```typescript
-// CPU-intensive work on main thread
-const hash = await this.cryptoService.calculateSHA256(file.filePath);
-
-// I/O-bound work on main thread
-await fs.copyFile(file.filePath, targetPath);
-
-// External process spawn on main thread
-metadata = await this.exifToolService.extractMetadata(file.filePath);
-```
-
-**Impact**:
-- Main process event loop blocked
-- IPC messages delayed
-- UI updates stall
-
-**Fix**: Use Worker Threads for:
-- SHA256 hashing
-- File copying
-- Or batch these into chunks with `setImmediate()` yields
-
----
-
-## ARCHITECTURAL ISSUE #4: Transaction is All-or-Nothing
-
-Current: One transaction for ALL 15 files
-
+**Current Code**:
 ```typescript
 return await this.db.transaction().execute(async (trx) => {
   for (let i = 0; i < files.length; i++) {
@@ -312,530 +281,230 @@ return await this.db.transaction().execute(async (trx) => {
 });
 ```
 
-**Impact**:
-- If file #15 fails after #1-14 succeed, database shows ALL succeeded
-- But if transaction rolls back (unlikely given error handling), ALL fail
-- Files may be copied to archive but not in database (orphans)
-
-**Better**: Per-file transactions or batches:
-```typescript
-for (let i = 0; i < files.length; i++) {
-  await this.db.transaction().execute(async (trx) => {
-    // Single file per transaction
-  });
-  onProgress(i + 1, files.length);
-}
-```
-
----
-
-## ARCHITECTURAL ISSUE #5: ExifTool Global Instance
-
-**Location**: `electron/services/exiftool-service.ts:1`
+**Fix**: Per-file transactions
 
 ```typescript
-import { exiftool } from 'exiftool-vendored';
-```
+const results: ImportResult[] = [];
+let imported = 0, duplicates = 0, errors = 0;
 
-This is a GLOBAL singleton. If multiple imports run:
-- ExifTool commands queue up
-- Timeouts stack
-- Process pool may be exhausted
-
----
-
-## WHERE THE IMPORT ACTUALLY FAILS
-
-Given the user's symptoms (15 files detected, 0 imported), the most likely failure points are:
-
-### Hypothesis 1: Archive Folder Not Set (MOST LIKELY)
-
-```typescript
-// ipc-handlers.ts:587-589
-if (!archivePath?.value) {
-  throw new Error('Archive folder not configured. Please set it in Settings.');
-}
-```
-
-**Check**: Go to Settings page, verify Archive Folder is set.
-
-### Hypothesis 2: Location Not Found
-
-```typescript
-// file-import-service.ts:276-278
-const location = await this.locationRepo.findById(file.locid);
-if (!location) {
-  throw new Error(`Location not found: ${file.locid}`);
-}
-```
-
-**Check**: Console should show this error if triggered.
-
-### Hypothesis 3: File Organization Path Fails
-
-```typescript
-// file-import-service.ts:501-503
-if (!PathValidator.validateArchivePath(targetPath, this.archivePath)) {
-  throw new Error(`Security: Target path escapes archive directory: ${targetPath}`);
-}
-```
-
-**Check**: If archive folder has special characters or spaces, path building might fail.
-
-### Hypothesis 4: All Files Timeout in ExifTool
-
-30-second timeout * 15 files = 7.5 minutes
-If ExifTool is broken or missing, EVERY file times out.
-
-**Check**: Look for `[ExifTool] Calling exiftool.read()` logs without completion.
-
----
-
-## WHY DASHBOARD SEEMS LOCKED
-
-It's NOT actually locked. Here's what happens:
-
-1. User drops 15 files
-2. Import starts (fire-and-forget)
-3. Import runs heavy I/O on main process
-4. Main process event loop is busy
-5. User navigates to Dashboard
-6. Dashboard queries (`location:findAll`, `stats:topStates`) are sent via IPC
-7. **IPC messages are queued** waiting for main process
-8. Dashboard shows "Loading..." indefinitely
-9. User thinks app is frozen
-
-**Solution**:
-- Move heavy I/O to Worker Threads
-- Use `setImmediate()` to yield event loop
-- Show "Import in progress - some features may be slow"
-
----
-
-## COMPLETE DATA FLOW WITH FAILURE POINTS
-
-```
-User drops 15 NEF files
-    |
-    v
-[PRELOAD] Drop handler captures event
-    |-- webUtils.getPathForFile() OR file.path fallback
-    |-- Extracts 15 paths
-    |-- console: "[Preload] Total paths extracted: 15"
-    |
-    v
-[FRONTEND] LocationDetail.svelte handleDrop()
-    |-- Gets paths via window.getDroppedFilePaths()
-    |-- Calls window.electronAPI.media.expandPaths()
-    |
-    v
-[IPC] media:expandPaths handler
-    |-- Recursively scans directories
-    |-- Filters by supported extensions (NEF is supported since waldo5)
-    |-- Returns 15 paths
-    |
-    v
-[FRONTEND] importFilePaths()
-    |-- Checks $isImporting (should be false)
-    |-- Creates filesForImport array with { filePath, originalName }
-    |-- importStore.startJob() - sets activeJob
-    |-- **FIRE-AND-FORGET**: window.electronAPI.media.import({...})
-    |
-    v
-[IPC] media:import handler
-    |-- Validates input with Zod schema
-    |-- Gets archive_folder from settings
-    |-- **FAILURE POINT A**: Archive folder not set --> throws
-    |-- Creates FileImportService
-    |-- Calls fileImportService.importFiles()
-    |
-    v
-[SERVICE] FileImportService.importFiles()
-    |-- Validates all file paths (security check)
-    |-- **FAILURE POINT B**: Path not allowed --> throws
-    |-- Starts database transaction
-    |
-    v
-[LOOP] For each of 15 files:
-    |
-    |-- Step 0: Pre-fetch location
-    |   |-- **FAILURE POINT C**: Location not found --> throws
-    |
-    |-- Step 1: Sanitize filename
-    |
-    |-- Step 2: Calculate SHA256
-    |   |-- Reads entire 25MB file
-    |   |-- Blocks event loop briefly
-    |
-    |-- Step 3: Determine file type
-    |   |-- '.nef' --> 'image' (correct since waldo5)
-    |
-    |-- Step 4: Check duplicate
-    |   |-- Query imgs table for hash
-    |
-    |-- Step 5: Extract ExifTool metadata
-    |   |-- 30-second timeout
-    |   |-- **FAILURE POINT D**: Timeout --> continues without metadata
-    |   |-- **FAILURE POINT E**: ExifTool crash --> continues without metadata
-    |
-    |-- Step 5b: Check GPS mismatch (if image + has GPS)
-    |
-    |-- Step 6: Organize file to archive
-    |   |-- Build folder structure: [state]-[type]/[slocnam]-[loc12]/org-img-[loc12]/
-    |   |-- **FAILURE POINT F**: Directory creation fails
-    |   |-- Copy file (25MB write)
-    |   |-- Verify SHA256 (25MB read)
-    |   |-- **FAILURE POINT G**: Integrity check fails --> deletes file, throws
-    |
-    |-- Step 7: Insert database record
-    |   |-- INSERT INTO imgs
-    |   |-- **FAILURE POINT H**: SQL constraint violation --> throws
-    |
-    |-- Step 8: Delete original (if requested - currently false)
-    |
-    v
-[RESULT] After all 15 files:
-    |-- Returns { total: 15, imported: X, duplicates: Y, errors: Z }
-    |-- **BUG**: Returns normally even if imported=0, errors=15
-    |
-    v
-[IPC RESPONSE] Sent back to renderer
-    |
-    v
-[FRONTEND] .then() handler fires
-    |-- importStore.completeJob({ imported: 0, errors: 15 })
-    |-- loadLocation() - sees 0 new files
-    |-- **NO ERROR SHOWN TO USER**
-```
-
----
-
-## VERIFICATION CHECKLIST
-
-To diagnose the specific failure:
-
-1. [ ] Open DevTools Console
-2. [ ] Look for `[media:import] Starting import with input:` log
-3. [ ] Check if archive path is shown: `[media:import] Archive path: /path/to/archive`
-4. [ ] If missing, archive folder not set
-5. [ ] Look for `[FileImport] Transaction started` log
-6. [ ] If missing, validation failed before transaction
-7. [ ] Look for `[FileImport] Step 0: Pre-fetching location data...`
-8. [ ] If missing, loop never started
-9. [ ] Look for `[ExifTool] Calling exiftool.read()...`
-10. [ ] If appears but no completion, ExifTool hanging
-11. [ ] Look for `[organizeFile] Target path:` log
-12. [ ] Check if path looks correct
-13. [ ] Look for `Error` in red in console
-14. [ ] Note the exact error message
-
----
-
-## RECOMMENDED FIXES (Priority Order)
-
-### FIX 1: Type Violation (IMMEDIATE)
-
-```typescript
-// file-import-service.ts:222
-type: 'document',  // Changed from 'unknown'
-```
-
-### FIX 2: Progress After Completion
-
-```typescript
-// file-import-service.ts:191-227
-for (let i = 0; i < files.length; i++) {
-  const file = files[i];
-  // Move onProgress AFTER try block
-  try {
-    const result = await this.importSingleFile(file, deleteOriginals, trx);
-    results.push(result);
-    // Report progress AFTER completion
-    if (onProgress) {
-      onProgress(i + 1, files.length);
-    }
-    // ...
-  } catch (error) {
-    // ...
-    // Still report progress on error so UI doesn't stall
-    if (onProgress) {
-      onProgress(i + 1, files.length);
-    }
-  }
-}
-```
-
-### FIX 3: User-Visible Error Notification
-
-```typescript
-// LocationDetail.svelte:364-377
-.then((result) => {
-  importStore.completeJob({...});
-
-  // Show meaningful feedback
-  if (result.errors > 0 && result.imported === 0) {
-    // All failed - show error
-    showToast(`Import failed: ${result.errors} files could not be imported`, 'error');
-  } else if (result.errors > 0) {
-    // Partial success
-    showToast(`Imported ${result.imported} files. ${result.errors} failed.`, 'warning');
-  } else {
-    // Full success
-    showToast(`Successfully imported ${result.imported} files`, 'success');
-  }
-
-  loadLocation();
-})
-```
-
-### FIX 4: Validate IPC Sender
-
-```typescript
-// ipc-handlers.ts:617-620
-(current, total) => {
-  try {
-    if (_event.sender && !_event.sender.isDestroyed()) {
-      _event.sender.send('media:import:progress', { current, total });
-    }
-  } catch (e) {
-    console.warn('[media:import] Progress event failed:', e);
-  }
-}
-```
-
-### FIX 5: Per-File Transactions (Optional but Recommended)
-
-```typescript
-// Move from single transaction to per-file
 for (let i = 0; i < files.length; i++) {
   try {
     const result = await this.db.transaction().execute(async (trx) => {
       return await this.importSingleFile(files[i], deleteOriginals, trx);
     });
     results.push(result);
-    // ...
+    // ... count logic ...
   } catch (error) {
     results.push({ success: false, ... });
+    errors++;
   }
+
   onProgress?.(i + 1, files.length);
-  // Yield to event loop
   await new Promise(resolve => setImmediate(resolve));
+}
+
+// Create import record after all files
+const importId = await this.createImportRecord({...});
+return { total: files.length, imported, duplicates, errors, results, importId };
+```
+
+---
+
+## PHASE 3 DETAILED FIXES
+
+### Issue 3.1: ExifTool for All File Types
+
+**Current**: Only images get ExifTool metadata
+
+**Fix**: Run ExifTool on videos and documents too
+
+```typescript
+// In importSingleFile, Step 5:
+if (type === 'image' || type === 'video' || type === 'document') {
+  try {
+    const exifData = await this.exifToolService.extractMetadata(file.filePath);
+    metadata = { ...metadata, exif: exifData };
+  } catch (e) {
+    console.warn('[FileImport] ExifTool failed:', e);
+  }
+}
+
+if (type === 'video') {
+  // Also run FFmpeg for video-specific data
+  const ffmpegData = await this.ffmpegService.extractMetadata(file.filePath);
+  metadata = { ...metadata, ffmpeg: ffmpegData };
 }
 ```
 
 ---
 
-## PREMIUM UX RECOMMENDATIONS
+### Issue 3.2: GPS from Videos
 
-### For an Archive App, Imports Should Be:
+**Current**: GPS only extracted from images
 
-1. **Non-Blocking**
-   - Move heavy I/O to Worker Threads
-   - Yield event loop with setImmediate()
-   - Dashboard stays responsive
+**Fix**: ExifTool extracts GPS from video files too (dashcams, phones)
 
-2. **Transparent**
-   - Per-file status visible
-   - Error details accessible
-   - Progress shows current file name
-
-3. **Recoverable**
-   - Pause/Resume capability
-   - Retry failed files
-   - Cancel without corrupting state
-
-4. **Informative**
-   - Toast notifications for completion
-   - Clear error messages
-   - Log viewer for debugging
-
-5. **Queued**
-   - Multiple imports can be queued
-   - Background processing continues
-   - Notification when done
-
----
-
-## IMPLEMENTATION GUIDE FOR INEXPERIENCED DEVELOPER
-
-### To Fix the Critical Bugs:
-
-1. **Open** `packages/desktop/electron/services/file-import-service.ts`
-
-2. **Line 222**: Change `'unknown'` to `'document'`
-   ```typescript
-   // BEFORE
-   type: 'unknown',
-   // AFTER
-   type: 'document',
-   ```
-
-3. **Lines 196-198**: Move progress call after try block
-   - Cut lines 196-199
-   - Paste after line 211 (inside success path)
-   - Also add progress call in catch block
-
-4. **Open** `packages/desktop/electron/main/ipc-handlers.ts`
-
-5. **Lines 617-620**: Wrap in try-catch
-   ```typescript
-   (current, total) => {
-     try {
-       _event.sender?.send?.('media:import:progress', { current, total });
-     } catch (e) {
-       // Ignore - window may have closed
-     }
-   }
-   ```
-
-6. **Open** `packages/desktop/src/pages/LocationDetail.svelte`
-
-7. **Lines 364-377**: Add error feedback
-   - After `importStore.completeJob({...});`
-   - Check if `result.errors > 0 && result.imported === 0`
-   - Show error message to user
-
-8. **Rebuild**: `pnpm run build`
-
-9. **Test** with 15 NEF files
-
----
-
-## PREVIOUS BUGS REFERENCE
-
-| Waldo | Issue | Status |
-|-------|-------|--------|
-| 1 | Preload ESM/CJS mismatch | Fixed |
-| 2 | Vite bundler adds ESM wrapper | Fixed |
-| 3 | Custom copy plugin for preload | Fixed |
-| 4 | webUtils undefined, file.path fallback | Partial (fallback works) |
-| 5 | RAW formats missing from extension lists | Fixed |
-| 6 | Import UX - blocking, no progress | Fixed (architecture) |
-| 7 | webUtils unavailable, no Select Files, wrong $store | Fixed |
-| 8 | ExifTool hang, UI overhaul requests | Fixed (timeout added) |
-| 9 | SQLite deadlock after ExifTool | Fixed (pre-fetch) |
-| **10** | **Type violation, silent failures, UX gaps** | **Identified** |
-
----
-
-## Summary
-
-The import system is **architecturally sound** but has **implementation bugs** that cause silent failures:
-
-1. **Type violation** ('unknown' not in type union)
-2. **Progress before work** (misleading UI)
-3. **Silent success on failure** (no user feedback)
-4. **IPC sender not validated** (could crash)
-5. **Heavy I/O on main thread** (blocks dashboard)
-
-These can all be fixed with targeted changes to ~50 lines of code.
-
----
-
----
-
-## AUDIT: Current Import vs Logseq Spec
-
-### Your Specified Import Steps
-
-```
-1. #import_location    - Location selection
-2. #import_id          - Import ID creation
-3. #import_folder      - Folder organization
-4. #import_files       - File copying
-5. #import_exiftool    - ExifTool metadata extraction
-6. #import_ffmpeg      - FFmpeg for videos
-7. #import_maps        - Map files handling
-8. #import_gps         - GPS extraction
-9. #import_address     - Address handling
-10. #import_verify     - Verification
-11. import_cleanup     - Cleanup
+```typescript
+// After ExifTool extraction for videos:
+if (type === 'video' && metadata?.exif?.gps) {
+  // Store GPS from video
+  videoRecord.meta_gps_lat = metadata.exif.gps.lat;
+  videoRecord.meta_gps_lng = metadata.exif.gps.lng;
+}
 ```
 
-### Implementation Status
-
-| Step | Status | Current Code | Gap |
-|------|--------|--------------|-----|
-| #import_location | **IMPLEMENTED** | `locationRepo.findById()` at Step 0 | None |
-| #import_id | **IMPLEMENTED** | `createImportRecordInTransaction()` | None |
-| #import_folder | **IMPLEMENTED** | `organizeFileWithLocation()` | None |
-| #import_files | **IMPLEMENTED** | `fs.copyFile()` | None |
-| #import_exiftool | **PARTIAL** | Only for images | Missing: documents, videos |
-| #import_ffmpeg | **IMPLEMENTED** | `ffmpegService.extractMetadata()` | None |
-| #import_maps | **PARTIAL** | Files stored | Missing: geo-data parsing |
-| #import_gps | **PARTIAL** | From images only | Missing: from videos, maps |
-| #import_address | **MISSING** | Not implemented | No reverse geocoding |
-| #import_verify | **IMPLEMENTED** | SHA256 after copy | None |
-| import_cleanup | **IMPLEMENTED** | `fs.unlink()` if requested | None |
-
-### Metadata Dump Status
-
-| File Type | ExifTool Dump | FFmpeg Dump | What's Stored |
-|-----------|--------------|-------------|---------------|
-| Images | **YES** `meta_exiftool` | N/A | width, height, date, camera, GPS |
-| Videos | **NO** (null) | **YES** `meta_ffmpeg` | duration, size, codec, fps |
-| Maps | **NO** (null) | N/A | **NOTHING** extracted |
-| Documents | **NO** (null) | N/A | **NOTHING** extracted |
-
-### Missing Per Your Rules
-
-1. **#import_address**: GPS coordinates extracted but NOT reverse geocoded to address
-   - Current: Stores `meta_gps_lat`, `meta_gps_lng`
-   - Missing: Call geocoding service → store street, city, state
-
-2. **#import_maps**: Geo files accepted but not parsed
-   - Current: `.gpx`, `.kml`, `.geojson` stored as files
-   - Missing: Parse coordinates, waypoints, boundaries
-
-3. **Full metadata for all types**:
-   - Documents: Should extract PDF author, title, page count via ExifTool
-   - Videos: Should ALSO run ExifTool for GPS (dashcams embed GPS)
-   - Maps: Should parse geo-metadata from the file content
-
-### Files Copied? Metadata Dumped?
-
-**Assuming import actually completes (fixes bugs first)**:
-
-| What | Happens? | Where |
-|------|----------|-------|
-| File copied | **YES** | `[archive]/locations/[STATE]-[TYPE]/[SLOCNAM]-[LOC12]/org-[type]-[LOC12]/[SHA256].[ext]` |
-| Original path saved | **YES** | `imgloco`, `vidloco`, `docloco`, `maploco` |
-| SHA256 saved | **YES** | `imgsha`, `vidsha`, `docsha`, `mapsha` |
-| Full ExifTool JSON | **IMAGES ONLY** | `meta_exiftool` column |
-| Full FFmpeg JSON | **VIDEOS ONLY** | `meta_ffmpeg` column |
-| GPS coordinates | **IMAGES ONLY** | `meta_gps_lat`, `meta_gps_lng` |
-| Address from GPS | **NO** | Not implemented |
+**Requires**: Add `meta_gps_lat`, `meta_gps_lng` columns to `vids` table
 
 ---
 
-## Action Items to Match Your Spec
+### Issue 3.3: #import_address - Reverse Geocoding
 
-### Priority 1: Fix Silent Failures (Files Not Importing)
-1. Fix type violation (`'unknown'` → `'document'`)
-2. Add user feedback on errors
-3. Move progress after completion
+**Current**: GPS stored but not converted to address
 
-### Priority 2: Complete Metadata Extraction
-1. Run ExifTool on documents (PDFs have metadata)
-2. Run ExifTool on videos (dashcams have GPS)
-3. Parse map files for coordinates
+**Fix**: Call geocoding service when GPS found
 
-### Priority 3: Add Missing Steps
-1. **#import_address**: Add reverse geocoding
-   ```typescript
-   if (metadata.gps) {
-     const address = await geocodingService.reverseGeocode(metadata.gps.lat, metadata.gps.lng);
-     // Store in meta_address_* columns
-   }
-   ```
+```typescript
+// After GPS extraction:
+if (metadata?.gps) {
+  try {
+    const geoResult = await this.geocodingService.reverseGeocode(
+      metadata.gps.lat,
+      metadata.gps.lng
+    );
+    if (geoResult) {
+      metadata.address = {
+        street: geoResult.address?.road,
+        city: geoResult.address?.city,
+        state: geoResult.address?.state,
+        country: geoResult.address?.country,
+      };
+    }
+  } catch (e) {
+    console.warn('[FileImport] Reverse geocoding failed:', e);
+  }
+}
+```
 
-2. **#import_maps**: Parse geo files
-   ```typescript
-   if (type === 'map') {
-     const geoData = await geoParserService.parseGeoFile(file.filePath);
-     // Store bounds, waypoints, etc.
-   }
-   ```
+**Requires**:
+- Add `meta_address_*` columns to imgs/vids tables
+- Pass geocodingService to FileImportService constructor
+
+---
+
+### Issue 3.4: Parse Map Files
+
+**Current**: .gpx/.kml files stored but not parsed
+
+**Fix**: Parse geo-data on import
+
+```typescript
+if (type === 'map') {
+  try {
+    const ext = path.extname(file.filePath).toLowerCase();
+    if (ext === '.gpx') {
+      metadata.mapData = await this.parseGPX(file.filePath);
+    } else if (ext === '.kml' || ext === '.kmz') {
+      metadata.mapData = await this.parseKML(file.filePath);
+    } else if (ext === '.geojson') {
+      metadata.mapData = JSON.parse(await fs.readFile(file.filePath, 'utf-8'));
+    }
+  } catch (e) {
+    console.warn('[FileImport] Map parsing failed:', e);
+  }
+}
+```
+
+**Requires**: GPX/KML parser library (e.g., `fast-xml-parser`)
+
+---
+
+## PHASE 4 DETAILED FIXES
+
+### Issue 4.1-4.6: Premium UX Features
+
+These are enhancement features to implement after core bugs are fixed:
+
+1. **Progress with filename**: Send filename in progress event
+2. **Error details**: Store and display per-file errors
+3. **Cancel button**: Add abort controller
+4. **Retry failed**: Store failed files, offer retry
+5. **Dashboard banner**: Show import status globally
+6. **Toast notifications**: Add toast component
+
+---
+
+## IMPLEMENTATION ORDER
+
+```
+PHASE 1 (CRITICAL - Do First):
+  1.1 Type violation         → 1 line change
+  1.2 Progress timing        → ~10 lines
+  1.3 Error feedback         → ~15 lines
+  1.4 IPC safety             → ~8 lines
+  1.5 User messages          → (included in 1.3)
+
+PHASE 2 (PERFORMANCE - Do Second):
+  2.1 Event loop yields      → ~3 lines per location
+  2.2 Per-file transactions  → ~30 line refactor
+
+PHASE 3 (FEATURES - Do Third):
+  3.1 ExifTool for all       → ~10 lines + DB columns
+  3.2 Video GPS              → ~5 lines + DB columns
+  3.3 Reverse geocoding      → ~20 lines + dependency
+  3.4 Map parsing            → ~30 lines + library
+
+PHASE 4 (UX - Do Last):
+  4.1-4.6 Various UI features
+```
+
+---
+
+## VERIFICATION CHECKLIST
+
+After implementing Phase 1, verify:
+
+1. [ ] Drop 15 NEF files onto location
+2. [ ] Console shows `[FileImport] Starting batch import of 15 files`
+3. [ ] Console shows `[FileImport] Step 0: Pre-fetching location data...`
+4. [ ] Progress bar updates AFTER each file (not before)
+5. [ ] If errors occur, UI shows error count
+6. [ ] If all succeed, files appear in location media section
+7. [ ] Dashboard is NOT frozen during import
+8. [ ] Archive folder contains copied files with SHA256 names
+
+---
+
+## FILE LOCATIONS QUICK REFERENCE
+
+| File | Path |
+|------|------|
+| File Import Service | `packages/desktop/electron/services/file-import-service.ts` |
+| IPC Handlers | `packages/desktop/electron/main/ipc-handlers.ts` |
+| Location Detail UI | `packages/desktop/src/pages/LocationDetail.svelte` |
+| Import Store | `packages/desktop/src/stores/import-store.ts` |
+| ExifTool Service | `packages/desktop/electron/services/exiftool-service.ts` |
+| FFmpeg Service | `packages/desktop/electron/services/ffmpeg-service.ts` |
+| Preload Script | `packages/desktop/electron/preload/preload.cjs` |
+
+---
+
+## METADATA DUMP STATUS
+
+| File Type | ExifTool | FFmpeg | GPS | Address | Currently |
+|-----------|----------|--------|-----|---------|-----------|
+| Images | **YES** | N/A | **YES** | NO | Working |
+| Videos | NO | **YES** | NO | NO | Partial |
+| Documents | NO | N/A | N/A | N/A | Not extracted |
+| Maps | NO | N/A | NO | N/A | Not parsed |
+
+**After Phase 3**:
+
+| File Type | ExifTool | FFmpeg | GPS | Address |
+|-----------|----------|--------|-----|---------|
+| Images | **YES** | N/A | **YES** | **YES** |
+| Videos | **YES** | **YES** | **YES** | **YES** |
+| Documents | **YES** | N/A | N/A | N/A |
+| Maps | **YES** | N/A | **YES** | N/A |
 
 ---
 
