@@ -814,4 +814,261 @@ Warnings: Only a11y hints (non-blocking)
 
 ---
 
+## Part 7: Architecture Review & Corrections
+
+### Question: Why Are We Not Using rsync?
+
+**Short Answer:** We should be. It's in the spec. Current implementation is incomplete.
+
+**Why rsync is the best option (per `import_files.md`):**
+
+| Feature | fs.copyFile (current) | rsync (spec) |
+|---------|----------------------|--------------|
+| Resume interrupted transfer | No | Yes (`--partial`) |
+| Hardlinks (same filesystem) | No | Yes (`--link-dest`) |
+| Delta transfer | No | Yes (only changed bytes) |
+| Built-in checksum | No | Yes (`--checksum`) |
+| Batch file list | No | Yes (`--files-from`) |
+| Progress reporting | No | Yes (`--progress`) |
+| Preserve permissions | Manual | Yes (`-a`) |
+| Cross-platform | Yes | macOS/Linux only |
+
+**Why it wasn't implemented:**
+1. **Cross-platform concern:** rsync not available on Windows by default
+2. **Complexity:** Spawning subprocess, parsing output
+3. **Time constraint:** fs.copyFile was "good enough" for MVP
+
+**Correct approach per spec:**
+```bash
+# Preferred: hardlink (same filesystem, instant, no space)
+rsync -avH --link-dest=/original/path /source/ /dest/
+
+# Alternative: copy with checksum verification
+rsync -av --checksum --progress --partial /source/ /dest/
+
+# With file list (batch mode)
+rsync -av --checksum --files-from=/tmp/import-files.txt / /dest/
+```
+
+**Verdict:** Current implementation is **non-compliant** with spec. rsync integration is required for production.
+
+---
+
+### Question: Wouldn't This Run Better If CLI Tool Was There First?
+
+**Answer: YES. Absolutely.**
+
+The spec (`auarchive_import.md`) shows 4 input sources:
+```
+┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│   GUI       │  │   CLI       │  │   API       │  │   WATCH     │
+│  (Drag &    │  │  (rsync     │  │  (REST/     │  │   FOLDER    │
+│   Drop)     │  │   --files)  │  │   GraphQL)  │  │  (daemon)   │
+└──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
+```
+
+**CLI-first architecture benefits:**
+
+1. **Separation of Concerns**
+   - Import logic is framework-agnostic
+   - GUI becomes a thin wrapper
+   - Easy to test without Electron
+
+2. **Headless Operation**
+   - Run on servers/NAS without display
+   - Cron job scheduling
+   - CI/CD pipeline integration
+
+3. **Scriptability**
+   ```bash
+   # Dream workflow per spec
+   au-import --location abc123 --files /path/to/*.NEF
+   au-import --resume imp-20241122-abc123
+   au-import --watch /import-inbox/
+   ```
+
+4. **Better Architecture**
+   ```
+   CURRENT (wrong):
+   GUI → PhaseImportService → DB
+
+   CORRECT (spec):
+   CLI → ImportCore (pure logic)
+     ↑
+   GUI → IPC → ImportCore
+     ↑
+   API → ImportCore
+     ↑
+   Watch → ImportCore
+   ```
+
+**Verdict:** Current implementation has it **backwards**. Should have been:
+1. Build CLI tool first (pure Node.js, no Electron)
+2. GUI calls CLI or shares core library
+3. This ensures all 4 input sources work identically
+
+---
+
+### Question: What Were The Audit Scores?
+
+**Detailed Audit Against Spec Files:**
+
+#### `auarchive_import.md` - Master Pipeline (11 steps)
+
+| Step | Spec | Implementation | Score |
+|------|------|----------------|-------|
+| 1. #import_location | Validate locid, fetch location | Done (pre-fetch fix) | 100% |
+| 2. #import_id | Generate UUID, SHA256, check duplicates | Done | 100% |
+| 3. #import_folder | Create folder structure | Done | 100% |
+| 4. #import_files | rsync copy | **NOT DONE** (fs.copyFile) | 30% |
+| 5. #import_exiftool | Extract image metadata | Done (per-file, not batch) | 70% |
+| 6. #import_ffmpeg | Extract video metadata | Done | 100% |
+| 7. #import_maps | Process GPX/KML | Done | 100% |
+| 8. #import_gps | Extract/validate GPS | Done | 100% |
+| 9. #import_address | Reverse geocode | Done | 100% |
+| 10. #import_verify | Verify integrity | Done | 100% |
+| 11. import_cleanup | Delete originals | Done | 100% |
+
+**Pipeline Score: 82%** (rsync and batch ExifTool missing)
+
+#### `claude.md` - Development Rules
+
+| Rule | Compliance | Notes |
+|------|------------|-------|
+| LILBITS (300 lines max) | **FAIL** | phase-import-service.ts is 550+ lines |
+| KISS | PARTIAL | Could be simpler with CLI-first |
+| NGS (No Google Services) | PASS | Using Nominatim |
+| DRETW | FAIL | Should use rsync (exists) |
+| DAFIDFAF | PASS | Only implemented what was asked |
+
+**Rules Score: 60%**
+
+#### `json_folders.md` - Folder Naming
+
+| Requirement | Implementation | Score |
+|-------------|----------------|-------|
+| `#folder_state_type` | Done (`NY-Church`) | 100% |
+| `#folder_locs` | Done (`stpeter-STPE12345678`) | 100% |
+| `#folder_imgs_import` | Done (`org-img-LOC12`) | 100% |
+| `#folder_vids_import` | Done (`org-vid-LOC12`) | 100% |
+| `#folder_docs_import` | Done (`org-doc-LOC12`) | 100% |
+| Sub-location variants | Done (`org-img-LOC12-SUB12`) | 100% |
+
+**Folder Score: 100%**
+
+#### Overall Audit
+
+| Category | Score | Weight | Weighted |
+|----------|-------|--------|----------|
+| Pipeline Steps | 82% | 40% | 32.8 |
+| Development Rules | 60% | 20% | 12.0 |
+| Folder Structure | 100% | 15% | 15.0 |
+| Architecture (CLI-first) | 20% | 25% | 5.0 |
+
+**TOTAL AUDIT SCORE: 64.8/100**
+
+**Not 85% as previously stated. Honest assessment is 65%.**
+
+---
+
+### Question: What Is A Watch Folder?
+
+**Definition:** A watch folder (also called "hot folder" or "drop folder") is a directory that an application monitors for new files. When files appear, they are automatically processed.
+
+**How it works:**
+```
+/import-inbox/
+├── loc-abc123/           # Files here → auto-import to location abc123
+│   └── photo.nef         # Detected! → Import starts
+├── loc-def456/           # Files here → auto-import to location def456
+└── unsorted/             # Files here → prompt user for location
+```
+
+**Use cases for AU Archive:**
+
+1. **NAS/Server Workflow**
+   - Photographer dumps SD card to network share
+   - App automatically imports to correct location
+
+2. **Sync Services**
+   - Dropbox/OneDrive syncs folder
+   - App picks up new files automatically
+
+3. **Automated Backups**
+   - Camera uploads to folder
+   - App catalogs without user intervention
+
+4. **Batch Processing**
+   - Copy 1000 photos to folder
+   - Walk away, come back to cataloged archive
+
+**Implementation approach (not coded yet):**
+```typescript
+// Pseudo-code for watch folder
+import chokidar from 'chokidar';
+
+const watcher = chokidar.watch('/import-inbox/', {
+  ignored: /(^|[\/\\])\../,  // Ignore hidden files
+  persistent: true,
+  awaitWriteFinish: true,    // Wait for file to finish writing
+});
+
+watcher.on('add', async (filePath) => {
+  // Extract location ID from parent folder name
+  const locid = extractLocidFromPath(filePath);
+
+  // Trigger import
+  await importService.importFiles([{
+    filePath,
+    originalName: path.basename(filePath),
+    locid,
+    auth_imp: 'watch-daemon',
+  }]);
+});
+```
+
+**Why it matters:**
+- Per spec, watch folder is one of 4 import triggers
+- Enables "set and forget" workflows
+- Critical for headless/server operation
+
+---
+
+## Part 8: Corrected Roadmap
+
+Given the audit findings, here's the correct order of implementation:
+
+### Priority 1: CLI Tool (Foundation)
+```
+packages/cli/
+├── src/
+│   ├── commands/
+│   │   ├── import.ts      # au-import command
+│   │   ├── resume.ts      # au-import --resume
+│   │   └── watch.ts       # au-import --watch
+│   ├── core/
+│   │   ├── import-core.ts # Framework-agnostic import logic
+│   │   ├── manifest.ts    # Manifest handling
+│   │   └── rsync.ts       # rsync wrapper
+│   └── index.ts           # CLI entry point
+└── package.json
+```
+
+### Priority 2: rsync Integration
+- Replace fs.copyFile with rsync wrapper
+- Support `--partial` for resume
+- Support `--link-dest` for hardlinks
+- Windows fallback to robocopy or fs.copyFile
+
+### Priority 3: Refactor GUI
+- GUI calls CLI commands or shares core library
+- Remove duplicate import logic from Electron
+
+### Priority 4: Watch Folder
+- chokidar-based file watcher
+- Run as daemon/service
+- Location-based inbox folders
+
+---
+
 End of Document
