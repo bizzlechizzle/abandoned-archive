@@ -51,6 +51,7 @@ Document each script in lilbits.md
 - WLO: We Love Open Source
 - URBFH: Understand Roadmap But Focus Here
 - DAFIDFAF: Don't Add Features I Didn't Ask For
+- NGS: No Google Services (no Google Maps, Google APIs, Google Analytics, Google Fonts CDN, etc. Use open-source alternatives: Leaflet/OSM for maps, Nominatim for geocoding, self-hosted fonts)
 
 ### Core Process
 

@@ -31,9 +31,9 @@
     vid_count: number;
   }
 
-  // Browser state
-  let currentUrl = $state('https://maps.google.com');
-  let urlInput = $state('https://maps.google.com');
+  // Browser state - Default to OpenStreetMap per NGS rule (No Google Services)
+  let currentUrl = $state('https://www.openstreetmap.org');
+  let urlInput = $state('https://www.openstreetmap.org');
   let pageTitle = $state('');
   let isLoading = $state(false);
   let browserContainerRef: HTMLDivElement;
@@ -596,15 +596,15 @@
         {/if}
       </div>
 
-      <!-- Quick Links -->
+      <!-- Quick Links - Using open-source alternatives per NGS rule -->
       <div class="bg-gray-50 rounded-lg border border-gray-200 p-4">
         <h3 class="text-sm font-semibold text-gray-800 mb-3">Quick Links</h3>
         <div class="space-y-1">
           <button
-            onclick={() => { urlInput = 'https://maps.google.com'; navigate(); }}
+            onclick={() => { urlInput = 'https://www.openstreetmap.org'; navigate(); }}
             class="w-full text-left px-2 py-1.5 text-sm bg-white rounded hover:bg-gray-100 transition border border-gray-100"
           >
-            Google Maps
+            OpenStreetMap
           </button>
           <button
             onclick={() => { urlInput = 'https://www.historicaerials.com'; navigate(); }}
@@ -613,10 +613,16 @@
             Historic Aerials
           </button>
           <button
-            onclick={() => { urlInput = 'https://www.google.com'; navigate(); }}
+            onclick={() => { urlInput = 'https://duckduckgo.com'; navigate(); }}
             class="w-full text-left px-2 py-1.5 text-sm bg-white rounded hover:bg-gray-100 transition border border-gray-100"
           >
-            Google Search
+            DuckDuckGo
+          </button>
+          <button
+            onclick={() => { urlInput = 'https://www.loc.gov/maps/'; navigate(); }}
+            class="w-full text-left px-2 py-1.5 text-sm bg-white rounded hover:bg-gray-100 transition border border-gray-100"
+          >
+            Library of Congress Maps
           </button>
         </div>
       </div>
