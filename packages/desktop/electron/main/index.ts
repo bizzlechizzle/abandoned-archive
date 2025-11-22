@@ -76,7 +76,9 @@ function createWindow() {
     minHeight: 600,
     title: 'AU Archive',
     webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
+      // CRITICAL: Use .cjs extension for preload script
+      // This ensures Node.js treats it as CommonJS regardless of "type": "module" in package.json
+      preload: path.join(__dirname, '../preload/index.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
       // Sandbox disabled to allow preload's webUtils.getPathForFile() to work with drag-drop files.

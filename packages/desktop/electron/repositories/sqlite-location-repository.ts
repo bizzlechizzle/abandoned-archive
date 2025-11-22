@@ -8,6 +8,7 @@ import {
   LocationInput,
   LocationEntity
 } from '@au-archive/core';
+import { AddressNormalizer } from '../services/address-normalizer';
 
 export class SQLiteLocationRepository implements LocationRepository {
   constructor(private readonly db: Kysely<Database>) {}
@@ -17,6 +18,14 @@ export class SQLiteLocationRepository implements LocationRepository {
     const loc12 = LocationEntity.generateLoc12(locid);
     const slocnam = input.slocnam || LocationEntity.generateShortName(input.locnam);
     const locadd = new Date().toISOString();
+
+    // Normalize address fields before storage
+    // This ensures consistent formatting: 2-letter state codes, proper zipcode format, etc.
+    const normalizedStreet = AddressNormalizer.normalizeStreet(input.address?.street);
+    const normalizedCity = AddressNormalizer.normalizeCity(input.address?.city);
+    const normalizedCounty = AddressNormalizer.normalizeCounty(input.address?.county);
+    const normalizedState = AddressNormalizer.normalizeStateCode(input.address?.state);
+    const normalizedZipcode = AddressNormalizer.normalizeZipcode(input.address?.zipcode);
 
     await this.db
       .insertInto('locs')
@@ -35,11 +44,11 @@ export class SQLiteLocationRepository implements LocationRepository {
         gps_verified_on_map: input.gps?.verifiedOnMap ? 1 : 0,
         gps_captured_at: input.gps?.capturedAt || null,
         gps_leaflet_data: input.gps?.leafletData ? JSON.stringify(input.gps.leafletData) : null,
-        address_street: input.address?.street || null,
-        address_city: input.address?.city || null,
-        address_county: input.address?.county || null,
-        address_state: input.address?.state || null,
-        address_zipcode: input.address?.zipcode || null,
+        address_street: normalizedStreet,
+        address_city: normalizedCity,
+        address_county: normalizedCounty,
+        address_state: normalizedState,
+        address_zipcode: normalizedZipcode,
         address_confidence: input.address?.confidence || null,
         address_geocoded_at: input.address?.geocodedAt || null,
         condition: input.condition || null,
@@ -143,11 +152,12 @@ export class SQLiteLocationRepository implements LocationRepository {
     }
 
     if (input.address !== undefined) {
-      updates.address_street = input.address.street || null;
-      updates.address_city = input.address.city || null;
-      updates.address_county = input.address.county || null;
-      updates.address_state = input.address.state || null;
-      updates.address_zipcode = input.address.zipcode || null;
+      // Normalize address fields before storage
+      updates.address_street = AddressNormalizer.normalizeStreet(input.address.street);
+      updates.address_city = AddressNormalizer.normalizeCity(input.address.city);
+      updates.address_county = AddressNormalizer.normalizeCounty(input.address.county);
+      updates.address_state = AddressNormalizer.normalizeStateCode(input.address.state);
+      updates.address_zipcode = AddressNormalizer.normalizeZipcode(input.address.zipcode);
       updates.address_confidence = input.address.confidence || null;
       updates.address_geocoded_at = input.address.geocodedAt || null;
     }

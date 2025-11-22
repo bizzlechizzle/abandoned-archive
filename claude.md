@@ -810,29 +810,118 @@ ipcMain.handle('geocode:reverse', async (event, { lat, lng }) => {
 });
 ```
 
+---
+
+## Address Normalization System
+
+### Overview
+
+All addresses are normalized before storage to ensure consistent formatting across all entry points
+(map clicks, geocoding, manual entry, imports).
+
+### Normalization Rules
+
+**State Codes:**
+- Must be exactly 2 characters (e.g., "NY", "CA")
+- Full state names are automatically converted (e.g., "New York" -> "NY")
+- Case-insensitive input, uppercase output
+
+**Zipcodes:**
+- Must be 5-digit or 5+4 format (e.g., "12345" or "12345-6789")
+- Various input formats are normalized (e.g., "12345 6789" -> "12345-6789")
+- Non-numeric characters are removed
+
+**Cities and Counties:**
+- Whitespace trimmed
+- Title case applied (e.g., "new york" -> "New York")
+- " County" suffix removed from county names
+
+**Streets:**
+- Whitespace trimmed and collapsed
+- Preserved as-is for case (user may have specific formatting)
+
+### Implementation
+
+Location: `electron/services/address-normalizer.ts`
+
+```typescript
+import { AddressNormalizer } from './address-normalizer';
+
+// Normalize individual fields
+const state = AddressNormalizer.normalizeStateCode('New York'); // 'NY'
+const zip = AddressNormalizer.normalizeZipcode('12345-6789');   // '12345-6789'
+const city = AddressNormalizer.normalizeCity('albany');          // 'Albany'
+
+// Normalize complete address (e.g., from geocoding)
+const normalized = AddressNormalizer.normalizeAddress({
+  street: '123 Main St',
+  city: 'albany',
+  state: 'New York',
+  stateCode: 'NY',
+  zipcode: '12207',
+}, 'high');
+```
+
+### Integration Points
+
+1. **SQLiteLocationRepository.create()** - Normalizes before INSERT
+2. **SQLiteLocationRepository.update()** - Normalizes before UPDATE
+3. **GeocodingService.parseNominatimResponse()** - Normalizes geocoding results
+
 ### Context Bridge (Preload)
 
+**CRITICAL: ES Module vs CommonJS Configuration**
+
+The preload script MUST be compiled to CommonJS format because Electron's preload system
+requires CommonJS. Since `package.json` has `"type": "module"`, we must:
+
+1. Output preload as `.cjs` extension (not `.js`) so Node.js treats it as CommonJS
+2. Reference the `.cjs` file in the main process
+
+Vite config (`vite.config.ts`):
+```typescript
+{
+  entry: 'electron/preload/index.ts',
+  vite: {
+    build: {
+      rollupOptions: {
+        output: {
+          format: 'cjs',
+          // CRITICAL: Use .cjs extension
+          entryFileNames: '[name].cjs',
+        },
+      },
+    },
+  },
+}
+```
+
+Main process (`electron/main/index.ts`):
+```typescript
+webPreferences: {
+  // CRITICAL: Reference .cjs file
+  preload: path.join(__dirname, '../preload/index.cjs'),
+  contextIsolation: true,
+  sandbox: false, // Required for webUtils.getPathForFile() in drag-drop
+}
+```
+
+**Preload Script Example:**
 ```typescript
 // electron/preload/index.ts
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  db: {
-    location: {
-      create: (data) => ipcRenderer.invoke('db:location:create', data),
-      findAll: (filters) => ipcRenderer.invoke('db:location:findAll', filters),
-    },
+  locations: {
+    create: (data) => ipcRenderer.invoke('location:create', data),
+    findAll: (filters) => ipcRenderer.invoke('location:findAll', filters),
   },
-  file: {
-    import: (filePath, locId) => ipcRenderer.invoke('file:import', { filePath, locId }),
-    calculateSHA256: (filePath) => ipcRenderer.invoke('file:calculateSHA256', filePath),
-  },
-  metadata: {
-    extractExif: (filePath) => ipcRenderer.invoke('metadata:extractExif', filePath),
-    extractVideo: (filePath) => ipcRenderer.invoke('metadata:extractVideo', filePath),
+  media: {
+    import: (input) => ipcRenderer.invoke('media:import', input),
+    selectFiles: () => ipcRenderer.invoke('media:selectFiles'),
   },
   geocode: {
-    reverse: (lat, lng) => ipcRenderer.invoke('geocode:reverse', { lat, lng }),
+    reverse: (lat, lng) => ipcRenderer.invoke('geocode:reverse', lat, lng),
   }
 });
 ```

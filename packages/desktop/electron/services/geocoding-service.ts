@@ -4,11 +4,15 @@
  *
  * Rate limiting: Nominatim allows 1 request/second max
  * Caching: Store results in SQLite to avoid repeat lookups
+ *
+ * Address Normalization: All geocoded addresses are normalized through AddressNormalizer
+ * to ensure consistent storage format (2-letter state codes, proper zipcode format, etc.)
  */
 
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 import type { Database } from '../main/database.types';
+import { AddressNormalizer } from './address-normalizer';
 
 export interface GeocodingResult {
   lat: number;
@@ -265,6 +269,7 @@ export class GeocodingService {
 
   /**
    * Parse Nominatim API response into our GeocodingResult format
+   * Uses AddressNormalizer to ensure consistent address formatting
    */
   private parseNominatimResponse(data: NominatimResponse): GeocodingResult {
     const addr = data.address;
@@ -274,15 +279,9 @@ export class GeocodingService {
       addr.city || addr.town || addr.village || addr.hamlet || addr.suburb || undefined;
 
     // Parse state code from ISO3166-2-lvl4 (e.g., "US-NY" -> "NY")
-    let stateCode = addr['ISO3166-2-lvl4'];
-    if (stateCode && stateCode.startsWith('US-')) {
-      stateCode = stateCode.substring(3);
-    }
-
-    // Build street address
-    let street = addr.road || undefined;
-    if (addr.house_number && street) {
-      street = `${addr.house_number} ${street}`;
+    let rawStateCode = addr['ISO3166-2-lvl4'];
+    if (rawStateCode && rawStateCode.startsWith('US-')) {
+      rawStateCode = rawStateCode.substring(3);
     }
 
     // Determine confidence based on precision
@@ -295,18 +294,35 @@ export class GeocodingService {
       confidence = 'low';
     }
 
+    // Use AddressNormalizer to ensure consistent formatting
+    // This handles: state name -> 2-letter code, zipcode format, whitespace, case
+    const normalizedAddress = AddressNormalizer.normalizeAddress(
+      {
+        street: addr.road,
+        houseNumber: addr.house_number,
+        city,
+        county: addr.county,
+        state: addr.state,
+        stateCode: rawStateCode,
+        zipcode: addr.postcode,
+        country: addr.country,
+        countryCode: addr.country_code,
+      },
+      confidence
+    );
+
     return {
       lat: parseFloat(data.lat),
       lng: parseFloat(data.lon),
       displayName: data.display_name,
       address: {
-        street,
+        street: normalizedAddress.street || undefined,
         houseNumber: addr.house_number,
-        city,
-        county: addr.county,
-        state: addr.state,
-        stateCode,
-        zipcode: addr.postcode,
+        city: normalizedAddress.city || undefined,
+        county: normalizedAddress.county || undefined,
+        state: addr.state, // Keep full state name for display
+        stateCode: normalizedAddress.state || undefined, // Normalized 2-letter code
+        zipcode: normalizedAddress.zipcode || undefined,
         country: addr.country,
         countryCode: addr.country_code?.toUpperCase(),
       },

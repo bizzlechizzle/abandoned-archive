@@ -31,7 +31,10 @@ export default defineConfig({
               output: {
                 format: 'cjs',
                 interop: 'auto',
-                entryFileNames: '[name].js',
+                // CRITICAL: Use .cjs extension so Node.js treats it as CommonJS
+                // regardless of "type": "module" in package.json
+                // Electron preload scripts MUST be CommonJS format
+                entryFileNames: '[name].cjs',
                 exports: 'none',
               },
             },
