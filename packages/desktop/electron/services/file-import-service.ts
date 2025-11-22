@@ -5,6 +5,8 @@ import { ExifToolService } from './exiftool-service';
 import { FFmpegService } from './ffmpeg-service';
 import { PathValidator } from './path-validator';
 import { GPSValidator } from './gps-validator';
+// FIX 3.3: Import geocoding for #import_address
+import { GeocodingService } from './geocoding-service';
 import { SQLiteMediaRepository } from '../repositories/sqlite-media-repository';
 import { SQLiteImportRepository } from '../repositories/sqlite-import-repository';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
@@ -153,7 +155,9 @@ export class FileImportService {
     private readonly importRepo: SQLiteImportRepository,
     private readonly locationRepo: SQLiteLocationRepository,
     private readonly archivePath: string,
-    private readonly allowedImportDirs: string[] = [] // User's home dir, downloads, etc.
+    private readonly allowedImportDirs: string[] = [], // User's home dir, downloads, etc.
+    // FIX 3.3: Optional geocoding service for #import_address
+    private readonly geocodingService?: GeocodingService
   ) {}
 
   /**
@@ -390,6 +394,35 @@ export class FileImportService {
             }
           }
           console.log('[FileImport] GPS check complete');
+
+          // FIX 3.3: #import_address - Reverse geocode to update location address
+          // Only trigger if: geocodingService exists, location has no address, file has GPS
+          if (this.geocodingService && !location.address?.street && !location.address?.city) {
+            try {
+              console.log('[FileImport] Step 5c: Reverse geocoding for #import_address...');
+              const geocodeResult = await this.geocodingService.reverseGeocode(gps.lat, gps.lng);
+              if (geocodeResult && geocodeResult.address) {
+                // Update location address (outside transaction - separate update)
+                await this.db
+                  .updateTable('locs')
+                  .set({
+                    address_street: geocodeResult.address.street || null,
+                    address_city: geocodeResult.address.city || null,
+                    address_county: geocodeResult.address.county || null,
+                    address_state: geocodeResult.address.stateCode || geocodeResult.address.state || null,
+                    address_zip: geocodeResult.address.zipcode || null,
+                    address_country: geocodeResult.address.countryCode || geocodeResult.address.country || null,
+                    address_geocoded_at: new Date().toISOString(),
+                  })
+                  .where('locid', '=', file.locid)
+                  .execute();
+                console.log('[FileImport] Location address updated from media GPS');
+              }
+            } catch (geocodeError) {
+              console.warn('[FileImport] Reverse geocoding failed:', geocodeError);
+              // Non-fatal - continue import
+            }
+          }
         }
       }
     } catch (error) {

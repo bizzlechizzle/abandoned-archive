@@ -591,6 +591,9 @@ export function registerIpcHandlers() {
         throw new Error('Archive folder not configured. Please set it in Settings.');
       }
 
+      // FIX 3.3: Create geocoding service for #import_address
+      const geocodingService = new GeocodingService(db);
+
       // Initialize FileImportService with all required dependencies
       const fileImportService = new FileImportService(
         db,
@@ -601,7 +604,8 @@ export function registerIpcHandlers() {
         importRepo,
         locationRepo,
         archivePath.value,
-        [] // allowedImportDirs - empty means only archive path is allowed
+        [], // allowedImportDirs - empty means only archive path is allowed
+        geocodingService // FIX 3.3: Pass geocoding service for #import_address
       );
 
       // Prepare files for import
