@@ -1966,10 +1966,257 @@ jobs:
    - GraphQL better for complex queries
    - Could implement REST first, GraphQL later
 
-4. **Windows Support Priority:** How important is Windows?
-   - rsync not native (cwRsync or WSL required)
-   - robocopy lacks some features
-   - macOS/Linux could be primary targets
+4. **Windows Support Priority:** ~~How important is Windows?~~
+   - **DECISION: Windows is NOT a priority**
+   - Primary targets: macOS and Linux only
+   - rsync available natively on both
+   - Simplifies architecture significantly
+
+---
+
+## Part 10: Amendments & Missing Items
+
+### 10.1 Windows Deprioritized
+
+Per user decision, Windows support is not important at this time. This simplifies:
+
+| Component | Before (cross-platform) | After (macOS/Linux only) |
+|-----------|------------------------|--------------------------|
+| rsync | Fallback chain needed | Native, no fallback |
+| ExifTool | Path handling differences | Standard Unix paths |
+| Watch folder | Task Scheduler integration | launchd/systemd only |
+| Testing | 3 OS matrix | 2 OS matrix |
+| Hardlinks | NTFS limitations | Works on HFS+/APFS/ext4 |
+
+**Updated platform matrix:**
+
+| Platform | Support Level |
+|----------|--------------|
+| macOS (Apple Silicon) | Primary |
+| macOS (Intel) | Primary |
+| Linux (Ubuntu/Debian) | Primary |
+| Linux (Fedora/RHEL) | Secondary |
+| Windows | Not supported |
+
+---
+
+### 10.2 Missing: Error Handling Strategy
+
+**Current:** Errors thrown as exceptions, inconsistent handling.
+
+**Proposed:** Result type pattern for predictable error handling.
+
+```typescript
+// packages/import-core/src/types/result.ts
+
+export type Result<T, E = Error> =
+  | { success: true; data: T }
+  | { success: false; error: E };
+
+export interface ImportError {
+  code: ImportErrorCode;
+  message: string;
+  phase?: ImportPhase;
+  file?: string;
+  recoverable: boolean;
+  details?: unknown;
+}
+
+export type ImportErrorCode =
+  | 'LOCATION_NOT_FOUND'
+  | 'FILE_NOT_FOUND'
+  | 'PERMISSION_DENIED'
+  | 'DUPLICATE_FILE'
+  | 'HASH_MISMATCH'
+  | 'RSYNC_FAILED'
+  | 'EXIFTOOL_TIMEOUT'
+  | 'DB_TRANSACTION_FAILED'
+  | 'MANIFEST_CORRUPT'
+  | 'DISK_FULL';
+```
+
+**Benefits:**
+- Caller always knows if operation succeeded
+- Error codes enable programmatic handling
+- `recoverable` flag guides retry logic
+- No surprise exceptions
+
+---
+
+### 10.3 Missing: Logging Strategy
+
+**Current:** `console.log` scattered throughout code.
+
+**Proposed:** Structured logging with levels.
+
+```typescript
+// packages/import-core/src/utils/logger.ts
+
+export interface Logger {
+  debug(message: string, context?: object): void;
+  info(message: string, context?: object): void;
+  warn(message: string, context?: object): void;
+  error(message: string, error?: Error, context?: object): void;
+}
+
+// CLI: Pretty console output
+// GUI: Send to renderer for display
+// Daemon: Write to log file
+```
+
+**Log file locations:**
+- macOS: `~/Library/Logs/au-archive/`
+- Linux: `~/.local/share/au-archive/logs/`
+
+---
+
+### 10.4 Missing: Security Considerations
+
+| Threat | Mitigation |
+|--------|------------|
+| Path traversal (`../../../etc/passwd`) | Validate all paths stay within archive |
+| Symlink attacks | Don't follow symlinks, or verify target |
+| Malicious EXIF data | Sanitize before storing in DB |
+| SQL injection | Use parameterized queries (Kysely does this) |
+| File permission escalation | Preserve original permissions, don't chmod |
+
+**Path validation (already exists, confirm coverage):**
+```typescript
+// Ensure destination is within archive
+const resolved = path.resolve(destination);
+if (!resolved.startsWith(archivePath)) {
+  throw new Error('Path traversal detected');
+}
+```
+
+---
+
+### 10.5 Missing: Recommended NPM Packages
+
+| Purpose | Package | Why |
+|---------|---------|-----|
+| CLI framework | `commander` | Standard, well-maintained |
+| CLI prompts | `inquirer` | Interactive selection |
+| CLI colors | `chalk` | Cross-platform colors |
+| CLI progress | `ora` | Spinners |
+| CLI tables | `cli-table3` | Formatted output |
+| File watching | `chokidar` | Best cross-platform watcher |
+| Config loading | `cosmiconfig` | Standard config file discovery |
+| Schema validation | `zod` | Already using, type-safe |
+| Process spawning | `execa` | Better than child_process |
+| Logging | `pino` | Fast, structured logging |
+
+---
+
+### 10.6 Missing: Relationship Between Packages
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ packages/core (EXISTS)                                       │
+│  - Location types/schemas                                    │
+│  - Media types/schemas                                       │
+│  - Shared Zod schemas                                        │
+│  - NO runtime dependencies                                   │
+└─────────────────────────────────────────────────────────────┘
+                              ↓ imports types
+┌─────────────────────────────────────────────────────────────┐
+│ packages/import-core (NEW)                                   │
+│  - Import pipeline logic                                     │
+│  - Manifest handling                                         │
+│  - Adapter interfaces (DB, rsync, exiftool)                  │
+│  - DOES have runtime deps (execa, chokidar)                  │
+└─────────────────────────────────────────────────────────────┘
+         ↓                    ↓                    ↓
+    ┌────┴────┐          ┌────┴────┐          ┌────┴────┐
+    │ cli     │          │ desktop │          │ (future)│
+    │         │          │         │          │ api     │
+    └─────────┘          └─────────┘          └─────────┘
+```
+
+**Dependency rules:**
+- `core` depends on nothing (types only)
+- `import-core` depends on `core`
+- `cli`, `desktop`, `api` depend on `import-core`
+- No circular dependencies allowed
+
+---
+
+### 10.7 Missing: Resolved Open Questions
+
+| Question | Decision | Rationale |
+|----------|----------|-----------|
+| Database locking | **WAL mode** | SQLite WAL allows concurrent reads + single writer. CLI read-only during GUI writes. |
+| API priority | **REST first** | Simpler for automation. GraphQL later if needed. |
+| Manifest format | **JSON** | Human-readable, easy to debug, standard tooling. |
+| Daemon architecture | **No central daemon** | CLI/GUI/Watch all independent. Simpler. DB locking handles conflicts. |
+
+---
+
+### 10.8 Missing: Performance Targets
+
+| Operation | Target | Current |
+|-----------|--------|---------|
+| Hash 1GB file | <5s | Unknown |
+| Import 100 photos | <30s | Unknown |
+| Import 1000 photos | <5min | Unknown |
+| ExifTool batch 100 | <5s | ~30s (per-file) |
+| Watch folder detection | <1s | N/A |
+| Manifest save | <100ms | Unknown |
+
+**Benchmark command (to be implemented):**
+```bash
+au-benchmark --files 100 --size 10MB
+```
+
+---
+
+### 10.9 Missing: Documentation Plan
+
+| Document | Location | Purpose |
+|----------|----------|---------|
+| User Guide | `docs/user-guide.md` | End-user documentation |
+| CLI Reference | `docs/cli-reference.md` | Command line usage |
+| API Reference | Generated from TSDoc | Developer API docs |
+| Architecture | `docs/architecture.md` | System design |
+| Contributing | `CONTRIBUTING.md` | How to contribute |
+
+**Generate API docs:**
+```bash
+pnpm run docs:generate  # Uses TypeDoc
+```
+
+---
+
+### 10.10 Spec Files Referenced
+
+For ChatGPT review, these are the spec files whereswaldo11 is based on:
+
+| File | Purpose | Location |
+|------|---------|----------|
+| `auarchive_import.md` | Master import pipeline | `pages/imports/` |
+| `import_location.md` | Location validation | `pages/imports/` |
+| `import_id.md` | ID generation + duplicates | `pages/imports/` |
+| `import_folder.md` | Folder structure | `pages/imports/` |
+| `import_files.md` | rsync copy spec | `pages/imports/` |
+| `import_exiftool.md` | Metadata extraction | `pages/imports/` |
+| `import_gps.md` | GPS validation | `pages/imports/` |
+| `json_folders.md` | Folder naming conventions | `pages/json/` |
+| `claude.md` | Development rules (LILBITS, etc.) | Root |
+
+---
+
+### 10.11 Summary of Amendments
+
+1. ✅ Windows deprioritized (macOS/Linux only)
+2. ✅ Error handling strategy (Result types)
+3. ✅ Logging strategy (structured, per-consumer)
+4. ✅ Security considerations (path traversal, symlinks)
+5. ✅ Recommended NPM packages
+6. ✅ Package relationship diagram
+7. ✅ Resolved open questions (WAL, REST, JSON, no daemon)
+8. ✅ Performance targets
+9. ✅ Documentation plan
+10. ✅ Spec file references
 
 ---
 
