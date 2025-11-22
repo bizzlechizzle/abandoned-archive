@@ -1,11 +1,63 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import electron from 'vite-plugin-electron';
 import path from 'path';
+import fs from 'fs';
+
+/**
+ * Custom plugin to copy preload script WITHOUT any bundling/transformation.
+ *
+ * WHY THIS EXISTS:
+ * vite-plugin-electron always transforms entry files, adding ESM syntax
+ * like "import require$$0 from 'electron'" even to .cjs files.
+ * This breaks Electron preload scripts which MUST be pure CommonJS.
+ *
+ * SOLUTION:
+ * Don't use vite-plugin-electron for preload at all.
+ * Just copy the static .cjs file directly to dist-electron/preload/
+ */
+function copyPreloadPlugin(): Plugin {
+  const srcPath = path.resolve(__dirname, 'electron/preload/preload.cjs');
+  const destDir = path.resolve(__dirname, 'dist-electron/preload');
+  const destPath = path.join(destDir, 'index.cjs');
+
+  function copyPreload() {
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
+    }
+    fs.copyFileSync(srcPath, destPath);
+    console.log('[preload] Copied static preload.cjs to dist-electron/preload/index.cjs');
+  }
+
+  return {
+    name: 'copy-preload',
+    // Copy on build start
+    buildStart() {
+      copyPreload();
+    },
+    // Watch for changes in dev mode
+    configureServer(server) {
+      // Initial copy
+      copyPreload();
+      // Watch for changes
+      server.watcher.add(srcPath);
+      server.watcher.on('change', (changedPath) => {
+        if (changedPath === srcPath) {
+          copyPreload();
+          // Trigger electron reload by touching main
+          server.ws.send({ type: 'full-reload' });
+        }
+      });
+    },
+  };
+}
 
 export default defineConfig({
   plugins: [
     svelte(),
+    // Copy preload FIRST, before electron plugin runs
+    copyPreloadPlugin(),
+    // Only configure main process - NO preload entry
     electron([
       {
         entry: 'electron/main/index.ts',
@@ -18,35 +70,7 @@ export default defineConfig({
           },
         },
       },
-      {
-        // Preload script - use static CJS file instead of Vite bundling
-        // Vite's bundling adds ESM exports to CJS files which breaks Electron
-        entry: 'electron/preload/preload.cjs',
-        onstart(args) {
-          // Copy the static preload file to dist
-          const fs = require('fs');
-          const srcPath = 'electron/preload/preload.cjs';
-          const destDir = 'dist-electron/preload';
-          const destPath = destDir + '/index.cjs';
-          if (!fs.existsSync(destDir)) {
-            fs.mkdirSync(destDir, { recursive: true });
-          }
-          fs.copyFileSync(srcPath, destPath);
-          args.reload();
-        },
-        vite: {
-          build: {
-            outDir: 'dist-electron/preload',
-            rollupOptions: {
-              external: ['electron'],
-              output: {
-                format: 'cjs',
-                entryFileNames: 'index.cjs',
-              },
-            },
-          },
-        },
-      },
+      // REMOVED: preload entry - handled by copyPreloadPlugin instead
     ]),
   ],
   resolve: {
