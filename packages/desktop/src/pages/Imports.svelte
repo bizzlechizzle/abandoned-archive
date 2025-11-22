@@ -96,12 +96,98 @@
     event.preventDefault();
     isDragging = false;
 
-    if (!event.dataTransfer?.files || event.dataTransfer.files.length === 0) {
+    if (!event.dataTransfer) {
       return;
     }
 
-    const files = Array.from(event.dataTransfer.files);
-    await importFiles(files);
+    // Use items API to support folders - recursively get all files
+    const items = event.dataTransfer.items;
+    if (items && items.length > 0) {
+      const filePaths: string[] = [];
+
+      // Collect all file paths from dropped items (including folder contents)
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === 'file') {
+          const entry = item.webkitGetAsEntry?.();
+          if (entry) {
+            const paths = await getFilesFromEntry(entry);
+            filePaths.push(...paths);
+          } else {
+            // Fallback for non-webkit browsers or simple files
+            const file = item.getAsFile();
+            if (file && (file as any).path) {
+              filePaths.push((file as any).path);
+            }
+          }
+        }
+      }
+
+      if (filePaths.length > 0) {
+        await importFilePaths(filePaths);
+      } else {
+        importProgress = 'No valid files found in dropped items';
+      }
+      return;
+    }
+
+    // Fallback to files API (for simple file drops)
+    if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
+      const files = Array.from(event.dataTransfer.files);
+      await importFiles(files);
+    }
+  }
+
+  // Recursively get all file paths from a FileSystemEntry (supports folders)
+  async function getFilesFromEntry(entry: FileSystemEntry): Promise<string[]> {
+    const paths: string[] = [];
+
+    if (entry.isFile) {
+      // Get the File object to access Electron's path property
+      const fileEntry = entry as FileSystemFileEntry;
+      return new Promise((resolve) => {
+        fileEntry.file((file) => {
+          const filePath = (file as any).path;
+          if (filePath) {
+            // Filter for supported media types
+            const ext = file.name.toLowerCase().split('.').pop() || '';
+            const supportedExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp',
+                                   'mp4', 'mov', 'avi', 'mkv', 'wmv', 'flv', 'webm',
+                                   'pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'];
+            if (supportedExts.includes(ext)) {
+              paths.push(filePath);
+            }
+          }
+          resolve(paths);
+        }, () => resolve(paths));
+      });
+    } else if (entry.isDirectory) {
+      // Recursively read directory contents
+      const dirEntry = entry as FileSystemDirectoryEntry;
+      const dirReader = dirEntry.createReader();
+
+      return new Promise((resolve) => {
+        const readEntries = () => {
+          dirReader.readEntries(async (entries) => {
+            if (entries.length === 0) {
+              resolve(paths);
+              return;
+            }
+
+            for (const childEntry of entries) {
+              const childPaths = await getFilesFromEntry(childEntry);
+              paths.push(...childPaths);
+            }
+
+            // Continue reading (readEntries may not return all entries at once)
+            readEntries();
+          }, () => resolve(paths));
+        };
+        readEntries();
+      });
+    }
+
+    return paths;
   }
 
   async function handleBrowse() {

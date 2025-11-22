@@ -68,6 +68,11 @@
   let newBookmarkType = $state('');
   let addingBookmark = $state(false);
 
+  // Import drag-drop state
+  let isDragging = $state(false);
+  let isImporting = $state(false);
+  let importProgress = $state('');
+
   const IMAGE_LIMIT = 6;
   const VIDEO_LIMIT = 3;
   const DOCUMENT_LIMIT = 3;
@@ -196,6 +201,137 @@
 
   function openBookmark(url: string) {
     window.electronAPI?.shell?.openExternal(url);
+  }
+
+  // Drag-drop handlers for media import
+  function handleDragOver(event: DragEvent) {
+    event.preventDefault();
+    isDragging = true;
+  }
+
+  function handleDragLeave() {
+    isDragging = false;
+  }
+
+  async function handleDrop(event: DragEvent) {
+    event.preventDefault();
+    isDragging = false;
+
+    if (!event.dataTransfer || !location) {
+      return;
+    }
+
+    // Use items API to support folders
+    const items = event.dataTransfer.items;
+    if (items && items.length > 0) {
+      const filePaths: string[] = [];
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === 'file') {
+          const entry = item.webkitGetAsEntry?.();
+          if (entry) {
+            const paths = await getFilesFromEntry(entry);
+            filePaths.push(...paths);
+          } else {
+            const file = item.getAsFile();
+            if (file && (file as any).path) {
+              filePaths.push((file as any).path);
+            }
+          }
+        }
+      }
+
+      if (filePaths.length > 0) {
+        await importFilePaths(filePaths);
+      } else {
+        importProgress = 'No valid files found';
+        setTimeout(() => { importProgress = ''; }, 3000);
+      }
+    }
+  }
+
+  // Recursively get all file paths from a FileSystemEntry (supports folders)
+  async function getFilesFromEntry(entry: FileSystemEntry): Promise<string[]> {
+    const paths: string[] = [];
+
+    if (entry.isFile) {
+      const fileEntry = entry as FileSystemFileEntry;
+      return new Promise((resolve) => {
+        fileEntry.file((file) => {
+          const filePath = (file as any).path;
+          if (filePath) {
+            const ext = file.name.toLowerCase().split('.').pop() || '';
+            const supportedExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp',
+                                   'mp4', 'mov', 'avi', 'mkv', 'wmv', 'flv', 'webm',
+                                   'pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'];
+            if (supportedExts.includes(ext)) {
+              paths.push(filePath);
+            }
+          }
+          resolve(paths);
+        }, () => resolve(paths));
+      });
+    } else if (entry.isDirectory) {
+      const dirEntry = entry as FileSystemDirectoryEntry;
+      const dirReader = dirEntry.createReader();
+
+      return new Promise((resolve) => {
+        const readEntries = () => {
+          dirReader.readEntries(async (entries) => {
+            if (entries.length === 0) {
+              resolve(paths);
+              return;
+            }
+
+            for (const childEntry of entries) {
+              const childPaths = await getFilesFromEntry(childEntry);
+              paths.push(...childPaths);
+            }
+
+            readEntries();
+          }, () => resolve(paths));
+        };
+        readEntries();
+      });
+    }
+
+    return paths;
+  }
+
+  async function importFilePaths(filePaths: string[]) {
+    if (!location || !window.electronAPI?.media) return;
+
+    try {
+      isImporting = true;
+      importProgress = `Importing ${filePaths.length} file(s)...`;
+
+      const filesForImport = filePaths.map((filePath) => {
+        const parts = filePath.split(/[\\/]/);
+        const fileName = parts[parts.length - 1];
+        return { filePath, originalName: fileName };
+      });
+
+      const result = await window.electronAPI.media.import({
+        files: filesForImport,
+        locid: location.locid,
+        auth_imp: currentUser,
+        deleteOriginals: false,
+      });
+
+      importProgress = `Imported ${result.imported} files, ${result.duplicates} duplicates, ${result.errors} errors`;
+
+      // Reload media to show new imports
+      await loadLocation();
+
+      setTimeout(() => { importProgress = ''; }, 5000);
+    } catch (error) {
+      console.error('Error importing files:', error);
+      importProgress = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      setTimeout(() => { importProgress = ''; }, 5000);
+    } finally {
+      isImporting = false;
+    }
   }
 
   onMount(async () => {
@@ -424,8 +560,40 @@
         </div>
       {/if}
 
-      <div class="mt-6 bg-white rounded-lg shadow p-6">
-        <h2 class="text-xl font-semibold mb-4 text-foreground">Media</h2>
+      <div
+        class="mt-6 bg-white rounded-lg shadow p-6"
+        ondragover={handleDragOver}
+        ondragleave={handleDragLeave}
+        ondrop={handleDrop}
+      >
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-xl font-semibold text-foreground">Media</h2>
+          {#if importProgress}
+            <span class="text-sm text-accent">{importProgress}</span>
+          {/if}
+        </div>
+
+        <!-- Drag-drop zone -->
+        <div
+          class="mb-6 p-6 border-2 border-dashed rounded-lg text-center transition-colors {isDragging ? 'border-accent bg-accent/10' : 'border-gray-300 hover:border-gray-400'}"
+        >
+          {#if isImporting}
+            <div class="text-gray-500">
+              <svg class="w-10 h-10 mx-auto mb-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <p class="text-sm">{importProgress}</p>
+            </div>
+          {:else}
+            <svg class="w-10 h-10 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            <p class="text-sm text-gray-500">
+              {isDragging ? 'Drop files or folders here' : 'Drag & drop files or folders to import'}
+            </p>
+            <p class="text-xs text-gray-400 mt-1">Supports images, videos, and documents</p>
+          {/if}
+        </div>
 
         <!-- Images -->
         <div class="mb-6">
