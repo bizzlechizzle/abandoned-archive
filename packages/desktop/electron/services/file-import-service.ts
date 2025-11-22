@@ -340,31 +340,34 @@ export class FileImportService {
     console.log('[FileImport] Step 5: Extracting metadata for', file.originalName, 'type:', type);
 
     try {
-      // FIX 3.2 / C4: Extract GPS from BOTH images and videos using ExifTool
-      // ExifTool works on videos too (dashcams, phones embed GPS in video metadata)
-      if (type === 'image' || type === 'video') {
-        console.log('[FileImport] Calling ExifTool for', type, '...');
-        const exifStart = Date.now();
-        const exifData = await this.exifToolService.extractMetadata(file.filePath);
-        console.log('[FileImport] ExifTool completed in', Date.now() - exifStart, 'ms');
+      // FIX 3.1 & 3.2: Extract metadata from ALL file types using ExifTool
+      // ExifTool works on images, videos (GPS from dashcams), documents (PDF metadata), and maps
+      console.log('[FileImport] Calling ExifTool for', type, '...');
+      const exifStart = Date.now();
+      const exifData = await this.exifToolService.extractMetadata(file.filePath);
+      console.log('[FileImport] ExifTool completed in', Date.now() - exifStart, 'ms');
 
-        if (type === 'image') {
-          metadata = exifData;
-        } else {
-          // For videos, also get FFmpeg data for duration, codec, etc.
-          console.log('[FileImport] Calling FFmpeg for video details...');
-          const ffmpegData = await this.ffmpegService.extractMetadata(file.filePath);
-          console.log('[FileImport] FFmpeg completed');
+      if (type === 'image') {
+        metadata = exifData;
+      } else if (type === 'video') {
+        // For videos, also get FFmpeg data for duration, codec, etc.
+        console.log('[FileImport] Calling FFmpeg for video details...');
+        const ffmpegData = await this.ffmpegService.extractMetadata(file.filePath);
+        console.log('[FileImport] FFmpeg completed');
 
-          // Merge: FFmpeg data + GPS from ExifTool
-          metadata = {
-            ...ffmpegData,
-            gps: exifData?.gps || null,
-            rawExif: exifData?.rawExif || null,
-          };
-        }
+        // Merge: FFmpeg data + GPS from ExifTool
+        metadata = {
+          ...ffmpegData,
+          gps: exifData?.gps || null,
+          rawExif: exifData?.rawExif || null,
+        };
+      } else if (type === 'document' || type === 'map') {
+        // FIX 3.1: Store ExifTool metadata for documents and maps
+        metadata = exifData;
+      }
 
-        // Check GPS mismatch for BOTH images and videos
+      // Check GPS mismatch for types with GPS data (images, videos, and maps can have GPS)
+      if (type === 'image' || type === 'video' || type === 'map') {
         const gps = metadata?.gps || exifData?.gps;
         if (gps && GPSValidator.isValidGPS(gps.lat, gps.lng)) {
           console.log('[FileImport] Step 5b: Checking GPS mismatch...');
@@ -671,6 +674,7 @@ export class FileImportService {
         })
         .execute();
     } else if (type === 'document') {
+      // FIX 3.1: Store ExifTool metadata for documents
       await trx
         .insertInto('docs')
         .values({
@@ -683,10 +687,10 @@ export class FileImportService {
           subid: file.subid || null,
           auth_imp: file.auth_imp,
           docadd: timestamp,
-          meta_exiftool: null,
-          meta_page_count: null,
-          meta_author: null,
-          meta_title: null,
+          meta_exiftool: metadata?.rawExif || null,
+          meta_page_count: null, // ExifTool doesn't provide this consistently
+          meta_author: null,     // Could extract from exif if available
+          meta_title: null,      // Could extract from exif if available
         })
         .execute();
     }
