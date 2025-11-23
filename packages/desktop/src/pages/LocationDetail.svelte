@@ -750,44 +750,74 @@
           <h2 class="text-xl font-semibold mb-4 text-foreground">Location</h2>
 
           {#if location.address}
+            <!-- Kanye3: Clean address display with copy button -->
             <div class="mb-4">
-              <h3 class="text-sm font-medium text-gray-500 mb-2">Address</h3>
-              <p class="text-base text-gray-900">
-                {#if location.address.street}{location.address.street}<br/>{/if}
-                {#if location.address.city}
-                  <button
-                    onclick={() => navigateToFilter('city', location.address!.city!)}
-                    class="text-accent hover:underline"
-                    title="View all locations in {location.address.city}"
-                  >{location.address.city}</button>,{' '}
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="text-sm font-medium text-gray-500">Address</h3>
+                <button
+                  onclick={() => {
+                    const addr = [
+                      location.address?.street,
+                      location.address?.city,
+                      location.address?.state,
+                      location.address?.zipcode
+                    ].filter(Boolean).join(', ');
+                    navigator.clipboard.writeText(addr);
+                  }}
+                  class="text-xs text-accent hover:underline flex items-center gap-1"
+                  title="Copy address to clipboard"
+                >
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                  </svg>
+                  Copy
+                </button>
+              </div>
+
+              <div class="text-base text-gray-900 space-y-1">
+                {#if location.address.street}
+                  <p class="font-medium">{location.address.street}</p>
                 {/if}
-                {#if location.address.state}
-                  <button
-                    onclick={() => navigateToFilter('state', location.address!.state!)}
-                    class="text-accent hover:underline"
-                    title="View all locations in {location.address.state}"
-                  >{location.address.state}</button>{' '}
-                {/if}
-                {#if location.address.zipcode}{location.address.zipcode}{/if}
-              </p>
-              {#if location.address.county}
-                <p class="text-sm text-gray-500 mt-1">
-                  <button
-                    onclick={() => navigateToFilter('county', location.address!.county!)}
-                    class="text-accent hover:underline"
-                    title="View all locations in {location.address.county} County"
-                  >{location.address.county} County</button>
+
+                <p>
+                  {#if location.address.city}
+                    <button
+                      onclick={() => navigateToFilter('city', location.address!.city!)}
+                      class="text-accent hover:underline"
+                      title="View all locations in {location.address.city}"
+                    >{location.address.city}</button>{location.address.state || location.address.zipcode ? ', ' : ''}
+                  {/if}
+                  {#if location.address.state}
+                    <button
+                      onclick={() => navigateToFilter('state', location.address!.state!)}
+                      class="text-accent hover:underline"
+                      title="View all locations in {location.address.state}"
+                    >{location.address.state}</button>{' '}
+                  {/if}
+                  {#if location.address.zipcode}
+                    <span>{location.address.zipcode}</span>
+                  {/if}
                 </p>
-              {/if}
+
+                {#if location.address.county}
+                  <p class="text-sm text-gray-500">
+                    <button
+                      onclick={() => navigateToFilter('county', location.address!.county!)}
+                      class="hover:underline"
+                      title="View all locations in {location.address.county} County"
+                    >{location.address.county} County</button>
+                  </p>
+                {/if}
+              </div>
             </div>
           {/if}
 
+          <!-- Kanye3: ALWAYS show map - use cascading fallbacks -->
           {#if location.gps}
             {@const confidence = getGpsConfidence(location.gps)}
             <div class="mb-4">
               <div class="flex items-center justify-between mb-2">
                 <h3 class="text-sm font-medium text-gray-500">GPS Coordinates</h3>
-                <!-- FIX 6.1: GPS Confidence Badge -->
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium
                   {confidence.color === 'green' ? 'bg-green-100 text-green-800' :
                    confidence.color === 'blue' ? 'bg-blue-100 text-blue-800' :
@@ -818,7 +848,6 @@
               <Map locations={[location]} />
             </div>
 
-            <!-- GPS metadata below the map -->
             <div class="flex flex-wrap items-center gap-3 text-xs">
               {#if location.gps.source}
                 <span class="text-gray-500">Source: {location.gps.source}</span>
@@ -840,9 +869,41 @@
                 </button>
               {/if}
             </div>
+          {:else if location.address?.state}
+            <!-- Kanye3: Show approximate map based on state capital -->
+            <div class="mb-4">
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="text-sm font-medium text-gray-500">Location</h3>
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                  <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                  </svg>
+                  Approximate (State Capital)
+                </span>
+              </div>
+              <p class="text-sm text-gray-600">
+                Showing {location.address.state} state capital area
+              </p>
+            </div>
+
+            <div class="h-64 rounded overflow-hidden mb-3">
+              <Map locations={[location]} />
+            </div>
+
+            <div class="flex items-center gap-2 text-xs text-yellow-600 bg-yellow-50 p-2 rounded">
+              <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>No exact GPS. Map shows approximate area based on address.</span>
+            </div>
           {:else}
-            <div class="text-center py-4">
-              <p class="text-gray-500 mb-3">No GPS coordinates available</p>
+            <!-- No GPS and no state - prompt to add -->
+            <div class="text-center py-6 bg-gray-50 rounded">
+              <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <p class="text-gray-500 mb-3">No location data available</p>
               <button
                 onclick={() => router.navigate('/atlas')}
                 class="px-4 py-2 text-sm bg-accent text-white rounded hover:opacity-90 transition"
@@ -993,11 +1054,26 @@
                   onclick={() => openLightbox(actualIndex)}
                   class="aspect-square bg-gray-100 rounded overflow-hidden hover:opacity-90 transition relative group"
                 >
-                  <div class="absolute inset-0 flex items-center justify-center text-gray-400">
-                    <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                  </div>
+                  {#if (image as any).thumb_path_sm || (image as any).thumb_path}
+                    <!-- Kanye3: Multi-tier thumbnail with HiDPI support -->
+                    <img
+                      src={`media://${(image as any).thumb_path_sm || (image as any).thumb_path}`}
+                      srcset={`
+                        media://${(image as any).thumb_path_sm || (image as any).thumb_path} 1x
+                        ${(image as any).thumb_path_lg ? `, media://${(image as any).thumb_path_lg} 2x` : ''}
+                      `}
+                      alt={image.imgnam}
+                      loading="lazy"
+                      class="w-full h-full object-cover"
+                    />
+                  {:else}
+                    <!-- Fallback placeholder when no thumbnail exists -->
+                    <div class="absolute inset-0 flex items-center justify-center text-gray-400">
+                      <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                  {/if}
                   <div class="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-2 opacity-0 group-hover:opacity-100 transition">
                     {#if image.meta_width && image.meta_height}
                       {formatResolution(image.meta_width, image.meta_height)}

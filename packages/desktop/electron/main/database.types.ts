@@ -111,6 +111,10 @@ export interface ImgsTable {
   preview_path: string | null;
   preview_extracted: number;
 
+  // Multi-tier thumbnails (Migration 9 - Premium Archive)
+  thumb_path_sm: string | null;  // 400px - grid view (1x)
+  thumb_path_lg: string | null;  // 800px - grid view (2x HiDPI)
+
   // XMP sync status (Migration 8)
   xmp_synced: number;
   xmp_modified_at: string | null;
@@ -147,6 +151,11 @@ export interface VidsTable {
   // Poster frames (Migration 8)
   thumb_path: string | null;
   poster_extracted: number;
+
+  // Multi-tier thumbnails (Migration 9 - Premium Archive)
+  thumb_path_sm: string | null;  // 400px - grid view (1x)
+  thumb_path_lg: string | null;  // 800px - grid view (2x HiDPI)
+  preview_path: string | null;   // 1920px - lightbox
 
   // XMP sync status (Migration 8)
   xmp_synced: number;
@@ -198,6 +207,11 @@ export interface MapsTable {
   reference: string | null;
   map_states: string | null;
   map_verified: number;
+
+  // Multi-tier thumbnails (Migration 9 - Premium Archive)
+  thumb_path_sm: string | null;  // 400px - grid view (1x)
+  thumb_path_lg: string | null;  // 800px - grid view (2x HiDPI)
+  preview_path: string | null;   // 1920px - lightbox
 }
 
 // Settings table

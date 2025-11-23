@@ -454,6 +454,45 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration completed: thumbnail/preview/XMP columns added');
     }
+
+    // Migration 9: Add multi-tier thumbnail columns (Premium Archive)
+    // Adds thumb_path_sm (400px), thumb_path_lg (800px), preview_path (1920px)
+    const imgColumnsCheck = sqlite.pragma('table_info(imgs)') as Array<{ name: string }>;
+    const hasThumbPathSm = imgColumnsCheck.some(col => col.name === 'thumb_path_sm');
+
+    if (!hasThumbPathSm) {
+      console.log('Running migration 9: Adding multi-tier thumbnail columns');
+
+      // Add columns to imgs table
+      sqlite.exec(`
+        ALTER TABLE imgs ADD COLUMN thumb_path_sm TEXT;
+        ALTER TABLE imgs ADD COLUMN thumb_path_lg TEXT;
+      `);
+      // Note: preview_path already exists from migration 8
+
+      // Add columns to vids table
+      sqlite.exec(`
+        ALTER TABLE vids ADD COLUMN thumb_path_sm TEXT;
+        ALTER TABLE vids ADD COLUMN thumb_path_lg TEXT;
+        ALTER TABLE vids ADD COLUMN preview_path TEXT;
+      `);
+
+      // Add columns to maps table (maps can have thumbnails too)
+      sqlite.exec(`
+        ALTER TABLE maps ADD COLUMN thumb_path_sm TEXT;
+        ALTER TABLE maps ADD COLUMN thumb_path_lg TEXT;
+        ALTER TABLE maps ADD COLUMN preview_path TEXT;
+      `);
+
+      // Create indexes for finding media without multi-tier thumbnails
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_imgs_thumb_sm ON imgs(thumb_path_sm);
+        CREATE INDEX IF NOT EXISTS idx_vids_thumb_sm ON vids(thumb_path_sm);
+        CREATE INDEX IF NOT EXISTS idx_maps_thumb_sm ON maps(thumb_path_sm);
+      `);
+
+      console.log('Migration 9 completed: multi-tier thumbnail columns added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

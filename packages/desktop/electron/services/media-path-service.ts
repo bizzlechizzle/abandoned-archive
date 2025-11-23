@@ -30,12 +30,19 @@ export class MediaPathService {
   // === Path Generators ===
 
   /**
-   * Get thumbnail path for a given file hash
+   * Get thumbnail path for a given file hash and size
    * Uses first 2 characters of hash as subdirectory for bucketing
+   *
+   * Sizes:
+   * - 400: Small thumbnail for grid view (1x displays)
+   * - 800: Large thumbnail for grid view (2x HiDPI displays)
+   * - 1920: Preview for lightbox/detail view
+   * - undefined: Legacy 256px path (backwards compatibility)
    */
-  getThumbnailPath(hash: string): string {
+  getThumbnailPath(hash: string, size?: 400 | 800 | 1920): string {
     const bucket = hash.substring(0, 2);
-    return path.join(this.getThumbnailDir(), bucket, `${hash}.jpg`);
+    const filename = size ? `${hash}_${size}.jpg` : `${hash}.jpg`;
+    return path.join(this.getThumbnailDir(), bucket, filename);
   }
 
   /**

@@ -465,9 +465,11 @@ export class FileImportService {
       ? (metadata?.gps || null)
       : null;
 
-    // Kanye5: Step 5d - Extract preview for RAW files and generate thumbnails
+    // Kanye5/Kanye3: Step 5d - Extract preview for RAW files and generate multi-tier thumbnails
+    let rawPreviewPath: string | null = null;
+    let thumbPathSm: string | null = null;
+    let thumbPathLg: string | null = null;
     let previewPath: string | null = null;
-    let thumbPath: string | null = null;
 
     if (type === 'image') {
       // Extract embedded JPEG preview from RAW files
@@ -475,47 +477,63 @@ export class FileImportService {
         console.log('[FileImport] Step 5d: Extracting RAW preview...');
         const previewStart = Date.now();
         try {
-          previewPath = await this.previewExtractorService.extractPreview(file.filePath, hash);
-          if (previewPath) {
-            console.log('[FileImport] Preview extracted in', Date.now() - previewStart, 'ms:', previewPath);
+          rawPreviewPath = await this.previewExtractorService.extractPreview(file.filePath, hash);
+          if (rawPreviewPath) {
+            console.log('[FileImport] Preview extracted in', Date.now() - previewStart, 'ms:', rawPreviewPath);
           } else {
             console.log('[FileImport] No embedded preview found (will use original for viewing)');
           }
         } catch (previewError) {
           console.warn('[FileImport] Preview extraction failed:', previewError);
-          // Non-fatal - continue without preview
         }
       }
 
-      // Generate thumbnail (use preview for RAW files, original for standard images)
-      console.log('[FileImport] Step 5e: Generating thumbnail...');
+      // Kanye3: Generate multi-tier thumbnails (400px, 800px, 1920px)
+      console.log('[FileImport] Step 5e: Generating multi-tier thumbnails (Premium Archive)...');
       const thumbStart = Date.now();
       try {
-        const sourceForThumb = previewPath || file.filePath;
-        thumbPath = await this.thumbnailService.generateThumbnail(sourceForThumb, hash);
-        if (thumbPath) {
-          console.log('[FileImport] Thumbnail generated in', Date.now() - thumbStart, 'ms:', thumbPath);
-        } else {
-          console.warn('[FileImport] Thumbnail generation returned null');
-        }
+        const sourceForThumb = rawPreviewPath || file.filePath;
+        const thumbnails = await this.thumbnailService.generateAllSizes(sourceForThumb, hash);
+        thumbPathSm = thumbnails.thumb_sm;
+        thumbPathLg = thumbnails.thumb_lg;
+        previewPath = thumbnails.preview;
+        console.log('[FileImport] Multi-tier thumbnails generated in', Date.now() - thumbStart, 'ms');
+        console.log(`  - thumb_sm (400px): ${thumbPathSm ? 'OK' : 'NULL'}`);
+        console.log(`  - thumb_lg (800px): ${thumbPathLg ? 'OK' : 'NULL'}`);
+        console.log(`  - preview (1920px): ${previewPath ? 'OK' : 'NULL'}`);
       } catch (thumbError) {
-        console.warn('[FileImport] Thumbnail generation failed:', thumbError);
-        // Non-fatal - continue without thumbnail
+        console.warn('[FileImport] Multi-tier thumbnail generation failed:', thumbError);
       }
     } else if (type === 'video') {
-      // Generate poster frame for videos
+      // Generate poster frame for videos, then generate multi-tier from poster
       console.log('[FileImport] Step 5d: Generating video poster frame...');
       const posterStart = Date.now();
       try {
-        thumbPath = await this.posterFrameService.generatePoster(file.filePath, hash);
-        if (thumbPath) {
-          console.log('[FileImport] Poster frame generated in', Date.now() - posterStart, 'ms:', thumbPath);
-        } else {
-          console.warn('[FileImport] Poster frame generation returned null');
+        const posterPath = await this.posterFrameService.generatePoster(file.filePath, hash);
+        if (posterPath) {
+          console.log('[FileImport] Poster frame generated in', Date.now() - posterStart, 'ms:', posterPath);
+          // Generate multi-tier thumbnails from poster frame
+          const thumbnails = await this.thumbnailService.generateAllSizes(posterPath, hash);
+          thumbPathSm = thumbnails.thumb_sm;
+          thumbPathLg = thumbnails.thumb_lg;
+          previewPath = thumbnails.preview;
         }
       } catch (posterError) {
         console.warn('[FileImport] Poster frame generation failed:', posterError);
-        // Non-fatal - continue without poster
+      }
+    } else if (type === 'map') {
+      // Maps can have thumbnails too (for image-based maps like scans)
+      const isImageMap = /\.(jpg|jpeg|png|gif|webp|tiff?)$/i.test(file.filePath);
+      if (isImageMap) {
+        console.log('[FileImport] Step 5d: Generating map thumbnails...');
+        try {
+          const thumbnails = await this.thumbnailService.generateAllSizes(file.filePath, hash);
+          thumbPathSm = thumbnails.thumb_sm;
+          thumbPathLg = thumbnails.thumb_lg;
+          previewPath = thumbnails.preview;
+        } catch (thumbError) {
+          console.warn('[FileImport] Map thumbnail generation failed:', thumbError);
+        }
       }
     }
 
@@ -537,8 +555,11 @@ export class FileImportService {
       archivePath,
       sanitizedName,
       metadata,
-      thumbPath,    // Kanye5: Pass thumbnail path
-      previewPath   // Kanye5: Pass preview path (for RAW files)
+      // Kanye3: Multi-tier thumbnail paths
+      thumbPathSm,
+      thumbPathLg,
+      previewPath,
+      rawPreviewPath  // For RAW files
     );
     console.log('[FileImport] Step 7 complete in', Date.now() - insertStart, 'ms');
 
@@ -748,7 +769,7 @@ export class FileImportService {
 
   /**
    * Insert media record in database within transaction
-   * Kanye5: Added thumbPath and previewPath parameters for on-import extraction
+   * Kanye3: Multi-tier thumbnails (400px, 800px, 1920px)
    */
   private async insertMediaRecordInTransaction(
     trx: any,
@@ -758,8 +779,10 @@ export class FileImportService {
     archivePath: string,
     originalName: string,
     metadata: any,
-    thumbPath: string | null = null,
-    previewPath: string | null = null
+    thumbPathSm: string | null = null,
+    thumbPathLg: string | null = null,
+    previewPath: string | null = null,
+    rawPreviewPath: string | null = null
   ): Promise<void> {
     const timestamp = new Date().toISOString();
 
@@ -784,9 +807,12 @@ export class FileImportService {
           meta_camera_model: metadata?.cameraModel || null,
           meta_gps_lat: metadata?.gps?.lat || null,
           meta_gps_lng: metadata?.gps?.lng || null,
-          // Kanye5: On-import preview/thumbnail paths
-          thumb_path: thumbPath,
+          // Kanye3: Multi-tier thumbnail paths
+          thumb_path_sm: thumbPathSm,
+          thumb_path_lg: thumbPathLg,
           preview_path: previewPath,
+          // Legacy column for backwards compatibility
+          thumb_path: thumbPathSm,
         })
         .execute();
     } else if (type === 'video') {
@@ -814,8 +840,12 @@ export class FileImportService {
           // FIX 3.2: Store GPS extracted from video metadata
           meta_gps_lat: metadata?.gps?.lat || null,
           meta_gps_lng: metadata?.gps?.lng || null,
-          // Kanye5: On-import poster frame path
-          thumb_path: thumbPath,
+          // Kanye3: Multi-tier thumbnail paths
+          thumb_path_sm: thumbPathSm,
+          thumb_path_lg: thumbPathLg,
+          preview_path: previewPath,
+          // Legacy column for backwards compatibility
+          thumb_path: thumbPathSm,
         })
         .execute();
     } else if (type === 'map') {
@@ -843,6 +873,10 @@ export class FileImportService {
           reference: null,
           map_states: null,
           map_verified: 0,
+          // Kanye3: Multi-tier thumbnail paths (for image-based maps)
+          thumb_path_sm: thumbPathSm,
+          thumb_path_lg: thumbPathLg,
+          preview_path: previewPath,
         })
         .execute();
     } else if (type === 'document') {
