@@ -52,6 +52,8 @@ Document each script in lilbits.md
 - URBFH: Understand Roadmap But Focus Here
 - DAFIDFAF: Don't Add Features I Didn't Ask For
 - NGS: No Google Services (no Google Maps, Google APIs, Google Analytics, etc. Use open-source alternatives: Leaflet/OSM for maps, Nominatim for geocoding). Exception: Google Fonts CDN is allowed for brand fonts (Lora, Roboto Mono)
+- PUEA: Premium User Experience Always (show only what exists, graceful degradation, polish every interaction)
+- AAA: Archive App Always (this is a research tool - every feature must support data interaction, documentation, and historical preservation. How can we write a research paper without interacting with data?)
 
 ### Core Process
 
