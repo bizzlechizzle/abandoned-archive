@@ -129,9 +129,11 @@
     onMapRightClick?: (lat: number, lng: number) => void;
     // FIX 6.8: Enable heat map visualization
     showHeatMap?: boolean;
+    // Kanye9: Custom zoom level based on GPS confidence
+    zoom?: number;
   }
 
-  let { locations = [], onLocationClick, onMapClick, onMapRightClick, showHeatMap = false }: Props = $props();
+  let { locations = [], onLocationClick, onMapClick, onMapRightClick, showHeatMap = false, zoom }: Props = $props();
 
   /**
    * Escape HTML to prevent XSS attacks
@@ -337,9 +339,9 @@
       bounds.getEast(),
       bounds.getNorth(),
     ];
-    const zoom = map.getZoom();
+    const currentZoom = map.getZoom();
 
-    const clusters = cluster.getClusters(bbox, Math.floor(zoom));
+    const clusters = cluster.getClusters(bbox, Math.floor(currentZoom));
 
     clusters.forEach((feature: any) => {
       const [lng, lat] = feature.geometry.coordinates;
@@ -394,17 +396,20 @@
       }
     });
 
-    // Kanye6: For single location view, zoom to street level for exact GPS
-    // or city level for approximate (state capital fallback)
-    if (locations.length === 1 && zoom === MAP_CONFIG.DEFAULT_ZOOM) {
+    // Kanye9: For single location view, use passed zoom prop if available
+    // This allows LocationMapSection to pass dynamic zoom based on GPS confidence
+    if (locations.length === 1 && currentZoom === MAP_CONFIG.DEFAULT_ZOOM) {
       const coords = getLocationCoordinates(locations[0]);
       if (coords) {
+        // Use prop zoom if provided, otherwise fall back to calculated zoom
         // Street level zoom (17) for exact GPS, city level (10) for approximate
-        const zoomLevel = coords.isApproximate ? 10 : 17;
+        const zoomLevel = zoom ?? (coords.isApproximate ? 10 : 17);
         map.setView([coords.lat, coords.lng], zoomLevel);
       }
-    } else if (locations.length > 0 && locations[0].gps && zoom === MAP_CONFIG.DEFAULT_ZOOM) {
-      map.setView([locations[0].gps.lat, locations[0].gps.lng], MAP_CONFIG.DETAIL_ZOOM);
+    } else if (locations.length > 0 && locations[0].gps && currentZoom === MAP_CONFIG.DEFAULT_ZOOM) {
+      // Use prop zoom if provided for multi-location views too
+      const zoomLevel = zoom ?? MAP_CONFIG.DETAIL_ZOOM;
+      map.setView([locations[0].gps.lat, locations[0].gps.lng], zoomLevel);
     }
   }
 

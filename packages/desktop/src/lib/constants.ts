@@ -56,6 +56,18 @@ export const GPS_CONFIG = {
   GPS_MISMATCH_THRESHOLD_METERS: 100,
 } as const;
 
+// Kanye9: GPS-based zoom levels for map display
+// Higher confidence = higher zoom (closer view)
+export const GPS_ZOOM_LEVELS = {
+  VERIFIED: 18,           // Building level - user confirmed location
+  EXIF: 17,               // Street level - from camera GPS
+  GEOCODED_ADDRESS: 17,   // Street level - forward geocoded from address
+  REVERSE_GEOCODE: 16,    // Block level - GPS existed, got address
+  MANUAL: 15,             // Neighborhood - user typed coordinates
+  STATE_CAPITAL: 8,       // State overview - fallback to capital
+  US_CENTER: 4,           // Country view - no location data
+} as const;
+
 // Database Configuration
 export const DB_CONFIG = {
   PRAGMA_WAL: 'journal_mode = WAL',
