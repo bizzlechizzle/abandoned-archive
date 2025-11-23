@@ -63,6 +63,72 @@ Document each script in lilbits.md
 6. Write/update/create code/plan based on implementation guide
 7. Update techguide.md and lilbits.md with what changed and why
 
+### Script Documentation Standard
+
+Every script MUST have a corresponding documentation file in `docs/scripts/[script-name].md`.
+
+**Purpose:** Prevent AI/developer drift by documenting WHY decisions were made, not just WHAT the code does. Any coder should be able to recreate the script from its documentation alone.
+
+**Required Sections:**
+
+```markdown
+# [Script Name]
+
+## Overview
+Brief description of what this script does and why it exists.
+
+## File Location
+`packages/desktop/electron/services/[script-name].ts`
+
+## Dependencies
+- Internal: List all internal imports
+- External: List all npm packages used
+
+## Consumers (What Uses This)
+- List all files/components that import this script
+- Describe how they use it
+
+## Core Rules (DO NOT BREAK)
+1. Rule 1 - Why this rule exists
+2. Rule 2 - Why this rule exists
+...
+
+## Function-by-Function Breakdown
+
+### functionName(params): ReturnType
+**Purpose:** What it does
+**Parameters:**
+- `param1`: Type - Description
+**Returns:** Description of return value
+**Example:**
+```typescript
+// Usage example
+```
+
+## Error Handling
+- What errors can occur
+- How they are handled
+- What the user sees
+
+## Performance Considerations
+- Expected performance characteristics
+- Known bottlenecks or limitations
+
+## Testing
+- How to test this script
+- Key test cases
+
+## Changelog
+| Date | Change | Reason |
+|------|--------|--------|
+| YYYY-MM-DD | Initial creation | Why it was built |
+```
+
+**Rules:**
+- Documentation MUST be updated when code changes
+- Changelog MUST include reasoning, not just "fixed bug"
+- Core Rules section is sacred - changes require explicit justification
+
 ---
 
 ## Architecture
