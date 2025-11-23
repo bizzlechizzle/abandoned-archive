@@ -4,14 +4,14 @@
   "type": "module",
   "main": "dist-electron/main/index.js",
   "scripts": {
-    "postinstall": "electron-rebuild",
+    "postinstall": "electron-rebuild -f -o better-sqlite3,sharp",
     "dev": "vite",
     "build": "vite build",
     "build:electron": "electron-builder --config electron-builder.config.json",
     "build:all": "pnpm run build && pnpm run build:electron",
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"electron .\"",
-    "rebuild": "electron-rebuild",
+    "rebuild": "electron-rebuild -f -o better-sqlite3,sharp",
     "test": "vitest",
     "lint": "eslint src electron"
   },
