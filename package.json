@@ -19,6 +19,9 @@
   },
   "scripts": {
     "postinstall": "pnpm --filter core build && pnpm --filter desktop rebuild",
+    "setup": "bash scripts/setup.sh",
+    "setup:quick": "bash scripts/setup.sh --skip-optional",
+    "check-deps": "bash scripts/check-deps.sh",
     "dev": "pnpm --filter desktop dev",
     "build": "pnpm --filter core build && pnpm --filter desktop build",
     "build:core": "pnpm --filter core build",

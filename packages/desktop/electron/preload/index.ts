@@ -151,6 +151,29 @@ const api = {
       ipcRenderer.invoke('geocode:clearCache', daysOld),
   },
 
+  // Kanye11: Address parsing with libpostal
+  address: {
+    // Check if libpostal is available
+    libpostalStatus: (): Promise<{
+      available: boolean;
+      source: string;
+      message: string;
+    }> =>
+      ipcRenderer.invoke('address:libpostalStatus'),
+
+    // Parse address using libpostal (or regex fallback)
+    parse: (address: string): Promise<{
+      house_number: string | null;
+      street: string | null;
+      city: string | null;
+      state: string | null;
+      zipcode: string | null;
+      country: string;
+      confidence: 'high' | 'medium' | 'low';
+    }> =>
+      ipcRenderer.invoke('address:parse', address),
+  },
+
   dialog: {
     selectFolder: (): Promise<string | null> =>
       ipcRenderer.invoke('dialog:selectFolder'),

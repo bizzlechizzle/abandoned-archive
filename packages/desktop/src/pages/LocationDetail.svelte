@@ -110,13 +110,17 @@
       console.log('[Kanye9] Cascade geocode result:', result);
       if (result?.lat && result?.lng) {
         console.log(`[Kanye9] Cascade success: tier ${result.cascadeTier} (${result.cascadeDescription})`);
+        // Kanye11 FIX: Use nested gps object per LocationInputSchema, NOT flat gps_lat/gps_lng fields
         await window.electronAPI.locations.update(location.locid, {
-          gps_lat: result.lat,
-          gps_lng: result.lng,
-          gps_source: 'geocoded_address',
-          // Kanye9: Store tier for accurate map zoom
-          gps_geocode_tier: result.cascadeTier,
-          gps_geocode_query: result.cascadeQuery,
+          gps: {
+            lat: result.lat,
+            lng: result.lng,
+            source: 'geocoded_address',
+            verifiedOnMap: false,
+            // Kanye9: Store tier for accurate map zoom
+            geocodeTier: result.cascadeTier,
+            geocodeQuery: result.cascadeQuery,
+          }
         });
         console.log('[Kanye9] Reloading location to trigger map re-zoom...');
         await loadLocation();
