@@ -34,6 +34,8 @@
   let currentIndex = $state(startIndex);
   let showExif = $state(false);
   let imageError = $state(false);
+  let regenerating = $state(false);
+  let regenerateError = $state<string | null>(null);
 
   const currentMedia = $derived(mediaList[currentIndex]);
 
@@ -94,6 +96,42 @@
   async function openInSystemViewer() {
     if (currentMedia) {
       await window.electronAPI?.media?.openFile(currentMedia.path);
+    }
+  }
+
+  // Kanye11: Regenerate preview for RAW files that couldn't be displayed
+  async function regeneratePreview() {
+    if (!currentMedia) return;
+
+    regenerating = true;
+    regenerateError = null;
+
+    try {
+      const result = await window.electronAPI?.media?.regenerateSingleFile(
+        currentMedia.hash,
+        currentMedia.path
+      );
+
+      if (result?.success) {
+        // Update the current media item with the new preview path
+        // This will trigger a re-render with the new image source
+        if (result.previewPath) {
+          // Force a reload by temporarily clearing the error state
+          imageError = false;
+          // Update the mediaList item (this mutates the parent's array)
+          mediaList[currentIndex] = {
+            ...currentMedia,
+            previewPath: result.previewPath,
+            thumbPath: result.thumbPathSm || currentMedia.thumbPath,
+          };
+        }
+      } else {
+        regenerateError = result?.error || 'Failed to regenerate preview';
+      }
+    } catch (err) {
+      regenerateError = err instanceof Error ? err.message : 'Unknown error';
+    } finally {
+      regenerating = false;
     }
   }
 
@@ -180,12 +218,32 @@
         <div class="text-center text-white">
           <p class="text-xl mb-4">Cannot display this file format in browser</p>
           <p class="text-gray-400 mb-4">{currentMedia.name || currentMedia.path}</p>
-          <button
-            onclick={openInSystemViewer}
-            class="px-6 py-3 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
-          >
-            Open in System Viewer
-          </button>
+
+          {#if regenerateError}
+            <p class="text-red-400 mb-4">{regenerateError}</p>
+          {/if}
+
+          <div class="flex gap-4 justify-center">
+            <button
+              onclick={openInSystemViewer}
+              class="px-6 py-3 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
+            >
+              Open in System Viewer
+            </button>
+
+            <!-- Kanye11: Regenerate preview button for RAW files -->
+            <button
+              onclick={regeneratePreview}
+              disabled={regenerating}
+              class="px-6 py-3 bg-green-600 text-white rounded hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {regenerating ? 'Extracting Preview...' : 'Extract Preview'}
+            </button>
+          </div>
+
+          <p class="text-gray-500 text-sm mt-4">
+            RAW files require preview extraction to display in browser
+          </p>
         </div>
       {:else}
         <!-- Image display -->

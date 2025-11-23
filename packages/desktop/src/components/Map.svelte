@@ -156,6 +156,8 @@
   let cluster: Supercluster | null = null;
   // Kanye9 FIX: Track GPS hash, not just length - triggers re-zoom when GPS updates
   let lastLocationsHash = $state('');
+  // Kanye11 FIX: Prevent infinite loop - track if initial view has been set
+  let initialViewSet = $state(false);
 
   /**
    * Kanye9: Generate hash from location IDs and GPS coordinates
@@ -411,12 +413,14 @@
     // Kanye8 FIX: Removed DEFAULT_ZOOM check - always zoom for single location
     // This ensures re-zoom after forward geocoding updates GPS coordinates
     // Kanye9: Use passed zoom prop if available for tier-based zoom levels
-    if (locations.length === 1) {
+    // Kanye11 FIX: Only set view once to prevent infinite loop (setView triggers moveend → updateClusters → setView)
+    if (locations.length === 1 && !initialViewSet) {
       const coords = getLocationCoordinates(locations[0]);
       if (coords) {
         // Use prop zoom if provided, otherwise fall back to calculated zoom
         // Street level zoom (17) for exact GPS, city level (10) for approximate
         const zoomLevel = zoom ?? (coords.isApproximate ? 10 : 17);
+        initialViewSet = true; // MUST set BEFORE setView to prevent recursion
         map.setView([coords.lat, coords.lng], zoomLevel);
       }
     }
@@ -428,6 +432,8 @@
     const currentHash = getLocationsHash(locations);
     if (map && markersLayer && currentHash !== lastLocationsHash) {
       lastLocationsHash = currentHash;
+      // Kanye11 FIX: Reset initialViewSet so map re-zooms when GPS changes
+      initialViewSet = false;
       initCluster();
       import('leaflet').then((L) => updateClusters(L.default));
     }

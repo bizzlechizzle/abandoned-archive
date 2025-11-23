@@ -325,6 +325,15 @@ const api = {
       ipcRenderer.invoke('media:darktableProcessPending'),
     darktableSetEnabled: (enabled: boolean): Promise<{ success: boolean }> =>
       ipcRenderer.invoke('media:darktableSetEnabled', enabled),
+    // Kanye11: Regenerate preview/thumbnails for a single file
+    regenerateSingleFile: (hash: string, filePath: string): Promise<{
+      success: boolean;
+      error?: string;
+      previewPath?: string;
+      thumbPathSm?: string;
+      thumbPathLg?: string;
+    }> =>
+      ipcRenderer.invoke('media:regenerateSingleFile', hash, filePath),
   },
 
   notes: {

@@ -276,6 +276,68 @@ export function registerMediaProcessingHandlers(
     }
   });
 
+  // Kanye11: Regenerate preview/thumbnails for a single file
+  // Used when MediaViewer can't display a file due to missing preview
+  ipcMain.handle('media:regenerateSingleFile', async (_event, hash: unknown, filePath: unknown) => {
+    try {
+      const validHash = z.string().min(1).parse(hash);
+      const validPath = z.string().min(1).parse(filePath);
+
+      const archivePath = await getArchivePath();
+      const mediaPathService = new MediaPathService(archivePath);
+      const thumbnailService = new ThumbnailService(mediaPathService);
+      const previewService = new PreviewExtractorService(mediaPathService, exifToolService);
+
+      let sourcePath = validPath;
+      let previewPath: string | null = null;
+
+      // For RAW files, extract preview first
+      const isRaw = /\.(nef|cr2|cr3|arw|srf|sr2|orf|pef|dng|rw2|raf|raw|rwl|3fr|fff|iiq|mrw|x3f|erf|mef|mos|kdc|dcr)$/i.test(validPath);
+
+      if (isRaw) {
+        console.log(`[Kanye11] Extracting preview for RAW file: ${validHash}`);
+        previewPath = await previewService.extractPreview(validPath, validHash);
+        if (previewPath) {
+          sourcePath = previewPath;
+          console.log(`[Kanye11] Preview extracted: ${previewPath}`);
+        } else {
+          console.warn(`[Kanye11] No embedded preview found in RAW file`);
+          return { success: false, error: 'No embedded preview found in RAW file' };
+        }
+      }
+
+      // Generate multi-tier thumbnails
+      console.log(`[Kanye11] Generating thumbnails from: ${sourcePath}`);
+      const result = await thumbnailService.generateAllSizes(sourcePath, validHash);
+
+      if (result.thumb_sm) {
+        // Update database
+        await db
+          .updateTable('imgs')
+          .set({
+            preview_path: previewPath || result.preview,
+            thumb_path_sm: result.thumb_sm,
+            thumb_path_lg: result.thumb_lg,
+          })
+          .where('imgsha', '=', validHash)
+          .execute();
+
+        console.log(`[Kanye11] Regeneration complete for ${validHash}`);
+        return {
+          success: true,
+          previewPath: previewPath || result.preview,
+          thumbPathSm: result.thumb_sm,
+          thumbPathLg: result.thumb_lg,
+        };
+      }
+
+      return { success: false, error: 'Failed to generate thumbnails' };
+    } catch (error) {
+      console.error('Error regenerating single file:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
   // ==================== DARKTABLE HANDLERS (Kanye10) ====================
 
   // Singleton instances for Darktable services
