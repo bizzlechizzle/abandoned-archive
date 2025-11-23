@@ -3,20 +3,35 @@
    * LocationAddress - Address display with copy button, clickable filters
    * Per LILBITS: ~100 lines, single responsibility
    * Per PUEA: Only show if address exists
+   * Kanye8: Clean city names, all parts clickable, open on map link
    */
   import type { Location } from '@au-archive/core';
 
   interface Props {
     address: Location['address'];
     onNavigateFilter: (type: string, value: string) => void;
+    onOpenOnMap?: () => void;
   }
 
-  let { address, onNavigateFilter }: Props = $props();
+  let { address, onNavigateFilter, onOpenOnMap }: Props = $props();
+
+  /**
+   * Kanye8: Remove administrative prefixes from city names
+   * "Village Of Cambridge" → "Cambridge"
+   * "City Of Albany" → "Albany"
+   */
+  function getDisplayCity(city: string | undefined): string {
+    if (!city) return '';
+    return city
+      .replace(/^(Village Of|City Of|Town Of|Borough Of|Township Of)\s+/i, '')
+      .trim();
+  }
 
   function copyAddress() {
+    const displayCity = getDisplayCity(address?.city);
     const addr = [
       address?.street,
-      address?.city,
+      displayCity,
       address?.state,
       address?.zipcode
     ].filter(Boolean).join(', ');
@@ -25,6 +40,7 @@
 
   // PUEA: Only render if we have address data
   const hasAddress = $derived(address?.street || address?.city || address?.state);
+  const displayCity = $derived(getDisplayCity(address?.city));
 </script>
 
 {#if hasAddress}
