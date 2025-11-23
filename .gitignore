@@ -34,3 +34,13 @@ coverage/
 
 # Electron
 out/
+
+# Logseq knowledge base
+logseq/
+pages/
+
+# Generated media (thumbnails, previews, posters)
+.thumbnails/
+.previews/
+.posters/
+.cache/
