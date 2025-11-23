@@ -2,9 +2,18 @@
  * Address Normalizer Service
  * Ensures consistent address formatting across all entry points
  * Per claude.md spec: address_state must be 2 characters, zipcode must match 5 or 5+4 format
+ *
+ * Kanye11: Now uses libpostal when available for ML-powered address parsing
  */
 
 import { STATE_ABBREVIATIONS, VALID_STATE_CODES } from './us-state-codes';
+import {
+  parseAddress as libpostalParse,
+  expandAddress as libpostalExpand,
+  isLibpostalAvailable,
+  getLibpostalStatus,
+  type LibpostalResult,
+} from './libpostal-service';
 
 export interface RawAddress {
   street?: string | null;
@@ -475,3 +484,77 @@ export interface ParsedAddress {
   country: string;
   confidence: 'high' | 'medium' | 'low';
 }
+
+// ============================================================================
+// KANYE11: LIBPOSTAL-POWERED ADDRESS PARSING
+// ============================================================================
+
+/**
+ * Kanye11: Parse address using libpostal (with fallback to regex)
+ * This is the PRIMARY method for parsing user-entered addresses
+ *
+ * @param addressString - Full address string like "123 Main St, Springfield, IL 62701"
+ * @returns ParsedAddress with extracted components and confidence level
+ */
+export function parseAddressWithLibpostal(addressString: string): ParsedAddress {
+  const result = libpostalParse(addressString);
+
+  // Convert libpostal result to our ParsedAddress format
+  // libpostal uses lowercase, we need to normalize to our format
+  let street: string | null = null;
+  if (result.house_number && result.road) {
+    street = `${result.house_number} ${titleCase(result.road)}`;
+  } else if (result.road) {
+    street = titleCase(result.road);
+  } else if (result.house_number) {
+    street = result.house_number;
+  }
+
+  // Add unit if present
+  if (result.unit && street) {
+    street = `${street}, Unit ${result.unit.toUpperCase()}`;
+  }
+
+  return {
+    house_number: result.house_number,
+    street,
+    city: result.city ? titleCase(result.city) : null,
+    state: result.state ? result.state.toUpperCase() : null,
+    zipcode: result.postcode,
+    country: result.country?.toUpperCase() || 'US',
+    confidence: result._confidence,
+  };
+}
+
+/**
+ * Kanye11: Expand address to normalized variations
+ * Useful for geocoding - try multiple forms
+ */
+export function expandAddressVariations(addressString: string): string[] {
+  return libpostalExpand(addressString);
+}
+
+/**
+ * Kanye11: Check if libpostal is available
+ */
+export function checkLibpostalStatus(): {
+  available: boolean;
+  source: string;
+  message: string;
+} {
+  return getLibpostalStatus();
+}
+
+/**
+ * Title case helper
+ */
+function titleCase(str: string): string {
+  return str
+    .toLowerCase()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+// Re-export for convenience
+export { isLibpostalAvailable };

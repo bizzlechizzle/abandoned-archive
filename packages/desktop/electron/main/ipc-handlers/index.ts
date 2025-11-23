@@ -22,7 +22,7 @@
 
 import { getDatabase } from '../database';
 import { registerLocationHandlers } from './locations';
-import { registerStatsHandlers, registerSettingsHandlers } from './stats-settings';
+import { registerStatsHandlers, registerSettingsHandlers, registerLibpostalHandlers } from './stats-settings';
 import { registerShellHandlers, registerDialogHandlers } from './shell-dialog';
 import { registerImportsHandlers } from './imports';
 import { registerMediaImportHandlers } from './media-import';
@@ -72,6 +72,9 @@ export function registerIpcHandlers() {
 
   // Geocoding
   registerGeocodeHandlers(db);
+
+  // Kanye11: Address parsing with libpostal
+  registerLibpostalHandlers();
 
   console.log('IPC handlers registered (modular)');
 }

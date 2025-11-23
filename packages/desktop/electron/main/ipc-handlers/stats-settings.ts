@@ -99,3 +99,27 @@ export function registerSettingsHandlers(db: Kysely<Database>) {
     }
   });
 }
+
+// Kanye11: Libpostal status handler
+import { checkLibpostalStatus, parseAddressWithLibpostal } from '../../services/address-normalizer';
+
+export function registerLibpostalHandlers() {
+  // Check libpostal availability
+  ipcMain.handle('address:libpostalStatus', async () => {
+    return checkLibpostalStatus();
+  });
+
+  // Parse address using libpostal (or fallback)
+  ipcMain.handle('address:parse', async (_event, address: unknown) => {
+    try {
+      const validatedAddress = z.string().min(1).parse(address);
+      return parseAddressWithLibpostal(validatedAddress);
+    } catch (error) {
+      console.error('Error parsing address:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => e.message).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+}
