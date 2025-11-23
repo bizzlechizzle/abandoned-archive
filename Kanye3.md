@@ -14,71 +14,25 @@
 - [x] Updated `electron.d.ts` with complete type definitions
 - [x] Split `ipc-handlers.ts` (1933 lines) into 14 LILBITS-compliant modules (<300 lines each)
 - [x] Deleted legacy backup file
+- [x] **Fixed `file://` protocol blocked error** - Implemented custom `media://` protocol
 
 ---
 
 ## Outstanding Issues
 
-### 1. CRITICAL: `file://` Protocol Blocked in Renderer
+### 1. ~~CRITICAL: `file://` Protocol Blocked in Renderer~~ ✅ FIXED
 
-**Error:**
-```
-Not allowed to load local resource: file:///Users/bryant/Documents/temp%20archvive/locations/...
-```
+**Status:** RESOLVED - Implemented Option B (Custom Protocol)
 
-**Location:** `packages/desktop/src/components/MediaViewer.svelte:41-48`
+**Solution Applied:**
+- Registered `media://` protocol as privileged in `electron/main/index.ts` (before `app.whenReady()`)
+- Added `protocol.handle('media', ...)` handler to serve local files
+- Updated `MediaViewer.svelte` and `MediaGrid.svelte` to use `media://` instead of `file://`
 
-**Current Code:**
-```typescript
-const imageSrc = $derived(() => {
-  if (currentMedia.previewPath) {
-    return `file://${currentMedia.previewPath}`;
-  }
-  return `file://${currentMedia.path}`;
-});
-```
-
-**Problem:** Web content from `localhost:5173` (dev) or `file://` (prod) cannot load arbitrary `file://` URLs due to Chromium security restrictions.
-
-**Solution Options:**
-
-#### Option A: Use IPC + Base64 Data URLs (Recommended)
-```typescript
-// In MediaViewer.svelte
-let imageSrc = $state<string>('');
-
-$effect(() => {
-  if (currentMedia?.hash) {
-    window.electronAPI.media.getCached(currentMedia.hash).then((base64) => {
-      if (base64) {
-        imageSrc = `data:image/jpeg;base64,${base64}`;
-      }
-    });
-  }
-});
-```
-
-The `media:getCached` handler already exists and returns base64 data.
-
-#### Option B: Register Custom Protocol
-In `electron/main/index.ts`:
-```typescript
-import { protocol } from 'electron';
-
-app.whenReady().then(() => {
-  protocol.registerFileProtocol('media', (request, callback) => {
-    const filePath = request.url.replace('media://', '');
-    callback({ path: decodeURIComponent(filePath) });
-  });
-});
-```
-
-Then use `media://${currentMedia.path}` in components.
-
-#### Option C: Serve via Local HTTP (Not Recommended)
-Would require running an HTTP server in main process - adds complexity.
-
-**Estimated Effort:** 2-4 hours for Option A
+**Files Changed:**
+- `packages/desktop/electron/main/index.ts` - Protocol registration
+- `packages/desktop/src/components/MediaViewer.svelte` - Use `media://` for images/videos
+- `packages/desktop/src/components/MediaGrid.svelte` - Use `media://` for thumbnails
 
 ---
 
@@ -125,7 +79,7 @@ The TypeScript compilation check passed (pre-existing errors are from test files
 
 1. Preload script loads without errors
 2. `media.preload()` is callable from renderer
-3. MediaViewer can display images (blocked by Issue #1)
+3. MediaViewer can display images (Issue #1 now fixed)
 
 **Testing Checklist:**
 - [ ] `pnpm dev` starts without errors
@@ -134,7 +88,7 @@ The TypeScript compilation check passed (pre-existing errors are from test files
 - [ ] Navigate to a location with media
 - [ ] Open MediaViewer lightbox
 - [ ] Verify no `preload is not a function` error
-- [ ] Verify images display (requires Issue #1 fix)
+- [ ] Verify images display via `media://` protocol (Issue #1 is now fixed)
 
 ---
 
@@ -263,8 +217,8 @@ window.electronAPI = {
 
 ## Priority Order
 
-1. **Issue #1 (file:// blocked)** - Blocking for media viewing
-2. **Issue #3 (runtime testing)** - Verify fixes work
+1. ~~**Issue #1 (file:// blocked)**~~ - ✅ FIXED
+2. **Issue #3 (runtime testing)** - Verify all fixes work
 3. **Issue #4 (tsconfig)** - Clean up dev experience
 4. **Issue #2 (DI pattern)** - Nice to have
 5. **Issue #5 (webUtils)** - Investigation only
