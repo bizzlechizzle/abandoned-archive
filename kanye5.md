@@ -2,7 +2,7 @@
 
 **Version:** 5.0.0
 **Created:** 2025-11-23
-**Status:** ROOT CAUSES IDENTIFIED - FIXES READY
+**Status:** BUG 1 FIXED - BUG 2 PENDING
 **Type:** Critical Bug Analysis & Implementation Guide
 
 ---
@@ -11,12 +11,12 @@
 
 **TARGET: 100/100 Score**
 
-Two critical bugs are preventing the Premium Archive features from working:
+Two critical bugs were identified. BUG 1 has been fixed:
 
-| Bug | Root Cause | Impact | Fix Complexity |
-|-----|-----------|--------|----------------|
-| **BUG 1** | Repository interfaces missing thumbnail fields | Thumbnails never reach frontend | SIMPLE |
-| **BUG 2** | Map shows but address_state often NULL | Map fallback fails | MEDIUM |
+| Bug | Root Cause | Impact | Status |
+|-----|-----------|--------|--------|
+| **BUG 1** | Repository interfaces missing thumbnail fields | Thumbnails never reach frontend | **FIXED** |
+| **BUG 2** | Map shows but address_state often NULL | Map fallback fails | PENDING |
 
 ---
 
