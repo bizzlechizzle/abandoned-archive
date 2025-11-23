@@ -42,6 +42,7 @@ export const LocationInputSchema = z.object({
   access: z.string().optional(),
   historic: z.boolean().default(false),
   favorite: z.boolean().default(false),
+  hero_imgsha: z.string().optional(),
   auth_imp: z.string().optional()
 });
 

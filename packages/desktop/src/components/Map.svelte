@@ -394,7 +394,16 @@
       }
     });
 
-    if (locations.length > 0 && locations[0].gps && zoom === MAP_CONFIG.DEFAULT_ZOOM) {
+    // Kanye6: For single location view, zoom to street level for exact GPS
+    // or city level for approximate (state capital fallback)
+    if (locations.length === 1 && zoom === MAP_CONFIG.DEFAULT_ZOOM) {
+      const coords = getLocationCoordinates(locations[0]);
+      if (coords) {
+        // Street level zoom (17) for exact GPS, city level (10) for approximate
+        const zoomLevel = coords.isApproximate ? 10 : 17;
+        map.setView([coords.lat, coords.lng], zoomLevel);
+      }
+    } else if (locations.length > 0 && locations[0].gps && zoom === MAP_CONFIG.DEFAULT_ZOOM) {
       map.setView([locations[0].gps.lat, locations[0].gps.lng], MAP_CONFIG.DETAIL_ZOOM);
     }
   }

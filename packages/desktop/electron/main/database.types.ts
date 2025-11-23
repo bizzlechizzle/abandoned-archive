@@ -57,6 +57,9 @@ export interface LocsTable {
   historic: number;
   favorite: number;
 
+  // Hero Image (Kanye6: User-selected featured image)
+  hero_imgsha: string | null;
+
   // Relationships
   sublocs: string | null;
   sub12: string | null;

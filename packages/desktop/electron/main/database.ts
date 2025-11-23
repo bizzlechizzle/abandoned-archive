@@ -493,6 +493,26 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 9 completed: multi-tier thumbnail columns added');
     }
+
+    // Migration 10: Add hero_imgsha to locs table for hero image selection
+    // Per Kanye6: Allow users to select a featured image for each location
+    const locsColumnsCheck = sqlite.prepare('PRAGMA table_info(locs)').all() as Array<{ name: string }>;
+    const hasHeroImgsha = locsColumnsCheck.some(col => col.name === 'hero_imgsha');
+
+    if (!hasHeroImgsha) {
+      console.log('Running migration 10: Adding hero_imgsha column to locs');
+
+      sqlite.exec(`
+        ALTER TABLE locs ADD COLUMN hero_imgsha TEXT;
+      `);
+
+      // Create index for finding locations with hero images
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_locs_hero_imgsha ON locs(hero_imgsha) WHERE hero_imgsha IS NOT NULL;
+      `);
+
+      console.log('Migration 10 completed: hero_imgsha column added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

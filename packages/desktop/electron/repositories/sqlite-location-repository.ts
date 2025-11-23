@@ -170,6 +170,7 @@ export class SQLiteLocationRepository implements LocationRepository {
     if (input.access !== undefined) updates.access = input.access;
     if (input.historic !== undefined) updates.historic = input.historic ? 1 : 0;
     if (input.favorite !== undefined) updates.favorite = input.favorite ? 1 : 0;
+    if (input.hero_imgsha !== undefined) updates.hero_imgsha = input.hero_imgsha;
     if (input.auth_imp !== undefined) updates.auth_imp = input.auth_imp;
 
     await this.db
@@ -265,6 +266,7 @@ export class SQLiteLocationRepository implements LocationRepository {
       access: row.access,
       historic: row.historic === 1,
       favorite: row.favorite === 1,
+      hero_imgsha: row.hero_imgsha,
       sublocs: row.sublocs ? JSON.parse(row.sublocs) : [],
       sub12: row.sub12,
       locadd: row.locadd,

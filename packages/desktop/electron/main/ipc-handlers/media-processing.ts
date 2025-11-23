@@ -174,26 +174,63 @@ export function registerMediaProcessingHandlers(
     }
   });
 
+  // Kanye6: Regenerate multi-tier thumbnails for all images missing thumb_path_sm
   ipcMain.handle('media:regenerateAllThumbnails', async () => {
     try {
       const archivePath = await getArchivePath();
       const mediaPathService = new MediaPathService(archivePath);
       const thumbnailService = new ThumbnailService(mediaPathService);
+      const previewService = new PreviewExtractorService(mediaPathService, exifToolService);
 
+      // Get images missing multi-tier thumbnails (thumb_path_sm is NULL)
       const images = await mediaRepo.getImagesWithoutThumbnails();
       let generated = 0;
       let failed = 0;
 
+      console.log(`[Kanye6] Regenerating thumbnails for ${images.length} images...`);
+
       for (const img of images) {
-        const result = await thumbnailService.generateThumbnail(img.imgloc, img.imgsha);
-        if (result) {
-          await mediaRepo.updateImageThumbnailPath(img.imgsha, result);
-          generated++;
-        } else {
+        try {
+          // For RAW files, extract preview first if needed
+          let sourcePath = img.imgloc;
+          const isRaw = /\.(nef|cr2|cr3|arw|srf|sr2|orf|pef|dng|rw2|raf|raw|rwl|3fr|fff|iiq|mrw|x3f|erf|mef|mos|kdc|dcr)$/i.test(img.imgloc);
+
+          if (isRaw && !img.preview_path) {
+            const preview = await previewService.extractPreview(img.imgloc, img.imgsha);
+            if (preview) {
+              sourcePath = preview;
+              await mediaRepo.updateImagePreviewPath(img.imgsha, preview);
+            }
+          } else if (img.preview_path) {
+            sourcePath = img.preview_path;
+          }
+
+          // Generate multi-tier thumbnails (400px, 800px, 1920px)
+          const result = await thumbnailService.generateAllSizes(sourcePath, img.imgsha);
+
+          if (result.thumb_sm) {
+            // Update database with all thumbnail paths
+            await db
+              .updateTable('imgs')
+              .set({
+                thumb_path_sm: result.thumb_sm,
+                thumb_path_lg: result.thumb_lg,
+                preview_path: result.preview || img.preview_path,
+              })
+              .where('imgsha', '=', img.imgsha)
+              .execute();
+
+            generated++;
+          } else {
+            failed++;
+          }
+        } catch (err) {
+          console.error(`[Kanye6] Failed to regenerate thumbnails for ${img.imgsha}:`, err);
           failed++;
         }
       }
 
+      console.log(`[Kanye6] Thumbnail regeneration complete: ${generated} generated, ${failed} failed`);
       return { generated, failed, total: images.length };
     } catch (error) {
       console.error('Error regenerating thumbnails:', error);

@@ -13,6 +13,12 @@
   let saving = $state(false);
   let saveMessage = $state('');
 
+  // Kanye6: Thumbnail regeneration state
+  let regenerating = $state(false);
+  let regenProgress = $state(0);
+  let regenTotal = $state(0);
+  let regenMessage = $state('');
+
   async function loadSettings() {
     try {
       loading = true;
@@ -71,6 +77,41 @@
       saveMessage = 'Error saving settings';
     } finally {
       saving = false;
+    }
+  }
+
+  /**
+   * Kanye6: Regenerate thumbnails for all images missing multi-tier thumbnails
+   * This repairs old imports that only have 256px thumbnails
+   */
+  async function regenerateThumbnails() {
+    if (!window.electronAPI?.media?.regenerateAllThumbnails) {
+      regenMessage = 'Thumbnail regeneration not available';
+      return;
+    }
+
+    try {
+      regenerating = true;
+      regenProgress = 0;
+      regenTotal = 0;
+      regenMessage = 'Starting thumbnail regeneration...';
+
+      const result = await window.electronAPI.media.regenerateAllThumbnails();
+
+      if (result.total === 0) {
+        regenMessage = 'All images already have thumbnails';
+      } else {
+        regenMessage = `Regenerated ${result.generated} of ${result.total} thumbnails (${result.failed} failed)`;
+      }
+
+      setTimeout(() => {
+        regenMessage = '';
+      }, 5000);
+    } catch (error) {
+      console.error('Thumbnail regeneration failed:', error);
+      regenMessage = 'Thumbnail regeneration failed';
+    } finally {
+      regenerating = false;
     }
   }
 
@@ -203,6 +244,34 @@
         <p class="text-xs text-gray-500">
           Prompt for user authentication when the application starts
         </p>
+      </div>
+
+      <!-- Kanye6: Maintenance Section for Thumbnail Regeneration -->
+      <div class="bg-white rounded-lg shadow p-6 mb-6">
+        <h2 class="text-lg font-semibold mb-4 text-foreground">Maintenance</h2>
+        <div class="space-y-4">
+          <div>
+            <p class="text-sm text-gray-700 mb-2">
+              Regenerate thumbnails for images imported before the multi-tier system.
+              This creates 400px, 800px, and 1920px versions for better quality display.
+            </p>
+            <div class="flex items-center gap-4">
+              <button
+                onclick={regenerateThumbnails}
+                disabled={regenerating}
+                class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+              >
+                {regenerating ? 'Regenerating...' : 'Regenerate All Thumbnails'}
+              </button>
+              {#if regenMessage}
+                <span class="text-sm text-gray-600">{regenMessage}</span>
+              {/if}
+            </div>
+            <p class="text-xs text-gray-500 mt-2">
+              This may take a while for large archives. RAW files (NEF, CR2, etc.) will have previews extracted first.
+            </p>
+          </div>
+        </div>
       </div>
 
       <DatabaseSettings />
