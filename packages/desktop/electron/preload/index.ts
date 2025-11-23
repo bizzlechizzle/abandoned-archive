@@ -256,6 +256,27 @@ const api = {
       ipcRenderer.invoke('media:writeXmp', mediaPath, data),
     regenerateAllThumbnails: (): Promise<{ generated: number; failed: number; total: number }> =>
       ipcRenderer.invoke('media:regenerateAllThumbnails'),
+    // Kanye10: Darktable integration for premium RAW processing
+    darktableAvailable: (): Promise<{ available: boolean; binaryPath: string | null }> =>
+      ipcRenderer.invoke('media:darktableAvailable'),
+    darktableQueueStatus: (): Promise<{
+      total: number;
+      completed: number;
+      failed: number;
+      currentHash: string | null;
+      isProcessing: boolean;
+    }> =>
+      ipcRenderer.invoke('media:darktableQueueStatus'),
+    darktableProcessPending: (): Promise<{
+      success: boolean;
+      queued?: number;
+      total?: number;
+      error?: string;
+      message?: string;
+    }> =>
+      ipcRenderer.invoke('media:darktableProcessPending'),
+    darktableSetEnabled: (enabled: boolean): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('media:darktableSetEnabled', enabled),
   },
 
   notes: {

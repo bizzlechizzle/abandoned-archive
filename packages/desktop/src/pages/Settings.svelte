@@ -19,6 +19,13 @@
   let regenTotal = $state(0);
   let regenMessage = $state('');
 
+  // Kanye10: Darktable state
+  let darktableAvailable = $state(false);
+  let darktableBinaryPath = $state<string | null>(null);
+  let darktableProcessing = $state(false);
+  let darktableMessage = $state('');
+  let darktableQueueStatus = $state({ total: 0, completed: 0, failed: 0, isProcessing: false });
+
   async function loadSettings() {
     try {
       loading = true;
@@ -98,10 +105,14 @@
 
       const result = await window.electronAPI.media.regenerateAllThumbnails();
 
-      if (result.total === 0) {
-        regenMessage = 'All images already have thumbnails';
+      if (result.total === 0 && result.rawTotal === 0) {
+        regenMessage = 'All images already have thumbnails and previews';
       } else {
-        regenMessage = `Regenerated ${result.generated} of ${result.total} thumbnails (${result.failed} failed)`;
+        // Kanye9: Show both thumbnail and preview extraction stats
+        const thumbMsg = result.total > 0 ? `${result.generated}/${result.total} thumbnails` : '';
+        const previewMsg = result.rawTotal > 0 ? `${result.previewsExtracted}/${result.rawTotal} RAW previews` : '';
+        const failMsg = (result.failed + (result.previewsFailed || 0)) > 0 ? `(${result.failed + (result.previewsFailed || 0)} failed)` : '';
+        regenMessage = `Processed: ${[thumbMsg, previewMsg].filter(Boolean).join(', ')} ${failMsg}`.trim();
       }
 
       setTimeout(() => {
@@ -115,8 +126,71 @@
     }
   }
 
+  /**
+   * Kanye10: Check Darktable availability and load queue status
+   */
+  async function checkDarktable() {
+    if (!window.electronAPI?.media?.darktableAvailable) return;
+
+    try {
+      const result = await window.electronAPI.media.darktableAvailable();
+      darktableAvailable = result.available;
+      darktableBinaryPath = result.binaryPath;
+
+      if (darktableAvailable) {
+        const status = await window.electronAPI.media.darktableQueueStatus();
+        darktableQueueStatus = status;
+      }
+    } catch (error) {
+      console.error('Error checking Darktable:', error);
+    }
+  }
+
+  /**
+   * Kanye10: Process all pending RAW files through Darktable
+   */
+  async function processDarktablePending() {
+    if (!window.electronAPI?.media?.darktableProcessPending) {
+      darktableMessage = 'Darktable processing not available';
+      return;
+    }
+
+    try {
+      darktableProcessing = true;
+      darktableMessage = 'Queueing RAW files for Darktable processing...';
+
+      const result = await window.electronAPI.media.darktableProcessPending();
+
+      if (result.success) {
+        if (result.queued === 0) {
+          darktableMessage = result.message || 'No RAW files pending';
+        } else {
+          darktableMessage = `Queued ${result.queued} RAW files for Darktable. Processing in background...`;
+        }
+      } else {
+        darktableMessage = result.error || 'Failed to process';
+      }
+
+      // Refresh status after a short delay
+      setTimeout(async () => {
+        const status = await window.electronAPI.media.darktableQueueStatus();
+        darktableQueueStatus = status;
+      }, 1000);
+
+      setTimeout(() => {
+        darktableMessage = '';
+      }, 5000);
+    } catch (error) {
+      console.error('Darktable processing failed:', error);
+      darktableMessage = 'Darktable processing failed';
+    } finally {
+      darktableProcessing = false;
+    }
+  }
+
   onMount(() => {
     loadSettings();
+    checkDarktable(); // Kanye10: Check Darktable on load
   });
 </script>
 
@@ -271,6 +345,63 @@
               This may take a while for large archives. RAW files (NEF, CR2, etc.) will have previews extracted first.
             </p>
           </div>
+        </div>
+      </div>
+
+      <!-- Kanye10: Darktable Premium RAW Processing -->
+      <div class="bg-white rounded-lg shadow p-6 mb-6">
+        <h2 class="text-lg font-semibold mb-4 text-foreground">Darktable RAW Processing</h2>
+        <div class="space-y-4">
+          <div>
+            <div class="flex items-center gap-2 mb-2">
+              <span class={`inline-block w-3 h-3 rounded-full ${darktableAvailable ? 'bg-green-500' : 'bg-gray-400'}`}></span>
+              <span class="text-sm text-gray-700">
+                {darktableAvailable ? 'Darktable CLI Available' : 'Darktable CLI Not Found'}
+              </span>
+            </div>
+            {#if darktableBinaryPath}
+              <p class="text-xs text-gray-500 ml-5 font-mono">{darktableBinaryPath}</p>
+            {:else}
+              <p class="text-xs text-gray-500 ml-5">
+                Install Darktable for premium RAW processing:
+                <a href="https://www.darktable.org/install/" target="_blank" class="text-accent hover:underline">darktable.org/install</a>
+              </p>
+            {/if}
+          </div>
+
+          {#if darktableAvailable}
+            <div>
+              <p class="text-sm text-gray-700 mb-2">
+                Process RAW files (NEF, CR2, ARW, etc.) through Darktable for professional-quality JPEG output.
+                This runs in the background and may take several minutes per file.
+              </p>
+
+              {#if darktableQueueStatus.isProcessing}
+                <div class="mb-2 text-sm text-gray-600">
+                  Processing: {darktableQueueStatus.completed} / {darktableQueueStatus.total} files
+                  {#if darktableQueueStatus.failed > 0}
+                    <span class="text-red-500">({darktableQueueStatus.failed} failed)</span>
+                  {/if}
+                </div>
+              {/if}
+
+              <div class="flex items-center gap-4">
+                <button
+                  onclick={processDarktablePending}
+                  disabled={darktableProcessing}
+                  class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+                >
+                  {darktableProcessing ? 'Processing...' : 'Process Pending RAW Files'}
+                </button>
+                {#if darktableMessage}
+                  <span class="text-sm text-gray-600">{darktableMessage}</span>
+                {/if}
+              </div>
+              <p class="text-xs text-gray-500 mt-2">
+                New RAW files are automatically queued for processing after import.
+              </p>
+            </div>
+          {/if}
         </div>
       </div>
 

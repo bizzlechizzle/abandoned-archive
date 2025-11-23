@@ -27,6 +27,10 @@ export interface MediaImage {
   preview_extracted: number;
   xmp_synced: number;
   xmp_modified_at: string | null;
+  // Darktable processing (Migration 11 - Kanye10 Premium RAW)
+  darktable_path: string | null;
+  darktable_processed: number;
+  darktable_processed_at: string | null;
 }
 
 export interface MediaVideo {
@@ -218,13 +222,50 @@ export class SQLiteMediaRepository {
   // ==================== THUMBNAIL/PREVIEW OPERATIONS ====================
 
   /**
-   * Get images without thumbnails for batch generation
+   * Get images without multi-tier thumbnails for batch generation
+   * Kanye8 FIX: Check thumb_path_sm (400px) not thumb_path (legacy 256px)
+   * This catches images imported before multi-tier system
    */
-  async getImagesWithoutThumbnails(): Promise<Array<{ imgsha: string; imgloc: string }>> {
+  async getImagesWithoutThumbnails(): Promise<Array<{ imgsha: string; imgloc: string; preview_path: string | null }>> {
+    const rows = await this.db
+      .selectFrom('imgs')
+      .select(['imgsha', 'imgloc', 'preview_path'])
+      .where('thumb_path_sm', 'is', null)
+      .execute();
+    return rows;
+  }
+
+  /**
+   * Kanye9: Get RAW images that are missing preview extraction
+   * These are files that have thumbnails but no preview (browser can't display RAW)
+   */
+  async getImagesWithoutPreviews(): Promise<Array<{ imgsha: string; imgloc: string }>> {
+    // RAW file extensions that need preview extraction
+    const rawPattern = '%.nef';  // Start with NEF, most common
     const rows = await this.db
       .selectFrom('imgs')
       .select(['imgsha', 'imgloc'])
-      .where('thumb_path', 'is', null)
+      .where('preview_path', 'is', null)
+      .where((eb) =>
+        eb.or([
+          eb('imgloc', 'like', '%.nef'),
+          eb('imgloc', 'like', '%.NEF'),
+          eb('imgloc', 'like', '%.cr2'),
+          eb('imgloc', 'like', '%.CR2'),
+          eb('imgloc', 'like', '%.cr3'),
+          eb('imgloc', 'like', '%.CR3'),
+          eb('imgloc', 'like', '%.arw'),
+          eb('imgloc', 'like', '%.ARW'),
+          eb('imgloc', 'like', '%.dng'),
+          eb('imgloc', 'like', '%.DNG'),
+          eb('imgloc', 'like', '%.orf'),
+          eb('imgloc', 'like', '%.ORF'),
+          eb('imgloc', 'like', '%.raf'),
+          eb('imgloc', 'like', '%.RAF'),
+          eb('imgloc', 'like', '%.rw2'),
+          eb('imgloc', 'like', '%.RW2'),
+        ])
+      )
       .execute();
     return rows;
   }
@@ -283,6 +324,72 @@ export class SQLiteMediaRepository {
       .set({
         xmp_synced: synced ? 1 : 0,
         xmp_modified_at: new Date().toISOString()
+      })
+      .where('imgsha', '=', imgsha)
+      .execute();
+  }
+
+  // ==================== DARKTABLE OPERATIONS (Kanye10) ====================
+
+  /**
+   * Get RAW images that haven't been processed by Darktable
+   * Used to populate background processing queue
+   */
+  async getImagesForDarktableProcessing(): Promise<Array<{ imgsha: string; imgloc: string; locid: string | null }>> {
+    const rows = await this.db
+      .selectFrom('imgs')
+      .select(['imgsha', 'imgloc', 'locid'])
+      .where('darktable_processed', '=', 0)
+      .where((eb) =>
+        eb.or([
+          eb('imgloc', 'like', '%.nef'),
+          eb('imgloc', 'like', '%.NEF'),
+          eb('imgloc', 'like', '%.cr2'),
+          eb('imgloc', 'like', '%.CR2'),
+          eb('imgloc', 'like', '%.cr3'),
+          eb('imgloc', 'like', '%.CR3'),
+          eb('imgloc', 'like', '%.arw'),
+          eb('imgloc', 'like', '%.ARW'),
+          eb('imgloc', 'like', '%.dng'),
+          eb('imgloc', 'like', '%.DNG'),
+          eb('imgloc', 'like', '%.orf'),
+          eb('imgloc', 'like', '%.ORF'),
+          eb('imgloc', 'like', '%.raf'),
+          eb('imgloc', 'like', '%.RAF'),
+          eb('imgloc', 'like', '%.rw2'),
+          eb('imgloc', 'like', '%.RW2'),
+          eb('imgloc', 'like', '%.pef'),
+          eb('imgloc', 'like', '%.PEF'),
+        ])
+      )
+      .execute();
+    return rows;
+  }
+
+  /**
+   * Update Darktable processing status for an image
+   */
+  async updateImageDarktablePath(imgsha: string, darktablePath: string): Promise<void> {
+    await this.db
+      .updateTable('imgs')
+      .set({
+        darktable_path: darktablePath,
+        darktable_processed: 1,
+        darktable_processed_at: new Date().toISOString()
+      })
+      .where('imgsha', '=', imgsha)
+      .execute();
+  }
+
+  /**
+   * Mark an image as failed Darktable processing (still sets processed=1 to avoid retry)
+   */
+  async markDarktableFailed(imgsha: string): Promise<void> {
+    await this.db
+      .updateTable('imgs')
+      .set({
+        darktable_processed: 1,
+        darktable_processed_at: new Date().toISOString()
       })
       .where('imgsha', '=', imgsha)
       .execute();

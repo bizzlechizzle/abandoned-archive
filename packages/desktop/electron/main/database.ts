@@ -513,6 +513,28 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 10 completed: hero_imgsha column added');
     }
+
+    // Migration 11: Add darktable_path column to imgs table
+    // Per Kanye10: Darktable CLI integration for premium RAW processing
+    const imgColsForDarktable = sqlite.prepare('PRAGMA table_info(imgs)').all() as Array<{ name: string }>;
+    const hasDarktablePath = imgColsForDarktable.some(col => col.name === 'darktable_path');
+
+    if (!hasDarktablePath) {
+      console.log('Running migration 11: Adding Darktable columns to imgs');
+
+      sqlite.exec(`
+        ALTER TABLE imgs ADD COLUMN darktable_path TEXT;
+        ALTER TABLE imgs ADD COLUMN darktable_processed INTEGER DEFAULT 0;
+        ALTER TABLE imgs ADD COLUMN darktable_processed_at TEXT;
+      `);
+
+      // Create index for finding RAW files pending Darktable processing
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_imgs_darktable ON imgs(darktable_processed) WHERE darktable_processed = 0;
+      `);
+
+      console.log('Migration 11 completed: Darktable columns added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

@@ -121,6 +121,11 @@ export interface ImgsTable {
   // XMP sync status (Migration 8)
   xmp_synced: number;
   xmp_modified_at: string | null;
+
+  // Darktable processing (Migration 11 - Kanye10 Premium RAW)
+  darktable_path: string | null;       // Path to Darktable-processed JPEG
+  darktable_processed: number;         // 0 = not processed, 1 = processed
+  darktable_processed_at: string | null;
 }
 
 // Videos table

@@ -27,6 +27,13 @@ export class MediaPathService {
     return path.join(this.archivePath, '.posters');
   }
 
+  /**
+   * Kanye10: Directory for Darktable-processed RAW files
+   */
+  getDarktableDir(): string {
+    return path.join(this.archivePath, '.darktable');
+  }
+
   // === Path Generators ===
 
   /**
@@ -70,6 +77,15 @@ export class MediaPathService {
     return path.join(parsed.dir, `${parsed.name}.xmp`);
   }
 
+  /**
+   * Kanye10: Get Darktable output path for a RAW file (without extension)
+   * Caller should add .jpg extension
+   */
+  getDarktablePath(hash: string): string {
+    const bucket = hash.substring(0, 2);
+    return path.join(this.getDarktableDir(), bucket, hash);
+  }
+
   // === Directory Initialization ===
 
   /**
@@ -80,6 +96,7 @@ export class MediaPathService {
       this.getThumbnailDir(),
       this.getPreviewDir(),
       this.getPosterDir(),
+      this.getDarktableDir(),  // Kanye10: Darktable processed files
     ];
 
     for (const dir of dirs) {

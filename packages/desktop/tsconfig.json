@@ -9,7 +9,12 @@
     "isolatedModules": true,
     "noEmit": true,
     "strict": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@core/*": ["../core/src/*"]
+    }
   },
   "include": ["src/**/*", "electron/**/*"],
   "exclude": ["node_modules"]

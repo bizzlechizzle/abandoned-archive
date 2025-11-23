@@ -82,22 +82,28 @@
     } catch (err) { console.error('Error loading bookmarks:', err); }
   }
 
-  /** Kanye6: Auto forward geocode address to GPS */
+  /** Kanye6/Kanye9: Auto forward geocode address to GPS with debug logging */
   async function ensureGpsFromAddress(): Promise<void> {
-    if (!location) return;
-    if (location.gps?.lat && location.gps?.lng) return;
+    console.log('[Kanye9] ensureGpsFromAddress called');
+    if (!location) { console.log('[Kanye9] No location, skipping'); return; }
+    if (location.gps?.lat && location.gps?.lng) { console.log('[Kanye9] Already has GPS:', location.gps); return; }
     const hasAddress = location.address?.street || location.address?.city;
-    if (!hasAddress) return;
+    if (!hasAddress) { console.log('[Kanye9] No address to geocode'); return; }
     const addressParts = [location.address?.street, location.address?.city, location.address?.state, location.address?.zipcode].filter(Boolean);
     if (addressParts.length === 0) return;
     const addressString = addressParts.join(', ');
+    console.log('[Kanye9] Forward geocoding address:', addressString);
     try {
       const result = await window.electronAPI.geocode.forward(addressString);
+      console.log('[Kanye9] Geocode result:', result);
       if (result?.lat && result?.lng) {
+        console.log('[Kanye9] Updating location with GPS:', result.lat, result.lng);
         await window.electronAPI.locations.update(location.locid, { gps_lat: result.lat, gps_lng: result.lng, gps_source: 'geocoded_address' });
+        console.log('[Kanye9] Reloading location to trigger map re-zoom...');
         await loadLocation();
-      }
-    } catch (err) { console.error('[LocationDetail] Forward geocoding failed:', err); }
+        console.log('[Kanye9] Forward geocoding complete!');
+      } else { console.warn('[Kanye9] Geocode returned no coordinates'); }
+    } catch (err) { console.error('[Kanye9] Forward geocoding failed:', err); }
   }
 
   // Action handlers

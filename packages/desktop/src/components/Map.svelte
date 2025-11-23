@@ -152,7 +152,16 @@
   // FIX 6.8: Heat map layer
   let heatLayer: any = null;
   let cluster: Supercluster | null = null;
-  let lastLocationsLength = $state(0);
+  // Kanye9 FIX: Track GPS hash, not just length - triggers re-zoom when GPS updates
+  let lastLocationsHash = $state('');
+
+  /**
+   * Kanye9: Generate hash from location IDs and GPS coordinates
+   * This ensures the $effect triggers when GPS is updated via forward geocoding
+   */
+  function getLocationsHash(locs: Location[]): string {
+    return locs.map(l => `${l.locid}:${l.gps?.lat || 0}:${l.gps?.lng || 0}`).join(',');
+  }
 
   /**
    * FIX 6.8: Simple canvas-based heat map implementation
@@ -394,24 +403,26 @@
       }
     });
 
-    // Kanye6: For single location view, zoom to street level for exact GPS
+    // Kanye6/Kanye8: For single location view, zoom to street level for exact GPS
     // or city level for approximate (state capital fallback)
-    if (locations.length === 1 && zoom === MAP_CONFIG.DEFAULT_ZOOM) {
+    // Kanye8 FIX: Removed DEFAULT_ZOOM check - always zoom for single location
+    // This ensures re-zoom after forward geocoding updates GPS coordinates
+    if (locations.length === 1) {
       const coords = getLocationCoordinates(locations[0]);
       if (coords) {
         // Street level zoom (17) for exact GPS, city level (10) for approximate
         const zoomLevel = coords.isApproximate ? 10 : 17;
         map.setView([coords.lat, coords.lng], zoomLevel);
       }
-    } else if (locations.length > 0 && locations[0].gps && zoom === MAP_CONFIG.DEFAULT_ZOOM) {
-      map.setView([locations[0].gps.lat, locations[0].gps.lng], MAP_CONFIG.DETAIL_ZOOM);
     }
   }
 
   $effect(() => {
-    // Only reinitialize cluster if locations array length changed
-    if (map && markersLayer && locations.length !== lastLocationsLength) {
-      lastLocationsLength = locations.length;
+    // Kanye9 FIX: Track GPS hash, not just length
+    // This triggers re-zoom when forward geocoding updates location GPS
+    const currentHash = getLocationsHash(locations);
+    if (map && markersLayer && currentHash !== lastLocationsHash) {
+      lastLocationsHash = currentHash;
       initCluster();
       import('leaflet').then((L) => updateClusters(L.default));
     }

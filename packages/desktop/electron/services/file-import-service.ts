@@ -14,6 +14,8 @@ import { MediaPathService } from './media-path-service';
 import { ThumbnailService } from './thumbnail-service';
 import { PreviewExtractorService } from './preview-extractor-service';
 import { PosterFrameService } from './poster-frame-service';
+// Kanye10: Darktable queue for premium RAW processing (background, non-blocking)
+import { DarktableQueueService } from './darktable-queue-service';
 import { SQLiteMediaRepository } from '../repositories/sqlite-media-repository';
 import { SQLiteImportRepository } from '../repositories/sqlite-import-repository';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
@@ -173,7 +175,9 @@ export class FileImportService {
     private readonly archivePath: string,
     private readonly allowedImportDirs: string[] = [], // User's home dir, downloads, etc.
     // FIX 3.3: Optional geocoding service for #import_address
-    private readonly geocodingService?: GeocodingService
+    private readonly geocodingService?: GeocodingService,
+    // Kanye10: Optional Darktable queue for premium RAW processing
+    private readonly darktableQueueService?: DarktableQueueService
   ) {
     // FIX 3.4: Initialize GPX/KML parser
     this.gpxKmlParser = new GPXKMLParser();
@@ -294,6 +298,27 @@ export class FileImportService {
       await new Promise(resolve => setImmediate(resolve));
     }
     console.log('[FileImport] Batch processing complete:', imported, 'imported,', duplicates, 'duplicates,', errors, 'errors');
+
+    // Kanye10: Queue RAW files for Darktable processing (non-blocking background task)
+    // This runs AFTER import and naming, per user spec
+    if (this.darktableQueueService) {
+      const rawFilesForQueue = results
+        .filter(r => r.success && !r.duplicate && r.type === 'image' && r.archivePath)
+        .filter(r => this.previewExtractorService.isRawFormat(r.archivePath!))
+        .map(r => ({
+          hash: r.hash,
+          sourcePath: r.archivePath!,
+          locid: locid,
+        }));
+
+      if (rawFilesForQueue.length > 0) {
+        console.log(`[FileImport] Queueing ${rawFilesForQueue.length} RAW files for Darktable processing...`);
+        // Fire-and-forget - don't await, processing happens in background
+        this.darktableQueueService.enqueueBatch(rawFilesForQueue)
+          .then(queued => console.log(`[FileImport] ${queued} RAW files queued for Darktable`))
+          .catch(err => console.warn('[FileImport] Failed to queue for Darktable:', err));
+      }
+    }
 
     // Create import record in separate transaction (after all files processed)
     // NOTE: locid already pre-fetched at line 204, use auth_imp from first file

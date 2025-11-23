@@ -3,8 +3,10 @@
    * LocationAddress - Address display with copy button, clickable filters
    * Per LILBITS: ~100 lines, single responsibility
    * Per PUEA: Only show if address exists
+   * Kanye8: Use getDisplayCity() to strip "Village of", "City of" prefixes
    */
   import type { Location } from '@au-archive/core';
+  import { getDisplayCity } from '@/lib/display-helpers';
 
   interface Props {
     address: Location['address'];
@@ -53,8 +55,8 @@
           <button
             onclick={() => onNavigateFilter('city', address!.city!)}
             class="text-accent hover:underline"
-            title="View all locations in {address.city}"
-          >{address.city}</button>{address?.state || address?.zipcode ? ', ' : ''}
+            title="View all locations in {getDisplayCity(address.city)}"
+          >{getDisplayCity(address.city)}</button>{address?.state || address?.zipcode ? ', ' : ''}
         {/if}
         {#if address?.state}
           <button
