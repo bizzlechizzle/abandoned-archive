@@ -174,6 +174,54 @@
     }
   }
 
+  /**
+   * Kanye6: Auto forward geocode address to GPS if location has address but no GPS
+   * Premium Archive: ALWAYS show something on map, don't hide map when address exists
+   */
+  async function ensureGpsFromAddress(): Promise<void> {
+    if (!location) return;
+
+    // Already has GPS? Skip
+    if (location.gps?.lat && location.gps?.lng) return;
+
+    // No address to geocode? Skip
+    const hasAddress = location.address?.street || location.address?.city;
+    if (!hasAddress) return;
+
+    // Build address string
+    const addressParts = [
+      location.address?.street,
+      location.address?.city,
+      location.address?.state,
+      location.address?.zipcode
+    ].filter(Boolean);
+
+    if (addressParts.length === 0) return;
+
+    const addressString = addressParts.join(', ');
+
+    try {
+      console.log(`[LocationDetail] Forward geocoding address: ${addressString}`);
+      const result = await window.electronAPI.geocode.forward(addressString);
+
+      if (result?.lat && result?.lng) {
+        // Update location with geocoded GPS
+        await window.electronAPI.locations.update(location.locid, {
+          gps_lat: result.lat,
+          gps_lng: result.lng,
+          gps_source: 'geocoded_address'
+        });
+
+        console.log(`[LocationDetail] Forward geocoded to GPS: ${result.lat}, ${result.lng}`);
+
+        // Reload location to get updated GPS and show map at exact address
+        await loadLocation();
+      }
+    } catch (err) {
+      console.error('[LocationDetail] Forward geocoding failed:', err);
+    }
+  }
+
   async function handleSave(updates: Partial<LocationInput>) {
     if (!location) return;
 
@@ -273,6 +321,7 @@
   }
 
   // FIX 6.1: GPS confidence indicator
+  // Kanye6: Added support for 'geocoded_address' source from forward geocoding
   function getGpsConfidence(gps: Location['gps']): { level: 'high' | 'medium' | 'low'; color: string; label: string } {
     if (!gps) return { level: 'low', color: 'gray', label: 'No GPS' };
 
@@ -288,6 +337,11 @@
 
     if (gps.source === 'geocoding' || gps.source === 'reverse_geocode') {
       return { level: 'medium', color: 'blue', label: 'Geocoded' };
+    }
+
+    // Kanye6: Forward geocoded from address - medium confidence
+    if (gps.source === 'geocoded_address') {
+      return { level: 'medium', color: 'blue', label: 'From Address' };
     }
 
     // Lower confidence: manual entry or unknown source
@@ -531,8 +585,12 @@
   }
 
   onMount(async () => {
-    loadLocation();
+    await loadLocation();
     loadBookmarks();
+
+    // Kanye6: Auto forward geocode if location has address but no GPS
+    // This ensures map shows at exact address, not just state capital
+    await ensureGpsFromAddress();
 
     // Load current user from settings
     try {
@@ -563,24 +621,36 @@
     </div>
   {:else}
     <div class="max-w-6xl mx-auto p-8">
-      <!-- Hero Image -->
+      <!-- Hero Image - Kanye6: Show actual preview/thumbnail, not just placeholder -->
       {#if images.length > 0}
+        {@const heroImage = images[0]}
+        {@const heroSrc = heroImage.preview_path || heroImage.thumb_path_lg || heroImage.thumb_path_sm || heroImage.thumb_path}
         <div class="mb-6 -mx-8 -mt-8">
           <button
             onclick={() => openLightbox(0)}
             class="relative w-full h-64 md:h-96 bg-gray-100 overflow-hidden group cursor-pointer"
           >
-            <div class="absolute inset-0 flex items-center justify-center text-gray-400">
-              <svg class="w-24 h-24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </div>
+            {#if heroSrc}
+              <!-- Kanye6: Display actual image using preview or largest thumbnail -->
+              <img
+                src={`media://${heroSrc}`}
+                alt={heroImage.imgnam || 'Hero Image'}
+                class="absolute inset-0 w-full h-full object-cover"
+              />
+            {:else}
+              <!-- Fallback placeholder if no thumbnail exists -->
+              <div class="absolute inset-0 flex items-center justify-center text-gray-400">
+                <svg class="w-24 h-24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+            {/if}
             <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-6">
               <div class="flex items-center justify-between text-white">
                 <div>
                   <p class="text-xs opacity-80">Hero Image</p>
-                  {#if images[0].meta_width && images[0].meta_height}
-                    <p class="text-sm">{formatResolution(images[0].meta_width, images[0].meta_height)}</p>
+                  {#if heroImage.meta_width && heroImage.meta_height}
+                    <p class="text-sm">{formatResolution(heroImage.meta_width, heroImage.meta_height)}</p>
                   {/if}
                 </div>
                 <div class="opacity-0 group-hover:opacity-100 transition">
