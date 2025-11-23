@@ -8,7 +8,7 @@
   import { router } from '../../stores/router';
   import Map from '../Map.svelte';
   import type { Location } from '@au-archive/core';
-  import { GPS_ZOOM_LEVELS } from '../../lib/constants';
+  import { GPS_ZOOM_LEVELS, GPS_GEOCODE_TIER_ZOOM } from '../../lib/constants';
 
   interface Props {
     location: Location;
@@ -46,7 +46,7 @@
     return { level: 'low', color: 'gray', label: 'Unverified' };
   }
 
-  // Kanye9: Calculate zoom level based on GPS source/confidence
+  // Kanye9: Calculate zoom level based on GPS source/confidence and geocode tier
   function getZoomLevel(gps: Location['gps'], hasState: boolean): number {
     if (!gps) {
       return hasState ? GPS_ZOOM_LEVELS.STATE_CAPITAL : GPS_ZOOM_LEVELS.US_CENTER;
@@ -54,7 +54,15 @@
 
     if (gps.verifiedOnMap) return GPS_ZOOM_LEVELS.VERIFIED;
     if (gps.source === 'exif' || gps.source === 'media_gps') return GPS_ZOOM_LEVELS.EXIF;
-    if (gps.source === 'geocoded_address') return GPS_ZOOM_LEVELS.GEOCODED_ADDRESS;
+
+    // Kanye9: Use tier-based zoom for geocoded addresses
+    if (gps.source === 'geocoded_address') {
+      if (gps.geocodeTier && gps.geocodeTier >= 1 && gps.geocodeTier <= 5) {
+        return GPS_GEOCODE_TIER_ZOOM[gps.geocodeTier as keyof typeof GPS_GEOCODE_TIER_ZOOM];
+      }
+      return GPS_ZOOM_LEVELS.GEOCODED_ADDRESS; // Fallback if no tier stored
+    }
+
     if (gps.source === 'geocoding' || gps.source === 'reverse_geocode') return GPS_ZOOM_LEVELS.REVERSE_GEOCODE;
     if (gps.source === 'manual' || gps.source === 'user_input') return GPS_ZOOM_LEVELS.MANUAL;
 
@@ -97,6 +105,22 @@
       <p class="text-base text-gray-900 font-mono text-sm">
         {location.gps.lat.toFixed(6)}, {location.gps.lng.toFixed(6)}
       </p>
+
+      <!-- Kanye9: GPS accuracy warning for low-tier geocoding -->
+      {#if location.gps.source === 'geocoded_address' && location.gps.geocodeTier && location.gps.geocodeTier > 1}
+        <div class="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
+          <span class="font-medium">Approximate location</span> -
+          {#if location.gps.geocodeTier === 2}
+            Based on city center. Click map to set exact location.
+          {:else if location.gps.geocodeTier === 3}
+            Based on zipcode area. Click map to set exact location.
+          {:else if location.gps.geocodeTier === 4}
+            Based on county center. Click map to set exact location.
+          {:else}
+            Based on state center. Click map to set exact location.
+          {/if}
+        </div>
+      {/if}
     </div>
 
     <div class="h-64 rounded overflow-hidden mb-3">

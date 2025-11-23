@@ -19,6 +19,10 @@
   let regenTotal = $state(0);
   let regenMessage = $state('');
 
+  // Kanye9: Address normalization state
+  let normalizing = $state(false);
+  let normalizeMessage = $state('');
+
   async function loadSettings() {
     try {
       loading = true;
@@ -112,6 +116,54 @@
       regenMessage = 'Thumbnail regeneration failed';
     } finally {
       regenerating = false;
+    }
+  }
+
+  /**
+   * Kanye9: Normalize all addresses using AddressService
+   * This backfills address_raw, address_normalized, address_parsed_json for existing locations
+   */
+  async function normalizeAllAddresses() {
+    if (!window.electronAPI?.locations) {
+      normalizeMessage = 'Location API not available';
+      return;
+    }
+
+    try {
+      normalizing = true;
+      normalizeMessage = 'Normalizing addresses...';
+
+      // Get all locations
+      const locations = await window.electronAPI.locations.findAll();
+      let processed = 0;
+      let updated = 0;
+
+      for (const loc of locations) {
+        // Skip if no address data
+        if (!loc.address?.street && !loc.address?.city && !loc.address?.zipcode) {
+          processed++;
+          continue;
+        }
+
+        // Update location to trigger address normalization
+        await window.electronAPI.locations.update(loc.locid, {
+          address: loc.address
+        });
+
+        processed++;
+        updated++;
+        normalizeMessage = `Normalized ${processed} of ${locations.length} locations...`;
+      }
+
+      normalizeMessage = `Done! Normalized ${updated} locations with address data.`;
+      setTimeout(() => {
+        normalizeMessage = '';
+      }, 5000);
+    } catch (error) {
+      console.error('Address normalization failed:', error);
+      normalizeMessage = 'Normalization failed';
+    } finally {
+      normalizing = false;
     }
   }
 
@@ -269,6 +321,28 @@
             </div>
             <p class="text-xs text-gray-500 mt-2">
               This may take a while for large archives. RAW files (NEF, CR2, etc.) will have previews extracted first.
+            </p>
+          </div>
+
+          <!-- Kanye9: Address Normalization -->
+          <div class="mt-6 pt-6 border-t border-gray-200">
+            <p class="text-sm text-gray-700 mb-2">
+              Normalize all addresses using AddressService. This populates address_raw, address_normalized, and address_parsed_json fields for existing locations.
+            </p>
+            <div class="flex items-center gap-4">
+              <button
+                onclick={normalizeAllAddresses}
+                disabled={normalizing}
+                class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+              >
+                {normalizing ? 'Normalizing...' : 'Normalize All Addresses'}
+              </button>
+              {#if normalizeMessage}
+                <span class="text-sm text-gray-600">{normalizeMessage}</span>
+              {/if}
+            </div>
+            <p class="text-xs text-gray-500 mt-2">
+              Cleans city names (removes "Village Of", "City Of"), standardizes state codes, and stores both raw and normalized forms.
             </p>
           </div>
         </div>

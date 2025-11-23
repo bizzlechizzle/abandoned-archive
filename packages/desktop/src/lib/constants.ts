@@ -61,11 +61,21 @@ export const GPS_CONFIG = {
 export const GPS_ZOOM_LEVELS = {
   VERIFIED: 18,           // Building level - user confirmed location
   EXIF: 17,               // Street level - from camera GPS
-  GEOCODED_ADDRESS: 17,   // Street level - forward geocoded from address
+  GEOCODED_ADDRESS: 17,   // Street level - forward geocoded from full address
   REVERSE_GEOCODE: 16,    // Block level - GPS existed, got address
   MANUAL: 15,             // Neighborhood - user typed coordinates
   STATE_CAPITAL: 8,       // State overview - fallback to capital
   US_CENTER: 4,           // Country view - no location data
+} as const;
+
+// Kanye9: Zoom levels by cascade geocoding tier
+// More specific = higher zoom, less specific = wider view
+export const GPS_GEOCODE_TIER_ZOOM = {
+  1: 17,   // Tier 1: Full address - street level
+  2: 13,   // Tier 2: City + State - city overview
+  3: 12,   // Tier 3: Zipcode only - ZIP area
+  4: 10,   // Tier 4: County + State - county view
+  5: 8,    // Tier 5: State only - state overview
 } as const;
 
 // Database Configuration

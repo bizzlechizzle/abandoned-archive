@@ -40,6 +40,27 @@ const api = {
     // FIX 6.7: Proximity search - find locations within radius
     findNearby: (lat: number, lng: number, radiusKm: number): Promise<Array<Location & { distance: number }>> =>
       ipcRenderer.invoke('location:findNearby', lat, lng, radiusKm),
+    // Kanye9: Check for duplicate locations by address
+    checkDuplicates: (address: {
+      street?: string | null;
+      city?: string | null;
+      county?: string | null;
+      state?: string | null;
+      zipcode?: string | null;
+    }): Promise<Array<{
+      id: string;
+      name: string;
+      confidence: number;
+      matchedFields: string[];
+      address: {
+        street?: string | null;
+        city?: string | null;
+        county?: string | null;
+        state?: string | null;
+        zipcode?: string | null;
+      };
+    }>> =>
+      ipcRenderer.invoke('location:checkDuplicates', address),
   },
 
   stats: {

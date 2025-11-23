@@ -49,6 +49,8 @@ const api = {
     favorites: () => ipcRenderer.invoke("location:favorites"),
     toggleFavorite: (id) => ipcRenderer.invoke("location:toggleFavorite", id),
     findNearby: (lat, lng, radiusKm) => ipcRenderer.invoke("location:findNearby", lat, lng, radiusKm),
+    // Kanye9: Check for duplicate locations by address
+    checkDuplicates: (address) => ipcRenderer.invoke("location:checkDuplicates", address),
   },
 
   stats: {

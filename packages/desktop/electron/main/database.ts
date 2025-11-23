@@ -530,6 +530,21 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 11 completed: address normalization columns added');
     }
+
+    // Migration 12: Add GPS geocode tier columns to locs table
+    // Per Kanye9: Track which tier of cascade geocoding was used for accurate zoom levels
+    const hasGeocodeTier = locsColumnsCheck.some(col => col.name === 'gps_geocode_tier');
+
+    if (!hasGeocodeTier) {
+      console.log('Running migration 12: Adding GPS geocode tier columns to locs');
+
+      sqlite.exec(`
+        ALTER TABLE locs ADD COLUMN gps_geocode_tier INTEGER;
+        ALTER TABLE locs ADD COLUMN gps_geocode_query TEXT;
+      `);
+
+      console.log('Migration 12 completed: GPS geocode tier columns added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

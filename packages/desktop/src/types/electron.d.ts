@@ -21,6 +21,26 @@ export interface ElectronAPI {
     favorites: () => Promise<Location[]>;
     toggleFavorite: (id: string) => Promise<boolean>;
     findNearby: (lat: number, lng: number, radiusKm: number) => Promise<Array<Location & { distance: number }>>;
+    // Kanye9: Check for duplicate locations by address
+    checkDuplicates: (address: {
+      street?: string | null;
+      city?: string | null;
+      county?: string | null;
+      state?: string | null;
+      zipcode?: string | null;
+    }) => Promise<Array<{
+      id: string;
+      name: string;
+      confidence: number;
+      matchedFields: string[];
+      address: {
+        street?: string | null;
+        city?: string | null;
+        county?: string | null;
+        state?: string | null;
+        zipcode?: string | null;
+      };
+    }>>;
   };
 
   stats: {

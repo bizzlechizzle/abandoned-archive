@@ -66,6 +66,9 @@ export class SQLiteLocationRepository implements LocationRepository {
         gps_verified_on_map: input.gps?.verifiedOnMap ? 1 : 0,
         gps_captured_at: input.gps?.capturedAt || null,
         gps_leaflet_data: input.gps?.leafletData ? JSON.stringify(input.gps.leafletData) : null,
+        // Kanye9: Store geocode tier for accurate map zoom
+        gps_geocode_tier: input.gps?.geocodeTier || null,
+        gps_geocode_query: input.gps?.geocodeQuery || null,
         address_street: normalizedStreet,
         address_city: normalizedCity,
         address_county: normalizedCounty,
@@ -176,6 +179,9 @@ export class SQLiteLocationRepository implements LocationRepository {
       updates.gps_verified_on_map = input.gps.verifiedOnMap ? 1 : 0;
       updates.gps_captured_at = input.gps.capturedAt || null;
       updates.gps_leaflet_data = input.gps.leafletData ? JSON.stringify(input.gps.leafletData) : null;
+      // Kanye9: Store geocode tier for accurate map zoom
+      updates.gps_geocode_tier = input.gps.geocodeTier || null;
+      updates.gps_geocode_query = input.gps.geocodeQuery || null;
     }
 
     if (input.address !== undefined) {
@@ -211,6 +217,14 @@ export class SQLiteLocationRepository implements LocationRepository {
     if (input.favorite !== undefined) updates.favorite = input.favorite ? 1 : 0;
     if (input.hero_imgsha !== undefined) updates.hero_imgsha = input.hero_imgsha;
     if (input.auth_imp !== undefined) updates.auth_imp = input.auth_imp;
+
+    // Kanye9: Handle flat GPS field updates (for cascade geocoding and other direct updates)
+    const inputAny = input as any;
+    if (inputAny.gps_lat !== undefined) updates.gps_lat = inputAny.gps_lat;
+    if (inputAny.gps_lng !== undefined) updates.gps_lng = inputAny.gps_lng;
+    if (inputAny.gps_source !== undefined) updates.gps_source = inputAny.gps_source;
+    if (inputAny.gps_geocode_tier !== undefined) updates.gps_geocode_tier = inputAny.gps_geocode_tier;
+    if (inputAny.gps_geocode_query !== undefined) updates.gps_geocode_query = inputAny.gps_geocode_query;
 
     await this.db
       .updateTable('locs')
@@ -287,7 +301,10 @@ export class SQLiteLocationRepository implements LocationRepository {
               source: row.gps_source,
               verifiedOnMap: row.gps_verified_on_map === 1,
               capturedAt: row.gps_captured_at,
-              leafletData: row.gps_leaflet_data ? JSON.parse(row.gps_leaflet_data) : undefined
+              leafletData: row.gps_leaflet_data ? JSON.parse(row.gps_leaflet_data) : undefined,
+              // Kanye9: Include geocode tier for accurate map zoom
+              geocodeTier: row.gps_geocode_tier || undefined,
+              geocodeQuery: row.gps_geocode_query || undefined,
             }
           : undefined,
       address: {

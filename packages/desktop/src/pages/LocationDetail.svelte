@@ -111,6 +111,9 @@
           gps_lat: result.lat,
           gps_lng: result.lng,
           gps_source: 'geocoded_address',
+          // Kanye9: Store tier for accurate map zoom
+          gps_geocode_tier: result.cascadeTier,
+          gps_geocode_query: result.cascadeQuery,
         });
         await loadLocation();
       }

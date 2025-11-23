@@ -25,7 +25,11 @@
 
 {#if images.length > 0}
   <div class="mb-6">
-    <h3 class="text-sm font-medium text-gray-500 mb-3">Images ({images.length})</h3>
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-sm font-medium text-gray-500">Images ({images.length})</h3>
+      <!-- Kanye9: Hero hint for discoverability -->
+      <span class="text-xs text-gray-400">Hover any image to set as hero</span>
+    </div>
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
       {#each displayedImages as image, displayIndex}
         {@const actualIndex = images.findIndex(img => img.imgsha === image.imgsha)}

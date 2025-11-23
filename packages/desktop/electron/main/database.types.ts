@@ -39,6 +39,9 @@ export interface LocsTable {
   gps_verified_on_map: number;
   gps_captured_at: string | null;
   gps_leaflet_data: string | null;
+  // Kanye9: Track cascade geocoding tier for accurate zoom levels
+  gps_geocode_tier: number | null;     // 1-5 (1=full address, 5=state only)
+  gps_geocode_query: string | null;    // The query that succeeded
 
   // Address (Secondary, Optional)
   address_street: string | null;

@@ -9,7 +9,10 @@ export const GPSCoordinatesSchema = z.object({
   source: z.enum(['user_map_click', 'photo_exif', 'geocoded_address', 'manual_entry']),
   verifiedOnMap: z.boolean().default(false),
   capturedAt: z.string().datetime().optional(),
-  leafletData: z.record(z.unknown()).optional()
+  leafletData: z.record(z.unknown()).optional(),
+  // Kanye9: Cascade geocoding tier (1-5, only for geocoded_address source)
+  geocodeTier: z.number().min(1).max(5).optional(),
+  geocodeQuery: z.string().optional(),
 });
 
 export type GPSCoordinates = z.infer<typeof GPSCoordinatesSchema>;

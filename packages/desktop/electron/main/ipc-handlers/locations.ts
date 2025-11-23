@@ -9,6 +9,7 @@ import type { Database } from '../database';
 import { SQLiteLocationRepository } from '../../repositories/sqlite-location-repository';
 import { LocationInputSchema } from '@au-archive/core';
 import type { LocationFilters } from '@au-archive/core';
+import { AddressService, type NormalizedAddress } from '../../services/address-service';
 
 export function registerLocationHandlers(db: Kysely<Database>) {
   const locationRepo = new SQLiteLocationRepository(db);
@@ -163,6 +164,60 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return newFavoriteState;
     } catch (error) {
       console.error('Error toggling favorite:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  /**
+   * Kanye9: Check for duplicate locations by address
+   * Returns potential matches with confidence scores
+   */
+  ipcMain.handle('location:checkDuplicates', async (_event, address: unknown) => {
+    try {
+      // Validate input address
+      const AddressSchema = z.object({
+        street: z.string().nullable().optional(),
+        city: z.string().nullable().optional(),
+        county: z.string().nullable().optional(),
+        state: z.string().nullable().optional(),
+        zipcode: z.string().nullable().optional(),
+      });
+
+      const newAddress = AddressSchema.parse(address) as NormalizedAddress;
+
+      // Get all existing locations with addresses
+      const allLocations = await locationRepo.findAll();
+      const existingAddresses = allLocations
+        .filter(loc => loc.address && (loc.address.street || loc.address.city || loc.address.zipcode))
+        .map(loc => ({
+          id: loc.locid,
+          name: loc.locnam,
+          address: {
+            street: loc.address?.street || null,
+            city: loc.address?.city || null,
+            county: loc.address?.county || null,
+            state: loc.address?.state || null,
+            zipcode: loc.address?.zipcode || null,
+          } as NormalizedAddress,
+        }));
+
+      // Find duplicates using AddressService
+      const duplicates = AddressService.findDuplicates(newAddress, existingAddresses);
+
+      // Enrich with location names
+      return duplicates.map(dup => {
+        const loc = existingAddresses.find(e => e.id === dup.id);
+        return {
+          ...dup,
+          name: loc?.name || 'Unknown',
+          address: loc?.address,
+        };
+      });
+    } catch (error) {
+      console.error('Error checking duplicates:', error);
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
