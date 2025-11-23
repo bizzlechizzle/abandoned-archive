@@ -38,13 +38,14 @@
   const currentMedia = $derived(mediaList[currentIndex]);
 
   // Get the best available image source
+  // Uses custom media:// protocol registered in main process to bypass file:// restrictions
   const imageSrc = $derived(() => {
     if (!currentMedia) return '';
     // Priority: preview (for RAW) -> original path
     if (currentMedia.previewPath) {
-      return `file://${currentMedia.previewPath}`;
+      return `media://${currentMedia.previewPath}`;
     }
-    return `file://${currentMedia.path}`;
+    return `media://${currentMedia.path}`;
   });
 
   function handleKeydown(event: KeyboardEvent) {
@@ -168,7 +169,7 @@
       {#if currentMedia.type === 'video'}
         <!-- Video player -->
         <video
-          src={`file://${currentMedia.path}`}
+          src={`media://${currentMedia.path}`}
           controls
           class="max-w-full max-h-full object-contain"
         >

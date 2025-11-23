@@ -20,7 +20,6 @@ export interface ElectronAPI {
     historical: () => Promise<Location[]>;
     favorites: () => Promise<Location[]>;
     toggleFavorite: (id: string) => Promise<boolean>;
-    // FIX 6.7: Proximity search
     findNearby: (lat: number, lng: number, radiusKm: number) => Promise<Array<Location & { distance: number }>>;
   };
 
@@ -39,6 +38,43 @@ export interface ElectronAPI {
     openExternal: (url: string) => Promise<void>;
   };
 
+  geocode: {
+    reverse: (lat: number, lng: number) => Promise<{
+      lat: number;
+      lng: number;
+      displayName: string;
+      address: {
+        street?: string;
+        houseNumber?: string;
+        city?: string;
+        county?: string;
+        state?: string;
+        stateCode?: string;
+        zipcode?: string;
+        country?: string;
+        countryCode?: string;
+      };
+      confidence: 'high' | 'medium' | 'low';
+      source: 'nominatim' | 'cache';
+    } | null>;
+    forward: (address: string) => Promise<{
+      lat: number;
+      lng: number;
+      displayName: string;
+      address: {
+        street?: string;
+        city?: string;
+        county?: string;
+        state?: string;
+        stateCode?: string;
+        zipcode?: string;
+      };
+      confidence: 'high' | 'medium' | 'low';
+      source: 'nominatim' | 'cache';
+    } | null>;
+    clearCache: (daysOld?: number) => Promise<{ deleted: number }>;
+  };
+
   dialog: {
     selectFolder: () => Promise<string | null>;
   };
@@ -46,6 +82,24 @@ export interface ElectronAPI {
   database: {
     backup: () => Promise<{ success: boolean; path?: string; message?: string }>;
     restore: () => Promise<{ success: boolean; message: string; requiresRestart?: boolean; autoBackupPath?: string }>;
+    getLocation: () => Promise<{
+      currentPath: string;
+      defaultPath: string;
+      customPath: string | undefined;
+      isCustom: boolean;
+    }>;
+    changeLocation: () => Promise<{
+      success: boolean;
+      message: string;
+      newPath?: string;
+      requiresRestart?: boolean;
+    }>;
+    resetLocation: () => Promise<{
+      success: boolean;
+      message: string;
+      newPath?: string;
+      requiresRestart?: boolean;
+    }>;
   };
 
   imports: {
@@ -65,6 +119,7 @@ export interface ElectronAPI {
   };
 
   media: {
+    // File selection and import
     selectFiles: () => Promise<string[] | null>;
     expandPaths: (paths: string[]) => Promise<string[]>;
     import: (input: {
@@ -74,16 +129,67 @@ export interface ElectronAPI {
       auth_imp: string | null;
       deleteOriginals: boolean;
     }) => Promise<unknown>;
-    // FIX 4.1 & 4.3: Progress includes filename and importId
+    phaseImport: (input: {
+      files: Array<{ filePath: string; originalName: string }>;
+      locid: string;
+      subid?: string | null;
+      auth_imp: string | null;
+      deleteOriginals?: boolean;
+      useHardlinks?: boolean;
+      verifyChecksums?: boolean;
+    }) => Promise<{
+      success: boolean;
+      importId: string;
+      manifestPath: string;
+      summary: {
+        total: number;
+        imported: number;
+        duplicates: number;
+        errors: number;
+        images: number;
+        videos: number;
+        documents: number;
+        maps: number;
+      };
+      errors: string[];
+    }>;
+    onPhaseImportProgress: (callback: (progress: {
+      importId: string;
+      phase: 'log' | 'serialize' | 'copy' | 'dump' | 'complete';
+      phaseProgress: number;
+      currentFile?: string;
+      filesProcessed: number;
+      totalFiles: number;
+    }) => void) => () => void;
     onImportProgress: (callback: (progress: { current: number; total: number; filename?: string; importId?: string }) => void) => () => void;
-    // FIX 4.3: Cancel import
     cancelImport: (importId: string) => Promise<{ success: boolean; message: string }>;
     findByLocation: (locid: string) => Promise<{
       images: unknown[];
       videos: unknown[];
       documents: unknown[];
     }>;
-    openFile: (filePath: string) => Promise<void>;
+    // Media viewing and processing
+    openFile: (filePath: string) => Promise<{ success: boolean }>;
+    generateThumbnail: (sourcePath: string, hash: string) => Promise<string | null>;
+    extractPreview: (sourcePath: string, hash: string) => Promise<string | null>;
+    generatePoster: (sourcePath: string, hash: string) => Promise<string | null>;
+    getCached: (key: string) => Promise<string | null>;
+    preload: (mediaList: Array<{ hash: string; path: string }>, currentIndex: number) => Promise<{ success: boolean }>;
+    readXmp: (mediaPath: string) => Promise<{
+      rating?: number;
+      label?: string;
+      keywords?: string[];
+      title?: string;
+      description?: string;
+    } | null>;
+    writeXmp: (mediaPath: string, data: {
+      rating?: number;
+      label?: string;
+      keywords?: string[];
+      title?: string;
+      description?: string;
+    }) => Promise<{ success: boolean }>;
+    regenerateAllThumbnails: () => Promise<{ generated: number; failed: number; total: number }>;
   };
 
   notes: {
@@ -173,7 +279,6 @@ export interface ElectronAPI {
     attemptRecovery: () => Promise<unknown>;
   };
 
-  // FIX 5.4: Backup status events
   backup: {
     onStatus: (callback: (status: { success: boolean; message: string; timestamp: string; verified?: boolean }) => void) => () => void;
   };

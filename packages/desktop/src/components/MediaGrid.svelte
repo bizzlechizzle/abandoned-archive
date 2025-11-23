@@ -28,12 +28,13 @@
   let { items, onSelect }: Props = $props();
 
   // Get thumbnail source for an item
+  // Uses custom media:// protocol registered in main process to bypass file:// restrictions
   function getThumbnailSrc(item: MediaItem): string {
     if (item.thumbPath) {
-      return `file://${item.thumbPath}`;
+      return `media://${item.thumbPath}`;
     }
     // Fallback to original file for standard formats
-    return `file://${item.path}`;
+    return `media://${item.path}`;
   }
 
   // Check if file is a supported browser format

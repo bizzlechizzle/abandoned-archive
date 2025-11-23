@@ -1,6 +1,7 @@
 "use strict";
 // AU Archive Preload Script - Pure CommonJS
 // This file is NOT processed by Vite - it's used directly by Electron
+// IMPORTANT: Keep in sync with electron/preload/index.ts
 
 // DEBUG: Check what electron exports
 const electronModule = require("electron");
@@ -47,6 +48,7 @@ const api = {
     historical: () => ipcRenderer.invoke("location:historical"),
     favorites: () => ipcRenderer.invoke("location:favorites"),
     toggleFavorite: (id) => ipcRenderer.invoke("location:toggleFavorite", id),
+    findNearby: (lat, lng, radiusKm) => ipcRenderer.invoke("location:findNearby", lat, lng, radiusKm),
   },
 
   stats: {
@@ -91,16 +93,33 @@ const api = {
   },
 
   media: {
+    // File selection and import
     selectFiles: () => ipcRenderer.invoke("media:selectFiles"),
     expandPaths: (paths) => ipcRenderer.invoke("media:expandPaths", paths),
     import: (input) => ipcRenderer.invoke("media:import", input),
+    phaseImport: (input) => ipcRenderer.invoke("media:phaseImport", input),
+    onPhaseImportProgress: (callback) => {
+      const listener = (_event, progress) => callback(progress);
+      ipcRenderer.on("media:phaseImport:progress", listener);
+      return () => ipcRenderer.removeListener("media:phaseImport:progress", listener);
+    },
     onImportProgress: (callback) => {
       const listener = (_event, progress) => callback(progress);
       ipcRenderer.on("media:import:progress", listener);
       return () => ipcRenderer.removeListener("media:import:progress", listener);
     },
+    cancelImport: (importId) => ipcRenderer.invoke("media:import:cancel", importId),
     findByLocation: (locid) => ipcRenderer.invoke("media:findByLocation", locid),
+    // Media viewing and processing
     openFile: (filePath) => ipcRenderer.invoke("media:openFile", filePath),
+    generateThumbnail: (sourcePath, hash) => ipcRenderer.invoke("media:generateThumbnail", sourcePath, hash),
+    extractPreview: (sourcePath, hash) => ipcRenderer.invoke("media:extractPreview", sourcePath, hash),
+    generatePoster: (sourcePath, hash) => ipcRenderer.invoke("media:generatePoster", sourcePath, hash),
+    getCached: (key) => ipcRenderer.invoke("media:getCached", key),
+    preload: (mediaList, currentIndex) => ipcRenderer.invoke("media:preload", mediaList, currentIndex),
+    readXmp: (mediaPath) => ipcRenderer.invoke("media:readXmp", mediaPath),
+    writeXmp: (mediaPath, data) => ipcRenderer.invoke("media:writeXmp", mediaPath, data),
+    regenerateAllThumbnails: () => ipcRenderer.invoke("media:regenerateAllThumbnails"),
   },
 
   notes: {
@@ -159,6 +178,14 @@ const api = {
     getMaintenanceSchedule: () => ipcRenderer.invoke("health:getMaintenanceSchedule"),
     getRecoveryState: () => ipcRenderer.invoke("health:getRecoveryState"),
     attemptRecovery: () => ipcRenderer.invoke("health:attemptRecovery"),
+  },
+
+  backup: {
+    onStatus: (callback) => {
+      const listener = (_event, status) => callback(status);
+      ipcRenderer.on("backup:status", listener);
+      return () => ipcRenderer.removeListener("backup:status", listener);
+    },
   },
 
   browser: {

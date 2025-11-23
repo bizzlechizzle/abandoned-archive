@@ -1,5 +1,6 @@
-import { app, BrowserWindow, dialog, session } from 'electron';
+import { app, BrowserWindow, dialog, session, protocol, net } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { getDatabase, closeDatabase } from './database';
 import { registerIpcHandlers } from './ipc-handlers';
@@ -14,6 +15,20 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const isDev = process.env.NODE_ENV === 'development';
+
+// Register custom protocol for serving media files securely
+// This allows the renderer to load local files without file:// restrictions
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'media',
+    privileges: {
+      secure: true,
+      supportFetchAPI: true,
+      bypassCSP: true,
+      stream: true,
+    },
+  },
+]);
 
 // Crash handlers - log errors before exiting
 process.on('uncaughtException', (error: Error) => {
@@ -255,6 +270,33 @@ async function startupOrchestrator(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  // Register the media:// protocol handler
+  // Converts media://path/to/file.jpg to actual file access
+  protocol.handle('media', async (request) => {
+    try {
+      // Extract file path from URL: media:///path/to/file -> /path/to/file
+      const url = new URL(request.url);
+      let filePath = decodeURIComponent(url.pathname);
+
+      // On Windows, pathname starts with / before drive letter, e.g., /C:/...
+      if (process.platform === 'win32' && filePath.startsWith('/')) {
+        filePath = filePath.slice(1);
+      }
+
+      // Security: Verify file exists before serving
+      if (!fs.existsSync(filePath)) {
+        console.error('[media protocol] File not found:', filePath);
+        return new Response('File not found', { status: 404 });
+      }
+
+      // Use net.fetch to serve the file (handles streaming, range requests, etc.)
+      return net.fetch(`file://${filePath}`);
+    } catch (error) {
+      console.error('[media protocol] Error serving file:', error);
+      return new Response('Internal error', { status: 500 });
+    }
+  });
+
   await startupOrchestrator();
 
   createWindow();
