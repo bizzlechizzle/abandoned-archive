@@ -1,0 +1,21 @@
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="XMP Core 6.0.0">
+   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+      <rdf:Description rdf:about=""
+            xmlns:exif="http://ns.adobe.com/exif/1.0/"
+            xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/">
+         <exif:GPSHPositioningError>165</exif:GPSHPositioningError>
+         <exif:GPSImgDirection>293.89132705999998</exif:GPSImgDirection>
+         <exif:GPSAltitudeRef>0</exif:GPSAltitudeRef>
+         <exif:GPSAltitude>153.09999999999999</exif:GPSAltitude>
+         <exif:GPSLatitudeRef>N</exif:GPSLatitudeRef>
+         <exif:GPSLatitude>43.025105500000002</exif:GPSLatitude>
+         <exif:GPSLongitudeRef>W</exif:GPSLongitudeRef>
+         <exif:GPSLongitude>73.389746669999994</exif:GPSLongitude>
+         <exif:GPSImgDirectionRef>T</exif:GPSImgDirectionRef>
+         <exif:GPSSpeed>0.0</exif:GPSSpeed>
+         <exif:GPSSpeedRef>K</exif:GPSSpeedRef>
+         <exif:GPSTimeStamp>2020-03-22T14:39:28Z</exif:GPSTimeStamp>
+         <photoshop:DateCreated>2020-03-22T10:39:27-04:00</photoshop:DateCreated>
+      </rdf:Description>
+   </rdf:RDF>
+</x:xmpmeta>
