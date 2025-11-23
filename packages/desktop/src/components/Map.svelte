@@ -283,7 +283,9 @@
         }),
       };
 
+      // Kanye11: Default to Satellite with Labels overlay for premium UX
       baseLayers['Satellite'].addTo(map);
+      overlayLayers['Labels'].addTo(map);
 
       L.control.layers(baseLayers, overlayLayers).addTo(map);
 

@@ -51,20 +51,16 @@
 
     <div class="text-base text-gray-900 space-y-1">
       {#if address?.street}
-        <div class="flex items-center gap-2">
-          <p class="font-medium">{address.street}</p>
+        <div>
           {#if onOpenOnMap}
+            <!-- Kanye11: Street address clickable to open map page - no icon, seamless -->
             <button
               onclick={onOpenOnMap}
-              class="text-xs text-accent hover:underline flex items-center gap-1"
-              title="View this address on map"
-            >
-              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              Map
-            </button>
+              class="font-medium text-accent hover:underline"
+              title="View on map"
+            >{address.street}</button>
+          {:else}
+            <p class="font-medium">{address.street}</p>
           {/if}
         </div>
       {/if}
