@@ -18,13 +18,15 @@ from pathlib import Path
 def get_config_dir() -> Path:
     """Get the AU Archive config directory based on platform."""
     system = platform.system()
+    home = Path.home()
 
     if system == "Windows":
         appdata = os.environ.get("APPDATA", "")
-        return Path(appdata) / "au-archive"
-    else:  # Linux, macOS
-        home = Path.home()
-        return home / ".config" / "au-archive"
+        return Path(appdata) / "@au-archive" / "desktop"
+    elif system == "Darwin":  # macOS
+        return home / "Library" / "Application Support" / "@au-archive" / "desktop"
+    else:  # Linux
+        return home / ".config" / "@au-archive" / "desktop"
 
 
 def get_default_db_path() -> Path:
@@ -33,8 +35,8 @@ def get_default_db_path() -> Path:
 
 
 def get_bootstrap_config_path() -> Path:
-    """Get the bootstrap config path."""
-    return get_config_dir() / "bootstrap-config.json"
+    """Get the config.json path."""
+    return get_config_dir() / "config.json"
 
 
 def remove_file(path: Path, name: str) -> bool:
@@ -84,8 +86,9 @@ def reset_database(archive_path: str | None = None, force: bool = False):
     # Show what will be removed
     print("The following will be removed:")
     print(f"  - Database: {db_path}")
-    print(f"  - Bootstrap config: {config_path}")
+    print(f"  - Config: {config_path}")
     print(f"  - Data directory: {config_dir / 'data'}")
+    print(f"  - Backups directory: {config_dir / 'backups'}")
 
     if archive_path:
         archive = Path(archive_path)
@@ -107,8 +110,8 @@ def reset_database(archive_path: str | None = None, force: bool = False):
     # Remove database file
     remove_file(db_path, "Database")
 
-    # Remove bootstrap config
-    remove_file(config_path, "Bootstrap config")
+    # Remove config file
+    remove_file(config_path, "Config")
 
     # Remove entire data directory if empty or just has db-related files
     data_dir = config_dir / "data"
@@ -125,6 +128,10 @@ def reset_database(archive_path: str | None = None, force: bool = False):
                 print(f"  ✓ Removed empty data directory: {data_dir}")
         except Exception:
             pass
+
+    # Remove backups directory
+    backups_dir = config_dir / "backups"
+    remove_dir(backups_dir, "Backups directory")
 
     # Remove archive support directories if archive path provided
     if archive_path:
