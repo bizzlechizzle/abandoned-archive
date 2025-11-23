@@ -9,6 +9,11 @@ import { GPSValidator } from './gps-validator';
 import { GeocodingService } from './geocoding-service';
 // FIX 3.4: Import GPX/KML parser for map files
 import { GPXKMLParser, type MapFileData } from './gpx-kml-parser';
+// Kanye5: Import preview/thumbnail services for on-import extraction
+import { MediaPathService } from './media-path-service';
+import { ThumbnailService } from './thumbnail-service';
+import { PreviewExtractorService } from './preview-extractor-service';
+import { PosterFrameService } from './poster-frame-service';
 import { SQLiteMediaRepository } from '../repositories/sqlite-media-repository';
 import { SQLiteImportRepository } from '../repositories/sqlite-import-repository';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
@@ -151,6 +156,12 @@ export class FileImportService {
   // FIX 3.4: GPX/KML parser for map files
   private readonly gpxKmlParser: GPXKMLParser;
 
+  // Kanye5: Services for on-import preview/thumbnail extraction
+  private readonly mediaPathService: MediaPathService;
+  private readonly thumbnailService: ThumbnailService;
+  private readonly previewExtractorService: PreviewExtractorService;
+  private readonly posterFrameService: PosterFrameService;
+
   constructor(
     private readonly db: Kysely<Database>,
     private readonly cryptoService: CryptoService,
@@ -166,6 +177,12 @@ export class FileImportService {
   ) {
     // FIX 3.4: Initialize GPX/KML parser
     this.gpxKmlParser = new GPXKMLParser();
+
+    // Kanye5: Initialize preview/thumbnail services for on-import extraction
+    this.mediaPathService = new MediaPathService(archivePath);
+    this.thumbnailService = new ThumbnailService(this.mediaPathService);
+    this.previewExtractorService = new PreviewExtractorService(this.mediaPathService, exifToolService);
+    this.posterFrameService = new PosterFrameService(this.mediaPathService, ffmpegService);
   }
 
   /**
@@ -469,6 +486,60 @@ export class FileImportService {
       // Continue without metadata
     }
 
+    // Kanye5: Step 5d - Extract preview for RAW files and generate thumbnails
+    let previewPath: string | null = null;
+    let thumbPath: string | null = null;
+
+    if (type === 'image') {
+      // Extract embedded JPEG preview from RAW files
+      if (this.previewExtractorService.isRawFormat(file.filePath)) {
+        console.log('[FileImport] Step 5d: Extracting RAW preview...');
+        const previewStart = Date.now();
+        try {
+          previewPath = await this.previewExtractorService.extractPreview(file.filePath, hash);
+          if (previewPath) {
+            console.log('[FileImport] Preview extracted in', Date.now() - previewStart, 'ms:', previewPath);
+          } else {
+            console.log('[FileImport] No embedded preview found (will use original for viewing)');
+          }
+        } catch (previewError) {
+          console.warn('[FileImport] Preview extraction failed:', previewError);
+          // Non-fatal - continue without preview
+        }
+      }
+
+      // Generate thumbnail (use preview for RAW files, original for standard images)
+      console.log('[FileImport] Step 5e: Generating thumbnail...');
+      const thumbStart = Date.now();
+      try {
+        const sourceForThumb = previewPath || file.filePath;
+        thumbPath = await this.thumbnailService.generateThumbnail(sourceForThumb, hash);
+        if (thumbPath) {
+          console.log('[FileImport] Thumbnail generated in', Date.now() - thumbStart, 'ms:', thumbPath);
+        } else {
+          console.warn('[FileImport] Thumbnail generation returned null');
+        }
+      } catch (thumbError) {
+        console.warn('[FileImport] Thumbnail generation failed:', thumbError);
+        // Non-fatal - continue without thumbnail
+      }
+    } else if (type === 'video') {
+      // Generate poster frame for videos
+      console.log('[FileImport] Step 5d: Generating video poster frame...');
+      const posterStart = Date.now();
+      try {
+        thumbPath = await this.posterFrameService.generatePoster(file.filePath, hash);
+        if (thumbPath) {
+          console.log('[FileImport] Poster frame generated in', Date.now() - posterStart, 'ms:', thumbPath);
+        } else {
+          console.warn('[FileImport] Poster frame generation returned null');
+        }
+      } catch (posterError) {
+        console.warn('[FileImport] Poster frame generation failed:', posterError);
+        // Non-fatal - continue without poster
+      }
+    }
+
     // 6. Organize file to archive (validate path)
     // Pass pre-fetched location to avoid another DB call inside transaction
     console.log('[FileImport] Step 6: Organizing file to archive...');
@@ -486,7 +557,9 @@ export class FileImportService {
       type,
       archivePath,
       sanitizedName,
-      metadata
+      metadata,
+      thumbPath,    // Kanye5: Pass thumbnail path
+      previewPath   // Kanye5: Pass preview path (for RAW files)
     );
     console.log('[FileImport] Step 7 complete in', Date.now() - insertStart, 'ms');
 
@@ -663,6 +736,7 @@ export class FileImportService {
 
   /**
    * Insert media record in database within transaction
+   * Kanye5: Added thumbPath and previewPath parameters for on-import extraction
    */
   private async insertMediaRecordInTransaction(
     trx: any,
@@ -671,7 +745,9 @@ export class FileImportService {
     type: 'image' | 'video' | 'map' | 'document',
     archivePath: string,
     originalName: string,
-    metadata: any
+    metadata: any,
+    thumbPath: string | null = null,
+    previewPath: string | null = null
   ): Promise<void> {
     const timestamp = new Date().toISOString();
 
@@ -696,6 +772,9 @@ export class FileImportService {
           meta_camera_model: metadata?.cameraModel || null,
           meta_gps_lat: metadata?.gps?.lat || null,
           meta_gps_lng: metadata?.gps?.lng || null,
+          // Kanye5: On-import preview/thumbnail paths
+          thumb_path: thumbPath,
+          preview_path: previewPath,
         })
         .execute();
     } else if (type === 'video') {
@@ -723,6 +802,8 @@ export class FileImportService {
           // FIX 3.2: Store GPS extracted from video metadata
           meta_gps_lat: metadata?.gps?.lat || null,
           meta_gps_lng: metadata?.gps?.lng || null,
+          // Kanye5: On-import poster frame path
+          thumb_path: thumbPath,
         })
         .execute();
     } else if (type === 'map') {
