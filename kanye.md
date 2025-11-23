@@ -112,6 +112,246 @@ This section documents key architectural decisions. Do not modify without unders
 
 ---
 
+## Script Documentation Standard
+
+**Update for claude.md:** Every script in this project MUST have a corresponding `.md` documentation file.
+
+### Purpose
+
+Prevent AI drift and enable any developer (regardless of skill level) to:
+1. Understand exactly what the script does
+2. Understand WHY it does it that way
+3. Recreate the script from scratch if needed
+4. Track all changes with full reasoning
+
+### Location
+
+```
+docs/scripts/
+├── services/
+│   ├── thumbnail-service.md
+│   ├── preview-extractor-service.md
+│   ├── poster-frame-service.md
+│   ├── media-path-service.md
+│   ├── media-cache-service.md
+│   ├── preload-service.md
+│   ├── xmp-service.md
+│   └── xmp-sync-service.md
+└── components/
+    ├── MediaViewer.md
+    ├── MediaGrid.md
+    └── ExifPanel.md
+```
+
+### Required Sections
+
+Every script documentation file MUST contain:
+
+```markdown
+# [Script Name]
+
+## Overview
+One paragraph explaining what this script does and why it exists.
+
+## File Location
+`packages/desktop/electron/services/[name].ts`
+
+## Dependencies
+| Package | Why |
+|---------|-----|
+| sharp | Image resizing |
+| fs/promises | File system operations |
+
+## Consumers (What Uses This)
+- `file-import-service.ts` - Calls on import
+- `MediaGrid.svelte` - Displays output
+
+## Core Rules (DO NOT BREAK)
+1. [Rule 1 with explanation]
+2. [Rule 2 with explanation]
+3. [Rule 3 with explanation]
+
+## Function-by-Function Breakdown
+
+### functionName(param1: Type, param2: Type): ReturnType
+
+**Purpose:** What this function does
+
+**Parameters:**
+- `param1` - Description and valid values
+- `param2` - Description and valid values
+
+**Returns:** What it returns and when
+
+**Logic Flow:**
+1. Step 1 - why
+2. Step 2 - why
+3. Step 3 - why
+
+**Edge Cases:**
+- What happens if X
+- What happens if Y
+
+**Example:**
+```typescript
+const result = await functionName('input', 123);
+// Returns: '/path/to/output.jpg'
+```
+
+## Error Handling
+How errors are handled and why (throw vs return null vs log)
+
+## Performance Considerations
+Why certain choices were made for performance
+
+## Testing
+How to test this script, what to verify
+
+## Changelog
+
+### [Date] - v0.1.0 - Initial Implementation
+- Created by: [Author/AI Session]
+- Reason: Initial media viewer implementation per kanye.md
+- Changes: Initial implementation with X, Y, Z functions
+
+### [Date] - v0.1.1 - [Change Title]
+- Changed by: [Author/AI Session]
+- Reason: [Why this change was needed]
+- What changed: [Specific changes made]
+- Logic: [The reasoning behind the approach taken]
+- Impact: [What this affects]
+```
+
+### Example: thumbnail-service.md
+
+```markdown
+# Thumbnail Service
+
+## Overview
+Generates 256px JPEG thumbnails from images during import. Thumbnails enable
+instant grid browsing without loading full-size images. Uses Sharp for
+image processing. Non-blocking - failures return null, never throw.
+
+## File Location
+`packages/desktop/electron/services/thumbnail-service.ts`
+
+## Dependencies
+| Package | Why |
+|---------|-----|
+| sharp | Fast native image resizing, already in project |
+| fs/promises | Async file operations |
+| path | Path manipulation |
+
+## Consumers
+- `file-import-service.ts` - Calls generateThumbnail() after file copy
+- `MediaGrid.svelte` - Displays thumbnails in grid
+- `LocationDetail.svelte` - Shows thumbnail grid for location
+
+## Core Rules (DO NOT BREAK)
+
+1. **Size is 256px** - Matches MediaGrid cell size. Changing requires updating CSS.
+
+2. **Output is ALWAYS JPEG** - Browser compatibility. PNG thumbnails are 5x larger.
+
+3. **Quality is 80** - Tested balance. 60 is blurry, 90+ is diminishing returns.
+
+4. **Never throw, return null** - Import must not fail because thumbnail failed.
+
+5. **Hash bucketing** - Store as `.thumbnails/a3/a3d5e8f9...jpg` to avoid
+   filesystem limits (some FS slow with 10k+ files in one directory).
+
+6. **Sharp only** - Do not add ImageMagick, GraphicsMagick, Jimp, etc.
+
+## Function-by-Function Breakdown
+
+### generateThumbnail(sourcePath, hash, archivePath, size?): Promise<string | null>
+
+**Purpose:** Generate a thumbnail for a single image file.
+
+**Parameters:**
+- `sourcePath` - Absolute path to source image
+- `hash` - SHA256 hash of file (used for output filename)
+- `archivePath` - Root archive folder path
+- `size` - Optional, defaults to 256
+
+**Returns:**
+- Success: Absolute path to generated thumbnail
+- Failure: null (never throws)
+
+**Logic Flow:**
+1. Calculate output path using hash bucketing (a3/a3d5e8...)
+2. Create parent directory if not exists
+3. Use Sharp to resize with cover fit (crop to square)
+4. Save as JPEG quality 80
+5. Return output path or null on any error
+
+**Edge Cases:**
+- Corrupted image: Returns null, logs warning
+- Unsupported format: Sharp throws, caught, returns null
+- Disk full: Returns null, logs error
+- Source missing: Returns null
+
+**Example:**
+```typescript
+const thumbPath = await thumbnailService.generateThumbnail(
+  '/archive/locations/NY-Factory/org-img-A1B2/abc123.jpg',
+  'abc123def456...',
+  '/archive'
+);
+// Returns: '/archive/.thumbnails/ab/abc123def456.jpg'
+```
+
+## Error Handling
+All errors are caught and logged. Function returns null on failure.
+This is intentional - thumbnail generation is non-critical. Import
+must succeed even if thumbnails fail. UI shows placeholder for
+missing thumbnails.
+
+## Performance Considerations
+- Sharp uses native libvips - 10x faster than pure JS solutions
+- Resize before decode (Sharp optimization) - processes only needed pixels
+- Async/non-blocking - doesn't block import pipeline
+- 256px is small enough for fast generation (~50ms per image)
+
+## Testing
+1. Unit test: Generate thumbnail, verify file exists and is JPEG
+2. Unit test: Corrupted input returns null, no throw
+3. Integration: Import flow creates thumbnails
+4. Manual: Grid displays thumbnails correctly
+
+## Changelog
+
+### 2025-11-23 - v0.1.0 - Initial Implementation
+- Created by: Claude (kanye.md media viewer plan)
+- Reason: Enable fast grid browsing per Phase 1 of kanye.md
+- Changes:
+  - generateThumbnail() - single image thumbnail
+  - generateFromHeic() - HEIC conversion + thumbnail
+  - thumbnailExists() - check if already generated
+  - regenerateAll() - batch regeneration for existing imports
+- Logic: Used Sharp because already installed, native performance,
+  simple API. 256px chosen to match PhotoMechanic thumbnail size.
+```
+
+### Enforcement
+
+1. **Before merging any new script:** Documentation file must exist
+2. **Before modifying any script:** Update the changelog with reasoning
+3. **AI coding sessions:** Must read the script's .md file before editing
+4. **Code review:** Verify changelog was updated with reasoning
+
+### Why This Matters
+
+| Without This | With This |
+|--------------|-----------|
+| AI changes thumbnail size "to improve quality" | AI sees rule: "Size is 256px - changing requires updating CSS" |
+| Developer doesn't know why Sharp was chosen | Developer reads: "Sharp because already installed, native performance" |
+| Bug fix breaks something else | Changelog shows what was changed and why |
+| New dev can't understand the code | Documentation enables recreation from scratch |
+| AI forgets session context | Documentation is permanent |
+
+---
+
 ## Repository Cleanup
 
 Before implementing, clean up the repository to follow standard practices.
