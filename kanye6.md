@@ -602,4 +602,606 @@ After implementing fixes:
 
 ---
 
-*This is kanye6.md - comprehensive ULTRATHINK analysis of remaining Premium Archive issues with implementation-ready code.*
+## WHAT WOULD YOU DO DIFFERENTLY - CODING INSTRUCTIONS
+
+This section outlines strategic improvements with step-by-step coding instructions for an inexperienced developer.
+
+---
+
+### PRINCIPLE 1: DATA-FIRST ARCHITECTURE
+
+**Problem:** Features built in isolation. Thumbnails generated but not displayed. Forward geocoding exists but never called.
+
+**Coding Instructions:**
+
+1. **Before writing ANY new feature, document the complete data lifecycle:**
+
+```markdown
+## Feature: [Name]
+
+### Data Flow
+1. User action →
+2. Backend processing →
+3. Database storage →
+4. Frontend retrieval →
+5. User sees result
+
+### Integration Points
+- [ ] Point A calls Point B
+- [ ] Point B stores data correctly
+- [ ] Point C retrieves and displays data
+```
+
+2. **Create integration test file for each flow:**
+
+**File to create:** `packages/desktop/tests/integration/import-to-display.test.ts`
+
+```typescript
+/**
+ * Integration Test: Import to Display Flow
+ * Tests that imported files are viewable immediately after import
+ */
+describe('Import to Display', () => {
+  it('should display thumbnail immediately after import', async () => {
+    // 1. Import a file
+    const result = await importService.importFile(testImagePath, locationId);
+
+    // 2. Verify thumbnail was generated
+    expect(result.thumb_path_sm).not.toBeNull();
+    expect(fs.existsSync(result.thumb_path_sm)).toBe(true);
+
+    // 3. Verify database has the path
+    const dbRecord = await mediaRepo.findImageByHash(result.hash);
+    expect(dbRecord.thumb_path_sm).toBe(result.thumb_path_sm);
+
+    // 4. Verify media:// protocol can serve it
+    const response = await fetch(`media://${result.thumb_path_sm}`);
+    expect(response.ok).toBe(true);
+  });
+});
+```
+
+---
+
+### PRINCIPLE 2: ALWAYS SHOW SOMETHING (Graceful Degradation)
+
+**Problem:** Current philosophy is "hide if data is missing". Premium archives show SOMETHING at every level.
+
+**Coding Instructions:**
+
+1. **Update all conditional displays to cascade:**
+
+**File:** `packages/desktop/src/pages/LocationDetail.svelte`
+
+**Pattern to follow (already implemented):**
+```svelte
+<!-- WRONG: Hide if missing -->
+{#if location.gps}
+  <Map />
+{/if}
+
+<!-- RIGHT: Cascade through options -->
+{#if location.gps}
+  <Map /> <!-- Exact GPS -->
+{:else if location.address?.state}
+  <Map /> <!-- State capital fallback -->
+{:else}
+  <AddLocationPrompt /> <!-- Always show something -->
+{/if}
+```
+
+2. **Create a fallback helper function:**
+
+**File to create:** `packages/desktop/src/lib/display-helpers.ts`
+
+```typescript
+/**
+ * Get the best available display option for any data type
+ * Per Kanye6: ALWAYS return something, never null
+ */
+
+// For images
+export function getBestImageSource(image: MediaImage): string {
+  return image.preview_path
+    || image.thumb_path_lg
+    || image.thumb_path_sm
+    || image.thumb_path
+    || '/placeholder-image.svg';
+}
+
+// For GPS coordinates
+export function getBestCoordinates(location: Location): Coordinates | null {
+  // Priority 1: Exact GPS
+  if (location.gps?.lat && location.gps?.lng) {
+    return {
+      lat: location.gps.lat,
+      lng: location.gps.lng,
+      confidence: 'exact',
+      zoomLevel: 17
+    };
+  }
+
+  // Priority 2: State capital
+  if (location.address?.state) {
+    const capital = STATE_CAPITALS[location.address.state.toUpperCase()];
+    if (capital) {
+      return {
+        ...capital,
+        confidence: 'approximate',
+        zoomLevel: 10
+      };
+    }
+  }
+
+  // Priority 3: US center (last resort)
+  return {
+    lat: 39.8283,
+    lng: -98.5795,
+    confidence: 'none',
+    zoomLevel: 4
+  };
+}
+
+// For address display
+export function getDisplayCity(city: string | null): string {
+  if (!city) return '';
+  // Remove "Village of", "City of", "Town of" prefixes
+  return city.replace(/^(Village of|City of|Town of)\s*/i, '').trim();
+}
+```
+
+---
+
+### PRINCIPLE 3: IMPORT = COMPLETE EXPERIENCE
+
+**Problem:** Import is treated as "copy files". Should create complete, viewable archive entry.
+
+**Coding Instructions:**
+
+1. **Add import validation step:**
+
+**File:** `packages/desktop/electron/services/file-import-service.ts`
+
+After the import is complete, add validation:
+
+```typescript
+/**
+ * Validate import result - ensure file is immediately viewable
+ * Per Kanye6: Import isn't done until user can browse/view without errors
+ */
+async function validateImportResult(
+  hash: string,
+  fileType: 'image' | 'video' | 'document'
+): Promise<{ valid: boolean; issues: string[] }> {
+  const issues: string[] = [];
+
+  if (fileType === 'image') {
+    const image = await mediaRepo.findImageByHash(hash);
+
+    // Check thumbnail exists
+    if (!image.thumb_path_sm) {
+      issues.push('Missing small thumbnail');
+    } else if (!fs.existsSync(image.thumb_path_sm)) {
+      issues.push('Thumbnail file not found on disk');
+    }
+
+    // Check preview for RAW files
+    const isRaw = RAW_EXTENSIONS.test(image.imgloc);
+    if (isRaw && !image.preview_path) {
+      issues.push('RAW file missing extracted preview');
+    }
+  }
+
+  return {
+    valid: issues.length === 0,
+    issues
+  };
+}
+```
+
+2. **Add post-import repair for failed items:**
+
+**File:** `packages/desktop/electron/services/file-import-service.ts`
+
+```typescript
+/**
+ * Repair incomplete imports
+ * Call this to regenerate missing thumbnails/previews
+ */
+async function repairIncompleteImport(hash: string): Promise<void> {
+  const image = await mediaRepo.findImageByHash(hash);
+
+  // Regenerate thumbnails if missing
+  if (!image.thumb_path_sm) {
+    const source = image.preview_path || image.imgloc;
+    const thumbnails = await thumbnailService.generateAllSizes(source, hash);
+
+    await mediaRepo.updateImageThumbnails(hash, {
+      thumb_path_sm: thumbnails.thumb_sm,
+      thumb_path_lg: thumbnails.thumb_lg,
+      preview_path: thumbnails.preview
+    });
+  }
+
+  // Extract preview for RAW files if missing
+  const isRaw = RAW_EXTENSIONS.test(image.imgloc);
+  if (isRaw && !image.preview_path) {
+    const preview = await previewExtractorService.extractPreview(image.imgloc, hash);
+    if (preview) {
+      await mediaRepo.updateImagePreviewPath(hash, preview);
+    }
+  }
+}
+```
+
+3. **Add "Regenerate Thumbnails" button in Settings:**
+
+**File:** `packages/desktop/src/pages/Settings.svelte`
+
+```svelte
+<!-- Add to settings page -->
+<div class="border-t pt-6 mt-6">
+  <h3 class="text-lg font-semibold mb-4">Maintenance</h3>
+
+  <div class="space-y-4">
+    <div>
+      <p class="text-sm text-gray-600 mb-2">
+        Regenerate thumbnails for images imported before the multi-tier system.
+      </p>
+      <button
+        onclick={regenerateThumbnails}
+        disabled={regenerating}
+        class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 disabled:opacity-50"
+      >
+        {regenerating ? `Regenerating... (${progress}/${total})` : 'Regenerate All Thumbnails'}
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let regenerating = $state(false);
+  let progress = $state(0);
+  let total = $state(0);
+
+  async function regenerateThumbnails() {
+    regenerating = true;
+    try {
+      const result = await window.electronAPI.media.regenerateAllThumbnails(
+        (current, totalCount) => {
+          progress = current;
+          total = totalCount;
+        }
+      );
+      alert(`Regenerated ${result.success} of ${result.total} thumbnails`);
+    } catch (error) {
+      console.error('Regeneration failed:', error);
+    } finally {
+      regenerating = false;
+    }
+  }
+</script>
+```
+
+4. **Add IPC handler for thumbnail regeneration:**
+
+**File:** `packages/desktop/electron/main/ipc-handlers/media.ts`
+
+```typescript
+ipcMain.handle('media:regenerateAllThumbnails', async (event) => {
+  const images = await mediaRepo.getImagesWithoutThumbnails();
+  let success = 0;
+
+  for (let i = 0; i < images.length; i++) {
+    const img = images[i];
+
+    // Send progress update
+    event.sender.send('thumbnail-progress', { current: i + 1, total: images.length });
+
+    try {
+      // Get source (preview for RAW, original otherwise)
+      const isRaw = RAW_EXTENSIONS.test(img.imgloc);
+      let source = img.imgloc;
+
+      if (isRaw) {
+        // Extract preview first if needed
+        const preview = await previewExtractorService.extractPreview(img.imgloc, img.imgsha);
+        if (preview) {
+          source = preview;
+          await mediaRepo.updateImagePreviewPath(img.imgsha, preview);
+        }
+      }
+
+      // Generate all thumbnail sizes
+      const thumbnails = await thumbnailService.generateAllSizes(source, img.imgsha);
+
+      await db.updateTable('imgs')
+        .set({
+          thumb_path_sm: thumbnails.thumb_sm,
+          thumb_path_lg: thumbnails.thumb_lg,
+          preview_path: thumbnails.preview
+        })
+        .where('imgsha', '=', img.imgsha)
+        .execute();
+
+      success++;
+    } catch (error) {
+      console.error(`Failed to regenerate thumbnails for ${img.imgsha}:`, error);
+    }
+  }
+
+  return { total: images.length, success };
+});
+```
+
+---
+
+### PRINCIPLE 4: RAW FILES = SHOW PREVIEW, NEVER ORIGINAL
+
+**Problem:** Browser cannot render NEF/CR2/ARW files. User sees "Cannot display" error.
+
+**Coding Instructions:**
+
+1. **MediaViewer already handles this correctly (lines 42-49):**
+
+```typescript
+const imageSrc = $derived(() => {
+  if (!currentMedia) return '';
+  // Priority: preview (for RAW) -> original path
+  if (currentMedia.previewPath) {
+    return `media://${currentMedia.previewPath}`;
+  }
+  return `media://${currentMedia.path}`;
+});
+```
+
+2. **Ensure preview is passed from LocationDetail:**
+
+**Verify in LocationDetail.svelte (line 91-105):**
+```typescript
+const mediaViewerList = $derived(images.map(img => ({
+  hash: img.imgsha,
+  path: img.imgloc,
+  thumbPath: img.thumb_path_sm || img.thumb_path || null,
+  previewPath: img.preview_path || null,  // <-- THIS MUST BE SET
+  // ...
+})));
+```
+
+3. **If NEF still shows error, check database:**
+
+```sql
+-- Run this to check if previews were extracted
+SELECT imgsha, imgnam, imgloc, preview_path
+FROM imgs
+WHERE imgloc LIKE '%.nef' OR imgloc LIKE '%.NEF'
+LIMIT 10;
+```
+
+If `preview_path` is NULL, the preview extraction failed. Re-import or run regeneration.
+
+---
+
+### PRINCIPLE 5: HERO IMAGE = USER CHOICE
+
+**Problem:** No way to select featured image. Always shows first imported.
+
+**Coding Instructions:**
+
+1. **Database Migration (Migration 10):**
+
+**File:** `packages/desktop/electron/main/database.ts`
+
+Add to migrations array:
+
+```typescript
+// Migration 10: Hero image support
+{
+  version: 10,
+  up: async (db: Kysely<any>) => {
+    await sql`ALTER TABLE locs ADD COLUMN hero_imgsha TEXT`.execute(db);
+    // Note: SQLite doesn't support foreign keys on ALTER, constraint is logical only
+  }
+}
+```
+
+2. **Add to Location type:**
+
+**File:** `packages/core/src/types.ts`
+
+```typescript
+export interface Location {
+  // ... existing fields ...
+  hero_imgsha?: string | null;
+}
+```
+
+3. **Add "Set as Hero" button to image grid:**
+
+**File:** `packages/desktop/src/pages/LocationDetail.svelte`
+
+In the image grid loop, add:
+
+```svelte
+<button
+  onclick={() => openLightbox(actualIndex)}
+  class="aspect-square bg-gray-100 rounded overflow-hidden hover:opacity-90 transition relative group"
+>
+  <!-- existing image display code -->
+
+  <!-- Add hero image badge/button -->
+  <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition">
+    {#if image.imgsha === location.hero_imgsha}
+      <span class="px-2 py-1 bg-yellow-500 text-white text-xs rounded">
+        Hero
+      </span>
+    {:else}
+      <button
+        onclick|stopPropagation={() => setHeroImage(image.imgsha)}
+        class="px-2 py-1 bg-black/50 text-white text-xs rounded hover:bg-black/70"
+        title="Set as hero image"
+      >
+        Set Hero
+      </button>
+    {/if}
+  </div>
+</button>
+```
+
+4. **Add setHeroImage function:**
+
+```typescript
+async function setHeroImage(imgsha: string) {
+  if (!location) return;
+
+  try {
+    await window.electronAPI.locations.update(location.locid, {
+      hero_imgsha: imgsha
+    });
+    await loadLocation();
+  } catch (error) {
+    console.error('Failed to set hero image:', error);
+  }
+}
+```
+
+5. **Update Hero display to use selected image:**
+
+```svelte
+<!-- Replace existing hero section -->
+{#if images.length > 0}
+  {@const heroImage = location.hero_imgsha
+    ? images.find(img => img.imgsha === location.hero_imgsha) || images[0]
+    : images[0]}
+  {@const heroSrc = heroImage.preview_path || heroImage.thumb_path_lg || heroImage.thumb_path_sm}
+  <!-- rest of hero display -->
+{/if}
+```
+
+---
+
+### PRINCIPLE 6: THUMBNAIL QUALITY FOR MODERN DISPLAYS
+
+**Problem:** 256px thumbnails look blurry on HiDPI (Retina, 4K).
+
+**Status:** ALREADY IMPLEMENTED - Using 400/800/1920 tiers with srcset.
+
+**Verification:**
+
+Check that srcset is being used:
+```svelte
+<img
+  src={`media://${image.thumb_path_sm || image.thumb_path}`}
+  srcset={`
+    media://${image.thumb_path_sm || image.thumb_path} 1x
+    ${image.thumb_path_lg ? `, media://${image.thumb_path_lg} 2x` : ''}
+  `}
+/>
+```
+
+---
+
+### PRINCIPLE 7: TEST USER JOURNEYS, NOT COMPONENTS
+
+**Problem:** Components work in isolation. Bugs are at integration points.
+
+**Coding Instructions:**
+
+1. **Create user journey test file:**
+
+**File:** `packages/desktop/tests/journeys/browse-archive.test.ts`
+
+```typescript
+/**
+ * User Journey: Browse Archive
+ * Tests the complete flow a user experiences when browsing their archive
+ */
+describe('Browse Archive Journey', () => {
+
+  it('should show thumbnails for all imported images', async () => {
+    // Setup: Import 5 images to a location
+    const location = await createTestLocation();
+    const images = await importTestImages(location.locid, 5);
+
+    // Journey: Load location detail
+    const locationDetail = await loadLocationDetail(location.locid);
+
+    // Verify: All images have visible thumbnails
+    for (const img of locationDetail.images) {
+      expect(img.thumb_path_sm).not.toBeNull();
+      // Simulate what the browser does
+      const src = `media://${img.thumb_path_sm}`;
+      const canLoad = await verifyMediaProtocolServes(src);
+      expect(canLoad).toBe(true);
+    }
+  });
+
+  it('should show map for location with address but no GPS', async () => {
+    // Setup: Create location with address, no GPS
+    const location = await createTestLocation({
+      address_street: '99 Myrtle Avenue',
+      address_city: 'Cambridge',
+      address_state: 'NY',
+      gps_lat: null,
+      gps_lng: null
+    });
+
+    // Journey: Load location detail
+    const locationDetail = await loadLocationDetail(location.locid);
+
+    // Verify: GPS was populated via forward geocoding
+    expect(locationDetail.location.gps_lat).not.toBeNull();
+    expect(locationDetail.location.gps_lng).not.toBeNull();
+    expect(locationDetail.location.gps_source).toBe('geocoded_address');
+  });
+
+  it('should display RAW files using extracted preview', async () => {
+    // Setup: Import NEF file
+    const location = await createTestLocation();
+    const nefFile = await importTestFile(location.locid, 'test.nef');
+
+    // Verify: Preview was extracted
+    expect(nefFile.preview_path).not.toBeNull();
+
+    // Journey: Open in MediaViewer
+    const viewerSrc = getMediaViewerSource(nefFile);
+
+    // Verify: Uses preview, not original NEF
+    expect(viewerSrc).toContain('.previews/');
+    expect(viewerSrc).not.toContain('.nef');
+  });
+});
+```
+
+---
+
+### SUMMARY: CODING CHECKLIST FOR PREMIUM ARCHIVE
+
+Before shipping any feature, verify:
+
+- [ ] **Data Flow Complete:** Data goes from input → storage → display without gaps
+- [ ] **Graceful Degradation:** Something shows at every state (exact, approximate, prompt)
+- [ ] **Import Complete:** All thumbnails/previews generated and accessible
+- [ ] **RAW Handled:** Preview extracted and used for display
+- [ ] **HiDPI Ready:** Using srcset with 2x resolution available
+- [ ] **User Journey Tested:** End-to-end flow works, not just individual components
+- [ ] **Forward Geocoding:** Addresses auto-convert to GPS on load
+
+---
+
+## CHANGELOG - UPDATED
+
+| Date | Issue | Action | Status |
+|------|-------|--------|--------|
+| 2025-11-23 | Forward geocoding | Implemented auto-trigger in LocationDetail | **DONE** |
+| 2025-11-23 | Map zoom | Implemented street-level zoom for exact GPS | **DONE** |
+| 2025-11-23 | Hero image display | Fixed to show actual thumbnail | **DONE** |
+| 2025-11-23 | GPS confidence | Added 'geocoded_address' source support | **DONE** |
+| 2025-11-23 | NEF display | MediaViewer already uses preview | VERIFIED |
+| 2025-11-23 | Hero image selection | Documented implementation plan | PENDING |
+| 2025-11-23 | Thumbnail regeneration | Documented Settings button | PENDING |
+| 2025-11-23 | Coding principles | Added "What Would You Do Differently" section | **DONE** |
+
+---
+
+*This is kanye6.md - comprehensive ULTRATHINK analysis with coding instructions for Premium Archive implementation.*
