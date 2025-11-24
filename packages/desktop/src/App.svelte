@@ -19,6 +19,8 @@
   import ImportProgress from './components/ImportProgress.svelte';
   // FIX 4.6: Toast notification system
   import ToastContainer from './components/ToastContainer.svelte';
+  // P1: Global import modal
+  import ImportModal from './components/ImportModal.svelte';
   import Dashboard from './pages/Dashboard.svelte';
   import Locations from './pages/Locations.svelte';
   import Atlas from './pages/Atlas.svelte';
@@ -137,4 +139,6 @@
   <ImportProgress />
   <!-- FIX 4.6: Global toast notifications -->
   <ToastContainer />
+  <!-- P1: Global import modal -->
+  <ImportModal />
 {/if}
