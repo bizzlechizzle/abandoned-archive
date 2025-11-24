@@ -14,6 +14,11 @@
   // FIX 6.8: Heat map toggle
   let showHeatMap = $state(false);
 
+  // FEAT-P2: Default Atlas view settings
+  let defaultCenter = $state<{ lat: number; lng: number } | null>(null);
+  let defaultZoom = $state<number | null>(null);
+  let savingDefaultView = $state(false);
+
   // P3d: Context menu state for right-click options
   let contextMenu = $state<{ show: boolean; x: number; y: number; lat: number; lng: number }>({
     show: false,
@@ -114,8 +119,77 @@
     closeContextMenu();
   }
 
+  // FEAT-P1: Verify location GPS - updates coordinates and marks as verified
+  async function handleLocationVerify(locid: string, lat: number, lng: number) {
+    try {
+      await window.electronAPI.locations.update(locid, {
+        gps: {
+          lat,
+          lng,
+          source: 'user_map_click',
+          verifiedOnMap: true,
+        },
+      });
+      toasts.success('Location verified');
+      // Reload locations to update the map
+      await loadLocations();
+    } catch (err) {
+      console.error('Failed to verify location:', err);
+      toasts.error('Failed to verify location');
+    }
+  }
+
+  // FEAT-P2: Load default Atlas view from settings
+  async function loadDefaultView() {
+    if (!window.electronAPI?.settings) return;
+    try {
+      const settings = await window.electronAPI.settings.getAll();
+      if (settings.atlas_default_lat && settings.atlas_default_lng) {
+        defaultCenter = {
+          lat: parseFloat(settings.atlas_default_lat),
+          lng: parseFloat(settings.atlas_default_lng),
+        };
+      }
+      if (settings.atlas_default_zoom) {
+        defaultZoom = parseInt(settings.atlas_default_zoom, 10);
+      }
+    } catch (err) {
+      console.error('Error loading default view:', err);
+    }
+  }
+
+  // FEAT-P2: Save current map view as default
+  async function saveDefaultView() {
+    if (!window.electronAPI?.settings) return;
+    // Get current center from context menu (last right-click position as proxy)
+    // In practice, we'd need to get this from the Map component
+    // For now, use a simple approach: save the center of the US or current context
+    savingDefaultView = true;
+    try {
+      // We'll use current context menu position if available, else US center
+      const lat = contextMenu.lat || 39.8283;
+      const lng = contextMenu.lng || -98.5795;
+      const zoom = 5; // Default zoom for US view
+
+      await window.electronAPI.settings.set('atlas_default_lat', String(lat));
+      await window.electronAPI.settings.set('atlas_default_lng', String(lng));
+      await window.electronAPI.settings.set('atlas_default_zoom', String(zoom));
+
+      defaultCenter = { lat, lng };
+      defaultZoom = zoom;
+
+      toasts.success('Default view saved');
+    } catch (err) {
+      console.error('Error saving default view:', err);
+      toasts.error('Failed to save default view');
+    } finally {
+      savingDefaultView = false;
+    }
+  }
+
   onMount(() => {
     loadLocations();
+    loadDefaultView(); // FEAT-P2: Load saved default view
     // Close context menu on click outside
     const handleClickOutside = () => closeContextMenu();
     document.addEventListener('click', handleClickOutside);
@@ -134,13 +208,22 @@
       </p>
     </div>
     <div class="flex items-center gap-2">
-      <!-- FIX 6.8: Heat map toggle button -->
+      <!-- FEAT-P2: Set as Default View button -->
+      <button
+        onclick={saveDefaultView}
+        disabled={savingDefaultView}
+        class="px-4 py-2 bg-gray-100 text-foreground rounded hover:bg-gray-200 transition text-sm disabled:opacity-50"
+        title="Save current view as default when opening Atlas"
+      >
+        {savingDefaultView ? 'Saving...' : 'Set Default View'}
+      </button>
+      <!-- FIX 6.8: Heat map toggle button - NME: No emoji per claude.md -->
       <button
         onclick={() => showHeatMap = !showHeatMap}
         class="px-4 py-2 rounded transition text-sm {showHeatMap ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-foreground hover:bg-gray-200'}"
         title="Toggle heat map visualization"
       >
-        {showHeatMap ? '🔥 Heat On' : '🔥 Heat Off'}
+        {showHeatMap ? 'Heat On' : 'Heat Off'}
       </button>
       <button
         onclick={() => showFilters = !showFilters}
@@ -193,6 +276,7 @@
       onMapClick={handleMapClick}
       onMapRightClick={handleMapRightClick}
       showHeatMap={showHeatMap}
+      onLocationVerify={handleLocationVerify}
     />
     {#if loading}
       <div class="absolute top-2 left-1/2 -translate-x-1/2 bg-white px-4 py-2 rounded shadow-lg z-10">

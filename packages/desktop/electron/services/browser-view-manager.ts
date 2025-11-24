@@ -147,6 +147,11 @@ export class BrowserViewManager {
       },
     });
 
+    // FIX: Set user agent to a standard Chrome user agent
+    // Cloudflare may block Electron's default user agent causing 522 errors
+    const chromeUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    this.browserView.webContents.setUserAgent(chromeUserAgent);
+
     // Forward navigation events to renderer
     this.browserView.webContents.on('did-navigate', (_event, url) => {
       this.mainWindow.webContents.send('browser:navigated', url);

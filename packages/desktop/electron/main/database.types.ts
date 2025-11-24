@@ -131,10 +131,8 @@ export interface ImgsTable {
   xmp_synced: number;
   xmp_modified_at: string | null;
 
-  // Darktable processing (Migration 11 - Kanye10 Premium RAW)
-  darktable_path: string | null;       // Path to Darktable-processed JPEG
-  darktable_processed: number;         // 0 = not processed, 1 = processed
-  darktable_processed_at: string | null;
+  // NOTE: darktable columns exist in DB but are deprecated/unused
+  // darktable_path, darktable_processed, darktable_processed_at - REMOVED from app
 }
 
 // Videos table

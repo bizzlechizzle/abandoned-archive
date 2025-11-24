@@ -27,10 +27,7 @@ export interface MediaImage {
   preview_extracted: number;
   xmp_synced: number;
   xmp_modified_at: string | null;
-  // Darktable processing (Migration 11 - Kanye10 Premium RAW)
-  darktable_path: string | null;
-  darktable_processed: number;
-  darktable_processed_at: string | null;
+  // NOTE: darktable columns exist in DB but are deprecated/unused
 }
 
 export interface MediaVideo {

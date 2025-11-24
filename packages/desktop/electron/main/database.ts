@@ -514,8 +514,10 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 10 completed: hero_imgsha column added');
     }
 
-    // Migration 11: Add darktable_path column to imgs table
-    // Per Kanye10: Darktable CLI integration for premium RAW processing
+    // Migration 11: Add darktable_path column to imgs table (DEPRECATED)
+    // NOTE: Darktable integration has been REMOVED from the app.
+    // Columns remain for backwards compatibility but are unused.
+    // Per original Kanye10: Darktable CLI integration for premium RAW processing
     const imgColsForDarktable = sqlite.prepare('PRAGMA table_info(imgs)').all() as Array<{ name: string }>;
     const hasDarktablePath = imgColsForDarktable.some(col => col.name === 'darktable_path');
 

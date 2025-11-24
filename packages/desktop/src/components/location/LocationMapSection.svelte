@@ -76,7 +76,8 @@
 <div class="bg-white rounded-lg shadow p-6">
   <h2 class="text-xl font-semibold mb-4 text-foreground">Location</h2>
 
-  {#if location.gps}
+  {#if location.gps && (!location.gps.geocodeTier || location.gps.geocodeTier < 5)}
+    <!-- BUG-V4 FIX: Only show GPS section if we have real GPS data (not state-only tier 5) -->
     {@const confidence = getGpsConfidence(location.gps)}
     <div class="mb-4">
       <div class="flex items-center justify-between mb-2">
@@ -144,41 +145,22 @@
         </button>
       {/if}
     </div>
-  {:else if location.address?.state}
-    <!-- PUEA: Show approximate map based on state capital -->
-    <div class="mb-4">
-      <div class="flex items-center justify-between mb-2">
-        <h3 class="text-sm font-medium text-gray-500">Location</h3>
-        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-          <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
-          </svg>
-          Approximate (State Capital)
-        </span>
-      </div>
-      <p class="text-sm text-gray-600">
-        Showing {location.address.state} state capital area
-      </p>
-    </div>
-
-    <div class="h-64 rounded overflow-hidden mb-3">
-      <Map locations={[location]} zoom={mapZoom} />
-    </div>
-
-    <div class="flex items-center gap-2 text-xs text-yellow-600 bg-yellow-50 p-2 rounded">
-      <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-      <span>No exact GPS. Map shows approximate area based on address.</span>
-    </div>
   {:else}
+    <!-- BUG-V4 FIX: For state-only (tier 5) or no GPS, show simple "Add GPS" prompt -->
+    <!-- User explicitly requested: DO NOT show approximate map for state-only locations -->
     <!-- PUEA: No GPS and no state - prompt to add -->
     <div class="text-center py-6 bg-gray-50 rounded">
       <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
       </svg>
-      <p class="text-gray-500 mb-3">No location data available</p>
+      <p class="text-gray-500 mb-3">
+        {#if location.address?.state}
+          State: {location.address.state} - No exact GPS coordinates
+        {:else}
+          No location data available
+        {/if}
+      </p>
       <button
         onclick={() => router.navigate('/atlas')}
         class="px-4 py-2 text-sm bg-accent text-white rounded hover:opacity-90 transition"

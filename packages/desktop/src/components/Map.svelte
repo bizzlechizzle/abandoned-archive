@@ -134,9 +134,11 @@
     showHeatMap?: boolean;
     // Kanye9: Custom zoom level based on GPS confidence
     zoom?: number;
+    // FEAT-P1: Verify Location callback - called with locid and new lat/lng
+    onLocationVerify?: (locid: string, lat: number, lng: number) => void;
   }
 
-  let { locations = [], onLocationClick, onMapClick, onMapRightClick, showHeatMap = false, zoom }: Props = $props();
+  let { locations = [], onLocationClick, onMapClick, onMapRightClick, showHeatMap = false, zoom, onLocationVerify }: Props = $props();
 
   /**
    * Escape HTML to prevent XSS attacks
@@ -161,6 +163,10 @@
   let lastLocationsHash = $state('');
   // Kanye11 FIX: Prevent infinite loop - track if initial view has been set
   let initialViewSet = $state(false);
+  // BUG-V1 FIX: Location lookup for event delegation
+  let locationLookup = new Map<string, Location>();
+  // BUG-V1 FIX: Store cleanup function for event delegation
+  let viewDetailsClickHandler: ((e: MouseEvent) => void) | null = null;
 
   /**
    * Kanye9: Generate hash from location IDs and GPS coordinates
@@ -313,11 +319,40 @@
       });
 
       map.on('contextmenu', (e) => {
+        // BUG-V2 FIX: Prevent default browser context menu
+        e.originalEvent.preventDefault();
         if (onMapRightClick) {
           // BUG-2 FIX: Pass screen coordinates for context menu positioning
           onMapRightClick(e.latlng.lat, e.latlng.lng, e.originalEvent.clientX, e.originalEvent.clientY);
         }
       });
+
+      // BUG-V1 FIX: Event delegation for View Details and Verify button clicks
+      // This is more reliable than DOM manipulation in Leaflet popups
+      viewDetailsClickHandler = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        // Handle View Details button
+        if (target.classList.contains('view-details-btn')) {
+          e.preventDefault();
+          e.stopPropagation();
+          const locid = target.getAttribute('data-location-id');
+          if (locid && locationLookup.has(locid) && onLocationClick) {
+            onLocationClick(locationLookup.get(locid)!);
+          }
+        }
+        // FEAT-P1: Handle Verify Location button
+        if (target.classList.contains('verify-location-btn')) {
+          e.preventDefault();
+          e.stopPropagation();
+          const locid = target.getAttribute('data-verify-location-id');
+          const loc = locid ? locationLookup.get(locid) : null;
+          if (locid && loc && loc.gps && onLocationVerify) {
+            // Verify at current position
+            onLocationVerify(locid, loc.gps.lat, loc.gps.lng);
+          }
+        }
+      };
+      document.addEventListener('click', viewDetailsClickHandler);
 
       map.on('zoomend moveend', () => {
         updateClusters(L);
@@ -404,7 +439,23 @@
           ? 'Approximate (State)'
           : String(confidence).charAt(0).toUpperCase() + String(confidence).slice(1) + ' GPS';
 
-        // P3b: Mini location popup with "View Details" button
+        // P3b: Mini location popup with "View Details" and "Verify" buttons
+        // FEAT-P1: Verify button allows user to confirm/adjust pin location
+        const isVerified = location.gps?.verifiedOnMap;
+        const verifyButtonHtml = onLocationVerify && !isVerified
+          ? `<button
+              data-verify-location-id="${location.locid}"
+              class="verify-location-btn"
+              style="margin-top: 4px; padding: 6px 12px; background: #22c55e; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;"
+            >
+              Verify Location
+            </button>`
+          : isVerified
+            ? `<div style="margin-top: 4px; padding: 6px 12px; background: #dcfce7; color: #166534; border-radius: 4px; font-size: 11px; text-align: center;">
+                Location Verified
+              </div>`
+            : '';
+
         const popupContent = `
           <div class="location-popup" style="min-width: 180px;">
             <strong style="font-size: 14px;">${escapeHtml(location.locnam)}</strong><br/>
@@ -418,35 +469,29 @@
             >
               View Details
             </button>
+            ${verifyButtonHtml}
           </div>
         `;
 
         marker.bindPopup(popupContent);
+
+        // FEAT-P1: Make marker draggable if onLocationVerify is provided
+        if (onLocationVerify && !isVerified) {
+          marker.options.draggable = true;
+          marker.on('dragend', () => {
+            const newPos = marker.getLatLng();
+            onLocationVerify(location.locid, newPos.lat, newPos.lng);
+          });
+        }
 
         // P3b: Click on marker opens popup (not direct navigation)
         marker.on('click', () => {
           marker.openPopup();
         });
 
-        // BUG-3 FIX: Handle "View Details" button click via popup open event
-        // Use setTimeout to ensure DOM is ready after popup renders
-        marker.on('popupopen', () => {
-          setTimeout(() => {
-            const btn = document.querySelector(`[data-location-id="${location.locid}"]`) as HTMLButtonElement;
-            if (btn) {
-              // Remove any existing listeners to prevent duplicates
-              const newBtn = btn.cloneNode(true) as HTMLButtonElement;
-              btn.parentNode?.replaceChild(newBtn, btn);
-              newBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                if (onLocationClick) {
-                  onLocationClick(location);
-                }
-              });
-            }
-          }, 10);
-        });
+        // BUG-V1 FIX: Store location reference for event delegation
+        // Event delegation handles clicks at document level - more reliable than DOM manipulation
+        locationLookup.set(location.locid, location);
 
         markersLayer.addLayer(marker);
       }
@@ -504,6 +549,12 @@
   });
 
   onDestroy(() => {
+    // BUG-V1 FIX: Clean up event delegation listener
+    if (viewDetailsClickHandler) {
+      document.removeEventListener('click', viewDetailsClickHandler);
+      viewDetailsClickHandler = null;
+    }
+    locationLookup.clear();
     if (map) {
       map.remove();
       map = null;
