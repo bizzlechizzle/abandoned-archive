@@ -216,14 +216,13 @@ STEP 5: Add Triggers Elsewhere
 - Atlas: Right-click "Add Location" opens modal (already has similar)
 - Consider: Keyboard shortcut (Ctrl+N or Ctrl+I)
 
-STEP 6: Handle Post-Submit
+STEP 6: Handle Post-Submit ✅ CONFIRMED
 ----------------------------------------
-Options after successful creation:
-a) Close modal + toast "Location created"
-b) Close modal + navigate to new location page
-c) Ask user: "Add more details?" → navigate to location
-
-Recommendation: Option (b) - navigate to location for Step 2 details
+On successful location creation:
+1. Close modal
+2. Show toast "Location created"
+3. Navigate to new location detail page
+4. User adds GPS, address, other Step 2 details on location page
 ```
 
 **Testing Checklist:**
@@ -301,11 +300,13 @@ $effect(() => {
   }
 });
 
-STEP 4: Update Dropdowns
+STEP 4: Update Dropdowns ✅ DATABASE-DRIVEN
 ----------------------------------------
-- State dropdown: All states (static list or from DB)
-- Type dropdown: {#each availableTypes as type}
-- Show "All Types" option when no specific type selected
+- State dropdown: Query DB for states with locations
+  `SELECT DISTINCT address_state FROM locs WHERE address_state IS NOT NULL`
+- Type dropdown: Query DB for types in selected state
+  `SELECT DISTINCT type FROM locs WHERE address_state = ? AND type IS NOT NULL`
+- Show "All" option when no specific selection
 ```
 
 **Testing Checklist:**
@@ -629,18 +630,25 @@ WEEK 4: Polish & Fixes
 
 ---
 
-## Questions to Resolve Before Implementation
+## Resolved Decisions
 
-1. **Data Migration:** Do we have a database backup strategy before running P0 migration?
+1. **Data Migration:** ✅ ALWAYS backup database before migrations
+   - `cp archive.db archive.db.backup` before any schema changes
+   - Keep backups until changes verified working
 
-2. **Types List:** Where does the list of valid types come from? Static list or database-driven?
+2. **Types List:** ✅ Database-driven
+   - Query: `SELECT DISTINCT type FROM locs WHERE type IS NOT NULL`
+   - Filter by state when state is selected
 
-3. **States List:** Same question - static list of US states or from database?
+3. **States List:** ✅ Database-driven
+   - Query: `SELECT DISTINCT address_state FROM locs WHERE address_state IS NOT NULL`
+   - Shows only states that have locations
 
-4. **Post-Submit Behavior:** After creating location via popup, should we:
-   - Just show toast and close?
-   - Navigate to new location page?
-   - Ask user what they want to do?
+4. **Post-Submit Behavior:** ✅ Navigate to new location page
+   - After successful creation: close modal → navigate to location detail page
+   - User can then add GPS, address, and other Step 2 details
+
+## Open Questions
 
 5. **Bookmarks Browser:** Is pre-filling state/type necessary or nice-to-have?
 
