@@ -81,8 +81,7 @@ export class SQLiteLocationRepository implements LocationRepository {
         address_normalized: addressRecord ? AddressService.format(addressRecord.normalized) : null,
         address_parsed_json: addressRecord ? JSON.stringify(addressRecord.parsed) : null,
         address_source: addressRecord?.source || null,
-        condition: input.condition || null,
-        status: input.status || null,
+        // P0: condition and status removed - use access only
         documentation: input.documentation || null,
         access: input.access || null,
         historic: input.historic ? 1 : 0,
@@ -209,8 +208,7 @@ export class SQLiteLocationRepository implements LocationRepository {
       updates.address_source = addressRecord.source;
     }
 
-    if (input.condition !== undefined) updates.condition = input.condition;
-    if (input.status !== undefined) updates.status = input.status;
+    // P0: condition and status removed - use access only
     if (input.documentation !== undefined) updates.documentation = input.documentation;
     if (input.access !== undefined) updates.access = input.access;
     if (input.historic !== undefined) updates.historic = input.historic ? 1 : 0;
@@ -316,8 +314,7 @@ export class SQLiteLocationRepository implements LocationRepository {
         confidence: (row.address_confidence ?? undefined) as any,
         geocodedAt: row.address_geocoded_at ?? undefined
       },
-      condition: row.condition ?? undefined,
-      status: row.status ?? undefined,
+      // P0: condition and status removed - use access only
       documentation: row.documentation ?? undefined,
       access: row.access ?? undefined,
       historic: row.historic === 1,
