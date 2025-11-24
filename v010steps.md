@@ -45,23 +45,29 @@ This document outlines the next cleanup steps to get us closer to launch.
 
 ### UI/UX Improvements
 
-**Pop-up Import Form**
-- On Squarespace, forms can be implemented as pop-ups
-- [ ] Investigate implementing the import form as a pop-up/modal
-- [ ] Could be reused across multiple pages for easy access
-- [ ] Benefits:
-  - Quick access from any page
-  - Consistent experience
-  - Doesn't require page navigation
+**Pop-up Import Form** ✓ CONFIRMED
+- Implement import form as a modal/dialog component
+- Available globally across all pages
+- [ ] Wrap import form in modal component
+- [ ] Add trigger button in header/nav ("+ Add Location")
+- [ ] Consider floating action button (FAB) option
+- [ ] Optional: keyboard shortcut (e.g., `Ctrl+I` or `N`)
+
+**Benefits:**
+- No page navigation needed
+- Quick access from browse, dashboard, anywhere
+- Consistent experience
+- Form state can be preserved if accidentally closed
+
+**Open Questions:**
+- Full form or simplified "quick add" version?
+- Post-submit behavior: close modal, show success, navigate to record?
 
 ---
 
 ## Questions to Explore
 
-1. What triggers should open the pop-up form? (Button, keyboard shortcut, etc.)
-2. Which pages should have access to the pop-up form?
-3. Should the pop-up form have all fields or a simplified version?
-4. Data migration strategy for removing Condition/Status fields?
+1. Data migration strategy for removing Condition/Status fields?
 
 ---
 
