@@ -126,6 +126,20 @@ This document outlines the next cleanup steps to get us closer to launch.
 
 ---
 
+### Atlas
+
+**[ ] Change pin colors to accent color**
+
+**[ ] Mini location pop-up on pin click**
+- Show mini pop-up instead of going direct to location page
+- Preview info before navigating
+
+**[ ] Add additional map layers to Leaflet**
+- Add all available free/open source map layers
+- Layer switcher for users to choose preferred style
+
+---
+
 ## Questions to Explore
 
 1. Data migration strategy for removing Condition/Status fields?
