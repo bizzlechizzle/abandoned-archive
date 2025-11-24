@@ -155,6 +155,22 @@ This document outlines the next cleanup steps to get us closer to launch.
 
 ---
 
+### Location Page
+
+**[ ] Remove "Source: geocoded_address"**
+
+**[ ] Fix "Approximate location" message logic**
+- Current: "Approximate location - Based on state center. Click map to set exact location."
+- Problem: Shows even when location has real GPS coordinates
+- [ ] Implement smart hierarchy - only show approximate message when GPS is actually missing/defaulted
+
+**Location Box should contain:**
+- Address
+- GPS
+- Map
+
+---
+
 ## Questions to Explore
 
 1. Data migration strategy for removing Condition/Status fields?
