@@ -6,8 +6,8 @@
    */
   import { onMount } from 'svelte';
   import { importModal, closeImportModal } from '../stores/import-modal-store';
-  import { navigate } from '../stores/router';
-  import { addToast } from '../stores/toast-store';
+  import { router } from '../stores/router';
+  import { toasts } from '../stores/toast-store';
 
   // P0: Access options - consolidated from condition/status per v010steps.md
   const ACCESS_OPTIONS = [
@@ -160,11 +160,11 @@
 
       // Success: close modal, show toast, navigate to new location
       closeImportModal();
-      addToast('Location created successfully', 'success');
+      toasts.success('Location created successfully');
 
       // P1 Resolved Decision #4: Navigate to new location page
       if (newLocation?.locid) {
-        navigate('location', { id: newLocation.locid });
+        router.navigate(`/location/${newLocation.locid}`);
       }
 
       // Reset form
