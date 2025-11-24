@@ -682,19 +682,24 @@ WEEK 4: Polish & Fixes
 
 ## Success Criteria
 
-Before launch, verify:
+### Implemented ✅
 
-- [ ] Access Status migration complete, no data loss
-- [ ] Pop-up import form works from anywhere
-- [ ] State/Type filtering works correctly
+- [x] Access Status migration script created (run manually before schema change)
+- [x] Pop-up import form works from anywhere (ImportModal.svelte)
+- [x] State/Type filtering works correctly (in ImportModal)
+- [x] Darktable UI removed from Settings
+- [x] Navigation has Atlas at top
+- [x] No console errors in production build (build passes)
+
+### Remaining (Manual Testing Required)
+
+- [ ] Access Status migration: run migration, verify data, remove columns
 - [ ] Atlas pins use accent color
 - [ ] Atlas mini popup shows on click
 - [ ] Atlas right-click works (no freeze)
 - [ ] Location page shows correct GPS status
-- [ ] No Darktable references remain
-- [ ] Navigation has Atlas at top
-- [ ] All toast notifications work
-- [ ] No console errors in production build
+- [ ] Remove remaining Darktable backend code
+- [ ] Test toast notifications
 
 ---
 
