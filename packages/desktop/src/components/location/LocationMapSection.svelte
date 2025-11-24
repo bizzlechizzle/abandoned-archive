@@ -106,8 +106,8 @@
         {location.gps.lat.toFixed(6)}, {location.gps.lng.toFixed(6)}
       </p>
 
-      <!-- Kanye9: GPS accuracy warning for low-tier geocoding -->
-      {#if location.gps.source === 'geocoded_address' && location.gps.geocodeTier && location.gps.geocodeTier > 1}
+      <!-- P4b: GPS accuracy warning only for unverified low-tier geocoding -->
+      {#if !location.gps.verifiedOnMap && location.gps.source === 'geocoded_address' && location.gps.geocodeTier && location.gps.geocodeTier > 1}
         <div class="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
           <span class="font-medium">Approximate location</span> -
           {#if location.gps.geocodeTier === 2}
@@ -128,9 +128,6 @@
     </div>
 
     <div class="flex flex-wrap items-center gap-3 text-xs">
-      {#if location.gps.source}
-        <span class="text-gray-500">Source: {location.gps.source}</span>
-      {/if}
       {#if location.gps.verifiedOnMap}
         <div class="flex items-center gap-1">
           <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

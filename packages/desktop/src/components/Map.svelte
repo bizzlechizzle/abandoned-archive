@@ -262,6 +262,7 @@
         zoom: MAP_CONFIG.DEFAULT_ZOOM,
       });
 
+      // P3c: Additional map layers per v010steps.md
       const baseLayers: { [key: string]: TileLayer } = {
         'Satellite': L.tileLayer(TILE_LAYERS.SATELLITE, {
           attribution: 'Tiles &copy; Esri',
@@ -274,6 +275,16 @@
         'Topo': L.tileLayer(TILE_LAYERS.TOPO, {
           attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap',
           maxZoom: 17,
+        }),
+        'Light': L.tileLayer(TILE_LAYERS.CARTO_LIGHT, {
+          attribution: '&copy; OpenStreetMap contributors, &copy; CartoDB',
+          maxZoom: MAP_CONFIG.MAX_ZOOM,
+          subdomains: 'abcd',
+        }),
+        'Dark': L.tileLayer(TILE_LAYERS.CARTO_DARK, {
+          attribution: '&copy; OpenStreetMap contributors, &copy; CartoDB',
+          maxZoom: MAP_CONFIG.MAX_ZOOM,
+          subdomains: 'abcd',
         }),
       };
 
@@ -390,18 +401,39 @@
           ? 'Approximate (State)'
           : String(confidence).charAt(0).toUpperCase() + String(confidence).slice(1) + ' GPS';
 
-        marker.bindPopup(`
-          <div>
-            <strong>${escapeHtml(location.locnam)}</strong><br/>
-            ${escapeHtml(location.type) || 'Unknown Type'}<br/>
-            ${location.address?.city ? `${escapeHtml(location.address.city)}, ` : ''}${escapeHtml(location.address?.state) || ''}
-            <br/><span style="color: ${THEME.GPS_CONFIDENCE_COLORS[confidence]};">● ${confidenceLabel}</span>
+        // P3b: Mini location popup with "View Details" button
+        const popupContent = `
+          <div class="location-popup" style="min-width: 180px;">
+            <strong style="font-size: 14px;">${escapeHtml(location.locnam)}</strong><br/>
+            <span style="color: #666; font-size: 12px;">${escapeHtml(location.type) || 'Unknown Type'}</span><br/>
+            <span style="color: #888; font-size: 11px;">${location.address?.city ? `${escapeHtml(location.address.city)}, ` : ''}${escapeHtml(location.address?.state) || ''}</span>
+            <br/>
+            <button
+              data-location-id="${location.locid}"
+              class="view-details-btn"
+              style="margin-top: 8px; padding: 6px 12px; background: #b9975c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;"
+            >
+              View Details
+            </button>
           </div>
-        `);
+        `;
 
+        marker.bindPopup(popupContent);
+
+        // P3b: Click on marker opens popup (not direct navigation)
         marker.on('click', () => {
-          if (onLocationClick) {
-            onLocationClick(location);
+          marker.openPopup();
+        });
+
+        // Handle "View Details" button click via popup open event
+        marker.on('popupopen', () => {
+          const btn = document.querySelector(`[data-location-id="${location.locid}"]`);
+          if (btn) {
+            btn.addEventListener('click', () => {
+              if (onLocationClick) {
+                onLocationClick(location);
+              }
+            });
           }
         });
 

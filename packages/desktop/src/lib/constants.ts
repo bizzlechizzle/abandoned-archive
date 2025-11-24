@@ -19,11 +19,15 @@ export const MAP_CONFIG = {
 } as const;
 
 // Tile Layer URLs
+// P3c: Additional free/open-source map layers per v010steps.md
 export const TILE_LAYERS = {
   SATELLITE: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
   STREET: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
   TOPO: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
   LABELS: 'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png',
+  // P3c: New layers
+  CARTO_LIGHT: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+  CARTO_DARK: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
 } as const;
 
 // UI Configuration
@@ -98,12 +102,13 @@ export const THEME = {
   ACCENT: '#b9975c',
   BACKGROUND: '#fffbf7',
   FOREGROUND: '#454545',
+  // P3a: All pin colors changed to accent color per v010steps.md
   GPS_CONFIDENCE_COLORS: {
-    verified: '#10b981',
-    high: '#3b82f6',
-    medium: '#f59e0b',
-    low: '#ef4444',
-    none: '#6b7280',
+    verified: '#b9975c',
+    high: '#b9975c',
+    medium: '#b9975c',
+    low: '#b9975c',
+    none: '#b9975c',
   },
 } as const;
 
