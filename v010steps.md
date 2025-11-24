@@ -1654,3 +1654,338 @@ _Implementation Round #4 completed: 2025-11-24_
 _Implementor: Claude Code Agent_
 _Build: ✅ PASSED_
 _Score: 92/100_
+
+---
+
+## AUDIT REPORT #5 - 2025-11-24 (Post Round #4 Review)
+
+### CRITICAL REGRESSION WARNING
+
+**Multiple fixes from Round #4 reported as NOT WORKING.** User testing reveals the following items are still broken or never worked:
+
+---
+
+### CRITICAL BUGS (STILL BROKEN)
+
+#### BUG-R1: Atlas "View Details" Button Still Not Navigating
+
+**Status:** 🔴 STILL BROKEN (Round #4 fix did not work)
+
+**Issue:** Clicking "View Details" in the mini location popup on Atlas pins STILL does not navigate to the location page.
+
+**Previous "Fix" (Round #4):** Added setTimeout and button cloning - DID NOT RESOLVE
+
+**Root Cause Analysis Needed:**
+1. Check if popup HTML is being re-rendered on each open
+2. Check Leaflet popup event lifecycle
+3. Verify `onLocationClick` prop is being passed correctly from Atlas.svelte
+4. Test if click event is being swallowed by Leaflet
+5. Consider using Leaflet's built-in popup event system instead of DOM manipulation
+
+**File Location:** `packages/desktop/src/components/Map.svelte` lines 432-450
+
+**Alternative Implementation to Try:**
+```javascript
+// Instead of DOM manipulation, use custom events or Svelte stores
+// Or use Leaflet's native popup close-on-click + separate navigation
+```
+
+---
+
+#### BUG-R2: Right-Click Context Menu Not Working
+
+**Status:** 🔴 STILL BROKEN (Round #4 fix did not work)
+
+**Issue:** Right-click context menu on Atlas map is STILL not working. May freeze the map.
+
+**Previous "Fix" (Round #4):** Added screen coordinate passing - DID NOT RESOLVE
+
+**Debug Required:**
+1. Check browser console for JavaScript errors on right-click
+2. Verify `contextmenu` event is firing in Map.svelte
+3. Check if Leaflet is preventing default context menu behavior
+4. Test in different browsers (Chrome vs Electron)
+5. Check if the map "freeze" is actually a blocking script error
+
+**Files to Debug:**
+- `packages/desktop/src/pages/Atlas.svelte` - Context menu state
+- `packages/desktop/src/components/Map.svelte` - Event handler
+
+**Potential Issues:**
+1. Event handler may not be attached properly
+2. State update may be causing re-render that kills the map
+3. `e.originalEvent` may not exist in all cases
+4. Missing `e.preventDefault()` may be causing browser context menu conflict
+
+---
+
+#### BUG-R3: Image Thumbnails / RAW Image View Broken
+
+**Status:** 🔴 BROKEN - Not addressed by Round #4
+
+**Issue:** Image thumbnails and raw image view not working.
+
+**Round #4 Finding:** Claimed this was "not a code bug" and user needs to regenerate thumbnails.
+
+**User Feedback:** Still broken. Need deeper investigation.
+
+**Investigation Required:**
+1. Test Settings → Maintenance → "Regenerate All Thumbnails" - does it work?
+2. Check if new imports generate thumbnails correctly
+3. Verify `media://` protocol handler is working
+4. Check ThumbnailService.ts for errors
+5. Verify exiftool dependency is installed and working
+
+**Files to Check:**
+- `packages/desktop/electron/services/thumbnail-service.ts`
+- `packages/desktop/electron/services/media-path-service.ts`
+- `packages/desktop/src/components/location/LocationGallery.svelte`
+- `packages/desktop/src/components/MediaViewer.svelte`
+
+---
+
+### FEATURE REQUESTS (NOT YET IMPLEMENTED)
+
+#### FEAT-P1: Location Verification (Drag Pin to Exact Spot)
+
+**Priority:** HIGH - Core Feature
+
+**Request:** Add "Verify Location" button in Atlas popup that:
+1. Makes the pin draggable
+2. User drags pin to exact correct location
+3. On release/save, updates GPS coordinates in database
+4. Sets `gps_verified = true` flag
+5. Shows "Location Verified" badge on Location page
+
+**Implementation Requirements:**
+- Leaflet draggable marker: `marker.dragging.enable()`
+- New button in popup: "Verify Location"
+- New IPC endpoint: `locations:updateGPS` with `verified: true`
+- New database field: `gps_verified BOOLEAN DEFAULT 0`
+- UI indicator on Location page showing verified status
+
+**Files to Create/Modify:**
+- `packages/desktop/src/components/Map.svelte` - Add draggable mode
+- `packages/desktop/src/pages/Atlas.svelte` - Add Verify button to popup
+- `packages/desktop/electron/main/ipc-handlers/locations.ts` - GPS update with verify
+- `packages/desktop/electron/main/schema.sql` - Add `gps_verified` column
+- `packages/desktop/src/components/location/LocationMapSection.svelte` - Show verified badge
+
+---
+
+#### FEAT-P2: Default Atlas Coordinates / View
+
+**Priority:** MEDIUM
+
+**Request:** Allow setting default map view when Atlas opens:
+1. Add "Set as Default View" button in Atlas toolbar
+2. Saves current center lat/lng and zoom level to settings
+3. Atlas loads to this view instead of default US center
+
+**Implementation:**
+- New settings keys: `atlas_default_lat`, `atlas_default_lng`, `atlas_default_zoom`
+- Load on Atlas mount, fallback to default if not set
+- Save via settings API when button clicked
+
+**Files to Modify:**
+- `packages/desktop/src/pages/Atlas.svelte` - Button + initial view logic
+- `packages/desktop/electron/main/ipc-handlers/settings.ts` - Already exists
+
+---
+
+#### FEAT-P3: DO NOT Show GPS for State-Only Locations
+
+**Priority:** HIGH
+
+**Request:** If all we know is the STATE, do NOT:
+1. Show fake GPS coordinates based on state center
+2. Show "Approximate location - Based on state center. Click map to set exact location."
+
+**User Explicitly Said:** "We don't want to see that."
+
+**Current Behavior:** Round #4 claimed to fix this with `geocodeTier < 5` condition.
+
+**User Feedback:** Still seeing this message.
+
+**Debug Required:**
+1. Verify `geocodeTier` is being set correctly for state-only locations
+2. Check if condition is actually being evaluated
+3. May need to completely hide the map section for tier 5 locations
+
+**Stricter Implementation:**
+```svelte
+<!-- For tier 5 (state-only), show NOTHING - no map, no message -->
+{#if location.gps.geocodeTier && location.gps.geocodeTier < 5}
+  <!-- Show map section -->
+{:else}
+  <!-- Show "No GPS Data - Add on Atlas" button only -->
+{/if}
+```
+
+**File:** `packages/desktop/src/components/location/LocationMapSection.svelte`
+
+---
+
+#### FEAT-P4: Navigation Reorder (UPDATED)
+
+**Priority:** LOW
+
+**Current Order (per user feedback - Round #4 may not have deployed):**
+```
+Atlas, Dashboard, Locations, Browser, Search, Settings
+```
+
+**Requested Order:**
+```
+Dashboard, Atlas, Locations, Browser, Settings, Search
+```
+
+**Key Changes:**
+1. Dashboard ABOVE Atlas (Dashboard first)
+2. Search BELOW Settings (Search last)
+
+**File:** `packages/desktop/src/components/Navigation.svelte`
+
+---
+
+#### FEAT-P5: Satellite View with Road Markings (Hybrid Layer)
+
+**Priority:** LOW
+
+**Question from User:** "Does Leaflet have a satellite view with road markings?"
+
+**Answer:** YES - This is called a "Hybrid" view.
+
+**Current Implementation:** Uses Satellite + Labels overlay manually.
+
+**Enhancement Options:**
+1. **Auto-Hybrid:** Add explicit "Hybrid" option in layer control that auto-enables labels
+2. **Bing Maps Hybrid:** `L.tileLayer.bing({imagerySet: 'AerialWithLabels'})`
+3. **Google Hybrid:** (NOT RECOMMENDED - TOS issues with Electron)
+
+**Recommendation:** Add "Hybrid" as a base layer option that uses ESRI Satellite + CartoDB Labels combined.
+
+**File:** `packages/desktop/src/components/Map.svelte`
+
+---
+
+#### FEAT-P6: Light View as Default Atlas Layer
+
+**Priority:** MEDIUM
+
+**Status:** Round #4 claimed to implement this, but user says it's NOT working.
+
+**Requested:** Make "Light" (CartoDB Positron) the default layer instead of Satellite.
+
+**Debug Required:**
+1. Check if Map.svelte changes were deployed
+2. Verify lines 302-303 show `baseLayers['Light'].addTo(map);`
+3. Check if layer control is overriding the default
+
+**File:** `packages/desktop/src/components/Map.svelte` lines 301-303
+
+---
+
+#### FEAT-P7: Default Author from Settings in ImportModal
+
+**Priority:** MEDIUM
+
+**Status:** Round #4 claimed to implement this, but needs verification.
+
+**Requested:** Pre-fill Author field in New Location popup with `current_user` from Settings.
+
+**Debug Required:**
+1. Verify Settings has `current_user` set
+2. Check if ImportModal.svelte is loading settings on mount
+3. Verify the author field is being populated
+
+**File:** `packages/desktop/src/components/ImportModal.svelte`
+
+---
+
+### NON-CODE ISSUES
+
+#### ISSUE-1: Cloudflare 522 Error on abandonedupstate.com
+
+**Status:** ⚠️ HOSTING ISSUE - NOT AN APP BUG
+
+**Error Details:**
+```
+Connection timed out - Error code 522
+Browser: Working
+Cloudflare: Working
+www.abandonedupstate.com Host: Error
+```
+
+**Explanation:** This is NOT an Electron/app problem. The origin web server is not responding.
+
+**Error 522 Causes:**
+1. Origin server is down or overloaded
+2. Firewall blocking Cloudflare IPs
+3. SSL/TLS configuration issue on origin
+4. Origin server timeout (>100 seconds)
+
+**Recommended Actions (for website owner):**
+1. Check origin server is running
+2. Verify Cloudflare IPs are whitelisted
+3. Check server logs for connection issues
+4. Temporarily pause Cloudflare to test direct connection
+5. Contact hosting provider
+
+**NOT ACTIONABLE IN APP CODE**
+
+---
+
+### SUMMARY TABLE
+
+| ID | Issue | Type | Status | Priority |
+|----|-------|------|--------|----------|
+| BUG-R1 | View Details button not navigating | Bug Regression | 🔴 BROKEN | CRITICAL |
+| BUG-R2 | Right-click context menu not working | Bug Regression | 🔴 BROKEN | CRITICAL |
+| BUG-R3 | Image thumbnails/RAW view broken | Bug | 🔴 BROKEN | CRITICAL |
+| FEAT-P1 | Verify Location (drag pin) | Feature | ❌ NOT DONE | HIGH |
+| FEAT-P2 | Default Atlas coordinates | Feature | ❌ NOT DONE | MEDIUM |
+| FEAT-P3 | Remove state-only GPS/message | Feature | 🟡 DISPUTED | HIGH |
+| FEAT-P4 | Navigation reorder | Feature | 🟡 VERIFY | LOW |
+| FEAT-P5 | Hybrid satellite layer | Feature | ❌ NOT DONE | LOW |
+| FEAT-P6 | Light as default layer | Feature | 🟡 VERIFY | MEDIUM |
+| FEAT-P7 | Default author from settings | Feature | 🟡 VERIFY | MEDIUM |
+| ISSUE-1 | Cloudflare 522 | Hosting | ⚠️ NOT APP | N/A |
+
+---
+
+### IMMEDIATE ACTION REQUIRED
+
+**Before ANY new features, fix the CRITICAL BUGS:**
+
+1. 🔴 **BUG-R1:** Debug View Details button - use console.log to trace click events
+2. 🔴 **BUG-R2:** Debug right-click menu - check for JS errors, test event firing
+3. 🔴 **BUG-R3:** Debug thumbnails - test regeneration, check service logs
+
+**Then verify Round #4 "fixes" actually deployed:**
+
+4. 🟡 **FEAT-P6:** Is Light actually the default layer? Check Map.svelte lines 302-303
+5. 🟡 **FEAT-P7:** Is author pre-filling? Check ImportModal.svelte lines 67-73
+6. 🟡 **FEAT-P4:** Is navigation reordered? Check Navigation.svelte lines 17-24
+7. 🟡 **FEAT-P3:** Is tier 5 message hidden? Check LocationMapSection.svelte line 111
+
+---
+
+### DEBUGGING CHECKLIST
+
+```
+[ ] Run app with DevTools open (Ctrl+Shift+I)
+[ ] Check Console for JavaScript errors
+[ ] Test right-click on Atlas map - note any errors
+[ ] Test View Details button - note any errors
+[ ] Check Network tab for failed requests (thumbnails)
+[ ] Verify git status - are Round #4 changes committed?
+[ ] Run: git log --oneline -10 to verify commits
+[ ] Run: git diff HEAD~1 to see last changes
+```
+
+---
+
+_Audit #5 completed: 2025-11-24_
+_Reporter: User Feedback Session_
+_Status: MULTIPLE REGRESSIONS / UNVERIFIED FIXES_
