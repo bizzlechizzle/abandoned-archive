@@ -82,18 +82,6 @@ else
   echo "                            Install: brew install libpostal (macOS)"
 fi
 
-# darktable
-printf "  %-25s" "darktable-cli"
-if command -v darktable-cli >/dev/null 2>&1; then
-  echo -e "${GREEN}✓${NC} $(which darktable-cli)"
-elif [ -f "/Applications/darktable.app/Contents/MacOS/darktable-cli" ]; then
-  echo -e "${GREEN}✓${NC} /Applications/darktable.app"
-else
-  echo -e "${YELLOW}○${NC} RAW processing disabled"
-  echo "                            Install: brew install --cask darktable (macOS)"
-  echo "                                     sudo apt install darktable (Ubuntu)"
-fi
-
 # ExifTool
 printf "  %-25s" "ExifTool"
 if command -v exiftool >/dev/null 2>&1; then

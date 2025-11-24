@@ -110,12 +110,14 @@
   }
 
   /**
-   * Create a colored circle marker icon based on GPS confidence
+   * Create a colored circle marker icon using accent color
+   * Per v010steps.md P3a: All pins use brand accent color #b9975c
    */
   function createConfidenceIcon(L: any, confidence: keyof typeof THEME.GPS_CONFIDENCE_COLORS): any {
-    const color = THEME.GPS_CONFIDENCE_COLORS[confidence];
+    // P3a: Use accent color for all pins instead of confidence-based colors
+    const accentColor = '#b9975c';
     return L.divIcon({
-      html: `<div class="confidence-marker" style="background-color: ${color};"></div>`,
+      html: `<div class="confidence-marker" style="background-color: ${accentColor};"></div>`,
       className: 'confidence-icon',
       iconSize: [16, 16],
       iconAnchor: [8, 8],

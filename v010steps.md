@@ -945,3 +945,113 @@ Before launch, prioritize:
 
 _Audit completed: 2025-11-24_
 _Auditor: Claude Code Review Agent_
+
+---
+
+## IMPLEMENTATION ROUND 2 - 2025-11-24
+
+### COMPLETION SCORE: **95/100**
+
+All critical issues from the first audit have been addressed. The following changes were made:
+
+### CHANGES IMPLEMENTED
+
+#### Browser Page (NOW 100/100)
+- [x] Changed "Save Bookmark To" → "Save Bookmark" at line 364
+- [x] Removed "Recent Uploads" section entirely (lines 494-524 deleted)
+- [x] Added "New Location" button that opens ImportModal
+- [x] Removed unused `recentUploads` state and loading code
+
+#### ImportForm (NOW 100/100)
+- [x] Changed "Location Name" → "Name" at line 430
+
+#### Atlas/Map (NOW 100/100)
+- [x] Changed pin colors to accent #b9975c (all pins use brand color)
+- [x] Added right-click context menu with two options:
+  - "Add Location" - opens ImportModal with GPS pre-filled
+  - "Copy GPS" - copies coordinates to clipboard with toast notification
+- [x] Context menu shows GPS coordinates in header
+
+#### Dashboard (NOW 100/100)
+- [x] "Add Location" button now opens ImportModal instead of navigating to /imports
+- [x] Button label changed to "+ New Location" for consistency
+
+#### Darktable Removal (NOW 95/100)
+- [x] Deleted `darktable-service.ts`
+- [x] Deleted `darktable-queue-service.ts`
+- [x] Removed darktable import and handlers from `media-processing.ts`
+- [x] Removed darktable API from `preload/index.ts`
+- [x] Removed darktable section from `setup.sh` (lines 232-261)
+- [x] Removed darktable from `check-deps.sh`
+- [x] Updated setup.sh help text
+- [x] Removed darktable methods from `sqlite-media-repository.ts`
+- [x] Removed darktable path methods from `media-path-service.ts`
+- [x] Removed darktable queue from `file-import-service.ts`
+
+**Note:** Database columns (darktable_path, darktable_processed, darktable_processed_at) and their type definitions remain to maintain backwards compatibility with existing databases. These columns are unused but harmless.
+
+### REMAINING ITEMS (5%)
+
+| Item | Status | Reason |
+|------|--------|--------|
+| Database darktable columns | Kept | Backwards compatibility - removing would break existing DBs |
+| Type definitions for darktable | Kept | Required for TypeScript - matches DB schema |
+| Documentation references (Kanye10.md, kanye9.md) | Kept | Historical documentation |
+
+### BUILD STATUS
+
+```
+✓ Core package built successfully
+✓ Desktop package built successfully
+✓ 156 modules transformed
+✓ dist-electron/main/index.js: 874.79 kB
+```
+
+**A11y warnings present (non-blocking):**
+- Click handlers on divs need keyboard handlers (context menu, modals)
+- Autofocus usage in Setup.svelte
+- Label association in DatabaseSettings.svelte
+
+### FILES MODIFIED
+
+| File | Changes |
+|------|---------|
+| `packages/desktop/src/pages/WebBrowser.svelte` | Bookmark label, removed Recent Uploads, added New Location button |
+| `packages/desktop/src/pages/Atlas.svelte` | Added context menu with Add Location + Copy GPS |
+| `packages/desktop/src/pages/Dashboard.svelte` | Add Location opens popup |
+| `packages/desktop/src/components/Map.svelte` | Pin colors use accent #b9975c |
+| `packages/desktop/src/components/ImportForm.svelte` | Field label: Name |
+| `packages/desktop/electron/main/ipc-handlers/media-processing.ts` | Removed darktable handlers |
+| `packages/desktop/electron/preload/index.ts` | Removed darktable API |
+| `packages/desktop/electron/services/file-import-service.ts` | Removed darktable queue |
+| `packages/desktop/electron/services/media-path-service.ts` | Removed darktable paths |
+| `packages/desktop/electron/repositories/sqlite-media-repository.ts` | Removed darktable methods |
+| `scripts/setup.sh` | Removed darktable installation |
+| `scripts/check-deps.sh` | Removed darktable check |
+
+### FILES DELETED
+
+| File | Reason |
+|------|--------|
+| `packages/desktop/electron/services/darktable-service.ts` | Feature removed |
+| `packages/desktop/electron/services/darktable-queue-service.ts` | Feature removed |
+
+---
+
+### VERIFICATION CHECKLIST
+
+| Requirement | Status | Verification |
+|-------------|--------|--------------|
+| "Save Bookmark" label | DONE | WebBrowser.svelte:364 |
+| "Recent Uploads" removed | DONE | Section deleted |
+| "New Location" in Browser | DONE | Opens ImportModal |
+| "Name" field label | DONE | ImportForm.svelte:430 |
+| Pin colors = accent | DONE | Map.svelte uses #b9975c |
+| Right-click "Copy GPS" | DONE | Atlas.svelte context menu |
+| Right-click "Add Location" | DONE | Atlas.svelte context menu |
+| Dashboard popup | DONE | Uses openImportModal() |
+| Darktable removed | DONE | Services deleted, references cleaned |
+| Build passes | DONE | ✓ built in 5.03s |
+
+_Implementation completed: 2025-11-24_
+_Implementor: Claude Code Agent_

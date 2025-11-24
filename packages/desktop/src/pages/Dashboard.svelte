@@ -12,6 +12,7 @@
   import { onMount } from 'svelte';
   import { router } from '../stores/router';
   import { importStore, isImporting, importProgress, recentImports as storeRecentImports } from '../stores/import-store';
+  import { openImportModal } from '../stores/import-modal-store';
   import type { Location } from '@au-archive/core';
 
   interface ImportRecord {
@@ -79,10 +80,10 @@
   <div class="flex justify-between items-center mb-8">
     <h1 class="text-3xl font-bold text-foreground">Dashboard</h1>
     <button
-      onclick={() => router.navigate('/imports')}
+      onclick={() => openImportModal()}
       class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition"
     >
-      Add Location
+      + New Location
     </button>
   </div>
 

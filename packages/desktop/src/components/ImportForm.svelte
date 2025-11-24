@@ -427,7 +427,7 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="md:col-span-2">
               <label for="new-loc-name" class="block text-sm font-medium text-gray-700 mb-1">
-                Location Name <span class="text-red-500">*</span>
+                Name <span class="text-red-500">*</span>
               </label>
               <input
                 id="new-loc-name"

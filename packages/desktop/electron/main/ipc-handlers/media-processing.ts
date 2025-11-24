@@ -17,9 +17,6 @@ import { PosterFrameService } from '../../services/poster-frame-service';
 import { MediaCacheService } from '../../services/media-cache-service';
 import { PreloadService } from '../../services/preload-service';
 import { XmpService } from '../../services/xmp-service';
-// Kanye10: Darktable integration for premium RAW processing
-import { DarktableService } from '../../services/darktable-service';
-import { DarktableQueueService } from '../../services/darktable-queue-service';
 
 export function registerMediaProcessingHandlers(
   db: Kysely<Database>,
@@ -337,101 +334,4 @@ export function registerMediaProcessingHandlers(
     }
   });
 
-  // ==================== DARKTABLE HANDLERS (Kanye10) ====================
-
-  // Singleton instances for Darktable services
-  let darktableService: DarktableService | null = null;
-  let darktableQueueService: DarktableQueueService | null = null;
-
-  const getDarktableServices = async () => {
-    if (!darktableService) {
-      const archivePath = await getArchivePath();
-      const mediaPathService = new MediaPathService(archivePath);
-      darktableService = new DarktableService(mediaPathService);
-
-      // Create queue service with callback to update DB when processing completes
-      darktableQueueService = new DarktableQueueService(
-        darktableService,
-        mediaPathService,
-        async (hash: string, outputPath: string) => {
-          // Update database with Darktable output path
-          await mediaRepo.updateImageDarktablePath(hash, outputPath);
-          console.log(`[Darktable] DB updated for ${hash}: ${outputPath}`);
-        }
-      );
-    }
-    return { darktableService, darktableQueueService };
-  };
-
-  // Check if Darktable CLI is available on this system
-  ipcMain.handle('media:darktableAvailable', async () => {
-    try {
-      const { darktableService } = await getDarktableServices();
-      const available = await darktableService!.isAvailable();
-      const binaryPath = await darktableService!.findBinary();
-      return { available, binaryPath };
-    } catch (error) {
-      console.error('Error checking Darktable availability:', error);
-      return { available: false, binaryPath: null };
-    }
-  });
-
-  // Get current Darktable queue status
-  ipcMain.handle('media:darktableQueueStatus', async () => {
-    try {
-      const { darktableQueueService } = await getDarktableServices();
-      return darktableQueueService!.getProgress();
-    } catch (error) {
-      console.error('Error getting Darktable queue status:', error);
-      return { total: 0, completed: 0, failed: 0, currentHash: null, isProcessing: false };
-    }
-  });
-
-  // Process all pending RAW files through Darktable
-  ipcMain.handle('media:darktableProcessPending', async () => {
-    try {
-      const { darktableService, darktableQueueService } = await getDarktableServices();
-
-      // Check if Darktable is available
-      const available = await darktableService!.isAvailable();
-      if (!available) {
-        return { success: false, error: 'Darktable CLI not found', queued: 0 };
-      }
-
-      // Get RAW files that haven't been processed by Darktable
-      const pendingFiles = await mediaRepo.getImagesForDarktableProcessing();
-      console.log(`[Darktable] Found ${pendingFiles.length} RAW files pending processing`);
-
-      if (pendingFiles.length === 0) {
-        return { success: true, queued: 0, message: 'No RAW files pending' };
-      }
-
-      // Queue all files for processing
-      const queued = await darktableQueueService!.enqueueBatch(
-        pendingFiles.map(f => ({
-          hash: f.imgsha,
-          sourcePath: f.imgloc,
-          locid: f.locid || '',
-        }))
-      );
-
-      return { success: true, queued, total: pendingFiles.length };
-    } catch (error) {
-      console.error('Error processing pending Darktable files:', error);
-      throw error;
-    }
-  });
-
-  // Enable/disable Darktable processing
-  ipcMain.handle('media:darktableSetEnabled', async (_event, enabled: unknown) => {
-    try {
-      const validEnabled = z.boolean().parse(enabled);
-      const { darktableQueueService } = await getDarktableServices();
-      darktableQueueService!.setEnabled(validEnabled);
-      return { success: true };
-    } catch (error) {
-      console.error('Error setting Darktable enabled state:', error);
-      throw error;
-    }
-  });
 }

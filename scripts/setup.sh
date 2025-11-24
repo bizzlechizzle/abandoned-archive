@@ -36,7 +36,7 @@ while [[ $# -gt 0 ]]; do
       echo "Usage: ./scripts/setup.sh [options]"
       echo ""
       echo "Options:"
-      echo "  --skip-optional  Skip optional dependencies (libpostal, darktable)"
+      echo "  --skip-optional  Skip optional dependencies (libpostal)"
       echo "  --verbose, -v    Show detailed output"
       echo "  --help, -h       Show this help message"
       echo ""
@@ -44,7 +44,7 @@ while [[ $# -gt 0 ]]; do
       echo "  1. Check for required tools (Node.js, pnpm)"
       echo "  2. Install Node.js dependencies"
       echo "  3. Build native modules for Electron"
-      echo "  4. Install optional dependencies (libpostal, darktable)"
+      echo "  4. Install optional dependencies (libpostal)"
       exit 0
       ;;
     *)
@@ -229,37 +229,6 @@ install_optional_dependencies() {
     pnpm rebuild node-postal 2>/dev/null || log_warn "node-postal rebuild skipped"
   fi
 
-  # ---- darktable ----
-  log_info "Checking darktable (RAW photo processing)..."
-
-  if command_exists darktable-cli; then
-    log_success "darktable-cli found at $(which darktable-cli)"
-  elif [ "$platform" = "macos" ]; then
-    if [ -f "/Applications/darktable.app/Contents/MacOS/darktable-cli" ]; then
-      log_success "darktable found at /Applications/darktable.app"
-    elif command_exists brew; then
-      log_info "Installing darktable via Homebrew..."
-      brew install --cask darktable
-      log_success "darktable installed"
-    else
-      log_warn "darktable not found. Install from: https://www.darktable.org/install/"
-    fi
-  elif [ "$platform" = "linux" ]; then
-    if command_exists apt; then
-      log_info "Installing darktable via apt..."
-      sudo apt update && sudo apt install -y darktable
-      log_success "darktable installed"
-    elif command_exists dnf; then
-      log_info "Installing darktable via dnf..."
-      sudo dnf install -y darktable
-      log_success "darktable installed"
-    else
-      log_warn "darktable not found. Install from: https://www.darktable.org/install/"
-    fi
-  else
-    log_warn "darktable: Manual installation required for $platform"
-  fi
-
   # ---- ExifTool ----
   log_info "Checking ExifTool (metadata extraction)..."
 
@@ -339,13 +308,6 @@ verify_installation() {
     echo -e "${GREEN}✓${NC} ML address parsing enabled"
   else
     echo -e "${YELLOW}○${NC} Using regex fallback"
-  fi
-
-  printf "  %-20s" "darktable"
-  if command_exists darktable-cli || [ -f "/Applications/darktable.app/Contents/MacOS/darktable-cli" ]; then
-    echo -e "${GREEN}✓${NC} RAW processing enabled"
-  else
-    echo -e "${YELLOW}○${NC} RAW processing disabled"
   fi
 
   printf "  %-20s" "exiftool"

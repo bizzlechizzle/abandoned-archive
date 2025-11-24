@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { router } from '../stores/router';
   import { openImportModal } from '../stores/import-modal-store';
+  import { toasts } from '../stores/toast-store';
   import Map from '../components/Map.svelte';
   import type { Location } from '@au-archive/core';
 
@@ -12,6 +13,15 @@
   let filterType = $state('');
   // FIX 6.8: Heat map toggle
   let showHeatMap = $state(false);
+
+  // P3d: Context menu state for right-click options
+  let contextMenu = $state<{ show: boolean; x: number; y: number; lat: number; lng: number }>({
+    show: false,
+    x: 0,
+    y: 0,
+    lat: 0,
+    lng: 0,
+  });
 
   // Show locations that are mappable: has GPS OR has address (city+state, zipcode)
   function isMappable(loc: Location): boolean {
@@ -65,19 +75,52 @@
   }
 
   function handleMapClick(lat: number, lng: number) {
-    // Left-click just logs for now
+    // Left-click closes context menu if open
+    closeContextMenu();
   }
 
   function handleMapRightClick(lat: number, lng: number) {
-    // P3d: Right-click opens global import modal with GPS pre-filled
+    // P3d: Show context menu with options instead of direct action
+    // Get mouse position from the event (we'll use a workaround since we don't have direct event access)
+    contextMenu = {
+      show: true,
+      x: window.innerWidth / 2, // Center horizontally as fallback
+      y: window.innerHeight / 2, // Center vertically as fallback
+      lat,
+      lng,
+    };
+  }
+
+  function closeContextMenu() {
+    contextMenu = { ...contextMenu, show: false };
+  }
+
+  function handleAddLocation() {
     openImportModal({
-      gps_lat: lat,
-      gps_lng: lng,
+      gps_lat: contextMenu.lat,
+      gps_lng: contextMenu.lng,
     });
+    closeContextMenu();
+  }
+
+  async function handleCopyGps() {
+    const gpsText = `${contextMenu.lat.toFixed(6)}, ${contextMenu.lng.toFixed(6)}`;
+    try {
+      await navigator.clipboard.writeText(gpsText);
+      toasts.success(`GPS copied: ${gpsText}`);
+    } catch (err) {
+      console.error('Failed to copy GPS:', err);
+      toasts.error('Failed to copy GPS to clipboard');
+    }
+    closeContextMenu();
   }
 
   onMount(() => {
     loadLocations();
+    // Close context menu on click outside
+    const handleClickOutside = () => closeContextMenu();
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
   });
 </script>
 
@@ -155,6 +198,45 @@
     {#if loading}
       <div class="absolute top-2 left-1/2 -translate-x-1/2 bg-white px-4 py-2 rounded shadow-lg z-10">
         <p class="text-gray-500 text-sm">Loading locations...</p>
+      </div>
+    {/if}
+
+    <!-- P3d: Right-click context menu -->
+    {#if contextMenu.show}
+      <div
+        class="fixed bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[160px]"
+        style="left: 50%; top: 50%; transform: translate(-50%, -50%);"
+        onclick={(e) => e.stopPropagation()}
+      >
+        <div class="px-3 py-2 border-b border-gray-100">
+          <p class="text-xs text-gray-500 font-mono">
+            {contextMenu.lat.toFixed(6)}, {contextMenu.lng.toFixed(6)}
+          </p>
+        </div>
+        <button
+          onclick={handleAddLocation}
+          class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 transition flex items-center gap-2"
+        >
+          <svg class="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Add Location
+        </button>
+        <button
+          onclick={handleCopyGps}
+          class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 transition flex items-center gap-2"
+        >
+          <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+          </svg>
+          Copy GPS
+        </button>
+        <button
+          onclick={closeContextMenu}
+          class="w-full text-left px-3 py-2 text-sm text-gray-400 hover:bg-gray-100 transition"
+        >
+          Cancel
+        </button>
       </div>
     {/if}
   </div>

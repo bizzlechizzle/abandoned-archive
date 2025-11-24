@@ -14,6 +14,7 @@
    */
   import { onMount, onDestroy } from 'svelte';
   import type { Location } from '@au-archive/core';
+  import { openImportModal } from '../stores/import-modal-store';
 
   interface Bookmark {
     bookmark_id: string;
@@ -23,13 +24,6 @@
     created_date: string;
   }
 
-  interface ImportRecord {
-    import_id: string;
-    locid: string | null;
-    import_date: string;
-    img_count: number;
-    vid_count: number;
-  }
 
   // Browser state - Default to Abandoned Upstate website
   let currentUrl = $state('https://www.abandonedupstate.com');
@@ -42,7 +36,6 @@
   let searchQuery = $state('');
   let recentBookmarks = $state<Bookmark[]>([]);
   let pinnedLocations = $state<Location[]>([]);
-  let recentUploads = $state<ImportRecord[]>([]);
   let showSaveBookmark = $state(false);
   let bookmarkLocid = $state<string | null>(null);
   let bookmarkTitle = $state('');
@@ -137,11 +130,6 @@
       // Load pinned/favorite locations (top 5) - "projects" in spec means pinned items
       if (window.electronAPI.locations) {
         pinnedLocations = (await window.electronAPI.locations.favorites()).slice(0, 5);
-      }
-
-      // Load recent uploads (top 5) per spec
-      if (window.electronAPI.imports) {
-        recentUploads = (await window.electronAPI.imports.findRecent(5)) as ImportRecord[];
       }
     } catch (error) {
       console.error('Error loading sidebar data:', error);
@@ -361,7 +349,7 @@
     <div class="flex-1 overflow-y-auto p-4 space-y-4">
       <!-- BOX 1: Save Bookmarks Bar - Quick save destination shortcuts -->
       <div class="bg-gray-50 rounded-lg border border-gray-200 p-4">
-        <h3 class="text-sm font-semibold text-gray-800 mb-3">Save Bookmark To</h3>
+        <h3 class="text-sm font-semibold text-gray-800 mb-3">Save Bookmark</h3>
 
         <!-- Save Bookmark Button & Form -->
         <div class="mb-3">
@@ -491,37 +479,6 @@
             {/if}
           </div>
 
-          <!-- Recent Uploads - quick save destinations -->
-          <div>
-            <h4 class="text-xs font-medium text-gray-600 mb-1.5">Recent Uploads</h4>
-            {#if recentUploads.length === 0}
-              <p class="text-xs text-gray-400 italic">No recent uploads</p>
-            {:else}
-              <div class="space-y-1">
-                {#each recentUploads.slice(0, 5) as upload}
-                  <button
-                    onclick={() => {
-                      // Quick save to this upload's location
-                      if (upload.locid) {
-                        bookmarkLocid = upload.locid;
-                      }
-                      showSaveBookmark = true;
-                      bookmarkTitle = pageTitle;
-                    }}
-                    class="w-full text-left px-2 py-1 text-xs bg-white rounded hover:bg-gray-100 truncate transition border border-gray-100"
-                    title="Save to upload location"
-                  >
-                    <span class="text-gray-600">
-                      {new Date(upload.import_date).toLocaleDateString()}
-                    </span>
-                    <span class="text-gray-400 ml-1">
-                      ({upload.img_count || 0} imgs, {upload.vid_count || 0} vids)
-                    </span>
-                  </button>
-                {/each}
-              </div>
-            {/if}
-          </div>
         </div>
       </div>
 
@@ -594,6 +551,18 @@
         {:else}
           <p class="text-xs text-gray-500">Click to browse saved bookmarks by state, type, or location</p>
         {/if}
+      </div>
+
+      <!-- New Location - opens global import modal -->
+      <div class="bg-gray-50 rounded-lg border border-gray-200 p-4">
+        <h3 class="text-sm font-semibold text-gray-800 mb-3">Add New</h3>
+        <button
+          onclick={() => openImportModal()}
+          class="w-full px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition text-sm font-medium"
+        >
+          + New Location
+        </button>
+        <p class="text-xs text-gray-500 mt-2">Create a new location to save bookmarks to</p>
       </div>
 
       <!-- Quick Links -->
