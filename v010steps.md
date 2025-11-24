@@ -8,7 +8,9 @@ This document outlines the next cleanup steps to get us closer to launch.
 
 ## App Improvements / Bug Fixes
 
-### Imports Page
+### Import Pop-up (Replaces Imports Page)
+
+**[ ] Remove dedicated /imports page** - replaced by global pop-up
 
 #### Mandatory Fields
 
@@ -61,9 +63,10 @@ This document outlines the next cleanup steps to get us closer to launch.
 - Documentation Level
 - Access Status
 
-**Separate Step (Step 2 - Details):**
+**Step 2 - Details (on Location Edit/Detail Page):**
 - GPS coordinates
 - Location details
+- After pop-up submit, user can navigate to location page to add details
 
 **Benefits:**
 - No page navigation needed
