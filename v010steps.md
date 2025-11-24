@@ -138,6 +138,21 @@ This document outlines the next cleanup steps to get us closer to launch.
 - Add all available free/open source map layers
 - Layer switcher for users to choose preferred style
 
+**Bug: Right-clicking map freezes it**
+- [ ] Troubleshoot freeze issue
+- [ ] Should show a pop-up context bar instead
+
+**Right-click Pop-up Bar Options:**
+- Add to map
+- Copy GPS
+
+---
+
+### Dashboard
+
+**[ ] Remove "Special Filters" - Map View**
+- Feature is redundant
+
 ---
 
 ## Questions to Explore
