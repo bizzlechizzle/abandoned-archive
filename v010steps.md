@@ -1055,3 +1055,359 @@ All critical issues from the first audit have been addressed. The following chan
 
 _Implementation completed: 2025-11-24_
 _Implementor: Claude Code Agent_
+
+---
+
+## AUDIT REPORT #3 - 2025-11-24 (Post-Merge Review)
+
+### ISSUES DISCOVERED POST-MERGE
+
+This audit was performed after merging PR #39. Several critical bugs were introduced and new feature requests identified.
+
+---
+
+### CRITICAL BUGS (From Last Commit)
+
+#### BUG-1: Image Thumbnails/RAW Image View Broken
+
+**Status:** 🔴 BROKEN - Needs Investigation
+
+**Issue:** Image thumbnails and raw image view not working after the darktable removal commit.
+
+**Likely Cause:** The darktable removal may have inadvertently affected the preview/thumbnail generation pipeline.
+
+**Files to Investigate:**
+- `packages/desktop/electron/services/file-import-service.ts` - darktable queue removed
+- `packages/desktop/electron/services/media-path-service.ts` - darktable paths removed
+- `packages/desktop/src/components/location/LocationGallery.svelte`
+- `packages/desktop/src/components/MediaViewer.svelte`
+
+**Debug Steps:**
+1. Check if thumbnail generation is still happening on import
+2. Check if RAW preview extraction works (exiftool dependency)
+3. Verify thumbnail paths are still being generated correctly
+4. Check console for errors when viewing gallery
+
+---
+
+#### BUG-2: Right-Click Menu Not Working / Map Freeze
+
+**Status:** 🔴 BROKEN - Needs Troubleshooting
+
+**Issue:** Right-click context menu on Atlas map is not working as expected. May freeze the map.
+
+**Current Implementation:** `Atlas.svelte` lines 82-116
+
+**Observed Problems:**
+1. Context menu may not appear at correct position (currently centered)
+2. Map may freeze on right-click
+3. Event propagation issues
+
+**Code Location:**
+```
+packages/desktop/src/pages/Atlas.svelte:82-116
+- handleMapRightClick() sets contextMenu state
+- Context menu rendered at fixed center position (not at click location)
+```
+
+**Root Cause Analysis:**
+- Line 87-88: `x: window.innerWidth / 2, y: window.innerHeight / 2` - Context menu appears at center, not at click location
+- Need to pass mouse event coordinates from Map component
+
+**Fix Required:**
+1. Pass event.containerPoint from Map.svelte's contextmenu handler
+2. Position context menu at actual click location
+3. Prevent default context menu from appearing
+
+---
+
+#### BUG-3: Atlas "View Details" Button Not Navigating
+
+**Status:** 🔴 BROKEN
+
+**Issue:** Clicking "View Details" button in the mini location popup on Atlas pins does not navigate to the location page.
+
+**Code Location:** `packages/desktop/src/components/Map.svelte` lines 406-440
+
+**Current Implementation:**
+```javascript
+// Line 431-439: Event listener added on popupopen
+marker.on('popupopen', () => {
+  const btn = document.querySelector(`[data-location-id="${location.locid}"]`);
+  if (btn) {
+    btn.addEventListener('click', () => {
+      if (onLocationClick) {
+        onLocationClick(location);
+      }
+    });
+  }
+});
+```
+
+**Potential Issues:**
+1. `document.querySelector` may not find button if popup DOM isn't ready
+2. Event listener may be added multiple times on repeated opens
+3. Button click event may be swallowed by popup click handling
+
+**Fix Required:**
+1. Use event delegation instead of direct querySelector
+2. Add slight delay for DOM to be ready
+3. Check if popup content is being replaced on each open
+
+---
+
+### NEW FEATURE REQUESTS
+
+#### FEAT-1: Location Verification (Drag Pin to Exact Spot)
+
+**Priority:** P3 - Atlas Enhancement
+
+**Request:** Add "Verify Location" feature in Atlas popup that:
+1. Allows user to drag the pin to the exact spot
+2. Adds a "location verified" tag in the system
+3. Shows verification status on Location page
+
+**Implementation Notes:**
+- Use Leaflet draggable marker functionality
+- Update GPS coordinates on drag end
+- Set `gps.verifiedOnMap = true` on save
+- Add UI indicator for verified locations
+
+**Files to Modify:**
+- `packages/desktop/src/components/Map.svelte` - Add draggable mode
+- `packages/desktop/src/pages/Atlas.svelte` - Add "Verify" button to popup
+- `packages/desktop/electron/main/ipc-handlers/locations.ts` - Update GPS endpoint
+
+---
+
+#### FEAT-2: Default Coordinates for Atlas View
+
+**Priority:** P3 - Atlas Enhancement
+
+**Request:** Add ability to set default GPS coordinates/zoom level for Atlas view:
+1. User can click "Set as default view" button
+2. Current map center and zoom are saved to settings
+3. Atlas opens to this view instead of default US center
+
+**Implementation Notes:**
+- Add settings: `atlas_default_lat`, `atlas_default_lng`, `atlas_default_zoom`
+- Load settings on Atlas mount
+- Add button in Atlas toolbar: "Set as Default View"
+
+**Files to Modify:**
+- `packages/desktop/src/pages/Atlas.svelte` - Add button and initial view logic
+- `packages/desktop/electron/main/ipc-handlers/settings.ts` - Store/retrieve
+- `packages/desktop/src/lib/constants.ts` - Fallback defaults
+
+---
+
+#### FEAT-3: Remove State-Only "Approximate Location" Message
+
+**Priority:** P4 - Location Page Fix
+
+**Request:** DO NOT show "Approximate location - Based on state center. Click map to set exact location." when we only know the state.
+
+**Reasoning:** If all we know is the state, don't add fake GPS coordinates. The approximate message is misleading.
+
+**Current Behavior:** `LocationMapSection.svelte` lines 109-123 shows tier-based approximate warnings
+
+**Required Change:**
+- If `geocodeTier === 5` (state only), DO NOT display the approximate location warning at all
+- Only show the "Approximate (State Capital)" badge (lines 148-163)
+- Remove the clickable "set exact location" suggestion for state-only
+
+**Code to Modify:**
+```svelte
+<!-- Line 110: Add condition to exclude tier 5 -->
+{#if !location.gps.verifiedOnMap && location.gps.source === 'geocoded_address' && location.gps.geocodeTier && location.gps.geocodeTier > 1 && location.gps.geocodeTier < 5}
+```
+
+---
+
+#### FEAT-4: Navigation Reorder
+
+**Priority:** P7 - UI Polish
+
+**Request:** Reorder navigation items:
+- Put "Dashboard" above "Atlas"
+- Put "Search" below "Settings"
+
+**Current Order (Navigation.svelte line 17-24):**
+```
+Atlas, Dashboard, Locations, Browser, Search, Settings
+```
+
+**Requested Order:**
+```
+Dashboard, Atlas, Locations, Browser, Settings, Search
+```
+
+**File to Modify:** `packages/desktop/src/components/Navigation.svelte` lines 17-24
+
+---
+
+#### FEAT-5: Satellite View with Road Markings (Hybrid Layer)
+
+**Priority:** P3 - Atlas Enhancement
+
+**Request:** Add satellite view with road labels/markings overlay.
+
+**Solution:** Already partially implemented! Current setup uses:
+- ESRI Satellite as base layer
+- CartoDB Labels as overlay
+
+The combination of Satellite + Labels overlay creates a hybrid view.
+
+**Enhancement:** Add explicit "Hybrid" layer option that combines both automatically.
+
+**Implementation Options:**
+1. **Google Hybrid** (NOT RECOMMENDED - TOS issues):
+   ```javascript
+   L.tileLayer('http://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+     maxZoom: 20,
+     subdomains: ['mt0','mt1','mt2','mt3']
+   })
+   ```
+
+2. **ESRI + CartoDB Labels** (CURRENT - Already works):
+   - Toggle Labels overlay on top of Satellite base layer
+   - Users can enable manually via layer control
+
+**File:** `packages/desktop/src/components/Map.svelte` lines 268-305
+
+---
+
+#### FEAT-6: Light View as Default Atlas Layer
+
+**Priority:** P3 - Atlas Enhancement
+
+**Request:** Make "Light" view the default layer when opening Atlas instead of Satellite.
+
+**Current Default:** Satellite + Labels (line 302-303)
+
+**Requested Default:** Light (CartoDB Positron)
+
+**Code Change:**
+```javascript
+// Current (line 302-303):
+baseLayers['Satellite'].addTo(map);
+overlayLayers['Labels'].addTo(map);
+
+// Change to:
+baseLayers['Light'].addTo(map);
+```
+
+**File:** `packages/desktop/src/components/Map.svelte` lines 301-303
+
+---
+
+#### FEAT-7: Default Author from Settings
+
+**Priority:** P2 - UX Improvement
+
+**Request:** In the New Location popup (ImportModal), pre-fill the Author field with the `current_user` from Settings.
+
+**Current Behavior:** Author field is empty (line 36: `let author = $state('');`)
+
+**Required Change:**
+```javascript
+// In ImportModal.svelte onMount or $effect:
+onMount(async () => {
+  loadOptions();
+  // Pre-fill author from settings
+  const settings = await window.electronAPI.settings.getAll();
+  if (settings.current_user) {
+    author = settings.current_user;
+  }
+});
+```
+
+**Files to Modify:**
+- `packages/desktop/src/components/ImportModal.svelte` - Load and set author
+
+---
+
+#### FEAT-8: Browser Site Loading Issue (Cloudflare 522)
+
+**Priority:** P5 - Investigation Required
+
+**Issue:** abandonedupstate.com fails to load in internal browser but works in real browser.
+
+**Error:** Cloudflare Error 522 - Connection timed out
+
+**Error Details:**
+```
+Error code 522
+The initial connection between Cloudflare's network and the origin web server timed out.
+```
+
+**Possible Causes:**
+1. Electron WebView/BrowserView user-agent being blocked
+2. Cloudflare bot protection detecting Electron
+3. Origin server firewall blocking Electron requests
+4. SSL/TLS handshake issues in Electron
+
+**Debug Steps:**
+1. Check if other Cloudflare-protected sites work
+2. Try setting custom user-agent to mimic Chrome
+3. Check Electron's web security settings
+4. Check if the site has IP-based restrictions
+
+**File to Investigate:** `packages/desktop/src/pages/WebBrowser.svelte`
+
+**Note:** This is likely a server-side configuration issue (origin server not responding), not an app bug. The 522 error indicates the origin server is not completing requests.
+
+---
+
+### SUMMARY OF REQUIRED CHANGES
+
+| ID | Issue | Type | Priority | Effort |
+|----|-------|------|----------|--------|
+| BUG-1 | Image thumbnails/RAW view broken | Bug | CRITICAL | HIGH |
+| BUG-2 | Right-click menu not working | Bug | CRITICAL | MEDIUM |
+| BUG-3 | View Details button not navigating | Bug | CRITICAL | LOW |
+| FEAT-1 | Verify Location (drag pin) | Feature | P3 | HIGH |
+| FEAT-2 | Default Atlas coordinates | Feature | P3 | LOW |
+| FEAT-3 | Remove state-only approximate msg | Feature | P4 | LOW |
+| FEAT-4 | Navigation reorder | Feature | P7 | LOW |
+| FEAT-5 | Satellite + roads (hybrid) | Feature | P3 | LOW |
+| FEAT-6 | Light view as Atlas default | Feature | P3 | LOW |
+| FEAT-7 | Default author from settings | Feature | P2 | LOW |
+| FEAT-8 | Browser Cloudflare 522 | Investigation | P5 | UNKNOWN |
+
+---
+
+### IMMEDIATE ACTION ITEMS
+
+**MUST FIX BEFORE LAUNCH:**
+1. ❌ BUG-1: Investigate thumbnail/RAW view regression
+2. ❌ BUG-2: Fix right-click context menu positioning and map freeze
+3. ❌ BUG-3: Fix View Details button navigation in Atlas popup
+
+**SHOULD FIX:**
+4. ❌ FEAT-3: Remove state-only approximate location message
+5. ❌ FEAT-7: Default author from settings in ImportModal
+
+**NICE TO HAVE:**
+6. ❌ FEAT-4: Navigation reorder
+7. ❌ FEAT-6: Light view as Atlas default
+8. ❌ FEAT-1: Verify Location feature
+9. ❌ FEAT-2: Default Atlas coordinates
+
+---
+
+### FILES REQUIRING CHANGES
+
+| File | Changes Required |
+|------|------------------|
+| `packages/desktop/src/pages/Atlas.svelte` | Fix context menu positioning, add Verify Location button |
+| `packages/desktop/src/components/Map.svelte` | Fix View Details navigation, pass click coordinates, change default layer to Light |
+| `packages/desktop/src/components/ImportModal.svelte` | Load and pre-fill author from settings |
+| `packages/desktop/src/components/location/LocationMapSection.svelte` | Remove state-only approximate message (tier 5) |
+| `packages/desktop/src/components/Navigation.svelte` | Reorder: Dashboard, Atlas, Locations, Browser, Settings, Search |
+| Various media/thumbnail files | Debug and fix thumbnail regression |
+
+---
+
+_Audit #3 completed: 2025-11-24_
+_Auditor: Claude Code Review Agent_
