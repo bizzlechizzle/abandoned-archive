@@ -764,3 +764,184 @@ myStore.set(newValue) // write value
 
 _Document Version: 1.0_
 _Last Updated: v0.10 Brainstorming Session_
+
+---
+
+## AUDIT REPORT - 2025-11-24
+
+### COMPLETION SCORE: **52/100**
+
+This audit was performed against the original requirements. Many features were upgraded while others were completely ignored.
+
+---
+
+### CATEGORY BREAKDOWN
+
+| Category | Score | Status |
+|----------|-------|--------|
+| Imports Page | 70/100 | PARTIAL |
+| Browser Page | 40/100 | POOR |
+| Darktable Removal | 0/100 | FAILED |
+| Atlas/Map | 65/100 | PARTIAL |
+| Dashboard | 85/100 | GOOD |
+| Navigation | 100/100 | COMPLETE |
+| Location Page | 60/100 | PARTIAL |
+
+---
+
+### DETAILED FINDINGS
+
+#### IMPORTS PAGE (70/100)
+
+**COMPLETED:**
+- [x] Access Status field with correct options (Abandoned, Demolished, Active, Partially Active, Future Classic, Vacant, Unknown)
+- [x] "Condition" field removed (P0 cleanup)
+- [x] "Status" field removed (P0 cleanup)
+- [x] Pop-up modal form works globally (ImportModal.svelte)
+- [x] Type dropdown dependent on State filter (filterTypesByState)
+
+**NOT COMPLETED:**
+- [ ] Field label inconsistency: ImportForm.svelte still uses "Location Name" at line 430 (should be just "Name")
+- [ ] Type defaults to empty string when state changes, not "all"
+
+---
+
+#### BROWSER PAGE (40/100) - NEEDS WORK
+
+**COMPLETED:**
+- [x] Recents autofilling last 5 locations (line 134: findRecent(5))
+- [x] Bookmarks browser with state/type filter dropdowns
+
+**NOT COMPLETED:**
+- [ ] "Save Bookmark To" still at line 364 - should be "Save Bookmark"
+- [ ] "Recent Uploads" section still exists (lines 494-524) - SHOULD BE REMOVED
+- [ ] No "New Location" button in Browser page that opens popup
+- [ ] abandonedupstate.com browser issue - needs manual testing
+
+---
+
+#### DARKTABLE REMOVAL (0/100) - COMPLETE FAILURE
+
+**Darktable was NOT removed from the codebase. Found in 14 files:**
+
+```
+Backend Files (STILL EXIST):
+- packages/desktop/electron/services/darktable-service.ts (ENTIRE FILE)
+- packages/desktop/electron/services/darktable-queue-service.ts (ENTIRE FILE)
+- packages/desktop/electron/main/ipc-handlers/media-processing.ts
+- packages/desktop/electron/services/file-import-service.ts
+- packages/desktop/electron/services/media-path-service.ts
+- packages/desktop/electron/main/database.ts
+- packages/desktop/electron/main/database.types.ts
+- packages/desktop/electron/repositories/sqlite-media-repository.ts
+- packages/desktop/electron/preload/index.ts
+
+Scripts (STILL EXIST):
+- scripts/setup.sh (lines 232-261 - installs darktable)
+- scripts/check-deps.sh
+
+Documentation (references remain):
+- v010steps.md
+- Kanye10.md
+- kanye9.md
+```
+
+**Required Actions:**
+1. Delete darktable-service.ts
+2. Delete darktable-queue-service.ts
+3. Remove darktable references from media-processing.ts
+4. Remove from setup.sh (lines 232-261)
+5. Remove from check-deps.sh
+6. Remove from file-import-service.ts
+7. Clean up database references
+
+---
+
+#### ATLAS/MAP (65/100)
+
+**COMPLETED:**
+- [x] Mini location popup on pin click (lines 404-421 in Map.svelte)
+- [x] "View Details" button works and navigates correctly
+- [x] 5 base map layers + labels overlay (Satellite, Street, Topo, Light, Dark)
+- [x] Right-click opens ImportModal with GPS pre-filled
+
+**NOT COMPLETED:**
+- [ ] Pin colors still use confidence-based colors (THEME.GPS_CONFIDENCE_COLORS), NOT accent color #b9975c
+- [ ] Right-click context menu missing "Copy GPS" option
+- [ ] Right-click freeze bug - needs manual testing
+
+**Relevant Code Location:** `packages/desktop/src/components/Map.svelte` lines 115-123
+
+---
+
+#### DASHBOARD (85/100)
+
+**COMPLETED:**
+- [x] "Special Filters" / Map View removed (not present in Dashboard)
+
+**NOT COMPLETED:**
+- [ ] "Add Location" button goes to /imports page instead of opening popup directly
+
+---
+
+#### NAVIGATION (100/100) - COMPLETE
+
+**COMPLETED:**
+- [x] Atlas at top of navigation (Navigation.svelte lines 15-24)
+- [x] Default page is Dashboard (App.svelte line 34)
+- [x] "New Location" button in navigation opens ImportModal
+
+---
+
+#### LOCATION PAGE (60/100)
+
+**COMPLETED:**
+- [x] GPS source shows "From Address" instead of raw "geocoded_address" (line 39)
+- [x] Approximate location hierarchy with tier-based messaging (lines 109-122)
+- [x] Location box properly organized (Address, GPS, Map sections)
+
+**NOT COMPLETED:**
+- [ ] "Add GPS on Atlas" button navigates away instead of opening popup
+- [ ] No direct "Add Location" button that opens ImportModal from location page
+
+---
+
+### CRITICAL ISSUES REQUIRING IMMEDIATE ACTION
+
+1. **DARKTABLE NOT REMOVED** - 14 files still contain references. This bloats the codebase with unused code.
+
+2. **"Recent Uploads" in Browser** - Lines 494-524 in WebBrowser.svelte should be deleted.
+
+3. **"Save Bookmark To" label** - Line 364 in WebBrowser.svelte should be changed to "Save Bookmark"
+
+4. **Pin colors not accent** - Map.svelte uses confidence colors, not brand accent #b9975c
+
+5. **Missing Browser "New Location" button** - Feature requested but not implemented
+
+6. **Missing right-click "Copy GPS"** - Context menu only has "Add to map" functionality
+
+---
+
+### FILES REQUIRING CHANGES
+
+| File | Action Required |
+|------|-----------------|
+| `packages/desktop/src/pages/WebBrowser.svelte` | Line 364: Change "Save Bookmark To" → "Save Bookmark" |
+| `packages/desktop/src/pages/WebBrowser.svelte` | Lines 494-524: DELETE "Recent Uploads" section |
+| `packages/desktop/src/components/Map.svelte` | Lines 115-123: Change pin colors to accent #b9975c |
+| `packages/desktop/electron/services/darktable-service.ts` | DELETE ENTIRE FILE |
+| `packages/desktop/electron/services/darktable-queue-service.ts` | DELETE ENTIRE FILE |
+| `scripts/setup.sh` | Lines 232-261: Remove darktable installation |
+| `packages/desktop/src/components/ImportForm.svelte` | Line 430: Change "Location Name" to "Name" |
+
+---
+
+### RECOMMENDATION
+
+Before launch, prioritize:
+1. **Darktable removal** (P6) - Dead code removal
+2. **Browser fixes** (P5) - User-facing issues
+3. **Pin colors** (P3a) - Branding consistency
+
+_Audit completed: 2025-11-24_
+_Auditor: Claude Code Review Agent_
