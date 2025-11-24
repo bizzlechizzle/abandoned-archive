@@ -1,5 +1,6 @@
 <script lang="ts">
   import { router } from '../stores/router';
+  import { openImportModal } from '../stores/import-modal-store';
   import logo from '../assets/abandoned-upstate-logo.png';
 
   let currentRoute = $state('/dashboard');
@@ -11,18 +12,15 @@
     return () => unsubscribe();
   });
 
-  // Per spec in desktop_app.md: left menu items
-  // #page_dashboard, #page_locations, #page_web-browser, #page_imports, #page_search, #page_settings, #page_atlas
-  // Note: "Projects" in dashboard spec means pinned/favorite items shown on dashboard, not a separate section
-  // Note: Bookmarks are part of the browser sidebar per page_web-browser.md spec
+  // P1/P7a: Navigation menu items - Atlas moved to top, Imports removed (replaced by modal)
+  // Per v010steps.md: Atlas at top, still default to Dashboard on app load
   const menuItems = [
+    { path: '/atlas', label: 'Atlas', icon: 'map' },
     { path: '/dashboard', label: 'Dashboard', icon: 'grid' },
     { path: '/locations', label: 'Locations', icon: 'list' },
     { path: '/browser', label: 'Browser', icon: 'globe' },
-    { path: '/imports', label: 'Imports', icon: 'upload' },
     { path: '/search', label: 'Search', icon: 'search' },
     { path: '/settings', label: 'Settings', icon: 'cog' },
-    { path: '/atlas', label: 'Atlas', icon: 'map' }
   ];
 
   function navigate(path: string) {
@@ -38,6 +36,19 @@
   <div class="p-6 border-b border-gray-200 text-center">
     <img src={logo} alt="Abandoned Upstate" class="h-20 w-auto mx-auto mb-2" />
     <p class="text-sm font-heading font-semibold text-accent tracking-wide">Archive Tool</p>
+  </div>
+
+  <!-- P1: New Location button - opens global import modal -->
+  <div class="px-4 py-3 border-b border-gray-200">
+    <button
+      onclick={() => openImportModal()}
+      class="w-full px-4 py-2 bg-accent text-white rounded-lg hover:opacity-90 transition font-medium text-sm flex items-center justify-center gap-2"
+    >
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+      </svg>
+      New Location
+    </button>
   </div>
 
   <div class="flex-1 overflow-y-auto">

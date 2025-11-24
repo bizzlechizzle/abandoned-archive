@@ -21,8 +21,7 @@
     akanam: location.akanam || '',
     type: location.type || '',
     stype: location.stype || '',
-    condition: location.condition || '',
-    status: location.status || '',
+    // P0: condition and status removed - use access only
     documentation: location.documentation || '',
     access: location.access || '',
     historic: location.historic || false,
@@ -77,8 +76,7 @@
         akanam: formData.akanam || undefined,
         type: formData.type || undefined,
         stype: formData.stype || undefined,
-        condition: formData.condition || undefined,
-        status: formData.status || undefined,
+        // P0: condition and status removed - use access only
         documentation: formData.documentation || undefined,
         access: formData.access || undefined,
         historic: formData.historic,
@@ -249,29 +247,7 @@
         </p>
       </div>
 
-      <div>
-        <label for="condition" class="block text-sm font-medium text-gray-700 mb-1">
-          Condition
-        </label>
-        <input
-          id="condition"
-          type="text"
-          bind:value={formData.condition}
-          class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-        />
-      </div>
-
-      <div>
-        <label for="status" class="block text-sm font-medium text-gray-700 mb-1">
-          Status
-        </label>
-        <input
-          id="status"
-          type="text"
-          bind:value={formData.status}
-          class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-        />
-      </div>
+      <!-- P0: Condition and Status fields removed - use Access only -->
 
       <div>
         <label for="documentation" class="block text-sm font-medium text-gray-700 mb-1">

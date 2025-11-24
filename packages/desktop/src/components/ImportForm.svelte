@@ -48,36 +48,18 @@
     'Drone Only',
   ];
 
-  // Access options per spec
+  // P0: Access options - consolidated from condition/status per v010steps.md
   const ACCESS_OPTIONS = [
     'Abandoned',
-    'Vacant',
+    'Demolished',
     'Active',
     'Partially Active',
+    'Future Classic',
+    'Vacant',
     'Unknown',
-    'Trespassing',
   ];
 
-  // Condition options per spec
-  const CONDITION_OPTIONS = [
-    'abandoned',
-    'demolished',
-    'renovated',
-    'future classic',
-    'unknown',
-  ];
-
-  // Status options per spec
-  const STATUS_OPTIONS = [
-    'locked',
-    'open',
-    'vandalized',
-    'unknown',
-    'fire damaged',
-    'popular site',
-    'time capsule',
-    'abandoned',
-  ];
+  // P0: STATUS_OPTIONS and CONDITION_OPTIONS removed - use ACCESS_OPTIONS only
 
   // New location form state - COMPREHENSIVE
   let showNewLocationForm = $state(false);
@@ -101,8 +83,7 @@
   // Documentation Status
   let newDocumentation = $state('');
   let newAccess = $state('');
-  let newCondition = $state('');
-  let newStatus = $state('');
+  // P0: newCondition and newStatus removed - use newAccess only
   let newHistoric = $state(false);
 
   // Address
@@ -285,8 +266,7 @@
         akanam: newAkaName.trim() || undefined,
         type: newType.trim() || undefined,
         stype: newSubType.trim() || undefined,
-        condition: newCondition || undefined,
-        status: newStatus || undefined,
+        // P0: condition and status removed - use access only
         documentation: newDocumentation || undefined,
         access: newAccess || undefined,
         historic: newHistoric,
@@ -340,8 +320,7 @@
     newSubType = '';
     newDocumentation = '';
     newAccess = '';
-    newCondition = '';
-    newStatus = '';
+    // P0: newCondition and newStatus removed
     newHistoric = false;
     newStreet = '';
     newCity = '';
@@ -623,39 +602,7 @@
               </select>
             </div>
 
-            <div>
-              <label for="new-condition" class="block text-sm font-medium text-gray-700 mb-1">
-                Condition
-              </label>
-              <select
-                id="new-condition"
-                bind:value={newCondition}
-                disabled={creatingLocation}
-                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
-              >
-                <option value="">Select...</option>
-                {#each CONDITION_OPTIONS as opt}
-                  <option value={opt}>{opt}</option>
-                {/each}
-              </select>
-            </div>
-
-            <div>
-              <label for="new-status" class="block text-sm font-medium text-gray-700 mb-1">
-                Status
-              </label>
-              <select
-                id="new-status"
-                bind:value={newStatus}
-                disabled={creatingLocation}
-                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
-              >
-                <option value="">Select...</option>
-                {#each STATUS_OPTIONS as opt}
-                  <option value={opt}>{opt}</option>
-                {/each}
-              </select>
-            </div>
+            <!-- P0: Condition and Status fields removed - use Access Status only -->
           </div>
 
           <div class="flex items-center">

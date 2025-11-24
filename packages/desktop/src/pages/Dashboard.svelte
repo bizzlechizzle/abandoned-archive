@@ -347,56 +347,6 @@
       </div>
     </div>
 
-    <!-- Row 5: Special Filters -->
-    <div class="mb-6">
-      <h2 class="text-xl font-semibold mb-4 text-foreground">Special Filters</h2>
-      <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <button
-          onclick={() => router.navigate('/locations', undefined, { filter: 'undocumented' })}
-          class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
-        >
-          <div class="text-sm text-gray-500">Undocumented</div>
-          <div class="text-lg font-semibold text-foreground">Need Visits</div>
-        </button>
-
-        <button
-          onclick={() => router.navigate('/locations', undefined, { filter: 'historical' })}
-          class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
-        >
-          <div class="text-sm text-gray-500">Historical</div>
-          <div class="text-lg font-semibold text-foreground">Landmarks</div>
-        </button>
-
-        <button
-          onclick={() => router.navigate('/locations', undefined, { filter: 'favorites' })}
-          class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
-        >
-          <div class="text-sm text-gray-500">Favorites</div>
-          <div class="text-lg font-semibold text-foreground">Starred</div>
-        </button>
-
-        <button
-          onclick={async () => {
-            if (!window.electronAPI?.locations) return;
-            const loc = await window.electronAPI.locations.random();
-            if (loc) router.navigate(`/location/${loc.locid}`);
-          }}
-          class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
-        >
-          <div class="text-sm text-gray-500">Surprise Me</div>
-          <div class="text-lg font-semibold text-foreground">Random</div>
-        </button>
-
-        <button
-          onclick={() => router.navigate('/atlas')}
-          class="px-4 py-3 bg-white rounded-lg shadow hover:shadow-lg transition text-left"
-        >
-          <div class="text-sm text-gray-500">Map View</div>
-          <div class="text-lg font-semibold text-foreground">Atlas</div>
-        </button>
-      </div>
-    </div>
-
     <!-- Stats Box -->
     <div class="bg-white rounded-lg shadow p-6">
       <h2 class="text-xl font-semibold mb-4 text-foreground">Archive Stats</h2>
