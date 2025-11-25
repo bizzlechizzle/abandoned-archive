@@ -116,9 +116,9 @@
 
 <svelte:window onkeydown={showEditModal ? handleKeydown : undefined} />
 
-<div class="bg-white rounded-lg shadow p-6">
+<div class="bg-white rounded-lg shadow p-8">
   <!-- Header with verification badge and edit button -->
-  <div class="flex items-center justify-between mb-4">
+  <div class="flex items-center justify-between mb-6">
     <h2 class="text-xl font-semibold text-foreground">Information</h2>
     {#if onSave}
       <button
@@ -132,7 +132,7 @@
   </div>
 
   {#if hasAnyInfo}
-    <dl class="space-y-3">
+    <dl class="space-y-4">
       {#if location.type}
         <div>
           <dt class="text-sm font-medium text-gray-500">Type</dt>
