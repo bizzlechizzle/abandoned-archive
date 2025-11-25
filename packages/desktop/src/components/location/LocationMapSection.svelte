@@ -161,75 +161,80 @@
     </button>
   </div>
 
-  <!-- SECTION 1: Mailing Address (DECISION-013: No borders, copy below content) -->
-  <div class="px-6 py-4">
-    <h3 class="section-title mb-2">Mailing Address</h3>
+  <!-- SECTION 1: Mailing Address + GPS side-by-side -->
+  <div class="flex gap-6 px-6 py-4">
+    <!-- Mailing Address -->
+    <div class="flex-1">
+      <h3 class="section-title mb-2">Mailing Address</h3>
 
-    {#if hasAddress}
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="text-base text-gray-900 space-y-0.5 relative" onmouseup={handleAddressSelection} oncontextmenu={handleAddressContextMenu}>
-        {#if location.address?.street}
+      {#if hasAddress}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="text-base text-gray-900 space-y-0.5 relative" onmouseup={handleAddressSelection} oncontextmenu={handleAddressContextMenu}>
+          {#if location.address?.street}
+            <button
+              onclick={openOnAtlas}
+              class="text-accent hover:underline text-left"
+              title="View on Atlas"
+            >{location.address.street}</button>
+          {/if}
+          <p>
+            {#if displayCity}
+              <button
+                onclick={() => onNavigateFilter('city', displayCity)}
+                class="text-accent hover:underline"
+                title="View all locations in {displayCity}"
+              >{displayCity}</button>{location.address?.state || location.address?.zipcode ? ', ' : ''}
+            {/if}
+            {#if location.address?.state}
+              <button
+                onclick={() => onNavigateFilter('state', location.address!.state!)}
+                class="text-accent hover:underline"
+                title="View all locations in {location.address.state}"
+              >{location.address.state}</button>{' '}
+            {/if}
+            {#if location.address?.zipcode}
+              <button
+                onclick={() => onNavigateFilter('zipcode', location.address!.zipcode!)}
+                class="text-accent hover:underline"
+                title="View all locations with zipcode {location.address.zipcode}"
+              >{location.address.zipcode}</button>
+            {/if}
+          </p>
+          {#if copiedAddress}
+            <span class="absolute -right-2 top-0 text-xs text-verified animate-pulse">Copied!</span>
+          {/if}
+        </div>
+      {:else}
+        <p class="text-sm text-gray-400 italic">No address set</p>
+      {/if}
+    </div>
+
+    <!-- GPS -->
+    <div class="flex-1">
+      <h3 class="section-title mb-2">GPS</h3>
+
+      {#if hasGps}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="relative" onmouseup={handleGpsSelection} oncontextmenu={handleGpsContextMenu}>
           <button
             onclick={openOnAtlas}
-            class="text-accent hover:underline text-left"
+            class="text-accent hover:underline font-mono text-sm text-left"
             title="View on Atlas"
-          >{location.address.street}</button>
-        {/if}
-        <p>
-          {#if displayCity}
-            <button
-              onclick={() => onNavigateFilter('city', displayCity)}
-              class="text-accent hover:underline"
-              title="View all locations in {displayCity}"
-            >{displayCity}</button>{location.address?.state || location.address?.zipcode ? ', ' : ''}
+          >
+            {location.gps!.lat.toFixed(6)}, {location.gps!.lng.toFixed(6)}
+          </button>
+          {#if copiedGps}
+            <span class="absolute -right-2 top-0 text-xs text-verified animate-pulse">Copied!</span>
           {/if}
-          {#if location.address?.state}
-            <button
-              onclick={() => onNavigateFilter('state', location.address!.state!)}
-              class="text-accent hover:underline"
-              title="View all locations in {location.address.state}"
-            >{location.address.state}</button>{' '}
-          {/if}
-          {#if location.address?.zipcode}
-            <button
-              onclick={() => onNavigateFilter('zipcode', location.address!.zipcode!)}
-              class="text-accent hover:underline"
-              title="View all locations with zipcode {location.address.zipcode}"
-            >{location.address.zipcode}</button>
-          {/if}
-        </p>
-        {#if copiedAddress}
-          <span class="absolute -right-2 top-0 text-xs text-verified animate-pulse">Copied!</span>
-        {/if}
-      </div>
-    {:else}
-      <p class="text-sm text-gray-400 italic">No address set</p>
-    {/if}
+        </div>
+      {:else}
+        <p class="text-sm text-gray-400 italic">No coordinates available</p>
+      {/if}
+    </div>
   </div>
 
-  <!-- SECTION 2: GPS + Mini Map (DECISION-013: No borders, copy below content) -->
+  <!-- SECTION 2: Mini Map (full width) -->
   <div class="px-6 py-4">
-    <h3 class="section-title mb-2">GPS</h3>
-
-    {#if hasGps}
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="relative mb-3" onmouseup={handleGpsSelection} oncontextmenu={handleGpsContextMenu}>
-        <button
-          onclick={openOnAtlas}
-          class="text-accent hover:underline font-mono text-sm text-left"
-          title="View on Atlas"
-        >
-          {location.gps!.lat.toFixed(6)}, {location.gps!.lng.toFixed(6)}
-        </button>
-        {#if copiedGps}
-          <span class="absolute -right-2 top-0 text-xs text-verified animate-pulse">Copied!</span>
-        {/if}
-      </div>
-    {:else}
-      <p class="text-sm text-gray-400 italic mb-3">No coordinates available</p>
-    {/if}
-
-    <!-- DECISION-011: Mini map with golden ratio (1.618:1), satellite+labels, limited interaction -->
     <div class="relative rounded-lg overflow-hidden border border-gray-200 group" style="aspect-ratio: 1.618 / 1;">
       <Map
         locations={[location]}
