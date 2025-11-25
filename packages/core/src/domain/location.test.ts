@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { LocationEntity, GPSCoordinatesSchema, AddressSchema, LocationInputSchema } from './location';
 
-// DECISION-013: Base location fixture with all required fields
+// DECISION-013 & DECISION-017: Base location fixture with all required fields
 const baseLocation = {
   locid: '550e8400-e29b-41d4-a716-446655440000',
   loc12: '550e8400e29b',
@@ -16,7 +16,12 @@ const baseLocation = {
   sublocs: [] as string[],
   regions: [] as string[],
   locadd: new Date().toISOString(),
-  locationVerified: false
+  locationVerified: false,
+  // DECISION-017: Country Cultural Region and geographic hierarchy fields
+  countryCulturalRegionVerified: false,
+  localCulturalRegionVerified: false,
+  country: 'United States',
+  continent: 'North America',
 };
 
 describe('LocationEntity', () => {

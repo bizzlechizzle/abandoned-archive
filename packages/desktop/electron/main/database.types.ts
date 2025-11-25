@@ -79,6 +79,13 @@ export interface LocsTable {
   census_division: string | null;   // New England, Middle Atlantic, etc. (9 divisions)
   state_direction: string | null;   // e.g., "Eastern NY", "Central TX"
 
+  // DECISION-017: Country Cultural Region and geographic hierarchy
+  country_cultural_region: string | null;           // 50 national-level regions (NYC Metro, Cascadia, etc.)
+  country_cultural_region_verified: number;         // 0/1 - User verified the country cultural region
+  local_cultural_region_verified: number;           // 0/1 - User verified the local cultural region
+  country: string | null;                           // Default: "United States"
+  continent: string | null;                         // Default: "North America"
+
   // Status
   condition: string | null;
   status: string | null;

@@ -91,6 +91,9 @@ export class SQLiteLocationRepository implements LocationRepository {
         address_normalized: addressRecord ? AddressService.format(addressRecord.normalized) : null,
         address_parsed_json: addressRecord ? JSON.stringify(addressRecord.parsed) : null,
         address_source: addressRecord?.source || null,
+        // DECISION-010: Verification flags (default to 0/false on create)
+        address_verified: input.address?.verified ? 1 : 0,
+        location_verified: 0,
         // P0: condition and status removed - use access only
         documentation: input.documentation || null,
         access: input.access || null,
@@ -117,7 +120,13 @@ export class SQLiteLocationRepository implements LocationRepository {
         census_region: regionFields.censusRegion,
         census_division: regionFields.censusDivision,
         state_direction: regionFields.stateDirection,
-        cultural_region: regionFields.culturalRegion
+        cultural_region: regionFields.culturalRegion,
+        // DECISION-017: Country Cultural Region and geographic hierarchy
+        country_cultural_region: regionFields.countryCulturalRegion,
+        country_cultural_region_verified: 0,
+        local_cultural_region_verified: 0,
+        country: 'United States',
+        continent: 'North America',
       })
       .execute();
 
@@ -292,6 +301,23 @@ export class SQLiteLocationRepository implements LocationRepository {
       updates.state_direction = inputAny.stateDirection;
     }
 
+    // DECISION-017: Handle Country Cultural Region and verification field updates
+    if (inputAny.countryCulturalRegion !== undefined) {
+      updates.country_cultural_region = inputAny.countryCulturalRegion;
+    }
+    if (inputAny.countryCulturalRegionVerified !== undefined) {
+      updates.country_cultural_region_verified = inputAny.countryCulturalRegionVerified ? 1 : 0;
+    }
+    if (inputAny.localCulturalRegionVerified !== undefined) {
+      updates.local_cultural_region_verified = inputAny.localCulturalRegionVerified ? 1 : 0;
+    }
+    if (inputAny.country !== undefined) {
+      updates.country = inputAny.country;
+    }
+    if (inputAny.continent !== undefined) {
+      updates.continent = inputAny.continent;
+    }
+
     // DECISION-012: Auto-recalculate region fields when address or GPS changes
     if (input.address !== undefined || input.gps !== undefined) {
       // Get current location to get existing values for fields not being updated
@@ -302,6 +328,7 @@ export class SQLiteLocationRepository implements LocationRepository {
         const newLat = input.gps?.lat ?? current.gps?.lat;
         const newLng = input.gps?.lng ?? current.gps?.lng;
         const existingCulturalRegion = inputAny.culturalRegion ?? current.culturalRegion;
+        const existingCountryCulturalRegion = inputAny.countryCulturalRegion ?? current.countryCulturalRegion;
 
         const regionFields = calculateRegionFields({
           state: newState,
@@ -309,6 +336,7 @@ export class SQLiteLocationRepository implements LocationRepository {
           lat: newLat,
           lng: newLng,
           existingCulturalRegion,
+          existingCountryCulturalRegion,
         });
 
         // Always update Census fields when address/GPS changes
@@ -318,6 +346,10 @@ export class SQLiteLocationRepository implements LocationRepository {
         // Only update cultural region if not already set
         if (!existingCulturalRegion && regionFields.culturalRegion) {
           updates.cultural_region = regionFields.culturalRegion;
+        }
+        // Only update country cultural region if not already set
+        if (!existingCountryCulturalRegion && regionFields.countryCulturalRegion) {
+          updates.country_cultural_region = regionFields.countryCulturalRegion;
         }
       }
     }
@@ -427,7 +459,8 @@ export class SQLiteLocationRepository implements LocationRepository {
         state: row.address_state ?? undefined,
         zipcode: row.address_zipcode ?? undefined,
         confidence: (row.address_confidence ?? undefined) as any,
-        geocodedAt: row.address_geocoded_at ?? undefined
+        geocodedAt: row.address_geocoded_at ?? undefined,
+        verified: row.address_verified === 1,
       },
       // P0: condition and status removed - use access only
       documentation: row.documentation ?? undefined,
@@ -456,7 +489,15 @@ export class SQLiteLocationRepository implements LocationRepository {
       culturalRegion: row.cultural_region ?? undefined,
       censusRegion: row.census_region ?? undefined,
       censusDivision: row.census_division ?? undefined,
-      stateDirection: row.state_direction ?? undefined
+      stateDirection: row.state_direction ?? undefined,
+      // DECISION-010: Location-level verification (set when BOTH address AND GPS verified)
+      locationVerified: row.location_verified === 1,
+      // DECISION-017: Country Cultural Region and geographic hierarchy
+      countryCulturalRegion: row.country_cultural_region ?? undefined,
+      countryCulturalRegionVerified: row.country_cultural_region_verified === 1,
+      localCulturalRegionVerified: row.local_cultural_region_verified === 1,
+      country: row.country ?? 'United States',
+      continent: row.continent ?? 'North America',
     };
   }
 
@@ -499,9 +540,9 @@ export class SQLiteLocationRepository implements LocationRepository {
   }
 
   /**
-   * DECISION-012: Backfill region fields for all existing locations
-   * Calculates Census region, division, state direction, and cultural region
-   * for locations that don't have these fields populated yet.
+   * DECISION-012/017: Backfill region fields for all existing locations
+   * Calculates Census region, division, state direction, cultural region,
+   * and country cultural region for locations that don't have these fields populated yet.
    * @returns Number of locations updated
    */
   async backfillRegions(): Promise<{ updated: number; total: number }> {
@@ -521,6 +562,7 @@ export class SQLiteLocationRepository implements LocationRepository {
         lat: row.gps_lat,
         lng: row.gps_lng,
         existingCulturalRegion: row.cultural_region,
+        existingCountryCulturalRegion: row.country_cultural_region,
       });
 
       // Check if any fields need updating
@@ -528,7 +570,8 @@ export class SQLiteLocationRepository implements LocationRepository {
         (regionFields.censusRegion && !row.census_region) ||
         (regionFields.censusDivision && !row.census_division) ||
         (regionFields.stateDirection && !row.state_direction) ||
-        (regionFields.culturalRegion && !row.cultural_region);
+        (regionFields.culturalRegion && !row.cultural_region) ||
+        (regionFields.countryCulturalRegion && !row.country_cultural_region);
 
       if (needsUpdate) {
         await this.db
@@ -538,6 +581,7 @@ export class SQLiteLocationRepository implements LocationRepository {
             census_division: regionFields.censusDivision ?? row.census_division,
             state_direction: regionFields.stateDirection ?? row.state_direction,
             cultural_region: regionFields.culturalRegion ?? row.cultural_region,
+            country_cultural_region: regionFields.countryCulturalRegion ?? row.country_cultural_region,
           })
           .where('locid', '=', row.locid)
           .execute();

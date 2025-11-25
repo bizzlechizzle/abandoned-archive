@@ -3,16 +3,34 @@
    * LocationEditModal - Popup modal for editing location address, GPS, and cultural region
    * Per DECISION-011: Edit button opens popup modal with map for GPS marker dragging
    * Per DECISION-012: Cultural region is predefined dropdown only (no custom entry)
+   * Per DECISION-017: Country Cultural Region and geographic hierarchy with verify checkboxes
    */
   import { onMount } from 'svelte';
   import type { Location, LocationInput } from '@au-archive/core';
   import Map from '../Map.svelte';
-  // DECISION-012: Use census-regions for cultural region options
-  import { getCulturalRegionsForState, getCulturalRegionFromCounty } from '../../lib/census-regions';
+  // DECISION-012: Use census-regions for local cultural region options
+  import { getCulturalRegionsForState, getCulturalRegionFromCounty, STATE_ADJACENCY } from '../../lib/census-regions';
+  // DECISION-017: Use country-cultural-regions for national-level regions with proximity filtering
+  import {
+    getNearbyCountryCulturalRegions,
+    getCountryCulturalRegion,
+    COUNTRY_CULTURAL_REGIONS,
+    type CountryCulturalRegionWithDistance,
+  } from '../../lib/country-cultural-regions';
+
+  /**
+   * Region data for saving
+   */
+  export interface RegionSaveData {
+    culturalRegion: string | null;
+    localCulturalRegionVerified: boolean;
+    countryCulturalRegion: string | null;
+    countryCulturalRegionVerified: boolean;
+  }
 
   interface Props {
     location: Location;
-    onSave: (updates: Partial<LocationInput>, addressVerified: boolean, gpsVerified: boolean, culturalRegion: string | null) => Promise<void>;
+    onSave: (updates: Partial<LocationInput>, addressVerified: boolean, gpsVerified: boolean, regionData: RegionSaveData) => Promise<void>;
     onClose: () => void;
   }
 
@@ -32,19 +50,71 @@
     // Verification
     address_verified: location.address?.verified || false,
     gps_verified: location.gps?.verifiedOnMap || false,
-    // Cultural Region (DECISION-012: predefined options only, no custom entry)
+    // Local Cultural Region (DECISION-012: predefined options only, no custom entry)
     cultural_region: (location as any).culturalRegion || '',
+    local_cultural_region_verified: (location as any).localCulturalRegionVerified || false,
+    // Country Cultural Region (DECISION-017: national-level regions)
+    country_cultural_region: (location as any).countryCulturalRegion || '',
+    country_cultural_region_verified: (location as any).countryCulturalRegionVerified || false,
   });
 
   let saving = $state(false);
   let error = $state<string | null>(null);
   let activeTab = $state<'address' | 'gps'>('address');
 
-  // Cultural region options based on state (DECISION-012: auto-suggest from county)
-  const culturalRegions = $derived(getCulturalRegionsForState(formData.address_state));
+  // DECISION-017: Proximity-filtered local cultural regions based on state and adjacent states
+  const localCulturalRegions = $derived(() => {
+    const state = formData.address_state?.toUpperCase();
+    if (!state) return getCulturalRegionsForState(null);
+
+    // Get regions for current state and all adjacent states
+    const adjacentStates = STATE_ADJACENCY[state] || [];
+    const allStates = [state, ...adjacentStates];
+
+    // Collect unique regions from all relevant states
+    const regionSet = new Set<string>();
+    for (const s of allStates) {
+      const regions = getCulturalRegionsForState(s);
+      regions.forEach(r => regionSet.add(r));
+    }
+
+    return Array.from(regionSet).sort();
+  });
+
   const suggestedCulturalRegion = $derived(
     getCulturalRegionFromCounty(formData.address_state, formData.address_county)
   );
+
+  // DECISION-017: Proximity-filtered country cultural regions based on GPS (~50 miles)
+  const nearbyCountryCulturalRegions = $derived(() => {
+    const lat = parseFloat(formData.gps_lat);
+    const lng = parseFloat(formData.gps_lng);
+
+    if (!isNaN(lat) && !isNaN(lng)) {
+      // Get regions within 100 miles (wider for dropdown options)
+      const nearby = getNearbyCountryCulturalRegions(lat, lng, 100);
+      if (nearby.length > 0) {
+        return nearby;
+      }
+    }
+
+    // Fallback: return all regions sorted by name if no GPS
+    return COUNTRY_CULTURAL_REGIONS.map(r => ({
+      ...r,
+      distance: Infinity,
+    })).sort((a, b) => a.name.localeCompare(b.name)) as CountryCulturalRegionWithDistance[];
+  });
+
+  // Suggested country cultural region from point-in-polygon
+  const suggestedCountryCulturalRegion = $derived(() => {
+    const lat = parseFloat(formData.gps_lat);
+    const lng = parseFloat(formData.gps_lng);
+
+    if (!isNaN(lat) && !isNaN(lng)) {
+      return getCountryCulturalRegion(lat, lng);
+    }
+    return null;
+  });
 
   // Handle GPS marker drag on map
   function handleGpsUpdate(locid: string, lat: number, lng: number) {
@@ -95,10 +165,15 @@
         };
       }
 
-      // Cultural region (DECISION-012: predefined options only)
-      const culturalRegion = formData.cultural_region || null;
+      // Region data (DECISION-012 & DECISION-017: cultural regions with verification)
+      const regionData: RegionSaveData = {
+        culturalRegion: formData.cultural_region || null,
+        localCulturalRegionVerified: formData.local_cultural_region_verified,
+        countryCulturalRegion: formData.country_cultural_region || null,
+        countryCulturalRegionVerified: formData.country_cultural_region_verified,
+      };
 
-      await onSave(updates, formData.address_verified, formData.gps_verified, culturalRegion);
+      await onSave(updates, formData.address_verified, formData.gps_verified, regionData);
       onClose();
     } catch (err) {
       console.error('Error saving location:', err);
@@ -250,10 +325,10 @@
             </p>
           </div>
 
-          <!-- Cultural Region (DECISION-012: predefined options only, no custom entry) -->
+          <!-- Local Cultural Region (DECISION-012: predefined options only, no custom entry) -->
           <div class="pt-4 border-t border-gray-200">
             <label for="cultural_region" class="block text-sm font-medium text-gray-700 mb-1">
-              Cultural Region
+              Local Cultural Region
               <span class="font-normal text-gray-400">(optional)</span>
             </label>
             <select
@@ -262,7 +337,7 @@
               class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
             >
               <option value="">Not specified</option>
-              {#each culturalRegions as region}
+              {#each localCulturalRegions() as region}
                 <option value={region}>{region}</option>
               {/each}
             </select>
@@ -276,9 +351,71 @@
               </p>
             {:else}
               <p class="text-xs text-gray-500 mt-1">
-                Cultural region is subjective and does not affect Location verification
+                State/county-level cultural region (e.g., Hudson Valley, Capital Region)
               </p>
             {/if}
+
+            <!-- Local Cultural Region Verification -->
+            <label class="flex items-center gap-2 cursor-pointer mt-2">
+              <input
+                type="checkbox"
+                bind:checked={formData.local_cultural_region_verified}
+                disabled={!formData.cultural_region}
+                class="w-4 h-4 text-verified rounded border-gray-300 focus:ring-verified disabled:opacity-50"
+              />
+              <span class="text-sm text-gray-600 {!formData.cultural_region ? 'opacity-50' : ''}">
+                Verify this local cultural region
+              </span>
+            </label>
+          </div>
+
+          <!-- Country Cultural Region (DECISION-017: national-level regions with proximity filtering) -->
+          <div class="pt-4 border-t border-gray-200">
+            <label for="country_cultural_region" class="block text-sm font-medium text-gray-700 mb-1">
+              Country Cultural Region
+              <span class="font-normal text-gray-400">(optional)</span>
+            </label>
+            <select
+              id="country_cultural_region"
+              bind:value={formData.country_cultural_region}
+              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            >
+              <option value="">Not specified</option>
+              {#each nearbyCountryCulturalRegions() as region}
+                <option value={region.name}>
+                  {region.name}
+                  {#if region.distance !== Infinity}
+                    ({Math.round(region.distance)} mi)
+                  {/if}
+                </option>
+              {/each}
+            </select>
+            {#if suggestedCountryCulturalRegion() && !formData.country_cultural_region}
+              <p class="text-xs text-accent mt-1">
+                Detected from GPS: <button
+                  type="button"
+                  onclick={() => formData.country_cultural_region = suggestedCountryCulturalRegion()!}
+                  class="font-medium underline hover:no-underline"
+                >{suggestedCountryCulturalRegion()}</button>
+              </p>
+            {:else}
+              <p class="text-xs text-gray-500 mt-1">
+                National-level cultural region (e.g., NYC Metro, Cascadia, Gulf Coast)
+              </p>
+            {/if}
+
+            <!-- Country Cultural Region Verification -->
+            <label class="flex items-center gap-2 cursor-pointer mt-2">
+              <input
+                type="checkbox"
+                bind:checked={formData.country_cultural_region_verified}
+                disabled={!formData.country_cultural_region}
+                class="w-4 h-4 text-verified rounded border-gray-300 focus:ring-verified disabled:opacity-50"
+              />
+              <span class="text-sm text-gray-600 {!formData.country_cultural_region ? 'opacity-50' : ''}">
+                Verify this country cultural region
+              </span>
+            </label>
           </div>
         </div>
       {:else}

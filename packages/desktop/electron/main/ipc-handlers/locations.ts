@@ -242,5 +242,45 @@ export function registerLocationHandlers(db: Kysely<Database>) {
     }
   });
 
+  /**
+   * DECISION-017: Update cultural regions and verification status
+   * Updates local cultural region, country cultural region, and their verification flags
+   */
+  ipcMain.handle('location:updateRegionData', async (_event, id: unknown, regionData: unknown) => {
+    try {
+      const validatedId = z.string().uuid().parse(id);
+
+      // Validate region data
+      const RegionDataSchema = z.object({
+        culturalRegion: z.string().nullable(),
+        localCulturalRegionVerified: z.boolean(),
+        countryCulturalRegion: z.string().nullable(),
+        countryCulturalRegionVerified: z.boolean(),
+      });
+
+      const validatedRegionData = RegionDataSchema.parse(regionData);
+
+      // Update directly in database
+      await db.updateTable('locs')
+        .set({
+          cultural_region: validatedRegionData.culturalRegion,
+          local_cultural_region_verified: validatedRegionData.localCulturalRegionVerified ? 1 : 0,
+          country_cultural_region: validatedRegionData.countryCulturalRegion,
+          country_cultural_region_verified: validatedRegionData.countryCulturalRegionVerified ? 1 : 0,
+          locup: new Date().toISOString(),
+        })
+        .where('locid', '=', validatedId)
+        .execute();
+
+      console.log(`[Location IPC] Updated region data for location ${validatedId}`);
+    } catch (error) {
+      console.error('Error updating region data:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
   return locationRepo;
 }

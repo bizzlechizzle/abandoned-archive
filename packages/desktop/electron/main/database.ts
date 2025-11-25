@@ -679,6 +679,35 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 17 completed: Information box columns added');
     }
+
+    // Migration 18: Add Country Cultural Region and geographic hierarchy fields
+    // Per DECISION-017: Local & Region sections overhaul
+    // - country_cultural_region: 50 national-level regions (from GeoJSON)
+    // - country_cultural_region_verified: User verification flag
+    // - local_cultural_region_verified: User verification for existing cultural_region
+    // - country: Defaults to "United States"
+    // - continent: Defaults to "North America"
+    const locsColsForCountryRegion = sqlite.prepare('PRAGMA table_info(locs)').all() as Array<{ name: string }>;
+    const hasCountryCulturalRegion = locsColsForCountryRegion.some(col => col.name === 'country_cultural_region');
+
+    if (!hasCountryCulturalRegion) {
+      console.log('Running migration 18: Adding Country Cultural Region and geographic hierarchy columns to locs');
+
+      sqlite.exec(`
+        ALTER TABLE locs ADD COLUMN country_cultural_region TEXT;
+        ALTER TABLE locs ADD COLUMN country_cultural_region_verified INTEGER DEFAULT 0;
+        ALTER TABLE locs ADD COLUMN local_cultural_region_verified INTEGER DEFAULT 0;
+        ALTER TABLE locs ADD COLUMN country TEXT DEFAULT 'United States';
+        ALTER TABLE locs ADD COLUMN continent TEXT DEFAULT 'North America';
+      `);
+
+      // Create index for country cultural region filtering
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_locs_country_cultural_region ON locs(country_cultural_region) WHERE country_cultural_region IS NOT NULL;
+      `);
+
+      console.log('Migration 18 completed: Country Cultural Region and geographic hierarchy columns added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

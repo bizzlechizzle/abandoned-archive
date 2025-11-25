@@ -2,12 +2,14 @@
  * RegionService - Auto-populate Census regions, divisions, and state direction
  *
  * Per DECISION-012: Auto-Population of Regions
+ * Per DECISION-017: Local & Region sections overhaul
  *
  * Features:
  * - Census Region lookup from state (4 regions: Northeast, Midwest, South, West)
  * - Census Division lookup from state (9 divisions)
  * - State Direction calculation from GPS vs state center
- * - Cultural Region suggestion from county lookup
+ * - Local Cultural Region suggestion from county lookup
+ * - Country Cultural Region lookup from GPS (point-in-polygon)
  *
  * All calculations are offline-first using embedded data.
  */
@@ -20,14 +22,23 @@ import {
   getCulturalRegionsForState,
 } from '../../src/lib/census-regions';
 
+import {
+  getCountryCulturalRegion,
+  getNearbyCountryCulturalRegions,
+  getCountryCulturalRegionsByCategory,
+  isValidCountryCulturalRegion,
+  type CountryCulturalRegionWithDistance,
+} from '../../src/lib/country-cultural-regions';
+
 /**
  * Region fields for a location
  */
 export interface RegionFields {
-  censusRegion: string | null;     // Northeast, Midwest, South, West
-  censusDivision: string | null;   // New England, Middle Atlantic, etc.
-  stateDirection: string | null;   // e.g., "Eastern NY", "Central TX"
-  culturalRegion: string | null;   // e.g., "Capital Region", "Hudson Valley"
+  censusRegion: string | null;           // Northeast, Midwest, South, West
+  censusDivision: string | null;         // New England, Middle Atlantic, etc.
+  stateDirection: string | null;         // e.g., "Eastern NY", "Central TX"
+  culturalRegion: string | null;         // e.g., "Capital Region", "Hudson Valley" (local/state-level)
+  countryCulturalRegion: string | null;  // e.g., "NYC Metro", "Cascadia" (national-level)
 }
 
 /**
@@ -38,7 +49,8 @@ export interface RegionInput {
   county?: string | null;
   lat?: number | null;
   lng?: number | null;
-  existingCulturalRegion?: string | null; // Don't overwrite if already set
+  existingCulturalRegion?: string | null;        // Don't overwrite if already set
+  existingCountryCulturalRegion?: string | null; // Don't overwrite if already set
 }
 
 /**
@@ -46,7 +58,7 @@ export interface RegionInput {
  * Returns region fields that should be auto-populated
  */
 export function calculateRegionFields(input: RegionInput): RegionFields {
-  const { state, county, lat, lng, existingCulturalRegion } = input;
+  const { state, county, lat, lng, existingCulturalRegion, existingCountryCulturalRegion } = input;
 
   // Census Region from state (always recalculate)
   const censusRegion = getCensusRegion(state);
@@ -57,10 +69,16 @@ export function calculateRegionFields(input: RegionInput): RegionFields {
   // State Direction from GPS + state (always recalculate)
   const stateDirection = getStateDirection(lat, lng, state);
 
-  // Cultural Region from county lookup (only suggest if not already set)
+  // Local Cultural Region from county lookup (only suggest if not already set)
   let culturalRegion = existingCulturalRegion || null;
   if (!culturalRegion && county && state) {
     culturalRegion = getCulturalRegionFromCounty(state, county);
+  }
+
+  // Country Cultural Region from GPS (only suggest if not already set)
+  let countryCulturalRegion = existingCountryCulturalRegion || null;
+  if (!countryCulturalRegion && lat && lng) {
+    countryCulturalRegion = getCountryCulturalRegion(lat, lng);
   }
 
   return {
@@ -68,6 +86,7 @@ export function calculateRegionFields(input: RegionInput): RegionFields {
     censusDivision,
     stateDirection,
     culturalRegion,
+    countryCulturalRegion,
   };
 }
 
@@ -97,4 +116,12 @@ export {
   getStateDirection,
   getCulturalRegionFromCounty,
   getCulturalRegionsForState,
+  // DECISION-017: Country Cultural Region exports
+  getCountryCulturalRegion,
+  getNearbyCountryCulturalRegions,
+  getCountryCulturalRegionsByCategory,
+  isValidCountryCulturalRegion,
 };
+
+// Re-export types
+export type { CountryCulturalRegionWithDistance };

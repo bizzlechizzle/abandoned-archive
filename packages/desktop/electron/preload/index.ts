@@ -64,6 +64,14 @@ const api = {
     // DECISION-012: Backfill region fields for existing locations
     backfillRegions: (): Promise<{ updated: number; total: number }> =>
       ipcRenderer.invoke('location:backfillRegions'),
+    // DECISION-017: Update cultural regions and verification status
+    updateRegionData: (id: string, regionData: {
+      culturalRegion: string | null;
+      localCulturalRegionVerified: boolean;
+      countryCulturalRegion: string | null;
+      countryCulturalRegionVerified: boolean;
+    }): Promise<void> =>
+      ipcRenderer.invoke('location:updateRegionData', id, regionData),
   },
 
   stats: {

@@ -99,6 +99,12 @@ export const LocationSchema = LocationInputSchema.extend({
   censusRegion: z.string().optional(),     // Northeast, Midwest, South, West
   censusDivision: z.string().optional(),   // New England, Middle Atlantic, etc. (9 divisions)
   stateDirection: z.string().optional(),   // e.g., "Eastern NY", "Central TX"
+  // DECISION-017: Country Cultural Region and geographic hierarchy
+  countryCulturalRegion: z.string().optional(),        // 50 national-level regions (NYC Metro, Cascadia, etc.)
+  countryCulturalRegionVerified: z.boolean().default(false),  // User verified the country cultural region
+  localCulturalRegionVerified: z.boolean().default(false),    // User verified the local cultural region
+  country: z.string().default('United States'),        // Country name
+  continent: z.string().default('North America'),      // Continent name
 });
 
 export type Location = z.infer<typeof LocationSchema>;

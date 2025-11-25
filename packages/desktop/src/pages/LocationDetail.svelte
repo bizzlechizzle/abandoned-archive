@@ -162,14 +162,21 @@
   }
 
   /**
-   * DECISION-011: Handle location save from edit modal
-   * Saves address, GPS, verification status, and cultural region
+   * DECISION-011 & DECISION-017: Handle location save from edit modal
+   * Saves address, GPS, verification status, and cultural regions
    */
+  interface RegionSaveData {
+    culturalRegion: string | null;
+    localCulturalRegionVerified: boolean;
+    countryCulturalRegion: string | null;
+    countryCulturalRegionVerified: boolean;
+  }
+
   async function handleLocationSave(
     updates: Partial<LocationInput>,
     addressVerified: boolean,
     gpsVerified: boolean,
-    culturalRegion: string | null
+    regionData: RegionSaveData
   ) {
     if (!location) return;
 
@@ -195,10 +202,12 @@
     // Update location via API
     await window.electronAPI.locations.update(location.locid, fullUpdates);
 
-    // Update cultural region separately if the API supports it
-    // For now, we'll update it as a direct database field
-    if (window.electronAPI.locations.updateCulturalRegion) {
-      await window.electronAPI.locations.updateCulturalRegion(location.locid, culturalRegion);
+    // DECISION-017: Update cultural regions and verification status
+    if (window.electronAPI.locations.updateRegionData) {
+      await window.electronAPI.locations.updateRegionData(location.locid, regionData);
+    } else if (window.electronAPI.locations.updateCulturalRegion) {
+      // Fallback: use legacy API for local cultural region only
+      await window.electronAPI.locations.updateCulturalRegion(location.locid, regionData.culturalRegion);
     }
 
     await loadLocation();
