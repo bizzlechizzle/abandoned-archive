@@ -76,6 +76,23 @@
     }
   }
 
+  // Auto-copy on text selection
+  function handleAddressSelection() {
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim().length > 0) {
+      copyAddress();
+      selection.removeAllRanges(); // Clear selection after copy
+    }
+  }
+
+  function handleGpsSelection() {
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim().length > 0) {
+      copyGPS();
+      selection.removeAllRanges(); // Clear selection after copy
+    }
+  }
+
   // Navigate to Atlas centered on this location (satellite view for seamless transition)
   function openOnAtlas() {
     if (location.gps?.lat && location.gps?.lng) {
@@ -125,7 +142,8 @@
     <h3 class="section-title mb-2">Mailing Address</h3>
 
     {#if hasAddress}
-      <div class="text-base text-gray-900 space-y-0.5">
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="text-base text-gray-900 space-y-0.5 relative" onmouseup={handleAddressSelection}>
         {#if location.address?.street}
           <button
             onclick={openOnAtlas}
@@ -156,22 +174,10 @@
             >{location.address.zipcode}</button>
           {/if}
         </p>
-      </div>
-      <!-- Copy button below address -->
-      <button
-        onclick={copyAddress}
-        class="mt-2 text-xs text-accent hover:underline flex items-center gap-1"
-        title="Copy address to clipboard"
-      >
         {#if copiedAddress}
-          <span class="text-verified animate-pulse">Copied!</span>
-        {:else}
-          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-          </svg>
-          Copy Address
+          <span class="absolute -right-2 top-0 text-xs text-verified animate-pulse">Copied!</span>
         {/if}
-      </button>
+      </div>
     {:else}
       <p class="text-sm text-gray-400 italic">No address set</p>
     {/if}
@@ -182,28 +188,19 @@
     <h3 class="section-title mb-2">GPS</h3>
 
     {#if hasGps}
-      <button
-        onclick={openOnAtlas}
-        class="text-accent hover:underline font-mono text-sm text-left"
-        title="View on Atlas"
-      >
-        {location.gps!.lat.toFixed(6)}, {location.gps!.lng.toFixed(6)}
-      </button>
-      <!-- Copy button below GPS -->
-      <button
-        onclick={copyGPS}
-        class="mt-2 text-xs text-accent hover:underline flex items-center gap-1 mb-3"
-        title="Copy GPS to clipboard"
-      >
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="relative mb-3" onmouseup={handleGpsSelection}>
+        <button
+          onclick={openOnAtlas}
+          class="text-accent hover:underline font-mono text-sm text-left"
+          title="View on Atlas"
+        >
+          {location.gps!.lat.toFixed(6)}, {location.gps!.lng.toFixed(6)}
+        </button>
         {#if copiedGps}
-          <span class="text-verified animate-pulse">Copied!</span>
-        {:else}
-          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-          </svg>
-          Copy Coordinates
+          <span class="absolute -right-2 top-0 text-xs text-verified animate-pulse">Copied!</span>
         {/if}
-      </button>
+      </div>
     {:else}
       <p class="text-sm text-gray-400 italic mb-3">No coordinates available</p>
     {/if}
