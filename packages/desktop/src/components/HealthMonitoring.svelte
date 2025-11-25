@@ -88,7 +88,7 @@
 </script>
 
 <div class="bg-white rounded-lg shadow p-6 mb-6">
-  <div class="flex justify-between items-center mb-4">
+  <div class="flex justify-between items-center mb-3">
     <h2 class="text-lg font-semibold text-foreground">System Health</h2>
     <button
       onclick={runHealthCheck}
@@ -100,14 +100,14 @@
   </div>
 
   {#if healthError}
-    <div class="p-3 bg-red-100 text-red-700 rounded mb-4">
+    <div class="p-3 bg-red-100 text-red-700 rounded mb-3">
       {healthError}
     </div>
   {/if}
 
   {#if healthDashboard}
     <!-- Overall Status -->
-    <div class="mb-6 p-4 rounded {getStatusBgColor(healthDashboard.status.overall)}">
+    <div class="mb-5 p-4 rounded {getStatusBgColor(healthDashboard.status.overall)}">
       <div class="flex items-center justify-between">
         <div>
           <h3 class="font-semibold {getStatusColor(healthDashboard.status.overall)}">
@@ -132,7 +132,7 @@
     </div>
 
     <!-- Component Health Grid -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
       <!-- Database Health -->
       <div class="p-4 border rounded">
         <div class="flex items-center justify-between mb-2">

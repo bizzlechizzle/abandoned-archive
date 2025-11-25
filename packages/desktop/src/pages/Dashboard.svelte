@@ -160,7 +160,7 @@
     <!-- Row 2: Pinned (full width) -->
     <div class="mb-6">
       <div class="bg-white rounded-lg shadow p-6">
-        <div class="flex justify-between items-start mb-4">
+        <div class="flex justify-between items-start mb-3">
           <div>
             <h3 class="text-lg font-semibold text-foreground">Pinned Locations</h3>
             <p class="text-gray-500 text-sm">Your favorite locations</p>
@@ -193,7 +193,7 @@
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
       <!-- Recent Imports -->
       <div class="bg-white rounded-lg shadow p-6">
-        <div class="flex justify-between items-start mb-4">
+        <div class="flex justify-between items-start mb-3">
           <div>
             <h3 class="text-lg font-semibold text-foreground">Recent Imports</h3>
             <p class="text-gray-500 text-sm">Latest media imports</p>
@@ -246,7 +246,7 @@
 
       <!-- Recent Locations -->
       <div class="bg-white rounded-lg shadow p-6">
-        <div class="flex justify-between items-start mb-4">
+        <div class="flex justify-between items-start mb-3">
           <div>
             <h3 class="text-lg font-semibold text-foreground">Recent Locations</h3>
             <p class="text-gray-500 text-sm">Last 5 added</p>
@@ -283,7 +283,7 @@
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
       <!-- Top Types -->
       <div class="bg-white rounded-lg shadow p-6">
-        <div class="flex justify-between items-start mb-4">
+        <div class="flex justify-between items-start mb-3">
           <div>
             <h3 class="text-lg font-semibold text-foreground">Top Types</h3>
             <p class="text-gray-500 text-sm">By location count</p>
@@ -316,7 +316,7 @@
 
       <!-- Top States -->
       <div class="bg-white rounded-lg shadow p-6">
-        <div class="flex justify-between items-start mb-4">
+        <div class="flex justify-between items-start mb-3">
           <div>
             <h3 class="text-lg font-semibold text-foreground">Top States</h3>
             <p class="text-gray-500 text-sm">By location count</p>
@@ -350,7 +350,7 @@
 
     <!-- Stats Box -->
     <div class="bg-white rounded-lg shadow p-6">
-      <h2 class="text-xl font-semibold mb-4 text-foreground">Archive Stats</h2>
+      <h2 class="text-xl font-semibold mb-3 text-foreground">Archive Stats</h2>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
         <div class="text-center">
           <div class="text-3xl font-bold text-accent">{totalCount}</div>

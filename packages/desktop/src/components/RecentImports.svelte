@@ -30,7 +30,7 @@
 </script>
 
 <div class="mt-8">
-  <h2 class="text-lg font-semibold mb-4 text-foreground">Recent Imports</h2>
+  <h2 class="text-lg font-semibold mb-3 text-foreground">Recent Imports</h2>
   {#if imports.length > 0}
     <div class="bg-white rounded-lg shadow">
       <ul class="divide-y divide-gray-200">

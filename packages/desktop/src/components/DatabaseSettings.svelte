@@ -157,9 +157,9 @@
 </script>
 
 <div class="bg-white rounded-lg shadow p-6 mb-6">
-  <h2 class="text-lg font-semibold mb-4 text-foreground">Database</h2>
+  <h2 class="text-lg font-semibold mb-3 text-foreground">Database</h2>
 
-  <div class="space-y-4">
+  <div class="space-y-3">
     <!-- Database Location -->
     <div>
       <label class="block text-sm font-medium text-gray-700 mb-2">

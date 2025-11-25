@@ -20,15 +20,15 @@
 </script>
 
 <div class="mt-6 bg-white rounded-lg shadow p-6">
-  <div class="flex items-center gap-2 mb-4">
+  <div class="flex items-center gap-2 mb-3">
     <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
     </svg>
     <h2 class="text-xl font-semibold text-foreground">Nerd Stats</h2>
   </div>
-  <p class="text-sm text-gray-500 mb-4">Technical metadata and statistics</p>
+  <p class="text-sm text-gray-500 mb-3">Technical metadata and statistics</p>
 
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 text-sm">
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 text-sm">
     <!-- IDs -->
     <div class="col-span-full border-b pb-3 mb-2">
       <p class="text-xs font-semibold text-gray-400 uppercase mb-2">Identifiers</p>

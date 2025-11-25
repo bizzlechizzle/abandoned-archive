@@ -230,7 +230,7 @@
   {:else}
     <div class="max-w-2xl">
       <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <h2 class="text-lg font-semibold mb-4 text-foreground">User</h2>
+        <h2 class="text-lg font-semibold mb-3 text-foreground">User</h2>
         <div class="mb-4">
           <label for="currentUser" class="block text-sm font-medium text-gray-700 mb-2">
             Current User
@@ -249,7 +249,7 @@
       </div>
 
       <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <h2 class="text-lg font-semibold mb-4 text-foreground">Archive Folder</h2>
+        <h2 class="text-lg font-semibold mb-3 text-foreground">Archive Folder</h2>
         <div class="mb-4">
           <label for="archivePath" class="block text-sm font-medium text-gray-700 mb-2">
             Location
@@ -276,7 +276,7 @@
       </div>
 
       <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <h2 class="text-lg font-semibold mb-4 text-foreground">Import Options</h2>
+        <h2 class="text-lg font-semibold mb-3 text-foreground">Import Options</h2>
         <div class="space-y-3">
           <div class="flex items-center">
             <input
@@ -326,7 +326,7 @@
       </div>
 
       <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <h2 class="text-lg font-semibold mb-4 text-foreground">Security</h2>
+        <h2 class="text-lg font-semibold mb-3 text-foreground">Security</h2>
         <div class="flex items-center mb-4">
           <input
             type="checkbox"
@@ -345,8 +345,8 @@
 
       <!-- Kanye6: Maintenance Section for Thumbnail Regeneration -->
       <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <h2 class="text-lg font-semibold mb-4 text-foreground">Maintenance</h2>
-        <div class="space-y-4">
+        <h2 class="text-lg font-semibold mb-3 text-foreground">Maintenance</h2>
+        <div class="space-y-3">
           <div>
             <p class="text-sm text-gray-700 mb-2">
               Regenerate thumbnails for images imported before the multi-tier system.

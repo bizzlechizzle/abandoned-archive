@@ -118,7 +118,7 @@
 
 <div class="bg-white rounded-lg shadow">
   <!-- Header with verification badge and edit button -->
-  <div class="flex items-start justify-between px-8 py-6">
+  <div class="flex items-start justify-between px-8 pt-6 pb-4">
     <h2 class="text-2xl font-semibold text-foreground leading-none">Information</h2>
     {#if onSave}
       <button
@@ -132,9 +132,9 @@
   </div>
 
   <!-- Content section -->
-  <div class="px-8 py-6">
+  <div class="px-8 pb-6">
     {#if hasAnyInfo}
-      <dl class="space-y-4">
+      <dl class="space-y-3">
       {#if location.type}
         <div>
           <dt class="text-sm font-medium text-gray-500">Type</dt>

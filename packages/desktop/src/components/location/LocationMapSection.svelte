@@ -148,7 +148,7 @@
 
 <div class="bg-white rounded-lg shadow">
   <!-- Header: Location with verification status and edit button (DECISION-013: No border) -->
-  <div class="flex items-start justify-between px-8 py-6">
+  <div class="flex items-start justify-between px-8 pt-6 pb-4">
     <h2 class="text-2xl font-semibold text-foreground leading-none">Location</h2>
     <button
       onclick={() => showEditModal = true}
@@ -160,8 +160,8 @@
   </div>
 
   <!-- SECTION 1: GPS (stacked first) -->
-  <div class="px-8 py-6">
-    <h3 class="section-title mb-3">GPS</h3>
+  <div class="px-8">
+    <h3 class="section-title mb-2">GPS</h3>
 
     {#if hasGps}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -183,8 +183,8 @@
   </div>
 
   <!-- SECTION 2: Address (stacked second, single line) -->
-  <div class="px-8 py-6">
-    <h3 class="section-title mb-3">Address</h3>
+  <div class="px-8 mt-5">
+    <h3 class="section-title mb-2">Address</h3>
 
     {#if hasAddress}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -229,7 +229,7 @@
   </div>
 
   <!-- SECTION 3: Mini Map (full width, smaller) -->
-  <div class="px-8 py-6">
+  <div class="px-8 mt-5">
     <div class="relative rounded-lg overflow-hidden border border-gray-200 group" style="aspect-ratio: 2 / 1;">
       <Map
         locations={[location]}
@@ -254,8 +254,8 @@
   </div>
 
   <!-- SECTION 4: Area (DECISION-012: County + Census Region/Division + Direction + Cultural Region) -->
-  <div class="px-8 py-6">
-    <h3 class="section-title mb-3">Area</h3>
+  <div class="px-8 mt-5 pb-6">
+    <h3 class="section-title mb-2">Area</h3>
 
     {#if hasAreaData}
       <div class="space-y-1 text-sm text-gray-700">

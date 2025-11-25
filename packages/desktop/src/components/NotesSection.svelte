@@ -130,7 +130,7 @@
 </script>
 
 <div class="bg-white rounded-lg shadow p-6">
-  <div class="flex justify-between items-center mb-4">
+  <div class="flex justify-between items-center mb-3">
     <h2 class="text-lg font-semibold text-foreground">Notes</h2>
     {#if !showAddForm}
       <button
@@ -144,13 +144,13 @@
   </div>
 
   {#if error}
-    <div class="mb-4 p-3 bg-red-100 text-red-700 rounded text-sm">
+    <div class="mb-3 p-3 bg-red-100 text-red-700 rounded text-sm">
       {error}
     </div>
   {/if}
 
   {#if showAddForm}
-    <div class="mb-4 p-4 bg-blue-50 border border-blue-200 rounded">
+    <div class="mb-3 p-4 bg-blue-50 border border-blue-200 rounded">
       <h3 class="text-sm font-semibold text-blue-900 mb-2">New Note</h3>
       <textarea
         bind:value={newNoteText}
@@ -187,7 +187,7 @@
       No notes yet. Add your first note to get started!
     </p>
   {:else}
-    <div class="space-y-4">
+    <div class="space-y-3">
       {#each notes as note}
         <div class="border border-gray-200 rounded p-4">
           {#if editingNoteId === note.note_id}
