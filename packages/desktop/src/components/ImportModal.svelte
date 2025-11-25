@@ -12,15 +12,21 @@
   import { toasts } from '../stores/toast-store';
   import AutocompleteInput from './AutocompleteInput.svelte';
   import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
-  import { DOCUMENTATION_OPTIONS, ACCESS_OPTIONS } from '../constants/location-enums';
+  import { ACCESS_OPTIONS } from '../constants/location-enums';
 
   // Form state
   let name = $state('');
   let type = $state('');
+  let subType = $state('');  // DECISION-015: Add Sub-Type field
   let selectedState = $state('');
   let author = $state('');
-  let documentation = $state('');
   let access = $state('');
+
+  // DECISION-016: Documentation checkboxes (replaces dropdown)
+  let docInterior = $state(false);
+  let docExterior = $state(false);
+  let docDrone = $state(false);
+  let docWebHistory = $state(false);
 
   // P2: Database-driven lists
   let allLocations = $state<Location[]>([]);
@@ -88,6 +94,18 @@
       if (loc.type) types.add(loc.type);
     });
     return Array.from(types).sort();
+  }
+
+  // DECISION-015/016: Get sub-type suggestions filtered by selected Type
+  function getSubTypeSuggestions(): string[] {
+    const subTypes = new Set<string>();
+    allLocations.forEach(loc => {
+      // Only include sub-types from locations matching selected type
+      if ((!type || loc.type === type) && (loc as any).subtype) {
+        subTypes.add((loc as any).subtype);
+      }
+    });
+    return Array.from(subTypes).sort();
   }
 
   // Get author suggestions from existing locations
@@ -208,7 +226,12 @@
       const locationData: Record<string, unknown> = {
         locnam: name.trim(),
         type: type || undefined,
-        documentation: documentation || undefined,
+        subtype: subType || undefined,  // DECISION-015: Include sub-type
+        // DECISION-016: Documentation checkboxes
+        docInterior: docInterior || undefined,
+        docExterior: docExterior || undefined,
+        docDrone: docDrone || undefined,
+        docWebHistory: docWebHistory || undefined,
         access: access || undefined,
         auth_imp: author.trim() || undefined,
         address: {
@@ -250,11 +273,16 @@
   function resetForm() {
     name = '';
     type = '';
+    subType = '';  // DECISION-015: Reset sub-type
     selectedState = '';
     author = '';
-    documentation = '';
     access = '';
     error = '';
+    // DECISION-016: Reset documentation checkboxes
+    docInterior = false;
+    docExterior = false;
+    docDrone = false;
+    docWebHistory = false;
   }
 
   function handleCancel() {
@@ -366,6 +394,22 @@
           {/if}
         </div>
 
+        <!-- DECISION-015: Sub-Type (optional) -->
+        <div>
+          <label for="loc-subtype" class="block text-sm font-medium text-gray-700 mb-1">
+            Sub-Type
+          </label>
+          <AutocompleteInput
+            value={subType}
+            onchange={(val) => subType = val}
+            suggestions={getSubTypeSuggestions()}
+            id="loc-subtype"
+            placeholder="e.g., Textile Mill, Asylum, Elementary"
+            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
+          />
+          <p class="text-xs text-gray-500 mt-1">Optional sub-category within Type</p>
+        </div>
+
         <!-- Author - Now with AutocompleteInput -->
         <div>
           <label for="loc-author" class="block text-sm font-medium text-gray-700 mb-1">
@@ -381,28 +425,33 @@
           />
         </div>
 
-        <!-- Documentation Level -->
+        <!-- DECISION-016: Documentation Checkboxes -->
         <div>
-          <label for="loc-documentation" class="block text-sm font-medium text-gray-700 mb-1">
-            Documentation Level
-          </label>
-          <select
-            id="loc-documentation"
-            bind:value={documentation}
-            disabled={saving}
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
-          >
-            <option value="">Select...</option>
-            {#each DOCUMENTATION_OPTIONS as opt}
-              <option value={opt}>{opt}</option>
-            {/each}
-          </select>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Documentation</label>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="flex items-center gap-2">
+              <input type="checkbox" bind:checked={docInterior} disabled={saving} class="rounded" />
+              <span class="text-sm">Interior</span>
+            </label>
+            <label class="flex items-center gap-2">
+              <input type="checkbox" bind:checked={docExterior} disabled={saving} class="rounded" />
+              <span class="text-sm">Exterior</span>
+            </label>
+            <label class="flex items-center gap-2">
+              <input type="checkbox" bind:checked={docDrone} disabled={saving} class="rounded" />
+              <span class="text-sm">Drone</span>
+            </label>
+            <label class="flex items-center gap-2">
+              <input type="checkbox" bind:checked={docWebHistory} disabled={saving} class="rounded" />
+              <span class="text-sm">Web-History</span>
+            </label>
+          </div>
         </div>
 
-        <!-- Access Status -->
+        <!-- Status -->
         <div>
           <label for="loc-access" class="block text-sm font-medium text-gray-700 mb-1">
-            Access Status
+            Status
           </label>
           <select
             id="loc-access"

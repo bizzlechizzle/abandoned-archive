@@ -121,10 +121,11 @@
   <div class="flex items-center justify-between mb-4">
     <h2 class="text-xl font-semibold text-foreground flex items-center gap-2">
       Information
+      <!-- DECISION-016: Colored dots instead of ✓/✗ -->
       {#if isInfoVerified}
-        <span class="text-verified text-sm" title="Information complete">✓</span>
+        <span class="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" title="Information complete"></span>
       {:else}
-        <span class="text-unverified text-sm" title="Information incomplete">✗</span>
+        <span class="w-2.5 h-2.5 rounded-full bg-red-400 inline-block" title="Information incomplete"></span>
       {/if}
     </h2>
     {#if onSave}

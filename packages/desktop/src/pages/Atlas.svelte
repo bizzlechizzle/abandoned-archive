@@ -34,15 +34,10 @@
     lng: 0,
   });
 
-  // Show locations that are mappable: has GPS OR has address (city+state, zipcode)
+  // DECISION-015: KISS - Only show locations with actual GPS coordinates
+  // Removes "ghost points" that appeared when locations had city/state but no GPS
   function isMappable(loc: Location): boolean {
-    // Has GPS coordinates
-    if (loc.gps?.lat && loc.gps?.lng) return true;
-    // Has city + state (can be geocoded)
-    if (loc.address?.city && loc.address?.state) return true;
-    // Has zipcode (can be geocoded)
-    if (loc.address?.zipcode) return true;
-    return false;
+    return !!(loc.gps?.lat && loc.gps?.lng);
   }
 
   let filteredLocations = $derived(() => {

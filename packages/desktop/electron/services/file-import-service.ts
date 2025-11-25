@@ -565,11 +565,34 @@ export class FileImportService {
     );
     console.log('[FileImport] Step 7 complete in', Date.now() - insertStart, 'ms');
 
-    // 8. Non-blocking geocoding (DUMP phase per spec: GPS → Address)
+    // DECISION-015: Step 8a - Auto-populate location GPS from first media with GPS
+    // If location has no GPS but media has GPS, transfer it to location
+    if (gpsForGeocode && (!location.gps?.lat || !location.gps?.lng)) {
+      console.log('[FileImport] Step 8a: Auto-populating location GPS from media EXIF...');
+      // Fire-and-forget - don't block import
+      // BUG FIX: Removed gps_updated_at (field doesn't exist in schema)
+      this.db
+        .updateTable('locs')
+        .set({
+          gps_lat: gpsForGeocode.lat,
+          gps_lng: gpsForGeocode.lng,
+          gps_source: 'media_gps',
+        })
+        .where('locid', '=', file.locid)
+        .execute()
+        .then(() => {
+          console.log('[FileImport] Location GPS auto-populated from media EXIF:', gpsForGeocode);
+        })
+        .catch((dbError) => {
+          console.warn('[FileImport] Failed to auto-populate location GPS:', dbError);
+        });
+    }
+
+    // Step 8b: Non-blocking geocoding (DUMP phase per spec: GPS → Address)
     // Fire-and-forget: Don't block import, don't fail if geocoding fails
     // Only trigger if: geocodingService exists, location has no address, file has GPS
     if (gpsForGeocode && this.geocodingService && !location.address_street && !location.address_city) {
-      console.log('[FileImport] Step 8: Queueing reverse geocode (non-blocking)...');
+      console.log('[FileImport] Step 8b: Queueing reverse geocode (non-blocking)...');
       // Fire-and-forget - don't await, don't block
       this.geocodingService.reverseGeocode(gpsForGeocode.lat, gpsForGeocode.lng)
         .then(async (geocodeResult) => {

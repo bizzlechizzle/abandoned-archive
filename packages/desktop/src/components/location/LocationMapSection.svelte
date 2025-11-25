@@ -37,9 +37,9 @@
   const censusRegion = $derived((location as any).censusRegion);
   const censusDivision = $derived((location as any).censusDivision);
   const stateDirection = $derived((location as any).stateDirection);
+  // DECISION-016: Removed legacy regions check
   const hasAreaData = $derived(
     location.address?.county ||
-    (location.regions && location.regions.length > 0) ||
     culturalRegion ||
     censusRegion ||
     censusDivision ||
@@ -48,6 +48,11 @@
 
   // GPS helpers
   const hasGps = $derived(location.gps?.lat && location.gps?.lng);
+
+  // DECISION-016: Verification states for colored dots
+  const isAddressVerified = $derived(!!(location.address?.street && location.address?.city && location.address?.state));
+  const isGpsVerified = $derived(!!(location.gps?.lat && location.gps?.lng && location.gps?.verifiedOnMap));
+  const isAreaVerified = $derived(!!(location.address?.county || culturalRegion));
 
   // Copy address with notification
   function copyAddress() {
@@ -105,6 +110,12 @@
   <div class="flex items-center justify-between px-6 py-4">
     <div class="flex items-center gap-2">
       <h2 class="text-xl font-semibold text-foreground">Location</h2>
+      <!-- DECISION-016: Overall location verification dot -->
+      {#if isAddressVerified && isGpsVerified}
+        <span class="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" title="Location verified"></span>
+      {:else}
+        <span class="w-2.5 h-2.5 rounded-full bg-red-400 inline-block" title="Location incomplete"></span>
+      {/if}
     </div>
     <button
       onclick={() => showEditModal = true}
@@ -121,6 +132,12 @@
   <div class="px-6 py-4">
     <div class="flex items-center gap-2 mb-2">
       <h3 class="section-title">Mailing Address</h3>
+      <!-- DECISION-016: Address verification dot -->
+      {#if isAddressVerified}
+        <span class="w-2 h-2 rounded-full bg-green-500 inline-block" title="Address verified"></span>
+      {:else}
+        <span class="w-2 h-2 rounded-full bg-red-400 inline-block" title="Address incomplete"></span>
+      {/if}
     </div>
 
     {#if hasAddress}
@@ -180,6 +197,12 @@
   <div class="px-6 py-4">
     <div class="flex items-center gap-2 mb-2">
       <h3 class="section-title">GPS</h3>
+      <!-- DECISION-016: GPS verification dot -->
+      {#if isGpsVerified}
+        <span class="w-2 h-2 rounded-full bg-green-500 inline-block" title="GPS verified on map"></span>
+      {:else}
+        <span class="w-2 h-2 rounded-full bg-red-400 inline-block" title="GPS not verified"></span>
+      {/if}
     </div>
 
     {#if hasGps}
@@ -237,6 +260,12 @@
   <div class="px-6 py-4">
     <div class="flex items-center gap-2 mb-2">
       <h3 class="section-title">Area</h3>
+      <!-- DECISION-016: Area verification dot -->
+      {#if isAreaVerified}
+        <span class="w-2 h-2 rounded-full bg-green-500 inline-block" title="Area data available"></span>
+      {:else}
+        <span class="w-2 h-2 rounded-full bg-red-400 inline-block" title="Area data incomplete"></span>
+      {/if}
     </div>
 
     {#if hasAreaData}
@@ -279,19 +308,7 @@
           </p>
         {/if}
 
-        <!-- Row 3: Cultural Region -->
-        {#if culturalRegion}
-          <p>
-            <span class="text-gray-500">Cultural Region:</span>{' '}
-            <button
-              onclick={() => onNavigateFilter('culturalRegion', culturalRegion)}
-              class="text-accent hover:underline"
-              title="View all locations in {culturalRegion}"
-            >{culturalRegion}</button>
-          </p>
-        {/if}
-
-        <!-- Row 4: County (DECISION-013: Include state filter to avoid duplicate county names) -->
+        <!-- Row 3: County (DECISION-015: Moved before Cultural Region) -->
         {#if location.address?.county}
           <p>
             <span class="text-gray-500">County:</span>{' '}
@@ -303,17 +320,15 @@
           </p>
         {/if}
 
-        <!-- Legacy regions (if any) -->
-        {#if location.regions && location.regions.length > 0}
+        <!-- Row 4: Cultural Region -->
+        {#if culturalRegion}
           <p>
-            <span class="text-gray-500">Regions:</span>{' '}
-            {#each location.regions as region, i}
-              <button
-                onclick={() => onNavigateFilter('region', region)}
-                class="text-accent hover:underline"
-                title="View all locations in {region}"
-              >{region}</button>{i < location.regions.length - 1 ? ', ' : ''}
-            {/each}
+            <span class="text-gray-500">Cultural Region:</span>{' '}
+            <button
+              onclick={() => onNavigateFilter('culturalRegion', culturalRegion)}
+              class="text-accent hover:underline"
+              title="View all locations in {culturalRegion}"
+            >{culturalRegion}</button>
           </p>
         {/if}
       </div>

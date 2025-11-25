@@ -1,19 +1,18 @@
 <script lang="ts">
   /**
-   * LocationHeader - Location name and edit button
-   * Per LILBITS: ~40 lines, single responsibility
+   * LocationHeader - Location name display only
+   * Per LILBITS: ~30 lines, single responsibility
    * DECISION-014: Removed favorite button (now in LocationInfo)
+   * DECISION-015: Removed edit button (edit is in LocationMapSection)
    */
   import { router } from '../../stores/router';
   import type { Location } from '@au-archive/core';
 
   interface Props {
     location: Location;
-    isEditing: boolean;
-    onEditToggle: () => void;
   }
 
-  let { location, isEditing, onEditToggle }: Props = $props();
+  let { location }: Props = $props();
 </script>
 
 <div class="mb-6">
@@ -23,16 +22,8 @@
   >
     &larr; Back to Locations
   </button>
-  <div class="flex items-center justify-between">
-    <div class="flex items-center gap-3">
-      <h1 class="text-3xl font-bold text-foreground drop-shadow-sm">{location.locnam}</h1>
-    </div>
-    <button
-      onclick={onEditToggle}
-      class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition"
-    >
-      {isEditing ? 'Cancel Edit' : 'Edit'}
-    </button>
+  <div class="flex items-center">
+    <h1 class="text-3xl font-bold text-foreground drop-shadow-sm">{location.locnam}</h1>
   </div>
   {#if location.akanam}
     <p class="text-gray-500 mt-1">Also Known As: {location.akanam}</p>
