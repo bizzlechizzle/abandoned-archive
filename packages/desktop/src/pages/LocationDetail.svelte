@@ -326,8 +326,9 @@
       </div>
     </div>
   {:else}
+    <!-- Hero outside max-w container for full-width stretch -->
+    <LocationHero {images} heroImgsha={location.hero_imgsha || null} />
     <div class="max-w-6xl mx-auto p-8">
-      <LocationHero {images} heroImgsha={location.hero_imgsha || null} onOpenLightbox={(i) => selectedImageIndex = i} />
       <!-- DECISION-015: LocationHeader now display-only, edit button in LocationMapSection -->
       <LocationHeader {location} />
 

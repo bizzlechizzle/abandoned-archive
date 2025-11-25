@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Location } from '@au-archive/core';
+  import { type Location, LocationEntity } from '@au-archive/core';
   import AutocompleteInput from './AutocompleteInput.svelte';
   import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
 
@@ -177,10 +177,7 @@
   }
 
   function generateShortName(name: string): string {
-    return name
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '')
-      .substring(0, 12);
+    return LocationEntity.generateShortName(name);
   }
 
   // Auto-generate short name when location name changes
