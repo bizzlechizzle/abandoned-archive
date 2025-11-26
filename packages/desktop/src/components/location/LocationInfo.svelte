@@ -216,7 +216,7 @@
       {#if hasAkaName}
         <div class="mb-4">
           <h3 class="section-title mb-1">Also Known As</h3>
-          <p class="text-base text-gray-900">{location.akanam}</p>
+          <span class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm">{location.akanam}</span>
         </div>
       {/if}
 
@@ -272,7 +272,7 @@
           <div>
             <h3 class="section-title mb-1">Built</h3>
             {#if location.builtYear}
-              <p class="text-base text-gray-900">{formatYearDisplay(location.builtYear, location.builtType)}</p>
+              <span class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm">{formatYearDisplay(location.builtYear, location.builtType)}</span>
             {:else}
               <p class="text-sm text-gray-400 italic">Not set</p>
             {/if}
@@ -280,7 +280,7 @@
           <div>
             <h3 class="section-title mb-1">Abandoned</h3>
             {#if location.abandonedYear}
-              <p class="text-base text-gray-900">{formatYearDisplay(location.abandonedYear, location.abandonedType)}</p>
+              <span class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm">{formatYearDisplay(location.abandonedYear, location.abandonedType)}</span>
             {:else}
               <p class="text-sm text-gray-400 italic">Not set</p>
             {/if}
@@ -350,7 +350,7 @@
       {#if hasAuthor}
         <div>
           <h3 class="section-title mb-1">Author</h3>
-          <p class="text-base text-gray-900">{location.auth_imp}</p>
+          <span class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm">{location.auth_imp}</span>
         </div>
       {/if}
     {:else}
@@ -388,74 +388,40 @@
 
       <!-- Content - Form order: Location Name, AKA, Historical Name (dropdown), Status (dropdown), Type/Sub-Type (autocomplete), Built/Abandoned, Documentation, Flags, Author -->
       <div class="p-6 overflow-y-auto max-h-[65vh] space-y-5">
-        <!-- Location Name + Verified -->
+        <!-- Location Name -->
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Location Name</label>
-          <div class="flex gap-3 items-center">
-            <input
-              type="text"
-              bind:value={editForm.locnam}
-              class="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-              placeholder="Location name"
-            />
-            <label class="flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
-              <input
-                type="checkbox"
-                bind:checked={editForm.locnamVerified}
-                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
-              />
-              <span class="text-sm text-gray-600">verified</span>
-            </label>
-          </div>
+          <input
+            type="text"
+            bind:value={editForm.locnam}
+            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            placeholder="Location name"
+          />
         </div>
 
-        <!-- AKA Name + Verified - comma separated -->
+        <!-- AKA Name -->
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Also Known As</label>
-          <div class="flex gap-3 items-center">
-            <input
-              type="text"
-              bind:value={editForm.akanam}
-              class="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-              placeholder="Name 1, Name 2, Name 3"
-            />
-            <label class="flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
-              <input
-                type="checkbox"
-                bind:checked={editForm.akanamVerified}
-                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
-              />
-              <span class="text-sm text-gray-600">verified</span>
-            </label>
-          </div>
-          <p class="text-xs text-gray-500 mt-1">Separate multiple names with commas</p>
+          <input
+            type="text"
+            bind:value={editForm.akanam}
+            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            placeholder="Name 1, Name 2, Name 3"
+          />
         </div>
 
-        <!-- Historical Name - dropdown from AKA values + Verified -->
+        <!-- Historical Name - dropdown from AKA values -->
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Historical Name</label>
-          <div class="flex gap-3 items-center">
-            <select
-              bind:value={editForm.historicalName}
-              class="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-            >
-              <option value="">Select from AKA names...</option>
-              {#each akaNames as name}
-                <option value={name}>{name}</option>
-              {/each}
-            </select>
-            <label class="flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
-              <input
-                type="checkbox"
-                bind:checked={editForm.historicalNameVerified}
-                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
-              />
-              <span class="text-sm text-gray-600">verified</span>
-            </label>
-          </div>
-          {#if akaNames.length === 0}
-            <p class="text-xs text-gray-500 mt-1">Add AKA names above to populate this dropdown</p>
-          {/if}
+          <select
+            bind:value={editForm.historicalName}
+            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+          >
+            <option value="">Select from AKA names...</option>
+            {#each akaNames as name}
+              <option value={name}>{name}</option>
+            {/each}
+          </select>
         </div>
 
         <!-- Status - dropdown -->
@@ -506,45 +472,45 @@
           </div>
         </div>
 
-        <!-- Built / Abandoned -->
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Built</label>
-            <div class="flex gap-2">
-              <select
-                bind:value={editForm.builtType}
-                class="px-2 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent text-sm"
-              >
-                <option value="year">Year</option>
-                <option value="range">Range</option>
-                <option value="date">Date</option>
-              </select>
-              <input
-                type="text"
-                bind:value={editForm.builtYear}
-                placeholder={editForm.builtType === 'year' ? '1920' : editForm.builtType === 'range' ? '1920-1925' : '1920-05-15'}
-                class="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-              />
-            </div>
+        <!-- Built -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Built</label>
+          <div class="flex gap-2">
+            <select
+              bind:value={editForm.builtType}
+              class="px-2 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent text-sm"
+            >
+              <option value="year">Year</option>
+              <option value="range">Range</option>
+              <option value="date">Date</option>
+            </select>
+            <input
+              type="text"
+              bind:value={editForm.builtYear}
+              placeholder={editForm.builtType === 'year' ? '1920' : editForm.builtType === 'range' ? '1920-1925' : '1920-05-15'}
+              class="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            />
           </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Abandoned</label>
-            <div class="flex gap-2">
-              <select
-                bind:value={editForm.abandonedType}
-                class="px-2 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent text-sm"
-              >
-                <option value="year">Year</option>
-                <option value="range">Range</option>
-                <option value="date">Date</option>
-              </select>
-              <input
-                type="text"
-                bind:value={editForm.abandonedYear}
-                placeholder={editForm.abandonedType === 'year' ? '2005' : editForm.abandonedType === 'range' ? '2005-2010' : '2005-03-20'}
-                class="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-              />
-            </div>
+        </div>
+
+        <!-- Abandoned -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Abandoned</label>
+          <div class="flex gap-2">
+            <select
+              bind:value={editForm.abandonedType}
+              class="px-2 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent text-sm"
+            >
+              <option value="year">Year</option>
+              <option value="range">Range</option>
+              <option value="date">Date</option>
+            </select>
+            <input
+              type="text"
+              bind:value={editForm.abandonedYear}
+              placeholder={editForm.abandonedType === 'year' ? '2005' : editForm.abandonedType === 'range' ? '2005-2010' : '2005-03-20'}
+              class="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            />
           </div>
         </div>
 
@@ -576,7 +542,6 @@
                 class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
               />
               <span class="text-sm">Drone</span>
-              <span class="text-xs text-gray-400">(auto-selects Exterior)</span>
             </label>
             <label class="flex items-center gap-2 cursor-pointer">
               <input
