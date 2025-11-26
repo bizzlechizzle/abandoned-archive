@@ -335,8 +335,20 @@
       </div>
     </div>
   {:else}
-    <!-- Hero outside max-w container for full-width stretch, includes title overlay -->
-    <LocationHero {images} heroImgsha={location.hero_imgsha || null} locnam={location.locnam} />
+    <!-- Hero outside max-w container for full-width stretch -->
+    <LocationHero {images} heroImgsha={location.hero_imgsha || null} />
+
+    <!-- Title below hero: single line, truncated, seamless with page -->
+    <div class="max-w-6xl mx-auto px-8 pt-6 pb-2">
+      <h1
+        class="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight max-w-[75%] truncate"
+        style="color: #454545;"
+        title={location.locnam}
+      >
+        {location.locnam}
+      </h1>
+    </div>
+
     <div class="max-w-6xl mx-auto px-8 pb-8">
 
       {#if isEditing}

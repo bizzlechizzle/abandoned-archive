@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * LocationHero - Cinematic hero image with title overlay
+   * LocationHero - Cinematic hero image with seamless gradient fade
    * Per LILBITS: ~100 lines, single responsibility
    * Per PUEA: Show placeholder with import prompt if no images
    */
@@ -9,10 +9,9 @@
   interface Props {
     images: MediaImage[];
     heroImgsha: string | null;
-    locnam?: string;
   }
 
-  let { images, heroImgsha, locnam }: Props = $props();
+  let { images, heroImgsha }: Props = $props();
 
   const heroImage = $derived(
     heroImgsha
@@ -27,12 +26,12 @@
   );
 </script>
 
-<!-- Hero with 2.35:1 cinematic aspect, S-curve gradient, title overlay -->
+<!-- Hero with 2:1 aspect, seamless S-curve light gradient -->
 {#if images.length > 0 && heroImage}
   <div>
     <div
-      class="relative w-full bg-gray-100 overflow-hidden"
-      style="aspect-ratio: 2.35 / 1;"
+      class="relative w-full bg-[#fffbf7] overflow-hidden"
+      style="aspect-ratio: 2 / 1;"
     >
       {#if heroSrc}
         <img
@@ -47,37 +46,27 @@
           </svg>
         </div>
       {/if}
-      <!-- Netflix-style dark scrim gradient: 80% height, ultra smooth roll-off -->
+      <!-- Seamless light gradient: bottom 12.5% solid, S-curve fade to 80% -->
       <div
         class="absolute bottom-0 left-0 right-0 h-[80%] pointer-events-none"
         style="background: linear-gradient(to top,
           #fffbf7 0%,
-          rgba(20,20,20,0.3) 8%,
-          rgba(0,0,0,0.5) 15%,
-          rgba(0,0,0,0.6) 25%,
-          rgba(0,0,0,0.5) 35%,
-          rgba(0,0,0,0.3) 50%,
-          rgba(0,0,0,0.15) 65%,
-          rgba(0,0,0,0.08) 80%,
-          rgba(0,0,0,0.03) 90%,
+          #fffbf7 12.5%,
+          rgba(255,251,247,0.95) 20%,
+          rgba(255,251,247,0.82) 30%,
+          rgba(255,251,247,0.62) 42%,
+          rgba(255,251,247,0.40) 54%,
+          rgba(255,251,247,0.22) 66%,
+          rgba(255,251,247,0.10) 78%,
+          rgba(255,251,247,0.03) 90%,
           transparent 100%
         );"
       ></div>
-      <!-- Title overlay positioned at bottom - white text on dark scrim -->
-      {#if locnam}
-        <div class="absolute bottom-0 left-0 right-0 px-8 pb-8">
-          <div class="max-w-6xl mx-auto">
-            <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight text-white max-w-[75%]">
-              {locnam}
-            </h1>
-          </div>
-        </div>
-      {/if}
     </div>
   </div>
 {:else}
   <!-- PUEA: Graceful empty state with action prompt -->
-  <div class="bg-gradient-to-br from-gray-100 to-[#fffbf7] flex flex-col items-center justify-center relative" style="aspect-ratio: 2.35 / 1;">
+  <div class="bg-gradient-to-br from-gray-100 to-[#fffbf7] flex items-center justify-center" style="aspect-ratio: 2 / 1;">
     <div class="text-center text-gray-400">
       <svg class="w-24 h-24 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -85,15 +74,5 @@
       <p class="text-lg">No Hero Image</p>
       <p class="text-sm mt-1">Import images to set a hero image</p>
     </div>
-    <!-- Title at bottom even without hero image -->
-    {#if locnam}
-      <div class="absolute bottom-0 left-0 right-0 px-8 pb-6">
-        <div class="max-w-6xl mx-auto">
-          <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold text-foreground leading-tight max-w-[75%]">
-            {locnam}
-          </h1>
-        </div>
-      </div>
-    {/if}
   </div>
 {/if}
