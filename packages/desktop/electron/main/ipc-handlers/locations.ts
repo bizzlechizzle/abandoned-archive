@@ -282,5 +282,43 @@ export function registerLocationHandlers(db: Kysely<Database>) {
     }
   });
 
+  // Get distinct types for autocomplete
+  ipcMain.handle('location:getDistinctTypes', async () => {
+    try {
+      const types = await db
+        .selectFrom('locs')
+        .select('type')
+        .distinct()
+        .where('type', 'is not', null)
+        .where('type', '!=', '')
+        .orderBy('type')
+        .execute();
+
+      return types.map(r => r.type).filter(Boolean) as string[];
+    } catch (error) {
+      console.error('Error getting distinct types:', error);
+      throw error;
+    }
+  });
+
+  // Get distinct sub-types for autocomplete
+  ipcMain.handle('location:getDistinctSubTypes', async () => {
+    try {
+      const stypes = await db
+        .selectFrom('locs')
+        .select('stype')
+        .distinct()
+        .where('stype', 'is not', null)
+        .where('stype', '!=', '')
+        .orderBy('stype')
+        .execute();
+
+      return stypes.map(r => r.stype).filter(Boolean) as string[];
+    } catch (error) {
+      console.error('Error getting distinct sub-types:', error);
+      throw error;
+    }
+  });
+
   return locationRepo;
 }

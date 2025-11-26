@@ -54,6 +54,9 @@ const api = {
     // DECISION-018: Region data management
     updateRegionData: (id, regionData) => ipcRenderer.invoke("location:updateRegionData", id, regionData),
     backfillRegions: () => ipcRenderer.invoke("location:backfillRegions"),
+    // Autocomplete helpers for Type/Sub-Type
+    getDistinctTypes: () => ipcRenderer.invoke("location:getDistinctTypes"),
+    getDistinctSubTypes: () => ipcRenderer.invoke("location:getDistinctSubTypes"),
   },
 
   stats: {

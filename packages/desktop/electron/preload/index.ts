@@ -72,6 +72,11 @@ const api = {
       countryCulturalRegionVerified: boolean;
     }): Promise<void> =>
       ipcRenderer.invoke('location:updateRegionData', id, regionData),
+    // Autocomplete helpers for Type/Sub-Type
+    getDistinctTypes: (): Promise<string[]> =>
+      ipcRenderer.invoke('location:getDistinctTypes'),
+    getDistinctSubTypes: (): Promise<string[]> =>
+      ipcRenderer.invoke('location:getDistinctSubTypes'),
   },
 
   stats: {

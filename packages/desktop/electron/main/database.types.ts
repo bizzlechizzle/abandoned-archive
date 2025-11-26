@@ -104,6 +104,10 @@ export interface LocsTable {
   doc_exterior: number;
   doc_drone: number;
   doc_web_history: number;
+  doc_map_find: number;            // 0/1 Map Find documentation checkbox
+
+  // Status tracking
+  status_changed_at: string | null; // ISO timestamp when status last changed
 
   // DECISION-019: Information Box overhaul fields
   historical_name: string | null;  // Historical/original name of location

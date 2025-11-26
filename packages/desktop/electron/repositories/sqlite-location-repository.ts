@@ -109,6 +109,8 @@ export class SQLiteLocationRepository implements LocationRepository {
         doc_exterior: input.docExterior ? 1 : 0,
         doc_drone: input.docDrone ? 1 : 0,
         doc_web_history: input.docWebHistory ? 1 : 0,
+        doc_map_find: input.docMapFind ? 1 : 0,
+        status_changed_at: input.statusChangedAt || null,
         // DECISION-019: Information Box overhaul fields
         historical_name: input.historicalName || null,
         locnam_verified: input.locnamVerified ? 1 : 0,
@@ -281,6 +283,8 @@ export class SQLiteLocationRepository implements LocationRepository {
     if (input.docExterior !== undefined) updates.doc_exterior = input.docExterior ? 1 : 0;
     if (input.docDrone !== undefined) updates.doc_drone = input.docDrone ? 1 : 0;
     if (input.docWebHistory !== undefined) updates.doc_web_history = input.docWebHistory ? 1 : 0;
+    if (input.docMapFind !== undefined) updates.doc_map_find = input.docMapFind ? 1 : 0;
+    if (input.statusChangedAt !== undefined) updates.status_changed_at = input.statusChangedAt;
     // DECISION-019: Information Box overhaul fields
     if (input.historicalName !== undefined) updates.historical_name = input.historicalName;
     if (input.locnamVerified !== undefined) updates.locnam_verified = input.locnamVerified ? 1 : 0;
@@ -487,6 +491,8 @@ export class SQLiteLocationRepository implements LocationRepository {
       docExterior: row.doc_exterior === 1,
       docDrone: row.doc_drone === 1,
       docWebHistory: row.doc_web_history === 1,
+      docMapFind: row.doc_map_find === 1,
+      statusChangedAt: row.status_changed_at ?? undefined,
       hero_imgsha: row.hero_imgsha ?? undefined,
       sublocs: row.sublocs ? JSON.parse(row.sublocs) : [],
       sub12: row.sub12 ?? undefined,

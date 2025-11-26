@@ -86,6 +86,8 @@ export const LocationInputSchema = z.object({
   docExterior: z.boolean().default(false),
   docDrone: z.boolean().default(false),
   docWebHistory: z.boolean().default(false),
+  docMapFind: z.boolean().default(false),    // Map Find documentation checkbox
+  statusChangedAt: z.string().datetime().optional(),  // Track when status last changed
   hero_imgsha: z.string().optional(),
   auth_imp: z.string().optional(),
   // DECISION-019: Information Box overhaul fields

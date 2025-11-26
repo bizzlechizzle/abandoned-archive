@@ -2,9 +2,11 @@
   /**
    * LocationInfo - Information box with structured fields
    * Per DECISION-019: Complete overhaul to mirror LocationMapSection styling
-   * Display: Historical Name, AKA Name, Status, Documentation, Built/Abandoned, Type/Sub-Type, Flags, Author
+   * Display order: AKA, Status+Type, Built/Abandoned, Documentation, Flags, Historical Name, Author
    */
   import type { Location, LocationInput } from '@au-archive/core';
+  import { ACCESS_OPTIONS } from '../../constants/location-enums';
+  import { onMount } from 'svelte';
 
   interface Props {
     location: Location;
@@ -17,6 +19,20 @@
   // Edit modal state
   let showEditModal = $state(false);
   let saving = $state(false);
+
+  // Autocomplete options for Type/Sub-Type
+  let typeOptions = $state<string[]>([]);
+  let stypeOptions = $state<string[]>([]);
+
+  // Load autocomplete options on mount
+  onMount(async () => {
+    try {
+      typeOptions = await window.api.location.getDistinctTypes();
+      stypeOptions = await window.api.location.getDistinctSubTypes();
+    } catch (err) {
+      console.error('Error loading type options:', err);
+    }
+  });
 
   // Edit form state - DECISION-019: All information fields
   let editForm = $state({
@@ -40,15 +56,19 @@
     docExterior: false,
     docDrone: false,
     docWebHistory: false,
+    docMapFind: false,
     auth_imp: '',
   });
+
+  // Track original status for change detection
+  let originalStatus = $state('');
 
   // PUEA: Check if we have data to display for each section
   const hasHistoricalName = $derived(!!location.historicalName);
   const hasAkaName = $derived(!!location.akanam);
   const hasStatus = $derived(!!location.access);
   const hasDocumentation = $derived(
-    location.docInterior || location.docExterior || location.docDrone || location.docWebHistory
+    location.docInterior || location.docExterior || location.docDrone || location.docWebHistory || location.docMapFind
   );
   const hasBuiltOrAbandoned = $derived(!!location.builtYear || !!location.abandonedYear);
   const hasType = $derived(!!location.type);
@@ -61,17 +81,23 @@
     hasBuiltOrAbandoned || hasType || hasFlags || hasAuthor
   );
 
-  // Documentation labels for checkboxes
+  // Documentation labels for display
   const docLabels = [
     { key: 'docInterior', label: 'Interior', field: 'docInterior' as const },
     { key: 'docExterior', label: 'Exterior', field: 'docExterior' as const },
     { key: 'docDrone', label: 'Drone', field: 'docDrone' as const },
-    { key: 'docWebHistory', label: 'Web/History', field: 'docWebHistory' as const },
+    { key: 'docMapFind', label: 'Map Find', field: 'docMapFind' as const },
+    { key: 'docWebHistory', label: 'Web Find', field: 'docWebHistory' as const },
   ];
 
   // Get active documentation types
   const activeDocTypes = $derived(
     docLabels.filter(d => location[d.field]).map(d => d.label)
+  );
+
+  // Parse AKA names for Historical Name dropdown
+  const akaNames = $derived(
+    editForm.akanam ? editForm.akanam.split(',').map(s => s.trim()).filter(Boolean) : []
   );
 
   // Format year display based on type
@@ -80,7 +106,16 @@
     return value; // Return as-is, type determines interpretation
   }
 
+  // Handle Drone checkbox - auto-select Exterior
+  function handleDroneChange(checked: boolean) {
+    editForm.docDrone = checked;
+    if (checked) {
+      editForm.docExterior = true;
+    }
+  }
+
   function openEditModal() {
+    originalStatus = location.access || '';
     editForm = {
       locnam: location.locnam || '',
       locnamVerified: location.locnamVerified || false,
@@ -102,6 +137,7 @@
       docExterior: location.docExterior || false,
       docDrone: location.docDrone || false,
       docWebHistory: location.docWebHistory || false,
+      docMapFind: location.docMapFind || false,
       auth_imp: location.auth_imp || '',
     };
     showEditModal = true;
@@ -111,6 +147,11 @@
     if (!onSave) return;
     try {
       saving = true;
+
+      // Track status change date if status changed
+      const statusChanged = editForm.access !== originalStatus;
+      const statusChangedAt = statusChanged ? new Date().toISOString() : undefined;
+
       await onSave({
         locnam: editForm.locnam,
         locnamVerified: editForm.locnamVerified,
@@ -119,6 +160,7 @@
         akanam: editForm.akanam || undefined,
         akanamVerified: editForm.akanamVerified,
         access: editForm.access || undefined,
+        statusChangedAt: statusChangedAt,
         builtYear: editForm.builtYear || undefined,
         builtType: editForm.builtYear ? editForm.builtType : undefined,
         abandonedYear: editForm.abandonedYear || undefined,
@@ -132,6 +174,7 @@
         docExterior: editForm.docExterior,
         docDrone: editForm.docDrone,
         docWebHistory: editForm.docWebHistory,
+        docMapFind: editForm.docMapFind,
         auth_imp: editForm.auth_imp || undefined,
       });
       showEditModal = false;
@@ -166,16 +209,9 @@
   </div>
 
   <!-- Content sections - PUEA: Only show sections that have data -->
+  <!-- Display order: AKA, Status+Type, Built/Abandoned, Documentation, Flags, Historical Name, Author -->
   <div class="px-8 pb-6">
     {#if hasAnyInfo}
-      <!-- Historical Name (show only if exists) -->
-      {#if hasHistoricalName}
-        <div class="mb-4">
-          <h3 class="section-title mb-1">Historical Name</h3>
-          <p class="text-base text-gray-900">{location.historicalName}</p>
-        </div>
-      {/if}
-
       <!-- AKA Name (show only if exists) -->
       {#if hasAkaName}
         <div class="mb-4">
@@ -184,30 +220,48 @@
         </div>
       {/if}
 
-      <!-- Status -->
-      {#if hasStatus}
-        <div class="mb-4">
-          <h3 class="section-title mb-1">Status</h3>
-          <button
-            onclick={() => onNavigateFilter('access', location.access!)}
-            class="text-base text-accent hover:underline"
-            title="View all locations with this status"
-          >
-            {location.access}
-          </button>
-        </div>
-      {/if}
-
-      <!-- Documentation badges -->
-      {#if hasDocumentation}
-        <div class="mb-4">
-          <h3 class="section-title mb-1">Documentation</h3>
-          <div class="flex flex-wrap gap-2">
-            {#each activeDocTypes as docType}
-              <span class="px-2 py-0.5 bg-green-100 text-green-800 rounded text-sm">
-                {docType}
-              </span>
-            {/each}
+      <!-- Status + Type (same row) -->
+      {#if hasStatus || hasType}
+        <div class="mb-4 grid grid-cols-2 gap-4">
+          <div>
+            <h3 class="section-title mb-1">Status</h3>
+            {#if hasStatus}
+              <button
+                onclick={() => onNavigateFilter('access', location.access!)}
+                class="text-base text-accent hover:underline"
+                title="View all locations with this status"
+              >
+                {location.access}
+              </button>
+            {:else}
+              <p class="text-sm text-gray-400 italic">Not set</p>
+            {/if}
+          </div>
+          <div>
+            <h3 class="section-title mb-1">Type</h3>
+            {#if hasType}
+              <p class="text-base">
+                <button
+                  onclick={() => onNavigateFilter('type', location.type!)}
+                  class="text-accent hover:underline"
+                  title="View all {location.type} locations"
+                >
+                  {location.type}
+                </button>
+                {#if location.stype}
+                  <span class="text-gray-400"> / </span>
+                  <button
+                    onclick={() => onNavigateFilter('stype', location.stype!)}
+                    class="text-accent hover:underline"
+                    title="View all {location.stype} locations"
+                  >
+                    {location.stype}
+                  </button>
+                {/if}
+              </p>
+            {:else}
+              <p class="text-sm text-gray-400 italic">Not set</p>
+            {/if}
           </div>
         </div>
       {/if}
@@ -234,65 +288,61 @@
         </div>
       {/if}
 
-      <!-- Type / Sub-Type -->
-      {#if hasType}
+      <!-- Documentation badges - accent color -->
+      {#if hasDocumentation}
         <div class="mb-4">
-          <h3 class="section-title mb-1">Type</h3>
-          <p class="text-base">
-            <button
-              onclick={() => onNavigateFilter('type', location.type!)}
-              class="text-accent hover:underline"
-              title="View all {location.type} locations"
-            >
-              {location.type}
-            </button>
-            {#if location.stype}
-              <span class="text-gray-400"> / </span>
-              <button
-                onclick={() => onNavigateFilter('stype', location.stype!)}
-                class="text-accent hover:underline"
-                title="View all {location.stype} locations"
-              >
-                {location.stype}
-              </button>
-            {/if}
-          </p>
+          <h3 class="section-title mb-1">Documentation</h3>
+          <div class="flex flex-wrap gap-2">
+            {#each activeDocTypes as docType}
+              <span class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm">
+                {docType}
+              </span>
+            {/each}
+          </div>
         </div>
       {/if}
 
-      <!-- Flags -->
+      <!-- Flags - accent color for all badges -->
       {#if hasFlags}
         <div class="mb-4">
           <h3 class="section-title mb-1">Flags</h3>
           <div class="flex flex-wrap gap-2">
-            {#if location.historic}
-              <button
-                onclick={() => onNavigateFilter('historic', 'true')}
-                class="px-2 py-0.5 bg-amber-100 text-amber-800 rounded text-sm hover:bg-amber-200"
-                title="View all historic landmarks"
-              >
-                Historic
-              </button>
-            {/if}
-            {#if location.favorite}
-              <button
-                onclick={() => onNavigateFilter('favorite', 'true')}
-                class="px-2 py-0.5 bg-red-100 text-red-800 rounded text-sm hover:bg-red-200"
-                title="View all favorites"
-              >
-                Favorite
-              </button>
-            {/if}
             {#if location.project}
               <button
                 onclick={() => onNavigateFilter('project', 'true')}
-                class="px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-sm hover:bg-blue-200"
+                class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm hover:bg-accent/20"
                 title="View all project locations"
               >
                 Project
               </button>
             {/if}
+            {#if location.favorite}
+              <button
+                onclick={() => onNavigateFilter('favorite', 'true')}
+                class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm hover:bg-accent/20"
+                title="View all favorites"
+              >
+                Favorite
+              </button>
+            {/if}
+            {#if location.historic}
+              <button
+                onclick={() => onNavigateFilter('historic', 'true')}
+                class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm hover:bg-accent/20"
+                title="View all historic landmarks"
+              >
+                Historical
+              </button>
+            {/if}
           </div>
+        </div>
+      {/if}
+
+      <!-- Historical Name (show only if exists) -->
+      {#if hasHistoricalName}
+        <div class="mb-4">
+          <h3 class="section-title mb-1">Historical Name</h3>
+          <p class="text-base text-gray-900">{location.historicalName}</p>
         </div>
       {/if}
 
@@ -336,7 +386,7 @@
         </button>
       </div>
 
-      <!-- Content -->
+      <!-- Content - Form order: Location Name, AKA, Historical Name (dropdown), Status (dropdown), Type/Sub-Type (autocomplete), Built/Abandoned, Documentation, Flags, Author -->
       <div class="p-6 overflow-y-auto max-h-[65vh] space-y-5">
         <!-- Location Name + Verified -->
         <div>
@@ -359,28 +409,7 @@
           </div>
         </div>
 
-        <!-- Historical Name + Verified -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Historical Name</label>
-          <div class="flex gap-3 items-center">
-            <input
-              type="text"
-              bind:value={editForm.historicalName}
-              class="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-              placeholder="Original or historical name"
-            />
-            <label class="flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
-              <input
-                type="checkbox"
-                bind:checked={editForm.historicalNameVerified}
-                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
-              />
-              <span class="text-sm text-gray-600">verified</span>
-            </label>
-          </div>
-        </div>
-
-        <!-- AKA Name + Verified -->
+        <!-- AKA Name + Verified - comma separated -->
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Also Known As</label>
           <div class="flex gap-3 items-center">
@@ -388,7 +417,7 @@
               type="text"
               bind:value={editForm.akanam}
               class="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-              placeholder="Alternative name"
+              placeholder="Name 1, Name 2, Name 3"
             />
             <label class="flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
               <input
@@ -399,55 +428,81 @@
               <span class="text-sm text-gray-600">verified</span>
             </label>
           </div>
+          <p class="text-xs text-gray-500 mt-1">Separate multiple names with commas</p>
         </div>
 
-        <!-- Status -->
+        <!-- Historical Name - dropdown from AKA values + Verified -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Historical Name</label>
+          <div class="flex gap-3 items-center">
+            <select
+              bind:value={editForm.historicalName}
+              class="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            >
+              <option value="">Select from AKA names...</option>
+              {#each akaNames as name}
+                <option value={name}>{name}</option>
+              {/each}
+            </select>
+            <label class="flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
+              <input
+                type="checkbox"
+                bind:checked={editForm.historicalNameVerified}
+                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+              />
+              <span class="text-sm text-gray-600">verified</span>
+            </label>
+          </div>
+          {#if akaNames.length === 0}
+            <p class="text-xs text-gray-500 mt-1">Add AKA names above to populate this dropdown</p>
+          {/if}
+        </div>
+
+        <!-- Status - dropdown -->
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Status</label>
-          <input
-            type="text"
+          <select
             bind:value={editForm.access}
             class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-            placeholder="e.g., Open, Demolished, Private"
-          />
+          >
+            <option value="">Select status...</option>
+            {#each ACCESS_OPTIONS as option}
+              <option value={option}>{option}</option>
+            {/each}
+          </select>
         </div>
 
-        <!-- Documentation checkboxes -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Documentation</label>
-          <div class="grid grid-cols-2 gap-2">
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                bind:checked={editForm.docInterior}
-                class="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500"
-              />
-              <span class="text-sm">Interior</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                bind:checked={editForm.docExterior}
-                class="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500"
-              />
-              <span class="text-sm">Exterior</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                bind:checked={editForm.docDrone}
-                class="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500"
-              />
-              <span class="text-sm">Drone</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                bind:checked={editForm.docWebHistory}
-                class="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500"
-              />
-              <span class="text-sm">Web/History</span>
-            </label>
+        <!-- Type / Sub-Type with autocomplete -->
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Type</label>
+            <input
+              type="text"
+              list="type-options"
+              bind:value={editForm.type}
+              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+              placeholder="e.g., Hospital, Factory"
+            />
+            <datalist id="type-options">
+              {#each typeOptions as option}
+                <option value={option} />
+              {/each}
+            </datalist>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Sub-Type</label>
+            <input
+              type="text"
+              list="stype-options"
+              bind:value={editForm.stype}
+              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+              placeholder="e.g., Psychiatric, Textile"
+            />
+            <datalist id="stype-options">
+              {#each stypeOptions as option}
+                <option value={option} />
+              {/each}
+            </datalist>
           </div>
         </div>
 
@@ -493,29 +548,56 @@
           </div>
         </div>
 
-        <!-- Type / Sub-Type -->
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Type</label>
-            <input
-              type="text"
-              bind:value={editForm.type}
-              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-              placeholder="e.g., Hospital, Factory"
-            />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Sub-Type</label>
-            <input
-              type="text"
-              bind:value={editForm.stype}
-              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-              placeholder="e.g., Psychiatric, Textile"
-            />
+        <!-- Documentation checkboxes - Drone auto-selects Exterior -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Documentation</label>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                bind:checked={editForm.docInterior}
+                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+              />
+              <span class="text-sm">Interior</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                bind:checked={editForm.docExterior}
+                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+              />
+              <span class="text-sm">Exterior</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={editForm.docDrone}
+                onchange={(e) => handleDroneChange(e.currentTarget.checked)}
+                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+              />
+              <span class="text-sm">Drone</span>
+              <span class="text-xs text-gray-400">(auto-selects Exterior)</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                bind:checked={editForm.docMapFind}
+                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+              />
+              <span class="text-sm">Map Find</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                bind:checked={editForm.docWebHistory}
+                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+              />
+              <span class="text-sm">Web Find</span>
+            </label>
           </div>
         </div>
 
-        <!-- Flags -->
+        <!-- Flags - accent color for all -->
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Flags</label>
           <div class="flex flex-wrap gap-4">
@@ -523,7 +605,7 @@
               <input
                 type="checkbox"
                 bind:checked={editForm.project}
-                class="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
               />
               <span class="text-sm">Project</span>
             </label>
@@ -531,7 +613,7 @@
               <input
                 type="checkbox"
                 bind:checked={editForm.favorite}
-                class="w-4 h-4 text-red-600 rounded border-gray-300 focus:ring-red-500"
+                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
               />
               <span class="text-sm">Favorite</span>
             </label>
@@ -539,7 +621,7 @@
               <input
                 type="checkbox"
                 bind:checked={editForm.historic}
-                class="w-4 h-4 text-amber-600 rounded border-gray-300 focus:ring-amber-500"
+                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
               />
               <span class="text-sm">Historical</span>
             </label>

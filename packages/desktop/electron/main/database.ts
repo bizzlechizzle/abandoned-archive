@@ -730,6 +730,24 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 19 completed: Information Box overhaul columns added');
     }
+
+    // Migration 20: Add Map Find documentation and status change tracking
+    // Per Information Box overhaul:
+    // - doc_map_find: Documentation checkbox for Map Find
+    // - status_changed_at: Track when status last changed for nerd stats
+    const locsColsForMapFind = sqlite.prepare('PRAGMA table_info(locs)').all() as Array<{ name: string }>;
+    const hasDocMapFind = locsColsForMapFind.some(col => col.name === 'doc_map_find');
+
+    if (!hasDocMapFind) {
+      console.log('Running migration 20: Adding doc_map_find and status_changed_at columns to locs');
+
+      sqlite.exec(`
+        ALTER TABLE locs ADD COLUMN doc_map_find INTEGER DEFAULT 0;
+        ALTER TABLE locs ADD COLUMN status_changed_at TEXT;
+      `);
+
+      console.log('Migration 20 completed: doc_map_find and status_changed_at columns added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

@@ -13,6 +13,7 @@ const baseLocation = {
   docExterior: false,
   docDrone: false,
   docWebHistory: false,
+  docMapFind: false,
   sublocs: [] as string[],
   regions: [] as string[],
   locadd: new Date().toISOString(),
