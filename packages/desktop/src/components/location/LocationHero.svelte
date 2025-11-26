@@ -47,27 +47,27 @@
           </svg>
         </div>
       {/if}
-      <!-- S-curve gradient fade: starts at 60% height, ultra smooth transition -->
+      <!-- Netflix-style dark scrim gradient: 80% height, ultra smooth roll-off -->
       <div
-        class="absolute bottom-0 left-0 right-0 h-[60%] pointer-events-none"
+        class="absolute bottom-0 left-0 right-0 h-[80%] pointer-events-none"
         style="background: linear-gradient(to top,
           #fffbf7 0%,
-          #fffbf7 8%,
-          rgba(255,251,247,0.95) 15%,
-          rgba(255,251,247,0.7) 35%,
-          rgba(255,251,247,0.3) 60%,
-          rgba(255,251,247,0.1) 80%,
+          rgba(20,20,20,0.3) 8%,
+          rgba(0,0,0,0.5) 15%,
+          rgba(0,0,0,0.6) 25%,
+          rgba(0,0,0,0.5) 35%,
+          rgba(0,0,0,0.3) 50%,
+          rgba(0,0,0,0.15) 65%,
+          rgba(0,0,0,0.08) 80%,
+          rgba(0,0,0,0.03) 90%,
           transparent 100%
         );"
       ></div>
-      <!-- Title overlay positioned at bottom -->
+      <!-- Title overlay positioned at bottom - white text on dark scrim -->
       {#if locnam}
-        <div class="absolute bottom-0 left-0 right-0 px-8 pb-6">
+        <div class="absolute bottom-0 left-0 right-0 px-8 pb-8">
           <div class="max-w-6xl mx-auto">
-            <h1
-              class="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight max-w-[75%]"
-              style="color: #1a1a1a; text-shadow: 0 2px 8px rgba(255,251,247,0.9), 0 0 20px rgba(255,251,247,0.8);"
-            >
+            <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight text-white max-w-[75%]">
               {locnam}
             </h1>
           </div>
