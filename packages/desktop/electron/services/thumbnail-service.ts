@@ -38,9 +38,10 @@ export class ThumbnailService {
    *
    * @param sourcePath - Absolute path to source image (or extracted preview for RAW)
    * @param hash - SHA256 hash of the original file (for naming)
+   * @param force - If true, regenerate even if thumbnails exist
    * @returns ThumbnailSet with paths to all generated sizes
    */
-  async generateAllSizes(sourcePath: string, hash: string): Promise<ThumbnailSet> {
+  async generateAllSizes(sourcePath: string, hash: string, force: boolean = false): Promise<ThumbnailSet> {
     const result: ThumbnailSet = {
       thumb_sm: null,
       thumb_lg: null,
@@ -50,11 +51,18 @@ export class ThumbnailService {
     try {
       // Get image metadata for aspect ratio calculation
       const metadata = await sharp(sourcePath).metadata();
-      const { width, height } = metadata;
+      let { width, height } = metadata;
 
       if (!width || !height) {
         console.error(`[ThumbnailService] Cannot read dimensions for ${sourcePath}`);
         return result;
+      }
+
+      // EXIF orientation 5,6,7,8 require width/height swap for correct layout
+      // (these are rotations that change portrait<->landscape)
+      const orientation = metadata.orientation || 1;
+      if (orientation >= 5 && orientation <= 8) {
+        [width, height] = [height, width];
       }
 
       // Ensure bucket directory exists
@@ -65,9 +73,9 @@ export class ThumbnailService {
 
       // Generate all three sizes in parallel
       const [sm, lg, preview] = await Promise.all([
-        this.generateSize(sourcePath, hash, THUMBNAIL_SIZES.SMALL, width, height, this.THUMB_QUALITY),
-        this.generateSize(sourcePath, hash, THUMBNAIL_SIZES.LARGE, width, height, this.THUMB_QUALITY),
-        this.generateSize(sourcePath, hash, THUMBNAIL_SIZES.PREVIEW, width, height, this.PREVIEW_QUALITY),
+        this.generateSize(sourcePath, hash, THUMBNAIL_SIZES.SMALL, width, height, this.THUMB_QUALITY, force),
+        this.generateSize(sourcePath, hash, THUMBNAIL_SIZES.LARGE, width, height, this.THUMB_QUALITY, force),
+        this.generateSize(sourcePath, hash, THUMBNAIL_SIZES.PREVIEW, width, height, this.PREVIEW_QUALITY, force),
       ]);
 
       result.thumb_sm = sm;
@@ -84,41 +92,50 @@ export class ThumbnailService {
   /**
    * Generate a single size thumbnail
    * Size is applied to the SHORT edge to maintain aspect ratio
+   *
+   * @param orientedWidth - Width AFTER EXIF rotation is applied
+   * @param orientedHeight - Height AFTER EXIF rotation is applied
+   * @param force - If true, regenerate even if thumbnail exists
    */
   private async generateSize(
     sourcePath: string,
     hash: string,
     targetSize: 400 | 800 | 1920,
-    width: number,
-    height: number,
-    quality: number
+    orientedWidth: number,
+    orientedHeight: number,
+    quality: number,
+    force: boolean = false
   ): Promise<string | null> {
     try {
       const thumbPath = this.mediaPathService.getThumbnailPath(hash, targetSize);
 
-      // Check if already exists
-      try {
-        await fs.access(thumbPath);
-        return thumbPath;
-      } catch {
-        // Doesn't exist, continue
+      // Check if already exists (skip if force=true)
+      if (!force) {
+        try {
+          await fs.access(thumbPath);
+          return thumbPath;
+        } catch {
+          // Doesn't exist, continue
+        }
       }
 
       // Calculate resize dimensions (target size on short edge)
-      const isLandscape = width > height;
+      // Uses ORIENTED dimensions so portrait images resize correctly
+      const isLandscape = orientedWidth > orientedHeight;
       const resizeOptions = isLandscape
         ? { height: targetSize }
         : { width: targetSize };
 
-      // Don't upscale - if source is smaller than target, use source size
-      if (isLandscape && height < targetSize) {
-        return null; // Source too small for this size
-      }
-      if (!isLandscape && width < targetSize) {
-        return null; // Source too small for this size
+      // Don't upscale - if source is smaller than target, skip
+      // Uses ORIENTED dimensions for accurate check
+      const shortEdge = isLandscape ? orientedHeight : orientedWidth;
+      if (shortEdge < targetSize) {
+        console.log(`[ThumbnailService] Skipping ${targetSize}px for ${hash}: source too small (${shortEdge}px < ${targetSize}px)`);
+        return null;
       }
 
       await sharp(sourcePath)
+        .rotate()  // Auto-rotate based on EXIF orientation
         .resize(resizeOptions)
         .jpeg({ quality })
         .toFile(thumbPath);
@@ -151,6 +168,7 @@ export class ThumbnailService {
       );
 
       await sharp(sourcePath)
+        .rotate()  // Auto-rotate based on EXIF orientation
         .resize(256, 256, { fit: 'cover', position: 'center' })
         .jpeg({ quality: 80 })
         .toFile(thumbPath);

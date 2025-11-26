@@ -68,7 +68,8 @@ export class ConfigService {
   private config: AppConfig | null = null;
 
   constructor() {
-    this.configPath = join(app.getPath('userData'), 'config.json');
+    // Use project-relative path for development convenience
+    this.configPath = join(process.cwd(), 'data', 'config.json');
   }
 
   /**

@@ -159,7 +159,8 @@ export class RecoverySystem {
    */
   private async createEmergencyBackup(): Promise<void> {
     try {
-      const emergencyDir = join(app.getPath('userData'), 'emergency-backups');
+      // Use project-relative path for development convenience
+      const emergencyDir = join(process.cwd(), 'data', 'emergency-backups');
       if (!existsSync(emergencyDir)) {
         await fs.mkdir(emergencyDir, { recursive: true });
       }

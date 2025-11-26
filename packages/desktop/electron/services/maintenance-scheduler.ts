@@ -42,7 +42,8 @@ export class MaintenanceScheduler {
   }
 
   constructor() {
-    this.historyFilePath = join(app.getPath('userData'), this.HISTORY_FILE);
+    // Use project-relative path for development convenience
+    this.historyFilePath = join(process.cwd(), 'data', this.HISTORY_FILE);
   }
 
   async initialize(): Promise<void> {

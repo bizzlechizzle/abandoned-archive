@@ -47,7 +47,8 @@ export class Logger {
   }
 
   constructor() {
-    this.logDir = path.join(app.getPath('userData'), 'logs');
+    // Use project-relative path for development convenience
+    this.logDir = path.join(process.cwd(), 'data', 'logs');
     this.currentLogFile = path.join(this.logDir, 'au-archive.log');
     this.ensureLogDirectory();
     // Don't rotate in constructor - config may not be loaded yet

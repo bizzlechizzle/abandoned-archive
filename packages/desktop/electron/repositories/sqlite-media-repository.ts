@@ -233,6 +233,17 @@ export class SQLiteMediaRepository {
   }
 
   /**
+   * Get ALL images for force regeneration
+   */
+  async getAllImages(): Promise<Array<{ imgsha: string; imgloc: string; preview_path: string | null }>> {
+    const rows = await this.db
+      .selectFrom('imgs')
+      .select(['imgsha', 'imgloc', 'preview_path'])
+      .execute();
+    return rows;
+  }
+
+  /**
    * Kanye9: Get RAW images that are missing preview extraction
    * These are files that have thumbnails but no preview (browser can't display RAW)
    */

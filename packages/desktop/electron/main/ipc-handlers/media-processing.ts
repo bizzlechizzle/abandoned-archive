@@ -174,28 +174,35 @@ export function registerMediaProcessingHandlers(
   });
 
   // Kanye6: Regenerate multi-tier thumbnails for all images missing thumb_path_sm
-  ipcMain.handle('media:regenerateAllThumbnails', async () => {
+  // When force=true, regenerates ALL thumbnails (useful after fixing extraction bugs)
+  ipcMain.handle('media:regenerateAllThumbnails', async (_event, options?: unknown) => {
+    const opts = z.object({ force: z.boolean().optional() }).optional().parse(options);
+    const force = opts?.force ?? false;
+
     try {
       const archivePath = await getArchivePath();
       const mediaPathService = new MediaPathService(archivePath);
       const thumbnailService = new ThumbnailService(mediaPathService);
       const previewService = new PreviewExtractorService(mediaPathService, exifToolService);
 
-      // Get images missing multi-tier thumbnails (thumb_path_sm is NULL)
-      const images = await mediaRepo.getImagesWithoutThumbnails();
+      // Get images to process - all images if force=true, otherwise just missing
+      const images = force
+        ? await mediaRepo.getAllImages()
+        : await mediaRepo.getImagesWithoutThumbnails();
       let generated = 0;
       let failed = 0;
 
-      console.log(`[Kanye6] Regenerating thumbnails for ${images.length} images...`);
+      console.log(`[Kanye6] Regenerating thumbnails for ${images.length} images (force=${force})...`);
 
       for (const img of images) {
         try {
-          // For RAW files, extract preview first if needed
+          // For RAW files, extract preview first
           let sourcePath = img.imgloc;
           const isRaw = /\.(nef|cr2|cr3|arw|srf|sr2|orf|pef|dng|rw2|raf|raw|rwl|3fr|fff|iiq|mrw|x3f|erf|mef|mos|kdc|dcr)$/i.test(img.imgloc);
 
-          if (isRaw && !img.preview_path) {
-            const preview = await previewService.extractPreview(img.imgloc, img.imgsha);
+          if (isRaw) {
+            // Always re-extract preview when force=true (picks highest resolution)
+            const preview = await previewService.extractPreview(img.imgloc, img.imgsha, force);
             if (preview) {
               sourcePath = preview;
               await mediaRepo.updateImagePreviewPath(img.imgsha, preview);
@@ -205,16 +212,18 @@ export function registerMediaProcessingHandlers(
           }
 
           // Generate multi-tier thumbnails (400px, 800px, 1920px)
-          const result = await thumbnailService.generateAllSizes(sourcePath, img.imgsha);
+          const result = await thumbnailService.generateAllSizes(sourcePath, img.imgsha, force);
 
           if (result.thumb_sm) {
             // Update database with all thumbnail paths
+            // FIX: Preserve RAW preview_path, don't overwrite with thumbnail preview
             await db
               .updateTable('imgs')
               .set({
                 thumb_path_sm: result.thumb_sm,
                 thumb_path_lg: result.thumb_lg,
-                preview_path: result.preview || img.preview_path,
+                // For RAW files, keep extracted preview; for others, use thumbnail preview
+                preview_path: isRaw ? (sourcePath !== img.imgloc ? sourcePath : img.preview_path) : (result.preview || img.preview_path),
               })
               .where('imgsha', '=', img.imgsha)
               .execute();

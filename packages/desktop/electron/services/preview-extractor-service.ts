@@ -59,9 +59,10 @@ export class PreviewExtractorService {
    *
    * @param sourcePath - Absolute path to RAW file
    * @param hash - SHA256 hash of the file (for naming)
+   * @param force - If true, re-extract even if preview exists (for upgrading to higher-res)
    * @returns Absolute path to extracted preview, or null on failure
    */
-  async extractPreview(sourcePath: string, hash: string): Promise<string | null> {
+  async extractPreview(sourcePath: string, hash: string, force: boolean = false): Promise<string | null> {
     try {
       // Skip non-RAW files
       if (!this.isRawFormat(sourcePath)) {
@@ -70,12 +71,14 @@ export class PreviewExtractorService {
 
       const previewPath = this.mediaPathService.getPreviewPath(hash);
 
-      // Check if preview already exists
-      try {
-        await fs.access(previewPath);
-        return previewPath; // Already exists
-      } catch {
-        // Doesn't exist, continue to extract
+      // Check if preview already exists (skip if force=true)
+      if (!force) {
+        try {
+          await fs.access(previewPath);
+          return previewPath; // Already exists
+        } catch {
+          // Doesn't exist, continue to extract
+        }
       }
 
       // Ensure bucket directory exists
@@ -84,15 +87,30 @@ export class PreviewExtractorService {
         hash
       );
 
-      // Try each preview tag in order
+      // Try ALL preview tags and pick the LARGEST one (highest resolution)
+      // Different RAW formats store the best preview under different tags:
+      // - Nikon NEF: JpgFromRaw is full-res, PreviewImage is smaller
+      // - Canon CR2: JpgFromRaw is full-res
+      // - Others: PreviewImage is usually best
+      let bestBuffer: Buffer | null = null;
+      let bestTag: string | null = null;
+
       for (const tag of this.PREVIEW_TAGS) {
         const buffer = await this.exifToolService.extractBinaryTag(sourcePath, tag);
 
         if (buffer && buffer.length > 0) {
-          await fs.writeFile(previewPath, buffer);
-          console.log(`[PreviewExtractor] Extracted ${tag} from ${sourcePath}`);
-          return previewPath;
+          console.log(`[PreviewExtractor] Found ${tag}: ${buffer.length} bytes`);
+          if (!bestBuffer || buffer.length > bestBuffer.length) {
+            bestBuffer = buffer;
+            bestTag = tag;
+          }
         }
+      }
+
+      if (bestBuffer && bestTag) {
+        await fs.writeFile(previewPath, bestBuffer);
+        console.log(`[PreviewExtractor] Extracted ${bestTag} (${bestBuffer.length} bytes) from ${sourcePath}`);
+        return previewPath;
       }
 
       // No preview found

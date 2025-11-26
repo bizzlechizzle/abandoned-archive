@@ -22,10 +22,14 @@ const CONFIG_FILENAME = 'bootstrap-config.json';
 
 /**
  * Get the path to the bootstrap config file
+ * Uses project-relative path for development convenience
  */
 function getConfigPath(): string {
-  const userDataPath = app.getPath('userData');
-  return path.join(userDataPath, CONFIG_FILENAME);
+  const projectDataDir = path.join(process.cwd(), 'data');
+  if (!fs.existsSync(projectDataDir)) {
+    fs.mkdirSync(projectDataDir, { recursive: true });
+  }
+  return path.join(projectDataDir, CONFIG_FILENAME);
 }
 
 /**
@@ -109,17 +113,17 @@ export function setCustomDatabasePath(dbPath: string | undefined): void {
 }
 
 /**
- * Get the default database path (in userData)
+ * Get the default database path
+ * Uses project-relative path for development convenience
  */
 export function getDefaultDatabasePath(): string {
-  const userDataPath = app.getPath('userData');
-  const dbDir = path.join(userDataPath, 'data');
+  const projectDataDir = path.join(process.cwd(), 'data');
 
-  if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
+  if (!fs.existsSync(projectDataDir)) {
+    fs.mkdirSync(projectDataDir, { recursive: true });
   }
 
-  return path.join(dbDir, 'au-archive.db');
+  return path.join(projectDataDir, 'au-archive.db');
 }
 
 /**
