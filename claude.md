@@ -54,7 +54,7 @@ Keep scripts under 300 LOC and documented in `lilbits.md`.
 
 - **Preload MUST be CommonJS** — Static `.cjs` file copied via custom Vite plugin (NOT bundled), use `require('electron')` only, never `import` in preload. Any ES module syntax crashes at runtime before UI loads. See `vite.config.ts` `copyPreloadPlugin()`.
 - **Database source of truth** — `migrations/` only, never edit schema inline in docs or ad-hoc SQL files
-- **Database location** — `[userData]/auarchive.db` where userData is `electron.app.getPath('userData')`. Foreign keys always enabled via PRAGMA on connection.
+- **Database location** — `./data/au-archive.db` (project-relative for development convenience). Foreign keys always enabled via PRAGMA on connection.
 - **GPS confidence ladder** — Map-confirmed > EXIF (<10 m accuracy) > Reverse-geocode > Manual guess
 - **Import spine** — Watcher scans drop zone, hashes every file, copies into archive folder, and links via SHA primary keys before metadata extraction
 - **Archive folder structure** — User-selected base → `locations/[STATE]-[TYPE]/[SLOCNAM]-[LOC12]/org-{img,vid,doc}-[LOC12]/`. Organized by state and location type.

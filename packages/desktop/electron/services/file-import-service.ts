@@ -841,7 +841,8 @@ export class FileImportService {
           // Kanye3: Multi-tier thumbnail paths
           thumb_path_sm: thumbPathSm,
           thumb_path_lg: thumbPathLg,
-          preview_path: previewPath,
+          // For RAW files, use extracted preview (full resolution); otherwise use generated thumbnail
+          preview_path: rawPreviewPath || previewPath,
           // Legacy column for backwards compatibility
           thumb_path: thumbPathSm,
         })
