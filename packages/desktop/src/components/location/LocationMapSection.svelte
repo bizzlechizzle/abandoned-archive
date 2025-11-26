@@ -57,6 +57,31 @@
     continent
   );
 
+  // STATE_NAMES: Convert state abbreviations to full names
+  const STATE_NAMES: Record<string, string> = {
+    AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California',
+    CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware', FL: 'Florida', GA: 'Georgia',
+    HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa',
+    KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine', MD: 'Maryland',
+    MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota', MS: 'Mississippi', MO: 'Missouri',
+    MT: 'Montana', NE: 'Nebraska', NV: 'Nevada', NH: 'New Hampshire', NJ: 'New Jersey',
+    NM: 'New Mexico', NY: 'New York', NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio',
+    OK: 'Oklahoma', OR: 'Oregon', PA: 'Pennsylvania', RI: 'Rhode Island', SC: 'South Carolina',
+    SD: 'South Dakota', TN: 'Tennessee', TX: 'Texas', UT: 'Utah', VT: 'Vermont',
+    VA: 'Virginia', WA: 'Washington', WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming',
+    DC: 'District of Columbia', PR: 'Puerto Rico', VI: 'Virgin Islands', GU: 'Guam'
+  };
+
+  // Extract just the direction from stateDirection (e.g., "Central NY" → "Central")
+  const directionOnly = $derived(
+    stateDirection ? stateDirection.replace(/\s+[A-Z]{2}$/, '') : null
+  );
+
+  // Full state name from abbreviation
+  const fullStateName = $derived(
+    location.address?.state ? STATE_NAMES[location.address.state] || location.address.state : null
+  );
+
   // GPS helpers
   const hasGps = $derived(location.gps?.lat && location.gps?.lng);
 
@@ -264,117 +289,89 @@
     </div>
   </div>
 
-  <!-- SECTION 4: Local (DECISION-017: County + Local Cultural Region + State Directional + State) -->
+  <!-- SECTION 4: Local (DECISION-018: Horizontal dash-separated format) -->
   <div class="px-8 mt-5">
     <h3 class="section-title mb-2">Local</h3>
 
     {#if hasLocalData}
-      <div class="space-y-1 text-sm text-gray-700">
-        <!-- County -->
+      <p class="text-sm">
         {#if location.address?.county}
-          <p>
-            <span class="text-gray-500">County:</span>{' '}
-            <button
-              onclick={() => onNavigateFilter('county', location.address!.county!, location.address?.state ? { state: location.address.state } : undefined)}
-              class="text-accent hover:underline"
-              title="View all locations in {location.address.county} County, {location.address?.state || ''}"
-            >{location.address.county}</button>
-          </p>
+          <button
+            onclick={() => onNavigateFilter('county', location.address!.county!, location.address?.state ? { state: location.address.state } : undefined)}
+            class="text-accent hover:underline"
+            title="View all locations in {location.address.county} County"
+          >{location.address.county} County</button>
         {/if}
-
-        <!-- Local Cultural Region (with verify indicator) -->
         {#if culturalRegion}
-          <p>
-            <span class="text-gray-500">Local Cultural Region:</span>{' '}
-            <button
-              onclick={() => onNavigateFilter('culturalRegion', culturalRegion)}
-              class="text-accent hover:underline"
-              title="View all locations in {culturalRegion}"
-            >{culturalRegion}</button>
-            {#if localCulturalRegionVerified}
-              <span class="text-verified ml-1" title="Verified">✓</span>
-            {/if}
-          </p>
+          {#if location.address?.county}<span class="text-gray-400"> - </span>{/if}
+          <button
+            onclick={() => onNavigateFilter('culturalRegion', culturalRegion)}
+            class="text-accent hover:underline"
+            title="View all locations in {culturalRegion}"
+          >{culturalRegion}</button>
+          {#if localCulturalRegionVerified}<span class="text-verified ml-1" title="Verified">✓</span>{/if}
         {/if}
-
-        <!-- State Directional -->
-        {#if stateDirection}
-          <p>
-            <span class="text-gray-500">State Directional:</span>{' '}
-            <button
-              onclick={() => onNavigateFilter('stateDirection', stateDirection)}
-              class="text-accent hover:underline"
-              title="View all locations in {stateDirection}"
-            >{stateDirection}</button>
-          </p>
+        {#if directionOnly}
+          {#if location.address?.county || culturalRegion}<span class="text-gray-400"> - </span>{/if}
+          <button
+            onclick={() => onNavigateFilter('stateDirection', stateDirection)}
+            class="text-accent hover:underline"
+            title="View all locations in {stateDirection}"
+          >{directionOnly}</button>
         {/if}
-
-        <!-- State -->
-        {#if location.address?.state}
-          <p>
-            <span class="text-gray-500">State:</span>{' '}
-            <button
-              onclick={() => onNavigateFilter('state', location.address!.state!)}
-              class="text-accent hover:underline"
-              title="View all locations in {location.address.state}"
-            >{location.address.state}</button>
-          </p>
+        {#if fullStateName}
+          {#if location.address?.county || culturalRegion || directionOnly}<span class="text-gray-400"> - </span>{/if}
+          <button
+            onclick={() => onNavigateFilter('state', location.address!.state!)}
+            class="text-accent hover:underline"
+            title="View all locations in {fullStateName}"
+          >{fullStateName}</button>
         {/if}
-      </div>
+      </p>
     {:else}
       <p class="text-sm text-gray-400 italic">No local information available</p>
     {/if}
   </div>
 
-  <!-- SECTION 5: Region (DECISION-017: Country Cultural Region + Census + Country + Continent) -->
+  <!-- SECTION 5: Region (DECISION-018: Horizontal dash-separated format) -->
   <div class="px-8 mt-5 pb-6">
     <h3 class="section-title mb-2">Region</h3>
 
     {#if hasRegionData}
-      <div class="space-y-1 text-sm text-gray-700">
-        <!-- Country Cultural Region (with verify indicator) -->
+      <p class="text-sm">
         {#if countryCulturalRegion}
-          <p>
-            <span class="text-gray-500">Country Cultural Region:</span>{' '}
-            <button
-              onclick={() => onNavigateFilter('countryCulturalRegion', countryCulturalRegion)}
-              class="text-accent hover:underline"
-              title="View all locations in {countryCulturalRegion}"
-            >{countryCulturalRegion}</button>
-            {#if countryCulturalRegionVerified}
-              <span class="text-verified ml-1" title="Verified">✓</span>
-            {/if}
-          </p>
+          <button
+            onclick={() => onNavigateFilter('countryCulturalRegion', countryCulturalRegion)}
+            class="text-accent hover:underline"
+            title="View all locations in {countryCulturalRegion}"
+          >{countryCulturalRegion}</button>
+          {#if countryCulturalRegionVerified}<span class="text-verified ml-1" title="Verified">✓</span>{/if}
         {/if}
-
-        <!-- 4-Region Census Model -->
         {#if censusRegion}
-          <p>
-            <span class="text-gray-500">Census:</span>{' '}
-            <button
-              onclick={() => onNavigateFilter('censusRegion', censusRegion)}
-              class="text-accent hover:underline"
-              title="View all locations in {censusRegion}"
-            >{censusRegion}</button>
-          </p>
+          {#if countryCulturalRegion}<span class="text-gray-400"> - </span>{/if}
+          <button
+            onclick={() => onNavigateFilter('censusRegion', censusRegion)}
+            class="text-accent hover:underline"
+            title="View all locations in {censusRegion}"
+          >{censusRegion}</button>
         {/if}
-
-        <!-- Country -->
         {#if country}
-          <p>
-            <span class="text-gray-500">Country:</span>{' '}
-            <span class="text-gray-700">{country}</span>
-          </p>
+          {#if countryCulturalRegion || censusRegion}<span class="text-gray-400"> - </span>{/if}
+          <button
+            onclick={() => onNavigateFilter('country', country)}
+            class="text-accent hover:underline"
+            title="View all locations in {country}"
+          >{country}</button>
         {/if}
-
-        <!-- Continent -->
         {#if continent}
-          <p>
-            <span class="text-gray-500">Continent:</span>{' '}
-            <span class="text-gray-700">{continent}</span>
-          </p>
+          {#if countryCulturalRegion || censusRegion || country}<span class="text-gray-400"> - </span>{/if}
+          <button
+            onclick={() => onNavigateFilter('continent', continent)}
+            class="text-accent hover:underline"
+            title="View all locations in {continent}"
+          >{continent}</button>
         {/if}
-      </div>
+      </p>
     {:else}
       <p class="text-sm text-gray-400 italic">No region information available</p>
     {/if}

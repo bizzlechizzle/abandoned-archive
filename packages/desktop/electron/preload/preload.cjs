@@ -51,6 +51,9 @@ const api = {
     findNearby: (lat, lng, radiusKm) => ipcRenderer.invoke("location:findNearby", lat, lng, radiusKm),
     // Kanye9: Check for duplicate locations by address
     checkDuplicates: (address) => ipcRenderer.invoke("location:checkDuplicates", address),
+    // DECISION-018: Region data management
+    updateRegionData: (id, regionData) => ipcRenderer.invoke("location:updateRegionData", id, regionData),
+    backfillRegions: () => ipcRenderer.invoke("location:backfillRegions"),
   },
 
   stats: {

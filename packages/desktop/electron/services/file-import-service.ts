@@ -11,6 +11,8 @@ import { GeocodingService } from './geocoding-service';
 import { GPXKMLParser, type MapFileData } from './gpx-kml-parser';
 // Kanye5: Import preview/thumbnail services for on-import extraction
 import { MediaPathService } from './media-path-service';
+// DECISION-018: Import region calculation for auto-population
+import { calculateRegionFields } from './region-service';
 import { ThumbnailService } from './thumbnail-service';
 import { PreviewExtractorService } from './preview-extractor-service';
 import { PosterFrameService } from './poster-frame-service';
@@ -580,8 +582,10 @@ export class FileImportService {
         })
         .where('locid', '=', file.locid)
         .execute()
-        .then(() => {
+        .then(async () => {
           console.log('[FileImport] Location GPS auto-populated from media EXIF:', gpsForGeocode);
+          // DECISION-018: Recalculate region fields after GPS update
+          await this.recalculateRegionsForLocation(file.locid, gpsForGeocode);
         })
         .catch((dbError) => {
           console.warn('[FileImport] Failed to auto-populate location GPS:', dbError);
@@ -611,6 +615,8 @@ export class FileImportService {
                 .where('locid', '=', file.locid)
                 .execute();
               console.log('[FileImport] Location address updated from media GPS (async)');
+              // DECISION-018: Recalculate region fields after address update (now has state/county for cultural region lookup)
+              await this.recalculateRegionsForLocation(file.locid, gpsForGeocode);
             } catch (dbError) {
               console.warn('[FileImport] Failed to update location address:', dbError);
             }
@@ -961,6 +967,63 @@ export class FileImportService {
       .execute();
 
     return importId;
+  }
+
+  /**
+   * DECISION-018: Recalculate region fields after GPS/address update
+   * Called after fire-and-forget GPS or address updates to ensure region fields are populated
+   */
+  private async recalculateRegionsForLocation(
+    locid: string,
+    gps: { lat: number; lng: number }
+  ): Promise<void> {
+    try {
+      // Get current location data for region calculation
+      const location = await this.db
+        .selectFrom('locs')
+        .select(['address_state', 'address_county', 'cultural_region', 'country_cultural_region'])
+        .where('locid', '=', locid)
+        .executeTakeFirst();
+
+      if (!location) {
+        console.warn('[FileImport] Cannot recalculate regions - location not found:', locid);
+        return;
+      }
+
+      // Calculate region fields using the shared region service
+      const regionFields = calculateRegionFields({
+        state: location.address_state,
+        county: location.address_county,
+        lat: gps.lat,
+        lng: gps.lng,
+        existingCulturalRegion: location.cultural_region,
+        existingCountryCulturalRegion: location.country_cultural_region,
+      });
+
+      // Update region fields in database
+      await this.db
+        .updateTable('locs')
+        .set({
+          census_region: regionFields.censusRegion,
+          census_division: regionFields.censusDivision,
+          state_direction: regionFields.stateDirection,
+          // Only update cultural regions if we got a value AND no existing value
+          cultural_region: regionFields.culturalRegion ?? location.cultural_region,
+          country_cultural_region: regionFields.countryCulturalRegion ?? location.country_cultural_region,
+        })
+        .where('locid', '=', locid)
+        .execute();
+
+      console.log('[FileImport] Region fields recalculated for location:', locid, {
+        censusRegion: regionFields.censusRegion,
+        stateDirection: regionFields.stateDirection,
+        culturalRegion: regionFields.culturalRegion,
+        countryCulturalRegion: regionFields.countryCulturalRegion,
+      });
+    } catch (error) {
+      console.warn('[FileImport] Failed to recalculate regions:', error);
+      // Non-fatal - don't fail the import
+    }
   }
 }
 
