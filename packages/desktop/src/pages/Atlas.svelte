@@ -19,11 +19,50 @@
   let defaultZoom = $state<number | null>(null);
   let savingDefaultView = $state(false);
 
-  // DECISION-011: URL param support for centering on location
-  let urlCenter = $state<{ lat: number; lng: number } | null>(null);
-  let urlZoom = $state<number | null>(null);
-  let highlightLocid = $state<string | null>(null);
-  let urlLayer = $state<'satellite' | 'street' | 'topo' | 'light' | 'dark' | 'satellite-labels' | null>(null);
+  // DECISION-016: Read URL params from router store (hash-based routing)
+  // Router parses #/atlas?lat=X&lng=Y&zoom=Z into { query: { lat, lng, zoom } }
+  let routeQuery = $state<Record<string, string>>({});
+
+  // Subscribe to router to get query params
+  router.subscribe(route => {
+    routeQuery = route.query || {};
+  });
+
+  // Derive URL params from router query
+  const urlCenter = $derived.by(() => {
+    const lat = routeQuery.lat;
+    const lng = routeQuery.lng;
+    if (lat && lng) {
+      const latNum = parseFloat(lat);
+      const lngNum = parseFloat(lng);
+      if (!isNaN(latNum) && !isNaN(lngNum)) {
+        return { lat: latNum, lng: lngNum };
+      }
+    }
+    return null;
+  });
+
+  const urlZoom = $derived.by(() => {
+    const zoom = routeQuery.zoom;
+    if (zoom) {
+      const zoomNum = parseInt(zoom, 10);
+      if (!isNaN(zoomNum) && zoomNum >= 1 && zoomNum <= 19) {
+        return zoomNum;
+      }
+    }
+    return null;
+  });
+
+  const highlightLocid = $derived(routeQuery.locid || null);
+
+  const urlLayer = $derived.by(() => {
+    const layer = routeQuery.layer;
+    const validLayers = ['satellite', 'street', 'topo', 'light', 'dark', 'satellite-labels'];
+    if (layer && validLayers.includes(layer)) {
+      return layer as 'satellite' | 'street' | 'topo' | 'light' | 'dark' | 'satellite-labels';
+    }
+    return null;
+  });
 
   // P3d: Context menu state for right-click options
   let contextMenu = $state<{ show: boolean; x: number; y: number; lat: number; lng: number }>({
@@ -188,46 +227,7 @@
     }
   }
 
-  /**
-   * DECISION-011: Parse URL params for centering map on specific location
-   * URL format: /atlas?lat=X&lng=Y&zoom=Z&locid=ID&layer=satellite-labels
-   */
-  function parseUrlParams() {
-    const params = new URLSearchParams(window.location.search);
-    const lat = params.get('lat');
-    const lng = params.get('lng');
-    const zoom = params.get('zoom');
-    const locid = params.get('locid');
-    const layer = params.get('layer');
-
-    if (lat && lng) {
-      const latNum = parseFloat(lat);
-      const lngNum = parseFloat(lng);
-      if (!isNaN(latNum) && !isNaN(lngNum)) {
-        urlCenter = { lat: latNum, lng: lngNum };
-      }
-    }
-
-    if (zoom) {
-      const zoomNum = parseInt(zoom, 10);
-      if (!isNaN(zoomNum) && zoomNum >= 1 && zoomNum <= 19) {
-        urlZoom = zoomNum;
-      }
-    }
-
-    if (locid) {
-      highlightLocid = locid;
-    }
-
-    // DECISION-011: Support layer param for seamless transition from mini map
-    const validLayers = ['satellite', 'street', 'topo', 'light', 'dark', 'satellite-labels'];
-    if (layer && validLayers.includes(layer)) {
-      urlLayer = layer as typeof urlLayer;
-    }
-  }
-
   onMount(() => {
-    parseUrlParams(); // DECISION-011: Parse URL params first
     loadLocations();
     loadDefaultView(); // FEAT-P2: Load saved default view
     // Close context menu on click outside
@@ -311,6 +311,7 @@
   <div class="flex-1 relative">
     <!-- ALWAYS show the map - it's an atlas, not a placeholder -->
     <!-- DECISION-011: Pass URL zoom/layer if available, default to satellite-labels -->
+    <!-- DECISION-016: Pass URL center for mini-map expand to maintain same view -->
     <Map
       locations={filteredLocations()}
       onLocationClick={handleLocationClick}
@@ -319,6 +320,7 @@
       showHeatMap={showHeatMap}
       onLocationVerify={handleLocationVerify}
       zoom={urlZoom ?? undefined}
+      center={urlCenter ?? undefined}
       defaultLayer={urlLayer ?? 'satellite-labels'}
     />
     {#if loading}

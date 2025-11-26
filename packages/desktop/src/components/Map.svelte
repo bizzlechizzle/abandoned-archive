@@ -139,6 +139,8 @@
     showHeatMap?: boolean;
     // Kanye9: Custom zoom level based on GPS confidence
     zoom?: number;
+    // DECISION-016: Initial center coordinates for Atlas expand from mini-map
+    center?: { lat: number; lng: number };
     // FEAT-P1: Verify Location callback - called with locid and new lat/lng
     onLocationVerify?: (locid: string, lat: number, lng: number) => void;
     // DECISION-010: Lock all map interaction (for mini map on location detail)
@@ -160,6 +162,7 @@
     onMapRightClick,
     showHeatMap = false,
     zoom,
+    center,
     onLocationVerify,
     readonly = false,
     limitedInteraction = false,
@@ -191,6 +194,9 @@
   let lastLocationsHash = $state('');
   // Kanye11 FIX: Prevent infinite loop - track if initial view has been set
   let initialViewSet = $state(false);
+  // DECISION-016: Track if center/zoom were explicitly provided via props (e.g., URL params)
+  // When true, skip auto-zoom logic to preserve the intended view
+  let hasExplicitView = $state(false);
   // BUG-V1 FIX: Location lookup for event delegation
   let locationLookup = new Map<string, Location>();
   // BUG-V1 FIX: Store cleanup function for event delegation
@@ -297,8 +303,12 @@
       // DECISION-010: Lock all interaction when readonly is true
       // DECISION-011: Limited interaction allows 1-2 zoom levels, slight pan
       const initialZoom = zoom ?? MAP_CONFIG.DEFAULT_ZOOM;
+      // DECISION-016: Use center prop if provided (e.g., from Atlas URL params)
+      const initialCenter = center ?? MAP_CONFIG.DEFAULT_CENTER;
+      // DECISION-016: Track if explicit view was provided - prevents auto-zoom from overriding
+      hasExplicitView = !!(center && zoom);
       map = L.map(mapContainer, {
-        center: [MAP_CONFIG.DEFAULT_CENTER.lat, MAP_CONFIG.DEFAULT_CENTER.lng],
+        center: [initialCenter.lat, initialCenter.lng],
         zoom: initialZoom,
         // Interaction controls - disabled when readonly, limited when limitedInteraction
         dragging: !readonly && true,
@@ -604,7 +614,10 @@
     if (map && markersLayer && currentHash !== lastLocationsHash) {
       lastLocationsHash = currentHash;
       // Kanye11 FIX: Reset initialViewSet so map re-zooms when GPS changes
-      initialViewSet = false;
+      // DECISION-016: Only reset if no explicit view was provided via props
+      if (!hasExplicitView) {
+        initialViewSet = false;
+      }
       initCluster();
       import('leaflet').then((L) => updateClusters(L.default));
     }
