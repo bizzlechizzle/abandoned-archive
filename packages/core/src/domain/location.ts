@@ -1,6 +1,18 @@
 import { z } from 'zod';
 import slugify from 'slugify';
 
+// Words to filter out from short names for better uniqueness
+const STOPWORDS = ['and', 'the', 'of', 'at', 'in', 'on', 'a', 'an'];
+const LOCATION_SUFFIXES = [
+  'church', 'hospital', 'factory', 'mill', 'school', 'building',
+  'house', 'mansion', 'hotel', 'motel', 'inn', 'theater', 'theatre',
+  'station', 'depot', 'warehouse', 'plant', 'complex', 'center',
+  'centre', 'asylum', 'sanitarium', 'sanatorium', 'prison', 'jail',
+  'penitentiary', 'cemetery', 'memorial', 'monument', 'cathedral',
+  'chapel', 'temple', 'synagogue', 'mosque', 'abbey', 'monastery',
+  'convent', 'rectory', 'parsonage', 'vicarage', 'catholic'
+];
+
 // GPS Coordinates Schema
 export const GPSCoordinatesSchema = z.object({
   lat: z.number().min(-90).max(90),
@@ -122,13 +134,26 @@ export class LocationEntity {
   constructor(private readonly data: Location) {}
 
   // Generate short name from location name
+  // Removes stopwords and location-type suffixes for maximum uniqueness in 12 chars
   static generateShortName(name: string): string {
     const slug = slugify(name, {
       lower: true,
       strict: true,
       remove: /[*+~.()'"!:@]/g
     });
-    return slug.substring(0, 12);
+
+    // Split on hyphens, remove stopwords and location suffixes, rejoin without hyphens
+    const words = slug.split('-').filter(w =>
+      !STOPWORDS.includes(w) && !LOCATION_SUFFIXES.includes(w)
+    );
+    const compact = words.join('');
+
+    // Edge case: if all words filtered out, fall back to first 12 chars of original slug
+    if (compact.length === 0) {
+      return slug.replace(/-/g, '').substring(0, 12);
+    }
+
+    return compact.substring(0, 12);
   }
 
   // Generate 12-character unique ID

@@ -30,21 +30,36 @@ const baseLocation = {
 
 describe('LocationEntity', () => {
   describe('generateShortName', () => {
-    it('should generate short names from location names', () => {
-      expect(LocationEntity.generateShortName('Old Factory')).toBe('old-factory');
-      expect(LocationEntity.generateShortName('Amazing Hospital Complex')).toBe('amazing-hosp');
-      expect(LocationEntity.generateShortName('Test (123)')).toBe('test-123');
+    it('should generate compact short names without hyphens', () => {
+      expect(LocationEntity.generateShortName('Test (123)')).toBe('test123');
+      expect(LocationEntity.generateShortName('First Baptist')).toBe('firstbaptist');
+    });
+
+    it('should remove stopwords (and, the, of, etc)', () => {
+      expect(LocationEntity.generateShortName('The Old Barn')).toBe('oldbarn');
+      expect(LocationEntity.generateShortName('Hall of Fame')).toBe('hallfame');
+    });
+
+    it('should remove location-type suffixes', () => {
+      expect(LocationEntity.generateShortName('Old Factory')).toBe('old');
+      expect(LocationEntity.generateShortName('Amazing Hospital Complex')).toBe('amazing');
+      expect(LocationEntity.generateShortName("O'Brien's Mill")).toBe('obriens');
+      expect(LocationEntity.generateShortName('St. Peter & Paul Catholic Church')).toBe('stpeterpaul');
     });
 
     it('should handle special characters', () => {
-      expect(LocationEntity.generateShortName("O'Brien's Mill")).toBe('obriens-mill');
-      expect(LocationEntity.generateShortName('Factory @ Main St.')).toBe('factory-main');
+      expect(LocationEntity.generateShortName('Factory @ Main St.')).toBe('mainst');
     });
 
     it('should truncate to 12 characters', () => {
       const longName = 'This is a very long location name';
       const result = LocationEntity.generateShortName(longName);
       expect(result.length).toBeLessThanOrEqual(12);
+    });
+
+    it('should fall back to original slug if all words filtered', () => {
+      // Edge case: if all words are stopwords/suffixes, use original
+      expect(LocationEntity.generateShortName('The Church')).toBe('thechurch');
     });
   });
 
