@@ -14,7 +14,7 @@
   import NotesSection from '../components/NotesSection.svelte';
   import MediaViewer from '../components/MediaViewer.svelte';
   import {
-    LocationHero, LocationHeader, LocationInfo,
+    LocationHero, LocationInfo,
     LocationMapSection, LocationGallery, LocationVideos, LocationDocuments,
     LocationImportZone, LocationBookmarks, LocationNerdStats,
     type MediaImage, type MediaVideo, type MediaDocument, type Bookmark,
@@ -335,11 +335,9 @@
       </div>
     </div>
   {:else}
-    <!-- Hero outside max-w container for full-width stretch -->
-    <LocationHero {images} heroImgsha={location.hero_imgsha || null} />
-    <div class="max-w-6xl mx-auto p-8">
-      <!-- DECISION-015: LocationHeader now display-only, edit button in LocationMapSection -->
-      <LocationHeader {location} />
+    <!-- Hero outside max-w container for full-width stretch, includes title overlay -->
+    <LocationHero {images} heroImgsha={location.hero_imgsha || null} locnam={location.locnam} />
+    <div class="max-w-6xl mx-auto px-8 pb-8">
 
       {#if isEditing}
         <LocationEditForm {location} onSave={handleSave} onCancel={() => isEditing = false} />
@@ -368,6 +366,16 @@
         <NotesSection locid={location.locid} {currentUser} />
         <LocationBookmarks {bookmarks} onAddBookmark={handleAddBookmark} onDeleteBookmark={handleDeleteBookmark} onOpenBookmark={handleOpenBookmark} />
         <LocationNerdStats {location} imageCount={images.length} videoCount={videos.length} documentCount={documents.length} />
+
+        <!-- Bottom navigation -->
+        <div class="mt-12 pt-6 border-t border-gray-200">
+          <button
+            onclick={() => router.navigate('/locations')}
+            class="text-accent hover:underline"
+          >
+            &larr; View All Locations
+          </button>
+        </div>
       {/if}
     </div>
   {/if}
