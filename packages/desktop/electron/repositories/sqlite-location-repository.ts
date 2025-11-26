@@ -109,6 +109,11 @@ export class SQLiteLocationRepository implements LocationRepository {
         doc_exterior: input.docExterior ? 1 : 0,
         doc_drone: input.docDrone ? 1 : 0,
         doc_web_history: input.docWebHistory ? 1 : 0,
+        // DECISION-019: Information Box overhaul fields
+        historical_name: input.historicalName || null,
+        locnam_verified: input.locnamVerified ? 1 : 0,
+        historical_name_verified: input.historicalNameVerified ? 1 : 0,
+        akanam_verified: input.akanamVerified ? 1 : 0,
         sublocs: null,
         sub12: null,
         locadd,
@@ -276,6 +281,11 @@ export class SQLiteLocationRepository implements LocationRepository {
     if (input.docExterior !== undefined) updates.doc_exterior = input.docExterior ? 1 : 0;
     if (input.docDrone !== undefined) updates.doc_drone = input.docDrone ? 1 : 0;
     if (input.docWebHistory !== undefined) updates.doc_web_history = input.docWebHistory ? 1 : 0;
+    // DECISION-019: Information Box overhaul fields
+    if (input.historicalName !== undefined) updates.historical_name = input.historicalName;
+    if (input.locnamVerified !== undefined) updates.locnam_verified = input.locnamVerified ? 1 : 0;
+    if (input.historicalNameVerified !== undefined) updates.historical_name_verified = input.historicalNameVerified ? 1 : 0;
+    if (input.akanamVerified !== undefined) updates.akanam_verified = input.akanamVerified ? 1 : 0;
 
     // Kanye9: Handle flat GPS field updates (for cascade geocoding and other direct updates)
     const inputAny = input as any;
@@ -498,6 +508,11 @@ export class SQLiteLocationRepository implements LocationRepository {
       localCulturalRegionVerified: row.local_cultural_region_verified === 1,
       country: row.country ?? 'United States',
       continent: row.continent ?? 'North America',
+      // DECISION-019: Information Box overhaul fields
+      historicalName: row.historical_name ?? undefined,
+      locnamVerified: row.locnam_verified === 1,
+      historicalNameVerified: row.historical_name_verified === 1,
+      akanamVerified: row.akanam_verified === 1,
     };
   }
 

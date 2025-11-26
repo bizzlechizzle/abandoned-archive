@@ -708,6 +708,28 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 18 completed: Country Cultural Region and geographic hierarchy columns added');
     }
+
+    // Migration 19: Add Information Box overhaul fields
+    // Per DECISION-019: Historical name and name verification fields
+    // - historical_name: Historical/original name of location
+    // - locnam_verified: User verified location name is correct
+    // - historical_name_verified: User verified historical name is correct
+    // - akanam_verified: User verified AKA name is correct
+    const locsColsForInfoOverhaul = sqlite.prepare('PRAGMA table_info(locs)').all() as Array<{ name: string }>;
+    const hasHistoricalName = locsColsForInfoOverhaul.some(col => col.name === 'historical_name');
+
+    if (!hasHistoricalName) {
+      console.log('Running migration 19: Adding Information Box overhaul columns to locs');
+
+      sqlite.exec(`
+        ALTER TABLE locs ADD COLUMN historical_name TEXT;
+        ALTER TABLE locs ADD COLUMN locnam_verified INTEGER DEFAULT 0;
+        ALTER TABLE locs ADD COLUMN historical_name_verified INTEGER DEFAULT 0;
+        ALTER TABLE locs ADD COLUMN akanam_verified INTEGER DEFAULT 0;
+      `);
+
+      console.log('Migration 19 completed: Information Box overhaul columns added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

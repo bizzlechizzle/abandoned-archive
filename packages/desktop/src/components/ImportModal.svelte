@@ -22,12 +22,6 @@
   let author = $state('');
   let access = $state('');
 
-  // DECISION-016: Documentation checkboxes (replaces dropdown)
-  let docInterior = $state(false);
-  let docExterior = $state(false);
-  let docDrone = $state(false);
-  let docWebHistory = $state(false);
-
   // P2: Database-driven lists
   let allLocations = $state<Location[]>([]);
   let availableTypes = $state<string[]>([]);
@@ -226,12 +220,7 @@
       const locationData: Record<string, unknown> = {
         locnam: name.trim(),
         type: type || undefined,
-        subtype: subType || undefined,  // DECISION-015: Include sub-type
-        // DECISION-016: Documentation checkboxes
-        docInterior: docInterior || undefined,
-        docExterior: docExterior || undefined,
-        docDrone: docDrone || undefined,
-        docWebHistory: docWebHistory || undefined,
+        stype: subType || undefined,  // DECISION-015: Include sub-type
         access: access || undefined,
         auth_imp: author.trim() || undefined,
         address: {
@@ -278,11 +267,6 @@
     author = '';
     access = '';
     error = '';
-    // DECISION-016: Reset documentation checkboxes
-    docInterior = false;
-    docExterior = false;
-    docDrone = false;
-    docWebHistory = false;
   }
 
   function handleCancel() {
@@ -423,29 +407,6 @@
             placeholder="Your name"
             class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
           />
-        </div>
-
-        <!-- DECISION-016: Documentation Checkboxes -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Documentation</label>
-          <div class="grid grid-cols-2 gap-2">
-            <label class="flex items-center gap-2">
-              <input type="checkbox" bind:checked={docInterior} disabled={saving} class="rounded" />
-              <span class="text-sm">Interior</span>
-            </label>
-            <label class="flex items-center gap-2">
-              <input type="checkbox" bind:checked={docExterior} disabled={saving} class="rounded" />
-              <span class="text-sm">Exterior</span>
-            </label>
-            <label class="flex items-center gap-2">
-              <input type="checkbox" bind:checked={docDrone} disabled={saving} class="rounded" />
-              <span class="text-sm">Drone</span>
-            </label>
-            <label class="flex items-center gap-2">
-              <input type="checkbox" bind:checked={docWebHistory} disabled={saving} class="rounded" />
-              <span class="text-sm">Web-History</span>
-            </label>
-          </div>
         </div>
 
         <!-- Status -->

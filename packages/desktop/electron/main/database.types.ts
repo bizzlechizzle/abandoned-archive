@@ -105,6 +105,12 @@ export interface LocsTable {
   doc_drone: number;
   doc_web_history: number;
 
+  // DECISION-019: Information Box overhaul fields
+  historical_name: string | null;  // Historical/original name of location
+  locnam_verified: number;         // 0/1 - User verified location name is correct
+  historical_name_verified: number; // 0/1 - User verified historical name is correct
+  akanam_verified: number;         // 0/1 - User verified AKA name is correct
+
   // Hero Image (Kanye6: User-selected featured image)
   hero_imgsha: string | null;
 

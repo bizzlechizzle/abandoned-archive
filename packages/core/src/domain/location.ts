@@ -75,7 +75,12 @@ export const LocationInputSchema = z.object({
   docDrone: z.boolean().default(false),
   docWebHistory: z.boolean().default(false),
   hero_imgsha: z.string().optional(),
-  auth_imp: z.string().optional()
+  auth_imp: z.string().optional(),
+  // DECISION-019: Information Box overhaul fields
+  historicalName: z.string().optional(),       // Historical/original name of location
+  locnamVerified: z.boolean().default(false),  // User verified location name is correct
+  historicalNameVerified: z.boolean().default(false), // User verified historical name is correct
+  akanamVerified: z.boolean().default(false),  // User verified AKA name is correct
 });
 
 export type LocationInput = z.infer<typeof LocationInputSchema>;
