@@ -46,6 +46,7 @@ export interface RegionFields {
  */
 export interface RegionInput {
   state?: string | null;
+  addressState?: string | null;                  // Fallback if state is empty
   county?: string | null;
   lat?: number | null;
   lng?: number | null;
@@ -58,21 +59,24 @@ export interface RegionInput {
  * Returns region fields that should be auto-populated
  */
 export function calculateRegionFields(input: RegionInput): RegionFields {
-  const { state, county, lat, lng, existingCulturalRegion, existingCountryCulturalRegion } = input;
+  const { state, addressState, county, lat, lng, existingCulturalRegion, existingCountryCulturalRegion } = input;
+
+  // Use state or fall back to addressState
+  const effectiveState = state || addressState || null;
 
   // Census Region from state (always recalculate)
-  const censusRegion = getCensusRegion(state);
+  const censusRegion = getCensusRegion(effectiveState);
 
   // Census Division from state (always recalculate)
-  const censusDivision = getCensusDivision(state);
+  const censusDivision = getCensusDivision(effectiveState);
 
   // State Direction from GPS + state (always recalculate)
-  const stateDirection = getStateDirection(lat, lng, state);
+  const stateDirection = getStateDirection(lat, lng, effectiveState);
 
   // Local Cultural Region from county lookup (only suggest if not already set)
   let culturalRegion = existingCulturalRegion || null;
-  if (!culturalRegion && county && state) {
-    culturalRegion = getCulturalRegionFromCounty(state, county);
+  if (!culturalRegion && county && effectiveState) {
+    culturalRegion = getCulturalRegionFromCounty(effectiveState, county);
   }
 
   // Country Cultural Region from GPS (only suggest if not already set)
