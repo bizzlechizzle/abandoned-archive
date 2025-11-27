@@ -417,7 +417,7 @@
     <LocationHero {images} heroImgsha={location.hero_imgsha || null} />
 
     <!-- Title below hero: left-anchored, premium text fitting - always one line -->
-    <div class="max-w-6xl mx-auto px-8 pt-6 pb-4">
+    <div class="max-w-6xl mx-auto px-8 pt-2 pb-2">
       <div
         bind:this={titleContainer}
         class="w-full lg:w-[70%] text-left"
