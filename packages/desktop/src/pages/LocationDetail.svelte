@@ -42,6 +42,9 @@
   let importProgress = $state('');
   let verifyingGps = $state(false);
   let togglingFavorite = $state(false);
+  let isEditingFocalPoint = $state(false);
+  let pendingFocalX = $state(0.5);
+  let pendingFocalY = $state(0.5);
 
   // Hero title text fitting - premium single-line scaling
   let titleContainer: HTMLDivElement | undefined = $state();
@@ -309,6 +312,35 @@
     } catch (err) { console.error('Error setting hero image:', err); }
   }
 
+  /** Migration 22: Focal point editing */
+  function startEditingFocalPoint() {
+    if (!location) return;
+    pendingFocalX = location.hero_focal_x ?? 0.5;
+    pendingFocalY = location.hero_focal_y ?? 0.5;
+    isEditingFocalPoint = true;
+  }
+
+  function handleFocalPointChange(x: number, y: number) {
+    pendingFocalX = x;
+    pendingFocalY = y;
+  }
+
+  async function saveFocalPoint() {
+    if (!location) return;
+    try {
+      await window.electronAPI.locations.update(locationId, {
+        hero_focal_x: pendingFocalX,
+        hero_focal_y: pendingFocalY,
+      });
+      await loadLocation();
+      isEditingFocalPoint = false;
+    } catch (err) { console.error('Error saving focal point:', err); }
+  }
+
+  function cancelFocalPointEdit() {
+    isEditingFocalPoint = false;
+  }
+
   function navigateToFilter(type: string, value: string, additionalFilters?: Record<string, string>) {
     // DECISION-013: Support multiple filters (e.g., county + state to avoid duplicates)
     const filters: Record<string, string> = { [type]: value, ...additionalFilters };
@@ -318,6 +350,11 @@
   async function openMediaFile(filePath: string) {
     try { await window.electronAPI.media.openFile(filePath); }
     catch (err) { console.error('Error opening file:', err); }
+  }
+
+  async function showInFinder(filePath: string) {
+    try { await window.electronAPI.media.showInFolder(filePath); }
+    catch (err) { console.error('Error showing in Finder:', err); }
   }
 
   // Import handlers
@@ -426,7 +463,46 @@
     </div>
   {:else}
     <!-- Hero outside max-w container for full-width stretch -->
-    <LocationHero {images} heroImgsha={location.hero_imgsha || null} />
+    <div class="relative">
+      <LocationHero
+        {images}
+        heroImgsha={location.hero_imgsha || null}
+        focalX={isEditingFocalPoint ? pendingFocalX : (location.hero_focal_x ?? 0.5)}
+        focalY={isEditingFocalPoint ? pendingFocalY : (location.hero_focal_y ?? 0.5)}
+        isEditing={isEditingFocalPoint}
+        onFocalPointChange={handleFocalPointChange}
+      />
+      <!-- Focal point edit controls -->
+      {#if location.hero_imgsha && images.length > 0}
+        <div class="absolute bottom-4 right-4 flex gap-2 z-30">
+          {#if isEditingFocalPoint}
+            <button
+              onclick={cancelFocalPointEdit}
+              class="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium rounded-lg shadow-lg transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onclick={saveFocalPoint}
+              class="px-3 py-1.5 bg-accent hover:bg-accent/90 text-white text-sm font-medium rounded-lg shadow-lg transition-colors"
+            >
+              Save Position
+            </button>
+          {:else}
+            <button
+              onclick={startEditingFocalPoint}
+              class="px-3 py-1.5 bg-black/60 hover:bg-black/80 text-white text-sm font-medium rounded-lg shadow-lg transition-colors flex items-center gap-1.5"
+              title="Adjust crop position"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" />
+              </svg>
+              Adjust
+            </button>
+          {/if}
+        </div>
+      {/if}
+    </div>
 
     <!-- Title below hero: left-anchored, premium text fitting - always one line -->
     <div class="max-w-6xl mx-auto px-8 pt-2 pb-2">
@@ -475,6 +551,7 @@
           onOpenVideoLightbox={(i) => selectedMediaIndex = images.length + i}
           onSetHeroImage={setHeroImage}
           onOpenDocument={openMediaFile}
+          onShowInFinder={showInFinder}
         />
         <LocationBookmarks {bookmarks} onAddBookmark={handleAddBookmark} onDeleteBookmark={handleDeleteBookmark} onOpenBookmark={handleOpenBookmark} />
         <LocationNerdStats {location} imageCount={images.length} videoCount={videos.length} documentCount={documents.length} />

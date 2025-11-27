@@ -122,6 +122,10 @@ export interface LocsTable {
   locnam_short: string | null;    // Optional custom short name for hero display
   locnam_use_the: number;         // 0/1 - Prepend "The" to display name
 
+  // Hero Focal Point (Migration 22: Crop center for hero images)
+  hero_focal_x: number;           // 0-1 horizontal position (0.5 = center)
+  hero_focal_y: number;           // 0-1 vertical position (0.5 = center)
+
   // Relationships
   sublocs: string | null;
   sub12: string | null;

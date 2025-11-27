@@ -766,6 +766,24 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 21 completed: hero display name columns added');
     }
+
+    // Migration 22: Add hero image focal point columns
+    // Per premium UX: Allow user to set crop center point for hero images
+    // - hero_focal_x: 0-1 horizontal position (0.5 = center)
+    // - hero_focal_y: 0-1 vertical position (0.5 = center)
+    const locsColsForFocal = sqlite.prepare('PRAGMA table_info(locs)').all() as Array<{ name: string }>;
+    const hasHeroFocalX = locsColsForFocal.some(col => col.name === 'hero_focal_x');
+
+    if (!hasHeroFocalX) {
+      console.log('Running migration 22: Adding hero focal point columns to locs');
+
+      sqlite.exec(`
+        ALTER TABLE locs ADD COLUMN hero_focal_x REAL DEFAULT 0.5;
+        ALTER TABLE locs ADD COLUMN hero_focal_y REAL DEFAULT 0.5;
+      `);
+
+      console.log('Migration 22 completed: hero focal point columns added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

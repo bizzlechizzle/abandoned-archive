@@ -28,6 +28,9 @@ const baseLocation = {
   historicalNameVerified: false,
   akanamVerified: false,
   locnamUseThe: false,
+  // Migration 22: Hero focal point
+  hero_focal_x: 0.5,
+  hero_focal_y: 0.5,
 };
 
 describe('LocationEntity', () => {

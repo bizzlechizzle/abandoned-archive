@@ -296,6 +296,9 @@ export class SQLiteLocationRepository implements LocationRepository {
     // Migration 21: Hero display name fields
     if (input.locnamShort !== undefined) updates.locnam_short = input.locnamShort;
     if (input.locnamUseThe !== undefined) updates.locnam_use_the = input.locnamUseThe ? 1 : 0;
+    // Migration 22: Hero focal point fields
+    if (input.hero_focal_x !== undefined) updates.hero_focal_x = input.hero_focal_x;
+    if (input.hero_focal_y !== undefined) updates.hero_focal_y = input.hero_focal_y;
 
     // Kanye9: Handle flat GPS field updates (for cascade geocoding and other direct updates)
     const inputAny = input as any;
@@ -528,6 +531,9 @@ export class SQLiteLocationRepository implements LocationRepository {
       // Migration 21: Hero display name fields
       locnamShort: row.locnam_short ?? undefined,
       locnamUseThe: row.locnam_use_the === 1,
+      // Migration 22: Hero focal point fields
+      hero_focal_x: row.hero_focal_x ?? 0.5,
+      hero_focal_y: row.hero_focal_y ?? 0.5,
     };
   }
 

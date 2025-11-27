@@ -1,25 +1,59 @@
 <script lang="ts">
   /**
-   * LocationVideos - Video thumbnail grid
+   * LocationVideos - Premium video thumbnail grid
    * Sub-accordion within Original Assets
    * Per DECISION-020: 4x2 grid, opens in MediaViewer
+   * Premium UX: Accent ring hover, options menu dropdown
    */
   import type { MediaVideo } from './types';
-  import { formatDuration, formatResolution } from './types';
+  import { formatDuration } from './types';
 
   interface Props {
     videos: MediaVideo[];
     onOpenLightbox: (index: number) => void;
+    onShowInFinder?: (path: string) => void;
   }
 
-  let { videos, onOpenLightbox }: Props = $props();
+  let { videos, onOpenLightbox, onShowInFinder }: Props = $props();
 
   const VIDEO_LIMIT = 8; // 4x2 grid
   let isOpen = $state(true); // Expanded by default
   let showAllVideos = $state(false);
+  let openMenuIndex = $state<number | null>(null);
 
   const displayedVideos = $derived(showAllVideos ? videos : videos.slice(0, VIDEO_LIMIT));
+
+  function toggleMenu(e: MouseEvent, index: number) {
+    e.stopPropagation();
+    openMenuIndex = openMenuIndex === index ? null : index;
+  }
+
+  function closeMenu() {
+    openMenuIndex = null;
+  }
+
+  function handleOpenLightbox(e: MouseEvent, index: number) {
+    e.stopPropagation();
+    onOpenLightbox(index);
+    closeMenu();
+  }
+
+  function handleShowInFinder(e: MouseEvent, path: string) {
+    e.stopPropagation();
+    onShowInFinder?.(path);
+    closeMenu();
+  }
+
+  // Close menu when clicking outside
+  function handleClickOutside(e: MouseEvent) {
+    const target = e.target as HTMLElement;
+    if (!target.closest('.video-menu')) {
+      closeMenu();
+    }
+  }
 </script>
+
+<svelte:window onclick={handleClickOutside} />
 
 {#if videos.length > 0}
   <div class="border-b border-gray-100 last:border-b-0">
@@ -46,10 +80,12 @@
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
           {#each displayedVideos as video, displayIndex}
             {@const actualIndex = videos.findIndex(v => v.vidsha === video.vidsha)}
-            <div class="aspect-[1.618/1] bg-gray-100 rounded overflow-hidden relative group">
+            {@const isMenuOpen = openMenuIndex === displayIndex}
+            <div class="video-card aspect-[1.618/1] bg-gray-100 rounded-lg overflow-hidden relative group">
+              <!-- Clickable video area -->
               <button
                 onclick={() => onOpenLightbox(actualIndex)}
-                class="w-full h-full hover:opacity-90 transition"
+                class="w-full h-full focus:outline-none"
               >
                 {#if video.thumb_path_sm || video.thumb_path}
                   <img
@@ -66,20 +102,62 @@
                     </svg>
                   </div>
                 {/if}
-                <!-- Play button overlay -->
-                <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                  <div class="w-12 h-12 bg-black/60 rounded-full flex items-center justify-center">
-                    <svg class="w-6 h-6 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
-                  </div>
-                </div>
               </button>
-              <!-- Duration/resolution overlay -->
-              <div class="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs p-1.5">
-                <span>{formatDuration(video.meta_duration)}</span>
-                {#if video.meta_width && video.meta_height}
-                  <span class="ml-2">{formatResolution(video.meta_width, video.meta_height)}</span>
+
+              <!-- Play button overlay (center, on hover) -->
+              <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                <div class="w-12 h-12 bg-black/60 rounded-full flex items-center justify-center">
+                  <svg class="w-6 h-6 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </div>
+              </div>
+
+              <!-- Duration badge (always visible, bottom-left) -->
+              {#if video.meta_duration}
+                <div class="absolute bottom-2 left-2 px-2 py-0.5 bg-black/70 text-white text-xs font-medium rounded">
+                  {formatDuration(video.meta_duration)}
+                </div>
+              {/if}
+
+              <!-- Options menu button (visible on hover) -->
+              <div class="video-menu absolute top-2 right-2">
+                <button
+                  onclick={(e) => toggleMenu(e, displayIndex)}
+                  class="w-7 h-7 flex items-center justify-center bg-black/50 hover:bg-black/70 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm {isMenuOpen ? 'opacity-100 bg-black/70' : ''}"
+                  aria-label="Video options"
+                >
+                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <circle cx="12" cy="6" r="1.5" />
+                    <circle cx="12" cy="12" r="1.5" />
+                    <circle cx="12" cy="18" r="1.5" />
+                  </svg>
+                </button>
+
+                <!-- Dropdown menu -->
+                {#if isMenuOpen}
+                  <div class="absolute top-9 right-0 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+                    <button
+                      onclick={(e) => handleOpenLightbox(e, actualIndex)}
+                      class="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                    >
+                      <svg class="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                      Play Video
+                    </button>
+                    {#if onShowInFinder}
+                      <button
+                        onclick={(e) => handleShowInFinder(e, video.vidloc)}
+                        class="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                      >
+                        <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                        </svg>
+                        Show in Finder
+                      </button>
+                    {/if}
+                  </div>
                 {/if}
               </div>
             </div>
@@ -101,3 +179,22 @@
     {/if}
   </div>
 {/if}
+
+<style>
+  /* Premium hover effect */
+  .video-card {
+    transition: transform 200ms ease, box-shadow 200ms ease;
+    border: 2px solid transparent;
+  }
+
+  .video-card:hover {
+    transform: scale(1.02);
+    box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.15);
+    border-color: var(--color-accent, #b9975c);
+  }
+
+  /* Ensure menu stays above other elements */
+  .video-menu {
+    z-index: 10;
+  }
+</style>
