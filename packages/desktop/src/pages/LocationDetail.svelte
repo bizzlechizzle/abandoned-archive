@@ -416,15 +416,15 @@
     <!-- Hero outside max-w container for full-width stretch -->
     <LocationHero {images} heroImgsha={location.hero_imgsha || null} />
 
-    <!-- Title below hero: premium text fitting - always one line -->
+    <!-- Title below hero: left-anchored, premium text fitting - always one line -->
     <div class="max-w-6xl mx-auto px-8 pt-6 pb-4">
       <div
         bind:this={titleContainer}
-        class="w-full lg:max-w-[70%]"
+        class="w-full lg:w-[70%] text-left"
       >
         <h1
           bind:this={titleElement}
-          class="font-bold leading-tight whitespace-nowrap"
+          class="font-bold leading-tight whitespace-nowrap text-left"
           style="color: #454545; font-size: {titleFontSize}px;"
           title={location.locnam}
         >
