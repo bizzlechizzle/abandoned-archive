@@ -27,8 +27,8 @@
   // Load autocomplete options on mount
   onMount(async () => {
     try {
-      typeOptions = await window.api.location.getDistinctTypes();
-      stypeOptions = await window.api.location.getDistinctSubTypes();
+      typeOptions = await window.electronAPI?.locations?.getDistinctTypes?.() || [];
+      stypeOptions = await window.electronAPI?.locations?.getDistinctSubTypes?.() || [];
     } catch (err) {
       console.error('Error loading type options:', err);
     }

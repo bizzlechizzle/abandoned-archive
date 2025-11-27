@@ -286,6 +286,7 @@ export function registerMediaProcessingHandlers(
       for (const img of images) {
         try {
           // For RAW files, extract preview first
+          // For non-RAW files, ALWAYS use original when force=true to fix rotation
           let sourcePath = img.imgloc;
           const isRaw = /\.(nef|cr2|cr3|arw|srf|sr2|orf|pef|dng|rw2|raf|raw|rwl|3fr|fff|iiq|mrw|x3f|erf|mef|mos|kdc|dcr)$/i.test(img.imgloc);
 
@@ -296,7 +297,9 @@ export function registerMediaProcessingHandlers(
               sourcePath = preview;
               await mediaRepo.updateImagePreviewPath(img.imgsha, preview);
             }
-          } else if (img.preview_path) {
+          } else if (!force && img.preview_path) {
+            // Only use existing preview when NOT forcing regeneration
+            // When force=true, use original to apply correct EXIF rotation
             sourcePath = img.preview_path;
           }
 
