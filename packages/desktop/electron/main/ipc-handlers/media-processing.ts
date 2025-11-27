@@ -281,6 +281,74 @@ export function registerMediaProcessingHandlers(
     }
   });
 
+  // DECISION-020: Regenerate video thumbnails (poster frames)
+  // Generates poster frame from video, then multi-tier thumbnails from poster
+  ipcMain.handle('media:regenerateVideoThumbnails', async (_event, options?: unknown) => {
+    const opts = z.object({ force: z.boolean().optional() }).optional().parse(options);
+    const force = opts?.force ?? false;
+
+    try {
+      const archivePath = await getArchivePath();
+      const mediaPathService = new MediaPathService(archivePath);
+      const thumbnailService = new ThumbnailService(mediaPathService);
+      const posterService = new PosterFrameService(mediaPathService, ffmpegService);
+
+      // Get videos without thumbnails (or all if force)
+      const videos = force
+        ? await mediaRepo.getAllVideos()
+        : await mediaRepo.getVideosWithoutThumbnails();
+
+      let generated = 0;
+      let failed = 0;
+
+      console.log(`[DECISION-020] Regenerating thumbnails for ${videos.length} videos (force=${force})...`);
+
+      for (const vid of videos) {
+        try {
+          // Step 1: Generate poster frame from video
+          const posterPath = await posterService.generatePoster(vid.vidloc, vid.vidsha);
+
+          if (!posterPath) {
+            console.warn(`[DECISION-020] No poster generated for ${vid.vidsha}`);
+            failed++;
+            continue;
+          }
+
+          // Step 2: Generate multi-tier thumbnails from poster
+          const result = await thumbnailService.generateAllSizes(posterPath, vid.vidsha, force);
+
+          if (result.thumb_sm) {
+            // Update database with thumbnail paths
+            await db
+              .updateTable('vids')
+              .set({
+                thumb_path_sm: result.thumb_sm,
+                thumb_path_lg: result.thumb_lg,
+                preview_path: result.preview,
+              })
+              .where('vidsha', '=', vid.vidsha)
+              .execute();
+
+            generated++;
+            console.log(`[DECISION-020] Generated thumbnails for video ${vid.vidsha}`);
+          } else {
+            failed++;
+          }
+        } catch (err) {
+          console.error(`[DECISION-020] Failed to generate thumbnails for ${vid.vidsha}:`, err);
+          failed++;
+        }
+      }
+
+      console.log(`[DECISION-020] Video thumbnail regeneration complete: ${generated} generated, ${failed} failed`);
+
+      return { generated, failed, total: videos.length };
+    } catch (error) {
+      console.error('Error regenerating video thumbnails:', error);
+      throw error;
+    }
+  });
+
   // Kanye11: Regenerate preview/thumbnails for a single file
   // Used when MediaViewer can't display a file due to missing preview
   ipcMain.handle('media:regenerateSingleFile', async (_event, hash: unknown, filePath: unknown) => {

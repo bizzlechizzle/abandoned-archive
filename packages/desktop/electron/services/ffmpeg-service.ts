@@ -88,7 +88,7 @@ export class FFmpegService {
         .seekInput(timestampSeconds)
         .frames(1)
         .size(`${size}x${size}`)
-        .outputOptions(['-q:v', '2']) // JPEG quality
+        .outputOptions(['-q:v', '2', '-update', '1']) // JPEG quality + single image mode (FFmpeg 7.x)
         .output(outputPath)
         .on('end', () => resolve())
         .on('error', (err) => reject(err))

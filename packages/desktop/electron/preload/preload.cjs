@@ -130,6 +130,7 @@ const api = {
     readXmp: (mediaPath) => ipcRenderer.invoke("media:readXmp", mediaPath),
     writeXmp: (mediaPath, data) => ipcRenderer.invoke("media:writeXmp", mediaPath, data),
     regenerateAllThumbnails: () => ipcRenderer.invoke("media:regenerateAllThumbnails"),
+    regenerateVideoThumbnails: (options) => ipcRenderer.invoke("media:regenerateVideoThumbnails", options),
   },
 
   notes: {

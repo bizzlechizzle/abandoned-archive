@@ -1,8 +1,18 @@
 import { z } from 'zod';
 import slugify from 'slugify';
 
-// Words to filter out from short names for better uniqueness
-const STOPWORDS = ['and', 'the', 'of', 'at', 'in', 'on', 'a', 'an'];
+// Minimal stopwords - only articles that add no meaning
+const STOPWORDS = ['the', 'a', 'an'];
+
+// British to American spelling normalization
+const SPELLING_MAP: Record<string, string> = {
+  'centre': 'center',
+  'theatre': 'theater',
+  'colour': 'color',
+  'harbour': 'harbor',
+};
+
+// Location suffixes - kept for other uses (e.g., stripLocationSuffix) but NOT used in generateShortName
 const LOCATION_SUFFIXES = [
   'church', 'hospital', 'factory', 'mill', 'school', 'building',
   'house', 'mansion', 'hotel', 'motel', 'inn', 'theater', 'theatre',
@@ -139,7 +149,7 @@ export class LocationEntity {
   constructor(private readonly data: Location) {}
 
   // Generate short name from location name
-  // Removes stopwords and location-type suffixes for maximum uniqueness in 12 chars
+  // Compact slug: lowercase, no hyphens, minimal filtering, normalized spelling
   static generateShortName(name: string): string {
     const slug = slugify(name, {
       lower: true,
@@ -147,13 +157,16 @@ export class LocationEntity {
       remove: /[*+~.()'"!:@]/g
     });
 
-    // Split on hyphens, remove stopwords and location suffixes, rejoin without hyphens
-    const words = slug.split('-').filter(w =>
-      !STOPWORDS.includes(w) && !LOCATION_SUFFIXES.includes(w)
-    );
-    const compact = words.join('');
+    // Split on hyphens, remove only minimal stopwords (the, a, an)
+    const words = slug.split('-').filter(w => !STOPWORDS.includes(w));
 
-    // Edge case: if all words filtered out, fall back to first 12 chars of original slug
+    // Normalize British spellings to American
+    const normalized = words.map(w => SPELLING_MAP[w] || w);
+
+    // Join without hyphens for compact slug
+    const compact = normalized.join('');
+
+    // Edge case: if all words filtered out, fall back to original slug without hyphens
     if (compact.length === 0) {
       return slug.replace(/-/g, '').substring(0, 12);
     }

@@ -15,7 +15,7 @@
   import MediaViewer from '../components/MediaViewer.svelte';
   import {
     LocationHero, LocationInfo,
-    LocationMapSection, LocationGallery, LocationVideos, LocationDocuments,
+    LocationMapSection, LocationOriginalAssets,
     LocationImportZone, LocationBookmarks, LocationNerdStats,
     type MediaImage, type MediaVideo, type MediaDocument, type Bookmark,
     type GpsWarning, type FailedFile
@@ -36,7 +36,7 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let isEditing = $state(false);
-  let selectedImageIndex = $state<number | null>(null);
+  let selectedMediaIndex = $state<number | null>(null);
   let currentUser = $state('default');
   let isDragging = $state(false);
   let importProgress = $state('');
@@ -48,8 +48,8 @@
   let titleElement: HTMLHeadingElement | undefined = $state();
   let titleFontSize = $state(60);
 
-  // Derived
-  const mediaViewerList = $derived(images.map(img => ({
+  // Derived: Combined media list for MediaViewer (images first, then videos)
+  const imageMediaList = $derived(images.map(img => ({
     hash: img.imgsha, path: img.imgloc,
     thumbPath: img.thumb_path_sm || img.thumb_path || null,
     previewPath: img.preview_path || null, type: 'image' as const,
@@ -58,6 +58,18 @@
     cameraModel: img.meta_camera_model || null,
     gpsLat: img.meta_gps_lat || null, gpsLng: img.meta_gps_lng || null,
   })));
+
+  const videoMediaList = $derived(videos.map(vid => ({
+    hash: vid.vidsha, path: vid.vidloc,
+    thumbPath: vid.thumb_path_sm || vid.thumb_path || null,
+    previewPath: vid.preview_path || null, type: 'video' as const,
+    name: vid.vidnam, width: vid.meta_width, height: vid.meta_height,
+    dateTaken: null, cameraMake: null, cameraModel: null,
+    gpsLat: vid.meta_gps_lat || null, gpsLng: vid.meta_gps_lng || null,
+  })));
+
+  // Combined list: images first, then videos
+  const mediaViewerList = $derived([...imageMediaList, ...videoMediaList]);
 
   // Hero display name: uses custom short name or auto-generates from locnam
   const LOCATION_SUFFIXES = new Set([
@@ -454,12 +466,16 @@
           onDismissWarning={(i) => gpsWarnings = gpsWarnings.filter((_, idx) => idx !== i)}
           onDismissAllWarnings={() => gpsWarnings = []} />
 
-        <div class="mt-6 bg-white rounded-lg shadow-md p-6">
-          <LocationGallery {images} heroImgsha={location.hero_imgsha || null}
-            onOpenLightbox={(i) => selectedImageIndex = i} onSetHeroImage={setHeroImage} />
-          <LocationVideos {videos} onOpenFile={openMediaFile} />
-          <LocationDocuments {documents} onOpenFile={openMediaFile} />
-        </div>
+        <LocationOriginalAssets
+          {images}
+          {videos}
+          {documents}
+          heroImgsha={location.hero_imgsha || null}
+          onOpenImageLightbox={(i) => selectedMediaIndex = i}
+          onOpenVideoLightbox={(i) => selectedMediaIndex = images.length + i}
+          onSetHeroImage={setHeroImage}
+          onOpenDocument={openMediaFile}
+        />
         <LocationBookmarks {bookmarks} onAddBookmark={handleAddBookmark} onDeleteBookmark={handleDeleteBookmark} onOpenBookmark={handleOpenBookmark} />
         <LocationNerdStats {location} imageCount={images.length} videoCount={videos.length} documentCount={documents.length} />
 
@@ -476,7 +492,7 @@
     </div>
   {/if}
 
-  {#if selectedImageIndex !== null && mediaViewerList.length > 0}
-    <MediaViewer mediaList={mediaViewerList} startIndex={selectedImageIndex} onClose={() => selectedImageIndex = null} />
+  {#if selectedMediaIndex !== null && mediaViewerList.length > 0}
+    <MediaViewer mediaList={mediaViewerList} startIndex={selectedMediaIndex} onClose={() => selectedMediaIndex = null} />
   {/if}
 </div>

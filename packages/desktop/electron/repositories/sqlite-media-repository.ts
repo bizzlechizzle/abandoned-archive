@@ -301,13 +301,36 @@ export class SQLiteMediaRepository {
   }
 
   /**
-   * Get videos without poster frames
+   * Get videos without poster frames (legacy - checks thumb_path)
    */
   async getVideosWithoutPosters(): Promise<Array<{ vidsha: string; vidloc: string }>> {
     const rows = await this.db
       .selectFrom('vids')
       .select(['vidsha', 'vidloc'])
       .where('thumb_path', 'is', null)
+      .execute();
+    return rows;
+  }
+
+  /**
+   * DECISION-020: Get videos without multi-tier thumbnails
+   */
+  async getVideosWithoutThumbnails(): Promise<Array<{ vidsha: string; vidloc: string }>> {
+    const rows = await this.db
+      .selectFrom('vids')
+      .select(['vidsha', 'vidloc'])
+      .where('thumb_path_sm', 'is', null)
+      .execute();
+    return rows;
+  }
+
+  /**
+   * DECISION-020: Get ALL videos for force regeneration
+   */
+  async getAllVideos(): Promise<Array<{ vidsha: string; vidloc: string }>> {
+    const rows = await this.db
+      .selectFrom('vids')
+      .select(['vidsha', 'vidloc'])
       .execute();
     return rows;
   }

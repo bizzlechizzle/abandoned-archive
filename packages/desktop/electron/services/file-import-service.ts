@@ -13,6 +13,7 @@ import { GPXKMLParser, type MapFileData } from './gpx-kml-parser';
 import { MediaPathService } from './media-path-service';
 // DECISION-018: Import region calculation for auto-population
 import { calculateRegionFields } from './region-service';
+import { LocationEntity } from '@au-archive/core';
 import { ThumbnailService } from './thumbnail-service';
 import { PreviewExtractorService } from './preview-extractor-service';
 import { PosterFrameService } from './poster-frame-service';
@@ -726,7 +727,7 @@ export class FileImportService {
     const stateTypeFolder = `${state}-${this.sanitizeFolderName(locType)}`;
 
     // [SLOCNAM]-[LOC12] folder
-    const slocnam = location.slocnam || this.generateSlocnam(location.locnam);
+    const slocnam = location.slocnam || LocationEntity.generateShortName(location.locnam);
     const loc12 = location.loc12;
     const locationFolder = `${this.sanitizeFolderName(slocnam)}-${loc12}`;
 
@@ -791,12 +792,6 @@ export class FileImportService {
       .substring(0, 50); // Limit length
   }
 
-  /**
-   * Generate short location name from full name
-   */
-  private generateSlocnam(locnam: string): string {
-    return this.sanitizeFolderName(locnam).substring(0, 20);
-  }
 
   /**
    * Insert media record in database within transaction
@@ -843,6 +838,8 @@ export class FileImportService {
           thumb_path_lg: thumbPathLg,
           // For RAW files, use extracted preview (full resolution); otherwise use generated thumbnail
           preview_path: rawPreviewPath || previewPath,
+          // FIX: Set preview_extracted flag when preview exists
+          preview_extracted: (rawPreviewPath || previewPath) ? 1 : 0,
           // Legacy column for backwards compatibility
           thumb_path: thumbPathSm,
         })

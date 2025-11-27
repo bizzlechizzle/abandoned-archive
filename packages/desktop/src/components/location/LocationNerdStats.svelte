@@ -14,20 +14,37 @@
 
   let { location, imageCount, videoCount, documentCount }: Props = $props();
 
-  function copyToClipboard(text: string) {
+  let isOpen = $state(false);
+  let copiedField = $state<string | null>(null);
+
+  function copyToClipboard(text: string, field: string) {
     navigator.clipboard.writeText(text);
+    copiedField = field;
+    setTimeout(() => {
+      copiedField = null;
+    }, 1500);
   }
 </script>
 
-<div class="mt-6 bg-white rounded-lg shadow p-6">
-  <div class="flex items-center gap-2 mb-3">
-    <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-    </svg>
+<div class="mt-6 bg-white rounded-lg shadow">
+  <button
+    onclick={() => isOpen = !isOpen}
+    aria-expanded={isOpen}
+    class="w-full p-6 flex items-center justify-between text-left hover:bg-gray-50 transition-colors rounded-lg"
+  >
     <h2 class="text-xl font-semibold text-foreground">Nerd Stats</h2>
-  </div>
-  <p class="text-sm text-gray-500 mb-3">Technical metadata and statistics</p>
+    <svg
+      class="w-5 h-5 text-gray-400 transition-transform duration-200 {isOpen ? 'rotate-180' : ''}"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+    </svg>
+  </button>
 
+  {#if isOpen}
+  <div class="px-6 pb-6">
   <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 text-sm">
     <!-- IDs -->
     <div class="col-span-full border-b pb-3 mb-2">
@@ -36,21 +53,21 @@
     <div>
       <span class="text-gray-500">Full Location ID:</span>
       <button
-        onclick={() => copyToClipboard(location.locid)}
+        onclick={() => copyToClipboard(location.locid, 'locid')}
         class="ml-2 font-mono text-xs text-accent hover:underline"
         title="Click to copy"
       >
-        {location.locid}
+        {copiedField === 'locid' ? 'Copied!' : location.locid}
       </button>
     </div>
     <div>
       <span class="text-gray-500">Short ID (loc12):</span>
       <button
-        onclick={() => copyToClipboard(location.loc12)}
+        onclick={() => copyToClipboard(location.loc12, 'loc12')}
         class="ml-2 font-mono text-xs text-accent hover:underline"
         title="Click to copy"
       >
-        {location.loc12}
+        {copiedField === 'loc12' ? 'Copied!' : location.loc12}
       </button>
     </div>
     {#if location.slocnam}
@@ -61,7 +78,7 @@
     {/if}
 
     <!-- Timestamps -->
-    <div class="col-span-full border-b pb-3 mb-2 mt-2">
+    <div class="col-span-full border-b pb-3 mb-2 mt-5">
       <p class="text-xs font-semibold text-gray-400 uppercase mb-2">Timestamps</p>
     </div>
     {#if location.locadd}
@@ -85,7 +102,7 @@
 
     <!-- GPS Details -->
     {#if location.gps}
-      <div class="col-span-full border-b pb-3 mb-2 mt-2">
+      <div class="col-span-full border-b pb-3 mb-2 mt-5">
         <p class="text-xs font-semibold text-gray-400 uppercase mb-2">GPS Details</p>
       </div>
       <div>
@@ -111,7 +128,7 @@
     {/if}
 
     <!-- Media Counts -->
-    <div class="col-span-full border-b pb-3 mb-2 mt-2">
+    <div class="col-span-full border-b pb-3 mb-2 mt-5">
       <p class="text-xs font-semibold text-gray-400 uppercase mb-2">Media Statistics</p>
     </div>
     <div>
@@ -133,7 +150,7 @@
 
     <!-- Regions -->
     {#if location.regions && location.regions.length > 0}
-      <div class="col-span-full border-b pb-3 mb-2 mt-2">
+      <div class="col-span-full border-b pb-3 mb-2 mt-5">
         <p class="text-xs font-semibold text-gray-400 uppercase mb-2">Classification</p>
       </div>
       <div class="col-span-full">
@@ -142,4 +159,6 @@
       </div>
     {/if}
   </div>
+  </div>
+  {/if}
 </div>

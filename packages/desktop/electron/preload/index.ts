@@ -343,6 +343,9 @@ const api = {
       ipcRenderer.invoke('media:writeXmp', mediaPath, data),
     regenerateAllThumbnails: (): Promise<{ generated: number; failed: number; total: number }> =>
       ipcRenderer.invoke('media:regenerateAllThumbnails'),
+    // DECISION-020: Regenerate video thumbnails (poster frames)
+    regenerateVideoThumbnails: (options?: { force?: boolean }): Promise<{ generated: number; failed: number; total: number }> =>
+      ipcRenderer.invoke('media:regenerateVideoThumbnails', options),
     // Kanye11: Regenerate preview/thumbnails for a single file
     regenerateSingleFile: (hash: string, filePath: string): Promise<{
       success: boolean;

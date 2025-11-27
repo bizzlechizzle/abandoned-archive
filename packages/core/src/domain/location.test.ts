@@ -27,6 +27,7 @@ const baseLocation = {
   locnamVerified: false,
   historicalNameVerified: false,
   akanamVerified: false,
+  locnamUseThe: false,
 };
 
 describe('LocationEntity', () => {
@@ -36,31 +37,40 @@ describe('LocationEntity', () => {
       expect(LocationEntity.generateShortName('First Baptist')).toBe('firstbaptist');
     });
 
-    it('should remove stopwords (and, the, of, etc)', () => {
+    it('should remove only minimal stopwords (the, a, an)', () => {
       expect(LocationEntity.generateShortName('The Old Barn')).toBe('oldbarn');
-      expect(LocationEntity.generateShortName('Hall of Fame')).toBe('hallfame');
+      expect(LocationEntity.generateShortName('A Big House')).toBe('bighouse');
+      // "of" and "and" are NOT stopwords - they provide context
+      expect(LocationEntity.generateShortName('Hall of Fame')).toBe('halloffame');
+      expect(LocationEntity.generateShortName('Peter and Paul')).toBe('peterandpaul');
     });
 
-    it('should remove location-type suffixes', () => {
-      expect(LocationEntity.generateShortName('Old Factory')).toBe('old');
-      expect(LocationEntity.generateShortName('Amazing Hospital Complex')).toBe('amazing');
-      expect(LocationEntity.generateShortName("O'Brien's Mill")).toBe('obriens');
-      expect(LocationEntity.generateShortName('St. Peter & Paul Catholic Church')).toBe('stpeterpaul');
+    it('should keep location-type words (they are part of identity)', () => {
+      expect(LocationEntity.generateShortName('Old Factory')).toBe('oldfactory');
+      expect(LocationEntity.generateShortName("O'Brien's Mill")).toBe('obriensmill');
+      expect(LocationEntity.generateShortName('Medley Centre')).toBe('medleycenter');
+    });
+
+    it('should normalize British to American spellings', () => {
+      expect(LocationEntity.generateShortName('Medley Centre')).toBe('medleycenter');
+      expect(LocationEntity.generateShortName('Old Theatre')).toBe('oldtheater');
     });
 
     it('should handle special characters', () => {
-      expect(LocationEntity.generateShortName('Factory @ Main St.')).toBe('mainst');
+      expect(LocationEntity.generateShortName('Factory @ Main')).toBe('factorymain');
     });
 
     it('should truncate to 12 characters', () => {
       const longName = 'This is a very long location name';
       const result = LocationEntity.generateShortName(longName);
       expect(result.length).toBeLessThanOrEqual(12);
+      // "St. Peter & Paul Catholic Church" → slugify converts & to "and" → truncates to 12
+      expect(LocationEntity.generateShortName('St. Peter & Paul Catholic Church')).toBe('stpeterandpa');
     });
 
     it('should fall back to original slug if all words filtered', () => {
-      // Edge case: if all words are stopwords/suffixes, use original
-      expect(LocationEntity.generateShortName('The Church')).toBe('thechurch');
+      // Edge case: if name is just "The" or "A"
+      expect(LocationEntity.generateShortName('The')).toBe('the');
     });
   });
 
