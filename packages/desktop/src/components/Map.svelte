@@ -153,6 +153,8 @@
     defaultLayer?: 'satellite' | 'street' | 'topo' | 'light' | 'dark' | 'satellite-labels';
     // DECISION-011: Compact layer control (collapsed by default)
     compactLayerControl?: boolean;
+    // Hide layer control entirely (for modal maps)
+    showLayerControl?: boolean;
   }
 
   let {
@@ -168,7 +170,8 @@
     limitedInteraction = false,
     hideAttribution = false,
     defaultLayer = 'light',
-    compactLayerControl = false
+    compactLayerControl = false,
+    showLayerControl = true
   }: Props = $props();
 
   /**
@@ -383,7 +386,8 @@
       }
 
       // DECISION-011: Compact layer control (collapsed, bottom-left) or standard
-      if (!limitedInteraction) {
+      // showLayerControl=false hides it entirely (for modal maps)
+      if (!limitedInteraction && showLayerControl) {
         L.control.layers(baseLayers, overlayLayers, {
           collapsed: compactLayerControl,
           position: compactLayerControl ? 'bottomleft' : 'topright',

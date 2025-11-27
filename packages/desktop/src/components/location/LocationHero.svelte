@@ -26,11 +26,11 @@
   );
 </script>
 
-<!-- Hero with 2.35:1 aspect, capped at 28% viewport height -->
+<!-- Hero with 2.35:1 aspect, capped at 33% viewport height -->
 {#if images.length > 0 && heroImage}
   <div class="w-full bg-[#fffbf7]">
     <div
-      class="relative w-full max-h-[28vh] mx-auto overflow-hidden"
+      class="relative w-full max-h-[33vh] mx-auto overflow-hidden"
       style="aspect-ratio: 2.35 / 1;"
     >
       {#if heroSrc}
@@ -67,7 +67,7 @@
 {:else}
   <!-- PUEA: Graceful empty state - matches hero constraints -->
   <div class="w-full bg-[#fffbf7]">
-    <div class="w-full max-h-[28vh] mx-auto bg-gradient-to-br from-gray-100 to-[#fffbf7] flex items-center justify-center" style="aspect-ratio: 2.35 / 1;">
+    <div class="w-full max-h-[33vh] mx-auto bg-gradient-to-br from-gray-100 to-[#fffbf7] flex items-center justify-center" style="aspect-ratio: 2.35 / 1;">
     <div class="text-center text-gray-400">
       <svg class="w-24 h-24 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />

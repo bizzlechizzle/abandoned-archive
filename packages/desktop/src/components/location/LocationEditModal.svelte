@@ -60,7 +60,7 @@
 
   let saving = $state(false);
   let error = $state<string | null>(null);
-  let activeTab = $state<'address' | 'gps'>('address');
+  let activeTab = $state<'address' | 'gps' | 'cultural'>('address');
 
   // DECISION-017: Proximity-filtered local cultural regions based on state and adjacent states
   const localCulturalRegions = $derived(() => {
@@ -240,6 +240,15 @@
       >
         GPS & Map
       </button>
+      <button
+        onclick={() => activeTab = 'cultural'}
+        class="flex-1 px-4 py-3 text-sm font-medium transition
+          {activeTab === 'cultural'
+            ? 'text-accent border-b-2 border-accent bg-accent/5'
+            : 'text-gray-500 hover:text-gray-700'}"
+      >
+        Cultural Region
+      </button>
     </div>
 
     <!-- Content -->
@@ -317,108 +326,12 @@
                 class="w-4 h-4 text-verified rounded border-gray-300 focus:ring-verified"
               />
               <span class="text-sm font-medium text-gray-700">
-                Verify this address is correct
-              </span>
-            </label>
-            <p class="text-xs text-gray-500 mt-1 ml-6">
-              Check this box after confirming the address matches the actual location
-            </p>
-          </div>
-
-          <!-- Local Cultural Region (DECISION-012: predefined options only, no custom entry) -->
-          <div class="pt-4 border-t border-gray-200">
-            <label for="cultural_region" class="block text-sm font-medium text-gray-700 mb-1">
-              Local Cultural Region
-              <span class="font-normal text-gray-400">(optional)</span>
-            </label>
-            <select
-              id="cultural_region"
-              bind:value={formData.cultural_region}
-              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-            >
-              <option value="">Not specified</option>
-              {#each localCulturalRegions() as region}
-                <option value={region}>{region}</option>
-              {/each}
-            </select>
-            {#if suggestedCulturalRegion && !formData.cultural_region}
-              <p class="text-xs text-accent mt-1">
-                Suggestion based on county: <button
-                  type="button"
-                  onclick={() => formData.cultural_region = suggestedCulturalRegion}
-                  class="font-medium underline hover:no-underline"
-                >{suggestedCulturalRegion}</button>
-              </p>
-            {:else}
-              <p class="text-xs text-gray-500 mt-1">
-                State/county-level cultural region (e.g., Hudson Valley, Capital Region)
-              </p>
-            {/if}
-
-            <!-- Local Cultural Region Verification -->
-            <label class="flex items-center gap-2 cursor-pointer mt-2">
-              <input
-                type="checkbox"
-                bind:checked={formData.local_cultural_region_verified}
-                disabled={!formData.cultural_region}
-                class="w-4 h-4 text-verified rounded border-gray-300 focus:ring-verified disabled:opacity-50"
-              />
-              <span class="text-sm text-gray-600 {!formData.cultural_region ? 'opacity-50' : ''}">
-                Verify this local cultural region
-              </span>
-            </label>
-          </div>
-
-          <!-- Country Cultural Region (DECISION-017: national-level regions with proximity filtering) -->
-          <div class="pt-4 border-t border-gray-200">
-            <label for="country_cultural_region" class="block text-sm font-medium text-gray-700 mb-1">
-              Country Cultural Region
-              <span class="font-normal text-gray-400">(optional)</span>
-            </label>
-            <select
-              id="country_cultural_region"
-              bind:value={formData.country_cultural_region}
-              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-            >
-              <option value="">Not specified</option>
-              {#each nearbyCountryCulturalRegions() as region}
-                <option value={region.name}>
-                  {region.name}
-                  {#if region.distance !== Infinity}
-                    ({Math.round(region.distance)} mi)
-                  {/if}
-                </option>
-              {/each}
-            </select>
-            {#if suggestedCountryCulturalRegion() && !formData.country_cultural_region}
-              <p class="text-xs text-accent mt-1">
-                Detected from GPS: <button
-                  type="button"
-                  onclick={() => formData.country_cultural_region = suggestedCountryCulturalRegion()!}
-                  class="font-medium underline hover:no-underline"
-                >{suggestedCountryCulturalRegion()}</button>
-              </p>
-            {:else}
-              <p class="text-xs text-gray-500 mt-1">
-                National-level cultural region (e.g., NYC Metro, Cascadia, Gulf Coast)
-              </p>
-            {/if}
-
-            <!-- Country Cultural Region Verification -->
-            <label class="flex items-center gap-2 cursor-pointer mt-2">
-              <input
-                type="checkbox"
-                bind:checked={formData.country_cultural_region_verified}
-                disabled={!formData.country_cultural_region}
-                class="w-4 h-4 text-verified rounded border-gray-300 focus:ring-verified disabled:opacity-50"
-              />
-              <span class="text-sm text-gray-600 {!formData.country_cultural_region ? 'opacity-50' : ''}">
-                Verify this country cultural region
+                Confirm Mailing Address
               </span>
             </label>
           </div>
         </div>
-      {:else}
+      {:else if activeTab === 'gps'}
         <!-- GPS Tab -->
         <div class="space-y-4">
           <div class="grid grid-cols-2 gap-4">
@@ -458,6 +371,9 @@
                   formData.gps_lng = lng.toFixed(6);
                 }}
                 zoom={mapLocation.gps ? 17 : 10}
+                defaultLayer="satellite-labels"
+                hideAttribution={true}
+                showLayerControl={false}
               />
             </div>
           </div>
@@ -471,12 +387,95 @@
                 class="w-4 h-4 text-verified rounded border-gray-300 focus:ring-verified"
               />
               <span class="text-sm font-medium text-gray-700">
-                Verify this GPS location is accurate
+                Confirm GPS Location
               </span>
             </label>
-            <p class="text-xs text-gray-500 mt-1 ml-6">
-              Check this box after confirming the marker is at the correct spot on the map
-            </p>
+          </div>
+        </div>
+      {:else if activeTab === 'cultural'}
+        <!-- Cultural Region Tab -->
+        <div class="space-y-4">
+          <!-- Local Cultural Region -->
+          <div>
+            <label for="cultural_region" class="block text-sm font-medium text-gray-700 mb-1">
+              Local Cultural Region
+            </label>
+            <select
+              id="cultural_region"
+              bind:value={formData.cultural_region}
+              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            >
+              <option value="">Not specified</option>
+              {#each localCulturalRegions() as region}
+                <option value={region}>{region}</option>
+              {/each}
+            </select>
+            {#if suggestedCulturalRegion && !formData.cultural_region}
+              <p class="text-xs text-accent mt-1">
+                Suggestion based on county: <button
+                  type="button"
+                  onclick={() => formData.cultural_region = suggestedCulturalRegion}
+                  class="font-medium underline hover:no-underline"
+                >{suggestedCulturalRegion}</button>
+              </p>
+            {/if}
+
+            <!-- Local Cultural Region Verification -->
+            <label class="flex items-center gap-2 cursor-pointer mt-2">
+              <input
+                type="checkbox"
+                bind:checked={formData.local_cultural_region_verified}
+                disabled={!formData.cultural_region}
+                class="w-4 h-4 text-verified rounded border-gray-300 focus:ring-verified disabled:opacity-50"
+              />
+              <span class="text-sm text-gray-600 {!formData.cultural_region ? 'opacity-50' : ''}">
+                Confirm Local Cultural Region
+              </span>
+            </label>
+          </div>
+
+          <!-- Country Cultural Region -->
+          <div class="pt-4 border-t border-gray-200">
+            <label for="country_cultural_region" class="block text-sm font-medium text-gray-700 mb-1">
+              Country Cultural Region
+            </label>
+            <select
+              id="country_cultural_region"
+              bind:value={formData.country_cultural_region}
+              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            >
+              <option value="">Not specified</option>
+              {#each nearbyCountryCulturalRegions() as region}
+                <option value={region.name}>
+                  {region.name}
+                  {#if region.distance !== Infinity}
+                    ({Math.round(region.distance)} mi)
+                  {/if}
+                </option>
+              {/each}
+            </select>
+            {#if suggestedCountryCulturalRegion() && !formData.country_cultural_region}
+              <p class="text-xs text-accent mt-1">
+                Detected from GPS: <button
+                  type="button"
+                  onclick={() => formData.country_cultural_region = suggestedCountryCulturalRegion()!}
+                  class="font-medium underline hover:no-underline"
+                >{suggestedCountryCulturalRegion()}</button>
+              </p>
+            {/if}
+
+            <!-- Country Cultural Region Verification -->
+            <label class="flex items-center gap-2 cursor-pointer mt-2">
+              <input
+                type="checkbox"
+                bind:checked={formData.country_cultural_region_verified}
+                disabled={!formData.country_cultural_region}
+                class="w-4 h-4 text-verified rounded border-gray-300 focus:ring-verified disabled:opacity-50"
+              />
+              <span class="text-sm text-gray-600 {!formData.country_cultural_region ? 'opacity-50' : ''}">
+                Confirm Country Cultural Region
+              </span>
+            </label>
           </div>
         </div>
       {/if}

@@ -21,6 +21,7 @@ export const ACCESS_OPTIONS = [
   'Partially Active',
   'Future Classic',
   'Vacant',
+  'Renovated',
   'Unknown',
 ] as const;
 
