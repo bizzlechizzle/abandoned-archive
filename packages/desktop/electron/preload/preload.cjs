@@ -178,10 +178,20 @@ const api = {
   },
 
   users: {
+    // CRUD
     create: (input) => ipcRenderer.invoke("users:create", input),
     findAll: () => ipcRenderer.invoke("users:findAll"),
+    findById: (userId) => ipcRenderer.invoke("users:findById", userId),
     findByUsername: (username) => ipcRenderer.invoke("users:findByUsername", username),
+    update: (userId, updates) => ipcRenderer.invoke("users:update", userId, updates),
     delete: (userId) => ipcRenderer.invoke("users:delete", userId),
+    // Authentication (Migration 24)
+    verifyPin: (userId, pin) => ipcRenderer.invoke("users:verifyPin", userId, pin),
+    setPin: (userId, pin) => ipcRenderer.invoke("users:setPin", userId, pin),
+    clearPin: (userId) => ipcRenderer.invoke("users:clearPin", userId),
+    hasPin: (userId) => ipcRenderer.invoke("users:hasPin", userId),
+    anyUserHasPin: () => ipcRenderer.invoke("users:anyUserHasPin"),
+    updateLastLogin: (userId) => ipcRenderer.invoke("users:updateLastLogin", userId),
   },
 
   health: {

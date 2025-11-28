@@ -30,6 +30,10 @@ export interface ImportFileInput {
   locid: string;
   subid?: string | null;
   auth_imp: string | null;
+  // Migration 25: Activity tracking
+  imported_by_id?: string | null;
+  imported_by?: string | null;
+  media_source?: string | null;
 }
 
 export interface ImportResult {
@@ -944,6 +948,10 @@ export class FileImportService {
           preview_extracted: (rawPreviewPath || previewPath) ? 1 : 0,
           // Legacy column for backwards compatibility
           thumb_path: thumbPathSm,
+          // Migration 25: Activity tracking
+          imported_by_id: file.imported_by_id || null,
+          imported_by: file.imported_by || null,
+          media_source: file.media_source || null,
         })
         .execute();
     } else if (type === 'video') {
@@ -977,6 +985,10 @@ export class FileImportService {
           preview_path: previewPath,
           // Legacy column for backwards compatibility
           thumb_path: thumbPathSm,
+          // Migration 25: Activity tracking
+          imported_by_id: file.imported_by_id || null,
+          imported_by: file.imported_by || null,
+          media_source: file.media_source || null,
         })
         .execute();
     } else if (type === 'map') {
@@ -1008,6 +1020,10 @@ export class FileImportService {
           thumb_path_sm: thumbPathSm,
           thumb_path_lg: thumbPathLg,
           preview_path: previewPath,
+          // Migration 25: Activity tracking
+          imported_by_id: file.imported_by_id || null,
+          imported_by: file.imported_by || null,
+          media_source: file.media_source || null,
         })
         .execute();
     } else if (type === 'document') {
@@ -1028,6 +1044,10 @@ export class FileImportService {
           meta_page_count: null, // ExifTool doesn't provide this consistently
           meta_author: null,     // Could extract from exif if available
           meta_title: null,      // Could extract from exif if available
+          // Migration 25: Activity tracking
+          imported_by_id: file.imported_by_id || null,
+          imported_by: file.imported_by || null,
+          media_source: file.media_source || null,
         })
         .execute();
     }

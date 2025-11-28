@@ -14,6 +14,7 @@ export interface Database {
   project_locations: ProjectLocationsTable;
   bookmarks: BookmarksTable;
   users: UsersTable;
+  location_authors: LocationAuthorsTable;
 }
 
 // Locations table
@@ -135,6 +136,13 @@ export interface LocsTable {
   locup: string | null;
   auth_imp: string | null;
 
+  // Activity Tracking (Migration 25)
+  created_by_id: string | null;    // User ID who created the location
+  created_by: string | null;       // Username for display
+  modified_by_id: string | null;   // User ID who last modified
+  modified_by: string | null;      // Username for display
+  modified_at: string | null;      // ISO timestamp of last modification
+
   // Regions
   regions: string | null;
   state: string | null;
@@ -193,6 +201,11 @@ export interface ImgsTable {
   hidden_reason: string | null;
   is_live_photo: number;
 
+  // Activity Tracking (Migration 25)
+  imported_by_id: string | null;   // User ID who imported this media
+  imported_by: string | null;      // Username for display
+  media_source: string | null;     // e.g., "Personal camera", "Facebook archive", "Web archive"
+
   // NOTE: darktable columns exist in DB but are deprecated/unused
   // darktable_path, darktable_processed, darktable_processed_at - REMOVED from app
 }
@@ -242,6 +255,11 @@ export interface VidsTable {
   hidden: number;
   hidden_reason: string | null;
   is_live_photo: number;
+
+  // Activity Tracking (Migration 25)
+  imported_by_id: string | null;   // User ID who imported this media
+  imported_by: string | null;      // Username for display
+  media_source: string | null;     // e.g., "Personal camera", "Facebook archive", "Web archive"
 }
 
 // Documents table
@@ -268,6 +286,11 @@ export interface DocsTable {
   // Hidden fields (Migration 23)
   hidden: number;
   hidden_reason: string | null;
+
+  // Activity Tracking (Migration 25)
+  imported_by_id: string | null;   // User ID who imported this media
+  imported_by: string | null;      // Username for display
+  media_source: string | null;     // e.g., "Personal camera", "Facebook archive", "Web archive"
 }
 
 // Maps table
@@ -298,6 +321,11 @@ export interface MapsTable {
   thumb_path_sm: string | null;  // 400px - grid view (1x)
   thumb_path_lg: string | null;  // 800px - grid view (2x HiDPI)
   preview_path: string | null;   // 1920px - lightbox
+
+  // Activity Tracking (Migration 25)
+  imported_by_id: string | null;   // User ID who imported this media
+  imported_by: string | null;      // Username for display
+  media_source: string | null;     // e.g., "Personal camera", "Facebook archive", "Web archive"
 }
 
 // Settings table
@@ -362,4 +390,16 @@ export interface UsersTable {
   username: string;
   display_name: string | null;
   created_date: string;
+  // Authentication (Migration 24)
+  pin_hash: string | null;
+  is_active: number;
+  last_login: string | null;
+}
+
+// Location Authors junction table (Migration 25)
+export interface LocationAuthorsTable {
+  locid: string;
+  user_id: string;
+  role: string;      // 'creator', 'documenter', 'contributor'
+  added_at: string;  // ISO timestamp
 }

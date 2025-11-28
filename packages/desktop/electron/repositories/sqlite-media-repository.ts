@@ -31,6 +31,10 @@ export interface MediaImage {
   hidden: number;
   hidden_reason: string | null;
   is_live_photo: number;
+  // Activity Tracking (Migration 25)
+  imported_by_id: string | null;
+  imported_by: string | null;
+  media_source: string | null;
   // NOTE: darktable columns exist in DB but are deprecated/unused
 }
 
@@ -67,6 +71,10 @@ export interface MediaVideo {
   hidden: number;
   hidden_reason: string | null;
   is_live_photo: number;
+  // Activity Tracking (Migration 25)
+  imported_by_id: string | null;
+  imported_by: string | null;
+  media_source: string | null;
 }
 
 export interface MediaDocument {
@@ -86,6 +94,10 @@ export interface MediaDocument {
   // Hidden fields (Migration 23)
   hidden: number;
   hidden_reason: string | null;
+  // Activity Tracking (Migration 25)
+  imported_by_id: string | null;
+  imported_by: string | null;
+  media_source: string | null;
 }
 
 /**

@@ -84,6 +84,35 @@ const api = {
       ipcRenderer.invoke('stats:topStates', limit),
     topTypes: (limit?: number): Promise<Array<{ type: string; count: number }>> =>
       ipcRenderer.invoke('stats:topTypes', limit),
+    // Migration 25 - Phase 4: Per-user stats
+    userContributions: (userId: string): Promise<{
+      locationsCreated: number;
+      locationsDocumented: number;
+      locationsContributed: number;
+      totalLocationsInvolved: number;
+      imagesImported: number;
+      videosImported: number;
+      documentsImported: number;
+      totalMediaImported: number;
+    }> =>
+      ipcRenderer.invoke('stats:userContributions', userId),
+    topContributors: (limit?: number): Promise<{
+      topCreators: Array<{ userId: string; username: string; displayName: string | null; count: number }>;
+      topDocumenters: Array<{ userId: string; username: string; displayName: string | null; count: number }>;
+      topImporters: Array<{ userId: string; username: string; displayName: string | null; count: number }>;
+    }> =>
+      ipcRenderer.invoke('stats:topContributors', limit),
+    allUserStats: (): Promise<Array<{
+      userId: string;
+      username: string;
+      displayName: string | null;
+      locationsCreated: number;
+      locationsDocumented: number;
+      locationsContributed: number;
+      mediaImported: number;
+      lastLogin: string | null;
+    }>> =>
+      ipcRenderer.invoke('stats:allUserStats'),
   },
 
   settings: {
@@ -456,18 +485,118 @@ const api = {
     countByLocation: (locid: string): Promise<number> =>
       ipcRenderer.invoke('bookmarks:countByLocation', locid),
   },
+  // Migration 25 - Phase 3: Location authors (multi-user attribution)
+  locationAuthors: {
+    add: (input: {
+      locid: string;
+      user_id: string;
+      role: 'creator' | 'documenter' | 'contributor';
+    }): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('location-authors:add', input),
+    remove: (locid: string, user_id: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('location-authors:remove', locid, user_id),
+    findByLocation: (locid: string): Promise<Array<{
+      locid: string;
+      user_id: string;
+      username?: string;
+      display_name?: string;
+      role: 'creator' | 'documenter' | 'contributor';
+      added_at: string;
+    }>> =>
+      ipcRenderer.invoke('location-authors:findByLocation', locid),
+    findByUser: (user_id: string): Promise<Array<{
+      locid: string;
+      user_id: string;
+      role: 'creator' | 'documenter' | 'contributor';
+      added_at: string;
+    }>> =>
+      ipcRenderer.invoke('location-authors:findByUser', user_id),
+    findCreator: (locid: string): Promise<{
+      locid: string;
+      user_id: string;
+      username?: string;
+      display_name?: string;
+      role: 'creator';
+      added_at: string;
+    } | null> =>
+      ipcRenderer.invoke('location-authors:findCreator', locid),
+    countByUserAndRole: (user_id: string): Promise<Record<string, number>> =>
+      ipcRenderer.invoke('location-authors:countByUserAndRole', user_id),
+    countByLocation: (locid: string): Promise<number> =>
+      ipcRenderer.invoke('location-authors:countByLocation', locid),
+    trackContribution: (locid: string, user_id: string, action: 'create' | 'import' | 'edit'): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('location-authors:trackContribution', locid, user_id, action),
+  },
+
   users: {
+    // CRUD
     create: (input: {
       username: string;
       display_name?: string | null;
-    }): Promise<unknown> =>
+      pin?: string | null;
+    }): Promise<{
+      user_id: string;
+      username: string;
+      display_name: string | null;
+      has_pin: boolean;
+      is_active: boolean;
+      last_login: string | null;
+    }> =>
       ipcRenderer.invoke('users:create', input),
-    findAll: (): Promise<unknown[]> =>
+    findAll: (): Promise<Array<{
+      user_id: string;
+      username: string;
+      display_name: string | null;
+      has_pin: boolean;
+      is_active: boolean;
+      last_login: string | null;
+    }>> =>
       ipcRenderer.invoke('users:findAll'),
-    findByUsername: (username: string): Promise<unknown | null> =>
+    findById: (userId: string): Promise<{
+      user_id: string;
+      username: string;
+      display_name: string | null;
+      has_pin: boolean;
+      is_active: boolean;
+      last_login: string | null;
+    } | null> =>
+      ipcRenderer.invoke('users:findById', userId),
+    findByUsername: (username: string): Promise<{
+      user_id: string;
+      username: string;
+      display_name: string | null;
+      has_pin: boolean;
+      is_active: boolean;
+      last_login: string | null;
+    } | null> =>
       ipcRenderer.invoke('users:findByUsername', username),
-    delete: (user_id: string): Promise<void> =>
-      ipcRenderer.invoke('users:delete', user_id),
+    update: (userId: string, updates: {
+      username?: string;
+      display_name?: string | null;
+    }): Promise<{
+      user_id: string;
+      username: string;
+      display_name: string | null;
+      has_pin: boolean;
+      is_active: boolean;
+      last_login: string | null;
+    }> =>
+      ipcRenderer.invoke('users:update', userId, updates),
+    delete: (userId: string): Promise<void> =>
+      ipcRenderer.invoke('users:delete', userId),
+    // Authentication (Migration 24)
+    verifyPin: (userId: string, pin: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('users:verifyPin', userId, pin),
+    setPin: (userId: string, pin: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('users:setPin', userId, pin),
+    clearPin: (userId: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('users:clearPin', userId),
+    hasPin: (userId: string): Promise<boolean> =>
+      ipcRenderer.invoke('users:hasPin', userId),
+    anyUserHasPin: (): Promise<boolean> =>
+      ipcRenderer.invoke('users:anyUserHasPin'),
+    updateLastLogin: (userId: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('users:updateLastLogin', userId),
   },
 
   health: {

@@ -827,6 +827,119 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 23 completed: hidden and live photo columns added');
     }
+
+    // Migration 24: User authentication system
+    // Multi-user support with simple PIN authentication
+    // - pin_hash: SHA256 hash of user's PIN (null = no PIN required)
+    // - is_active: Soft delete flag for users
+    // - last_login: Track last login timestamp
+    // - app_mode setting: 'single' or 'multi' user mode
+    const userColsForPin = sqlite.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>;
+    const hasPinHash = userColsForPin.some(col => col.name === 'pin_hash');
+
+    if (!hasPinHash) {
+      console.log('Running migration 24: Adding user authentication columns');
+
+      // Add authentication columns to users table
+      sqlite.exec(`
+        ALTER TABLE users ADD COLUMN pin_hash TEXT;
+        ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1;
+        ALTER TABLE users ADD COLUMN last_login TEXT;
+      `);
+
+      // Set default app_mode to 'single' for existing installations
+      const existingMode = sqlite.prepare("SELECT value FROM settings WHERE key = 'app_mode'").get();
+      if (!existingMode) {
+        sqlite.prepare("INSERT INTO settings (key, value) VALUES ('app_mode', 'single')").run();
+      }
+
+      console.log('Migration 24 completed: user authentication columns added');
+    }
+
+    // Migration 25: Activity tracking and author attribution
+    // Phase 2 & 3: Track who creates, modifies, imports, and documents locations
+    // - created_by_id, modified_by_id: Foreign keys to users table
+    // - created_by, modified_by: Username strings for display (denormalized for performance)
+    // - modified_at: Timestamp of last modification
+    // - imported_by_id, imported_by: Track who imported media
+    // - media_source: Track where media came from (e.g., "Personal camera", "Facebook archive")
+    // - location_authors: Junction table for multiple authors per location
+    const locsColsForTracking = sqlite.prepare('PRAGMA table_info(locs)').all() as Array<{ name: string }>;
+    const hasCreatedById = locsColsForTracking.some(col => col.name === 'created_by_id');
+
+    if (!hasCreatedById) {
+      console.log('Running migration 25: Adding activity tracking and author attribution');
+
+      // Add tracking columns to locs table
+      sqlite.exec(`
+        ALTER TABLE locs ADD COLUMN created_by_id TEXT REFERENCES users(user_id);
+        ALTER TABLE locs ADD COLUMN created_by TEXT;
+        ALTER TABLE locs ADD COLUMN modified_by_id TEXT REFERENCES users(user_id);
+        ALTER TABLE locs ADD COLUMN modified_by TEXT;
+        ALTER TABLE locs ADD COLUMN modified_at TEXT;
+      `);
+
+      // Add tracking columns to imgs table
+      sqlite.exec(`
+        ALTER TABLE imgs ADD COLUMN imported_by_id TEXT REFERENCES users(user_id);
+        ALTER TABLE imgs ADD COLUMN imported_by TEXT;
+        ALTER TABLE imgs ADD COLUMN media_source TEXT;
+      `);
+
+      // Add tracking columns to vids table
+      sqlite.exec(`
+        ALTER TABLE vids ADD COLUMN imported_by_id TEXT REFERENCES users(user_id);
+        ALTER TABLE vids ADD COLUMN imported_by TEXT;
+        ALTER TABLE vids ADD COLUMN media_source TEXT;
+      `);
+
+      // Add tracking columns to docs table
+      sqlite.exec(`
+        ALTER TABLE docs ADD COLUMN imported_by_id TEXT REFERENCES users(user_id);
+        ALTER TABLE docs ADD COLUMN imported_by TEXT;
+        ALTER TABLE docs ADD COLUMN media_source TEXT;
+      `);
+
+      // Add tracking columns to maps table
+      sqlite.exec(`
+        ALTER TABLE maps ADD COLUMN imported_by_id TEXT REFERENCES users(user_id);
+        ALTER TABLE maps ADD COLUMN imported_by TEXT;
+        ALTER TABLE maps ADD COLUMN media_source TEXT;
+      `);
+
+      // Create location_authors junction table for multiple contributors
+      sqlite.exec(`
+        CREATE TABLE IF NOT EXISTS location_authors (
+          locid TEXT NOT NULL REFERENCES locs(locid) ON DELETE CASCADE,
+          user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+          role TEXT NOT NULL DEFAULT 'contributor',
+          added_at TEXT NOT NULL,
+          PRIMARY KEY (locid, user_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_location_authors_locid ON location_authors(locid);
+        CREATE INDEX IF NOT EXISTS idx_location_authors_user_id ON location_authors(user_id);
+      `);
+
+      // Create indexes for activity queries
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_locs_created_by_id ON locs(created_by_id) WHERE created_by_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_locs_modified_by_id ON locs(modified_by_id) WHERE modified_by_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_imgs_imported_by_id ON imgs(imported_by_id) WHERE imported_by_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_vids_imported_by_id ON vids(imported_by_id) WHERE imported_by_id IS NOT NULL;
+      `);
+
+      // Backfill existing locations with auth_imp data if available
+      // This preserves the existing author attribution from the auth_imp field
+      sqlite.exec(`
+        UPDATE locs SET created_by = auth_imp WHERE created_by IS NULL AND auth_imp IS NOT NULL;
+        UPDATE imgs SET imported_by = auth_imp WHERE imported_by IS NULL AND auth_imp IS NOT NULL;
+        UPDATE vids SET imported_by = auth_imp WHERE imported_by IS NULL AND auth_imp IS NOT NULL;
+        UPDATE docs SET imported_by = auth_imp WHERE imported_by IS NULL AND auth_imp IS NOT NULL;
+        UPDATE maps SET imported_by = auth_imp WHERE imported_by IS NULL AND auth_imp IS NOT NULL;
+      `);
+
+      console.log('Migration 25 completed: activity tracking and author attribution columns added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

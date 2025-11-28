@@ -111,6 +111,11 @@ export const LocationInputSchema = z.object({
   // Hero Display Name (Migration 21)
   locnamShort: z.string().optional(),          // Optional custom short name for hero
   locnamUseThe: z.boolean().default(false),    // Prepend "The" to display name
+  // Migration 25: Activity tracking (optional on input, set by system)
+  created_by_id: z.string().uuid().optional(),
+  created_by: z.string().optional(),
+  modified_by_id: z.string().uuid().optional(),
+  modified_by: z.string().optional(),
 });
 
 export type LocationInput = z.infer<typeof LocationInputSchema>;
@@ -140,6 +145,12 @@ export const LocationSchema = LocationInputSchema.extend({
   localCulturalRegionVerified: z.boolean().default(false),    // User verified the local cultural region
   country: z.string().default('United States'),        // Country name
   continent: z.string().default('North America'),      // Continent name
+  // Migration 25: Activity tracking
+  createdById: z.string().uuid().optional(),
+  createdBy: z.string().optional(),
+  modifiedById: z.string().uuid().optional(),
+  modifiedBy: z.string().optional(),
+  modifiedAt: z.string().datetime().optional(),
 });
 
 export type Location = z.infer<typeof LocationSchema>;

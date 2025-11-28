@@ -6,6 +6,7 @@
  *
  * Modules:
  * - locations.ts: location:* handlers
+ * - location-authors.ts: location-authors:* handlers (Migration 25 - Phase 3)
  * - stats-settings.ts: stats:* and settings:* handlers
  * - shell-dialog.ts: shell:* and dialog:* handlers
  * - imports.ts: imports:* handlers
@@ -22,6 +23,7 @@
 
 import { getDatabase } from '../database';
 import { registerLocationHandlers } from './locations';
+import { registerLocationAuthorsHandlers } from './location-authors';
 import { registerStatsHandlers, registerSettingsHandlers, registerLibpostalHandlers } from './stats-settings';
 import { registerShellHandlers, registerDialogHandlers } from './shell-dialog';
 import { registerImportsHandlers } from './imports';
@@ -63,6 +65,9 @@ export function registerIpcHandlers() {
   registerProjectsHandlers(db);
   registerBookmarksHandlers(db);
   registerUsersHandlers(db);
+
+  // Migration 25 - Phase 3: Location authors (multi-user attribution)
+  registerLocationAuthorsHandlers(db);
 
   // Database operations
   registerDatabaseHandlers();

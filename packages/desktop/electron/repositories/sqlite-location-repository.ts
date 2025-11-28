@@ -137,6 +137,12 @@ export class SQLiteLocationRepository implements LocationRepository {
         local_cultural_region_verified: 0,
         country: 'United States',
         continent: 'North America',
+        // Migration 25: Activity tracking
+        created_by_id: input.created_by_id || null,
+        created_by: input.created_by || input.auth_imp || null,
+        modified_by_id: input.created_by_id || null,
+        modified_by: input.created_by || input.auth_imp || null,
+        modified_at: locadd,
       })
       .execute();
 
@@ -222,8 +228,20 @@ export class SQLiteLocationRepository implements LocationRepository {
     const locup = new Date().toISOString();
 
     const updates: Record<string, unknown> = {
-      locup
+      locup,
+      // Migration 25: Activity tracking
+      modified_at: locup,
     };
+
+    // Migration 25: Track who modified if provided
+    if ((input as any).modified_by_id !== undefined) {
+      updates.modified_by_id = (input as any).modified_by_id;
+    }
+    if ((input as any).modified_by !== undefined) {
+      updates.modified_by = (input as any).modified_by;
+    } else if (input.auth_imp !== undefined) {
+      updates.modified_by = input.auth_imp;
+    }
 
     if (input.locnam !== undefined) updates.locnam = input.locnam;
     if (input.slocnam !== undefined) updates.slocnam = input.slocnam;
@@ -531,6 +549,12 @@ export class SQLiteLocationRepository implements LocationRepository {
       // Migration 21: Hero display name fields
       locnamShort: row.locnam_short ?? undefined,
       locnamUseThe: row.locnam_use_the === 1,
+      // Migration 25: Activity tracking
+      createdById: row.created_by_id ?? undefined,
+      createdBy: row.created_by ?? undefined,
+      modifiedById: row.modified_by_id ?? undefined,
+      modifiedBy: row.modified_by ?? undefined,
+      modifiedAt: row.modified_at ?? undefined,
       // Migration 22: Hero focal point fields
       hero_focal_x: row.hero_focal_x ?? 0.5,
       hero_focal_y: row.hero_focal_y ?? 0.5,

@@ -1,18 +1,42 @@
 /**
  * Location IPC Handlers
  * Handles all location:* IPC channels
+ * Migration 25: Activity tracking - passes current user to repository
+ * Migration 25 - Phase 3: Author attribution via location_authors table
  */
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
 import type { Database } from '../database';
 import { SQLiteLocationRepository } from '../../repositories/sqlite-location-repository';
+import { SQLiteLocationAuthorsRepository } from '../../repositories/sqlite-location-authors-repository';
 import { LocationInputSchema } from '@au-archive/core';
 import type { LocationFilters } from '@au-archive/core';
 import { AddressService, type NormalizedAddress } from '../../services/address-service';
 
+/**
+ * Get current user context from settings
+ * Returns { userId, username } or null if no user logged in
+ */
+async function getCurrentUser(db: Kysely<Database>): Promise<{ userId: string; username: string } | null> {
+  try {
+    const userIdRow = await db.selectFrom('settings').select('value').where('key', '=', 'current_user_id').executeTakeFirst();
+    const usernameRow = await db.selectFrom('settings').select('value').where('key', '=', 'current_user').executeTakeFirst();
+
+    if (userIdRow?.value && usernameRow?.value) {
+      return { userId: userIdRow.value, username: usernameRow.value };
+    }
+    return null;
+  } catch (error) {
+    console.warn('[Location IPC] Failed to get current user:', error);
+    return null;
+  }
+}
+
 export function registerLocationHandlers(db: Kysely<Database>) {
   const locationRepo = new SQLiteLocationRepository(db);
+  // Migration 25 - Phase 3: Location authors repository for attribution tracking
+  const authorsRepo = new SQLiteLocationAuthorsRepository(db);
 
   ipcMain.handle('location:findAll', async (_event, filters?: LocationFilters) => {
     try {
@@ -39,7 +63,27 @@ export function registerLocationHandlers(db: Kysely<Database>) {
   ipcMain.handle('location:create', async (_event, input: unknown) => {
     try {
       const validatedInput = LocationInputSchema.parse(input);
-      return await locationRepo.create(validatedInput);
+
+      // Migration 25: Inject current user context
+      const currentUser = await getCurrentUser(db);
+      if (currentUser) {
+        validatedInput.created_by_id = currentUser.userId;
+        validatedInput.created_by = currentUser.username;
+        validatedInput.modified_by_id = currentUser.userId;
+        validatedInput.modified_by = currentUser.username;
+      }
+
+      const location = await locationRepo.create(validatedInput);
+
+      // Migration 25 - Phase 3: Track the creator in location_authors table
+      if (currentUser && location) {
+        await authorsRepo.trackUserContribution(location.locid, currentUser.userId, 'create').catch((err) => {
+          console.warn('[Location IPC] Failed to track creator:', err);
+          // Non-fatal - don't fail location creation
+        });
+      }
+
+      return location;
     } catch (error) {
       console.error('Error creating location:', error);
       if (error instanceof z.ZodError) {
@@ -53,7 +97,25 @@ export function registerLocationHandlers(db: Kysely<Database>) {
     try {
       const validatedId = z.string().uuid().parse(id);
       const validatedInput = LocationInputSchema.partial().parse(input);
-      return await locationRepo.update(validatedId, validatedInput);
+
+      // Migration 25: Inject current user context for modification tracking
+      const currentUser = await getCurrentUser(db);
+      if (currentUser) {
+        validatedInput.modified_by_id = currentUser.userId;
+        validatedInput.modified_by = currentUser.username;
+      }
+
+      const location = await locationRepo.update(validatedId, validatedInput);
+
+      // Migration 25 - Phase 3: Track the contributor in location_authors table
+      if (currentUser) {
+        await authorsRepo.trackUserContribution(validatedId, currentUser.userId, 'edit').catch((err) => {
+          console.warn('[Location IPC] Failed to track contributor:', err);
+          // Non-fatal - don't fail location update
+        });
+      }
+
+      return location;
     } catch (error) {
       console.error('Error updating location:', error);
       if (error instanceof z.ZodError) {
@@ -160,7 +222,18 @@ export function registerLocationHandlers(db: Kysely<Database>) {
         throw new Error('Location not found');
       }
       const newFavoriteState = !location.favorite;
-      await locationRepo.update(validatedId, { favorite: newFavoriteState });
+
+      // Migration 25: Track who toggled favorite
+      const currentUser = await getCurrentUser(db);
+      const updateData: { favorite: boolean; modified_by_id?: string; modified_by?: string } = {
+        favorite: newFavoriteState,
+      };
+      if (currentUser) {
+        updateData.modified_by_id = currentUser.userId;
+        updateData.modified_by = currentUser.username;
+      }
+
+      await locationRepo.update(validatedId, updateData);
       return newFavoriteState;
     } catch (error) {
       console.error('Error toggling favorite:', error);
@@ -260,6 +333,10 @@ export function registerLocationHandlers(db: Kysely<Database>) {
 
       const validatedRegionData = RegionDataSchema.parse(regionData);
 
+      // Migration 25: Get current user for modification tracking
+      const currentUser = await getCurrentUser(db);
+      const now = new Date().toISOString();
+
       // Update directly in database
       await db.updateTable('locs')
         .set({
@@ -267,7 +344,11 @@ export function registerLocationHandlers(db: Kysely<Database>) {
           local_cultural_region_verified: validatedRegionData.localCulturalRegionVerified ? 1 : 0,
           country_cultural_region: validatedRegionData.countryCulturalRegion,
           country_cultural_region_verified: validatedRegionData.countryCulturalRegionVerified ? 1 : 0,
-          locup: new Date().toISOString(),
+          locup: now,
+          // Migration 25: Activity tracking
+          modified_by_id: currentUser?.userId || null,
+          modified_by: currentUser?.username || null,
+          modified_at: now,
         })
         .where('locid', '=', validatedId)
         .execute();

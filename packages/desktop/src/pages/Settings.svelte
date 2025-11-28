@@ -4,15 +4,49 @@
   import HealthMonitoring from '../components/HealthMonitoring.svelte';
   import { thumbnailCache } from '../stores/thumbnail-cache-store';
 
+  interface User {
+    user_id: string;
+    username: string;
+    display_name: string | null;
+    has_pin: boolean;
+    is_active: boolean;
+    last_login: string | null;
+  }
+
   let archivePath = $state('');
   let deleteOriginals = $state(false);
-  let currentUser = $state('default');
-  let loginRequired = $state(false);
+  let currentUserId = $state<string | null>(null);
+  let currentUsername = $state('default');
   let importMap = $state(true);
   let mapImport = $state(true);
   let loading = $state(true);
   let saving = $state(false);
   let saveMessage = $state('');
+
+  // Migration 24: User management state
+  let appMode = $state<'single' | 'multi'>('single');
+  let requireLogin = $state(false);
+  let users = $state<User[]>([]);
+  let showAddUser = $state(false);
+  let editingUserId = $state<string | null>(null);
+  let changingPinUserId = $state<string | null>(null);
+
+  // New user form
+  let newUsername = $state('');
+  let newDisplayName = $state('');
+  let newPin = $state('');
+  let newConfirmPin = $state('');
+  let newUserError = $state('');
+
+  // Edit user form
+  let editUsername = $state('');
+  let editDisplayName = $state('');
+  let editError = $state('');
+
+  // Change PIN form
+  let changePin = $state('');
+  let changeConfirmPin = $state('');
+  let changePinError = $state('');
 
   // Kanye6: Thumbnail regeneration state
   let regenerating = $state(false);
@@ -45,14 +79,231 @@
 
       archivePath = settings.archive_folder || '';
       deleteOriginals = settings.delete_on_import === 'true';
-      currentUser = settings.current_user || 'default';
-      loginRequired = settings.login_required === 'true';
+      currentUserId = settings.current_user_id || null;
+      currentUsername = settings.current_user || 'default';
+      appMode = (settings.app_mode as 'single' | 'multi') || 'single';
+      requireLogin = settings.require_login === 'true';
       importMap = settings.import_map !== 'false'; // Default true
       mapImport = settings.map_import !== 'false'; // Default true
+
+      // Load users for multi-user mode
+      await loadUsers();
     } catch (error) {
       console.error('Error loading settings:', error);
     } finally {
       loading = false;
+    }
+  }
+
+  async function loadUsers() {
+    if (!window.electronAPI?.users) return;
+    try {
+      users = await window.electronAPI.users.findAll();
+    } catch (error) {
+      console.error('Error loading users:', error);
+    }
+  }
+
+  async function switchToMultiUser() {
+    if (!window.electronAPI?.settings) return;
+    try {
+      await window.electronAPI.settings.set('app_mode', 'multi');
+      appMode = 'multi';
+      saveMessage = 'Switched to multi-user mode';
+      setTimeout(() => saveMessage = '', 3000);
+    } catch (error) {
+      console.error('Error switching mode:', error);
+    }
+  }
+
+  async function switchToSingleUser() {
+    if (!window.electronAPI?.settings) return;
+    try {
+      await window.electronAPI.settings.set('app_mode', 'single');
+      appMode = 'single';
+      saveMessage = 'Switched to single-user mode';
+      setTimeout(() => saveMessage = '', 3000);
+    } catch (error) {
+      console.error('Error switching mode:', error);
+    }
+  }
+
+  async function toggleRequireLogin() {
+    if (!window.electronAPI?.settings) return;
+    try {
+      const newValue = !requireLogin;
+      await window.electronAPI.settings.set('require_login', newValue.toString());
+      requireLogin = newValue;
+      saveMessage = newValue ? 'Login will be required at startup' : 'Login no longer required at startup';
+      setTimeout(() => saveMessage = '', 3000);
+    } catch (error) {
+      console.error('Error toggling require login:', error);
+    }
+  }
+
+  function openAddUser() {
+    newUsername = '';
+    newDisplayName = '';
+    newPin = '';
+    newConfirmPin = '';
+    newUserError = '';
+    showAddUser = true;
+  }
+
+  function cancelAddUser() {
+    showAddUser = false;
+    newUserError = '';
+  }
+
+  async function createUser() {
+    if (!window.electronAPI?.users) return;
+
+    newUserError = '';
+
+    if (!newUsername.trim()) {
+      newUserError = 'Username is required';
+      return;
+    }
+
+    if (newPin && newPin.length < 4) {
+      newUserError = 'PIN must be at least 4 digits';
+      return;
+    }
+
+    if (newPin && !/^\d+$/.test(newPin)) {
+      newUserError = 'PIN must contain only numbers';
+      return;
+    }
+
+    if (newPin && newPin !== newConfirmPin) {
+      newUserError = 'PINs do not match';
+      return;
+    }
+
+    try {
+      await window.electronAPI.users.create({
+        username: newUsername.trim(),
+        display_name: newDisplayName.trim() || null,
+        pin: newPin.length >= 4 ? newPin : null,
+      });
+
+      showAddUser = false;
+      await loadUsers();
+      saveMessage = `User "${newUsername}" created`;
+      setTimeout(() => saveMessage = '', 3000);
+    } catch (error) {
+      console.error('Error creating user:', error);
+      newUserError = 'Failed to create user';
+    }
+  }
+
+  function startEditUser(user: User) {
+    editingUserId = user.user_id;
+    editUsername = user.username;
+    editDisplayName = user.display_name || '';
+    editError = '';
+  }
+
+  function cancelEditUser() {
+    editingUserId = null;
+    editError = '';
+  }
+
+  async function saveEditUser() {
+    if (!window.electronAPI?.users || !editingUserId) return;
+
+    editError = '';
+
+    if (!editUsername.trim()) {
+      editError = 'Username is required';
+      return;
+    }
+
+    try {
+      await window.electronAPI.users.update(editingUserId, {
+        username: editUsername.trim(),
+        display_name: editDisplayName.trim() || null,
+      });
+
+      editingUserId = null;
+      await loadUsers();
+      saveMessage = 'User updated';
+      setTimeout(() => saveMessage = '', 3000);
+    } catch (error) {
+      console.error('Error updating user:', error);
+      editError = 'Failed to update user';
+    }
+  }
+
+  function startChangePin(user: User) {
+    changingPinUserId = user.user_id;
+    changePin = '';
+    changeConfirmPin = '';
+    changePinError = '';
+  }
+
+  function cancelChangePin() {
+    changingPinUserId = null;
+    changePinError = '';
+  }
+
+  async function saveChangePin() {
+    if (!window.electronAPI?.users || !changingPinUserId) return;
+
+    changePinError = '';
+
+    if (changePin && changePin.length < 4) {
+      changePinError = 'PIN must be at least 4 digits';
+      return;
+    }
+
+    if (changePin && !/^\d+$/.test(changePin)) {
+      changePinError = 'PIN must contain only numbers';
+      return;
+    }
+
+    if (changePin && changePin !== changeConfirmPin) {
+      changePinError = 'PINs do not match';
+      return;
+    }
+
+    try {
+      if (changePin.length >= 4) {
+        await window.electronAPI.users.setPin(changingPinUserId, changePin);
+        saveMessage = 'PIN set successfully';
+      } else {
+        await window.electronAPI.users.clearPin(changingPinUserId);
+        saveMessage = 'PIN removed';
+      }
+
+      changingPinUserId = null;
+      await loadUsers();
+      setTimeout(() => saveMessage = '', 3000);
+    } catch (error) {
+      console.error('Error changing PIN:', error);
+      changePinError = 'Failed to change PIN';
+    }
+  }
+
+  async function deleteUser(user: User) {
+    if (!window.electronAPI?.users) return;
+
+    if (users.length <= 1) {
+      alert('Cannot delete the last user');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete user "${user.display_name || user.username}"?`)) {
+      return;
+    }
+
+    try {
+      await window.electronAPI.users.delete(user.user_id);
+      await loadUsers();
+      saveMessage = 'User deleted';
+      setTimeout(() => saveMessage = '', 3000);
+    } catch (error) {
+      console.error('Error deleting user:', error);
     }
   }
 
@@ -77,8 +328,6 @@
       await Promise.all([
         window.electronAPI.settings.set('archive_folder', archivePath),
         window.electronAPI.settings.set('delete_on_import', deleteOriginals.toString()),
-        window.electronAPI.settings.set('current_user', currentUser),
-        window.electronAPI.settings.set('login_required', loginRequired.toString()),
         window.electronAPI.settings.set('import_map', importMap.toString()),
         window.electronAPI.settings.set('map_import', mapImport.toString()),
       ]);
@@ -287,22 +536,289 @@
     </div>
   {:else}
     <div class="max-w-2xl">
+      <!-- Migration 24: User Management -->
       <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <h2 class="text-lg font-semibold mb-3 text-foreground">User</h2>
-        <div class="mb-4">
-          <label for="currentUser" class="block text-sm font-medium text-gray-700 mb-2">
-            Current User
-          </label>
-          <input
-            id="currentUser"
-            type="text"
-            bind:value={currentUser}
-            placeholder="Enter your name"
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-          />
-          <p class="text-xs text-gray-500 mt-2">
-            Used to track who added or modified locations
-          </p>
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-lg font-semibold text-foreground">Users</h2>
+            <p class="text-sm text-gray-500">
+              Mode: <span class="font-medium">{appMode === 'multi' ? 'Multi-User' : 'Single User'}</span>
+            </p>
+          </div>
+          <div class="flex gap-2">
+            {#if appMode === 'single'}
+              <button
+                onclick={switchToMultiUser}
+                class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition"
+              >
+                Switch to Multi-User
+              </button>
+            {:else}
+              <button
+                onclick={switchToSingleUser}
+                class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition"
+              >
+                Switch to Single User
+              </button>
+            {/if}
+          </div>
+        </div>
+
+        <!-- Require Login Toggle (only in multi-user mode) -->
+        {#if appMode === 'multi'}
+          <div class="mb-4 p-3 bg-gray-50 rounded-lg">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-medium text-foreground">Require login at startup</p>
+                <p class="text-xs text-gray-500">Always show login screen, even if no users have PINs</p>
+              </div>
+              <button
+                onclick={toggleRequireLogin}
+                class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors {requireLogin ? 'bg-accent' : 'bg-gray-300'}"
+                role="switch"
+                aria-checked={requireLogin}
+              >
+                <span
+                  class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {requireLogin ? 'translate-x-6' : 'translate-x-1'}"
+                ></span>
+              </button>
+            </div>
+          </div>
+        {/if}
+
+        <!-- User List -->
+        <div class="space-y-3">
+          {#each users as user}
+            <div class="border border-gray-200 rounded-lg p-4">
+              {#if editingUserId === user.user_id}
+                <!-- Edit Mode -->
+                <div class="space-y-3">
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-xs font-medium text-gray-600 mb-1">Username</label>
+                      <input
+                        type="text"
+                        bind:value={editUsername}
+                        class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium text-gray-600 mb-1">Display Name</label>
+                      <input
+                        type="text"
+                        bind:value={editDisplayName}
+                        placeholder="Optional"
+                        class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent"
+                      />
+                    </div>
+                  </div>
+                  {#if editError}
+                    <p class="text-red-500 text-xs">{editError}</p>
+                  {/if}
+                  <div class="flex gap-2">
+                    <button
+                      onclick={saveEditUser}
+                      class="px-3 py-1 text-sm bg-accent text-white rounded hover:opacity-90"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onclick={cancelEditUser}
+                      class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              {:else if changingPinUserId === user.user_id}
+                <!-- Change PIN Mode -->
+                <div class="space-y-3">
+                  <p class="text-sm font-medium text-foreground">
+                    {user.has_pin ? 'Change PIN for' : 'Set PIN for'} {user.display_name || user.username}
+                  </p>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-xs font-medium text-gray-600 mb-1">New PIN</label>
+                      <input
+                        type="password"
+                        inputmode="numeric"
+                        pattern="[0-9]*"
+                        maxlength="6"
+                        bind:value={changePin}
+                        placeholder="4-6 digits"
+                        class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent text-center"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium text-gray-600 mb-1">Confirm PIN</label>
+                      <input
+                        type="password"
+                        inputmode="numeric"
+                        pattern="[0-9]*"
+                        maxlength="6"
+                        bind:value={changeConfirmPin}
+                        placeholder="Re-enter"
+                        class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent text-center"
+                      />
+                    </div>
+                  </div>
+                  <p class="text-xs text-gray-500">Leave empty to remove PIN protection</p>
+                  {#if changePinError}
+                    <p class="text-red-500 text-xs">{changePinError}</p>
+                  {/if}
+                  <div class="flex gap-2">
+                    <button
+                      onclick={saveChangePin}
+                      class="px-3 py-1 text-sm bg-accent text-white rounded hover:opacity-90"
+                    >
+                      {changePin ? 'Set PIN' : 'Remove PIN'}
+                    </button>
+                    <button
+                      onclick={cancelChangePin}
+                      class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              {:else}
+                <!-- View Mode -->
+                <div class="flex items-center justify-between">
+                  <div>
+                    <div class="flex items-center gap-2">
+                      <span class="font-medium text-foreground">{user.display_name || user.username}</span>
+                      {#if user.has_pin}
+                        <span class="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">PIN</span>
+                      {/if}
+                      {#if currentUserId === user.user_id}
+                        <span class="text-xs bg-accent/10 text-accent px-1.5 py-0.5 rounded">Current</span>
+                      {/if}
+                    </div>
+                    {#if user.display_name}
+                      <p class="text-xs text-gray-500">@{user.username}</p>
+                    {/if}
+                    {#if user.last_login}
+                      <p class="text-xs text-gray-400">Last login: {new Date(user.last_login).toLocaleDateString()}</p>
+                    {/if}
+                  </div>
+                  <div class="flex gap-1">
+                    <button
+                      onclick={() => startEditUser(user)}
+                      class="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
+                      title="Edit user"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                      </svg>
+                    </button>
+                    {#if appMode === 'multi'}
+                      <button
+                        onclick={() => startChangePin(user)}
+                        class="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
+                        title={user.has_pin ? 'Change PIN' : 'Set PIN'}
+                      >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                        </svg>
+                      </button>
+                    {/if}
+                    {#if users.length > 1}
+                      <button
+                        onclick={() => deleteUser(user)}
+                        class="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"
+                        title="Delete user"
+                      >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                      </button>
+                    {/if}
+                  </div>
+                </div>
+              {/if}
+            </div>
+          {/each}
+
+          <!-- Add User Form -->
+          {#if showAddUser}
+            <div class="border border-accent rounded-lg p-4 bg-accent/5">
+              <h3 class="font-medium text-foreground mb-3">Add New User</h3>
+              <div class="space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Username *</label>
+                    <input
+                      type="text"
+                      bind:value={newUsername}
+                      placeholder="Enter username"
+                      class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Display Name</label>
+                    <input
+                      type="text"
+                      bind:value={newDisplayName}
+                      placeholder="Optional"
+                      class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent"
+                    />
+                  </div>
+                </div>
+                {#if appMode === 'multi'}
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-xs font-medium text-gray-600 mb-1">PIN (optional)</label>
+                      <input
+                        type="password"
+                        inputmode="numeric"
+                        pattern="[0-9]*"
+                        maxlength="6"
+                        bind:value={newPin}
+                        placeholder="4-6 digits"
+                        class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent text-center"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium text-gray-600 mb-1">Confirm PIN</label>
+                      <input
+                        type="password"
+                        inputmode="numeric"
+                        pattern="[0-9]*"
+                        maxlength="6"
+                        bind:value={newConfirmPin}
+                        placeholder="Re-enter"
+                        class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent text-center"
+                      />
+                    </div>
+                  </div>
+                {/if}
+                {#if newUserError}
+                  <p class="text-red-500 text-xs">{newUserError}</p>
+                {/if}
+                <div class="flex gap-2">
+                  <button
+                    onclick={createUser}
+                    class="px-3 py-1 text-sm bg-accent text-white rounded hover:opacity-90"
+                  >
+                    Create User
+                  </button>
+                  <button
+                    onclick={cancelAddUser}
+                    class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          {:else}
+            <button
+              onclick={openAddUser}
+              class="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-gray-400 hover:text-gray-600 transition text-sm"
+            >
+              + Add User
+            </button>
+          {/if}
         </div>
       </div>
 
@@ -383,23 +899,6 @@
         </div>
       </div>
 
-      <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <h2 class="text-lg font-semibold mb-3 text-foreground">Security</h2>
-        <div class="flex items-center mb-4">
-          <input
-            type="checkbox"
-            bind:checked={loginRequired}
-            id="loginRequired"
-            class="mr-2"
-          />
-          <label for="loginRequired" class="text-sm text-gray-700">
-            Require login at startup
-          </label>
-        </div>
-        <p class="text-xs text-gray-500">
-          Prompt for user authentication when the application starts
-        </p>
-      </div>
 
       <!-- Kanye6: Maintenance Section for Thumbnail Regeneration -->
       <div class="bg-white rounded-lg shadow p-6 mb-6">
