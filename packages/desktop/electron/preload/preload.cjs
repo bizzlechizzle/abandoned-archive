@@ -135,6 +135,9 @@ const api = {
     regenerateVideoThumbnails: (options) => ipcRenderer.invoke("media:regenerateVideoThumbnails", options),
     // Kanye11: Regenerate preview/thumbnails for a single file
     regenerateSingleFile: (hash, filePath) => ipcRenderer.invoke("media:regenerateSingleFile", hash, filePath),
+    // Hidden/Live Photo operations (Migration 23)
+    setHidden: (input) => ipcRenderer.invoke("media:setHidden", input),
+    detectLivePhotosAndSDR: (locid) => ipcRenderer.invoke("media:detectLivePhotosAndSDR", locid),
   },
 
   notes: {

@@ -784,6 +784,49 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 22 completed: hero focal point columns added');
     }
+
+    // Migration 23: Add hidden and live photo columns to media tables
+    // Per premium UX: Hide Live Photo videos, SDR duplicates, user-hidden items
+    // - hidden: 0/1 flag for hiding from default view
+    // - hidden_reason: 'user', 'live_photo', 'sdr_duplicate'
+    // - is_live_photo: Flag for iPhone Live Photos and Android Motion Photos
+    const imgColsForHidden = sqlite.prepare('PRAGMA table_info(imgs)').all() as Array<{ name: string }>;
+    const hasHiddenCol = imgColsForHidden.some(col => col.name === 'hidden');
+
+    if (!hasHiddenCol) {
+      console.log('Running migration 23: Adding hidden and live photo columns to media tables');
+
+      // Add columns to imgs table
+      sqlite.exec(`
+        ALTER TABLE imgs ADD COLUMN hidden INTEGER DEFAULT 0;
+        ALTER TABLE imgs ADD COLUMN hidden_reason TEXT;
+        ALTER TABLE imgs ADD COLUMN is_live_photo INTEGER DEFAULT 0;
+      `);
+
+      // Add columns to vids table
+      sqlite.exec(`
+        ALTER TABLE vids ADD COLUMN hidden INTEGER DEFAULT 0;
+        ALTER TABLE vids ADD COLUMN hidden_reason TEXT;
+        ALTER TABLE vids ADD COLUMN is_live_photo INTEGER DEFAULT 0;
+      `);
+
+      // Add columns to docs table
+      sqlite.exec(`
+        ALTER TABLE docs ADD COLUMN hidden INTEGER DEFAULT 0;
+        ALTER TABLE docs ADD COLUMN hidden_reason TEXT;
+      `);
+
+      // Create indexes for filtering hidden items
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_imgs_hidden ON imgs(hidden) WHERE hidden = 1;
+        CREATE INDEX IF NOT EXISTS idx_vids_hidden ON vids(hidden) WHERE hidden = 1;
+        CREATE INDEX IF NOT EXISTS idx_docs_hidden ON docs(hidden) WHERE hidden = 1;
+        CREATE INDEX IF NOT EXISTS idx_imgs_live_photo ON imgs(is_live_photo) WHERE is_live_photo = 1;
+        CREATE INDEX IF NOT EXISTS idx_vids_live_photo ON vids(is_live_photo) WHERE is_live_photo = 1;
+      `);
+
+      console.log('Migration 23 completed: hidden and live photo columns added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

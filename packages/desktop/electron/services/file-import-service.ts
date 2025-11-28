@@ -319,6 +319,11 @@ export class FileImportService {
       });
     });
 
+    // Auto-detect and hide Live Photo videos and SDR duplicates
+    // Runs after all files imported so we can match pairs
+    console.log('[FileImport] Step 10: Detecting Live Photos and SDR duplicates...');
+    await this.detectAndHideLivePhotosAndSDR(locid);
+
     return {
       total: files.length,
       imported,
@@ -327,6 +332,103 @@ export class FileImportService {
       results,
       importId,
     };
+  }
+
+  /**
+   * Detect and auto-hide Live Photo videos and SDR duplicates for a location
+   * - iPhone Live Photos: .MOV with matching .HEIC/.JPG filename
+   * - Android Motion Photos: .mp4 with matching image (YYYYMMDD_HHMMSS pattern)
+   * - SDR duplicates: Files with _SDR suffix when HDR version exists
+   */
+  private async detectAndHideLivePhotosAndSDR(locid: string): Promise<void> {
+    try {
+      // Get all images and videos for this location
+      const images = await this.mediaRepo.getImageFilenamesByLocation(locid);
+      const videos = await this.mediaRepo.getVideoFilenamesByLocation(locid);
+
+      console.log(`[FileImport] Scanning ${images.length} images and ${videos.length} videos for Live Photos/SDR`);
+
+      // Build set of image base names (without extension) for fast lookup
+      const imageBaseNames = new Map<string, string>(); // baseName -> imgsha
+      for (const img of images) {
+        const baseName = this.getBaseFilename(img.imgnamo);
+        imageBaseNames.set(baseName.toLowerCase(), img.imgsha);
+      }
+
+      // Detect Live Photo videos (MOV/MP4 with matching image)
+      let livePhotosHidden = 0;
+      for (const vid of videos) {
+        const ext = path.extname(vid.vidnamo).toLowerCase();
+        // iPhone: .MOV, Android: .mp4
+        if (ext === '.mov' || ext === '.mp4') {
+          const baseName = this.getBaseFilename(vid.vidnamo).toLowerCase();
+          // Check if there's a matching image
+          if (imageBaseNames.has(baseName)) {
+            // This is a Live Photo video - hide it and mark both as live photo
+            await this.mediaRepo.setVideoHidden(vid.vidsha, true, 'live_photo');
+            await this.mediaRepo.setVideoLivePhoto(vid.vidsha, true);
+            // Also mark the image as a live photo (but don't hide it)
+            const imgsha = imageBaseNames.get(baseName);
+            if (imgsha) {
+              await this.mediaRepo.setImageLivePhoto(imgsha, true);
+            }
+            livePhotosHidden++;
+            console.log(`[FileImport] Live Photo detected: ${vid.vidnamo} -> hidden`);
+          }
+        }
+      }
+
+      // Detect SDR duplicates (files with _SDR when HDR exists)
+      let sdrHidden = 0;
+      for (const img of images) {
+        const filename = img.imgnamo;
+        // Check for _SDR suffix (case insensitive)
+        if (/_sdr\./i.test(filename)) {
+          // Check if HDR version exists
+          const hdrFilename = filename.replace(/_sdr\./i, '.');
+          const hdrBaseName = this.getBaseFilename(hdrFilename).toLowerCase();
+          // Also check for explicit _HDR version
+          const hdrExplicitFilename = filename.replace(/_sdr\./i, '_HDR.');
+          const hdrExplicitBaseName = this.getBaseFilename(hdrExplicitFilename).toLowerCase();
+
+          if (imageBaseNames.has(hdrBaseName) || imageBaseNames.has(hdrExplicitBaseName)) {
+            await this.mediaRepo.setImageHidden(img.imgsha, true, 'sdr_duplicate');
+            sdrHidden++;
+            console.log(`[FileImport] SDR duplicate detected: ${filename} -> hidden`);
+          }
+        }
+      }
+
+      // Check EXIF for Android Motion Photos (MotionPhoto=1)
+      // This is an info flag, not hiding (video is embedded, nothing to hide)
+      for (const img of images) {
+        try {
+          // Query the raw EXIF data from database
+          const imgData = await this.mediaRepo.findImageByHash(img.imgsha);
+          if (imgData?.meta_exiftool) {
+            const exif = JSON.parse(imgData.meta_exiftool);
+            if (exif.MotionPhoto === 1 || exif.MicroVideo || exif.MicroVideoOffset) {
+              await this.mediaRepo.setImageLivePhoto(img.imgsha, true);
+              console.log(`[FileImport] Android Motion Photo detected: ${img.imgnamo}`);
+            }
+          }
+        } catch (e) {
+          // Ignore parse errors
+        }
+      }
+
+      console.log(`[FileImport] Detection complete: ${livePhotosHidden} Live Photo videos hidden, ${sdrHidden} SDR duplicates hidden`);
+    } catch (error) {
+      console.warn('[FileImport] Live Photo/SDR detection failed (non-fatal):', error);
+    }
+  }
+
+  /**
+   * Get base filename without extension
+   */
+  private getBaseFilename(filename: string): string {
+    const ext = path.extname(filename);
+    return path.basename(filename, ext);
   }
 
   /**

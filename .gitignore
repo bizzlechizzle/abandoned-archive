@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-pnpm-lock.yaml
 
 # Build outputs
 dist/
@@ -35,7 +34,18 @@ coverage/
 # Electron
 out/
 
+# Database (local development data)
+packages/desktop/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
 # User data (archive files, test images)
 archive/
 test images/
 logseq/
+
+# Thumbnails and previews (generated)
+thumbs/
+previews/

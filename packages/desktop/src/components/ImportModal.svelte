@@ -192,64 +192,90 @@
     }
   });
 
-  async function handleSubmit() {
+  function validateForm(): boolean {
     if (!name.trim()) {
       error = 'Name is required';
-      return;
+      return false;
     }
-
     if (!selectedState) {
       error = 'State is required';
-      return;
+      return false;
     }
-
     if (selectedState.length !== 2) {
       error = 'State must be 2-letter postal abbreviation (e.g., NY, CA)';
-      return;
+      return false;
     }
-
     if (!type) {
       error = 'Type is required';
-      return;
+      return false;
     }
+    return true;
+  }
+
+  function buildLocationData(): Record<string, unknown> {
+    const data: Record<string, unknown> = {
+      locnam: name.trim(),
+      type: type || undefined,
+      stype: subType || undefined,
+      access: access || undefined,
+      auth_imp: author.trim() || undefined,
+      address: {
+        state: selectedState.toUpperCase(),
+      },
+    };
+
+    // Include GPS if pre-filled (from map right-click)
+    if ($importModal.prefilledData?.gps_lat && $importModal.prefilledData?.gps_lng) {
+      data.gps = {
+        lat: $importModal.prefilledData.gps_lat,
+        lng: $importModal.prefilledData.gps_lng,
+        source: 'user_map_click',
+        verifiedOnMap: true,
+      };
+    }
+
+    return data;
+  }
+
+  async function handleCreate() {
+    if (!validateForm()) return;
 
     try {
       saving = true;
       error = '';
 
-      const locationData: Record<string, unknown> = {
-        locnam: name.trim(),
-        type: type || undefined,
-        stype: subType || undefined,  // DECISION-015: Include sub-type
-        access: access || undefined,
-        auth_imp: author.trim() || undefined,
-        address: {
-          state: selectedState.toUpperCase(),
-        },
-      };
-
-      // Include GPS if pre-filled (from map right-click)
-      if ($importModal.prefilledData?.gps_lat && $importModal.prefilledData?.gps_lng) {
-        locationData.gps = {
-          lat: $importModal.prefilledData.gps_lat,
-          lng: $importModal.prefilledData.gps_lng,
-          source: 'user_map_click',
-          verifiedOnMap: true,
-        };
-      }
-
-      const newLocation = await window.electronAPI.locations.create(locationData);
-
-      // Success: close modal, show toast, navigate to new location
+      const newLocation = await window.electronAPI.locations.create(buildLocationData());
       closeImportModal();
       toasts.success('Location created successfully');
 
-      // P1 Resolved Decision #4: Navigate to new location page
       if (newLocation?.locid) {
         router.navigate(`/location/${newLocation.locid}`);
       }
 
-      // Reset form
+      resetForm();
+    } catch (err) {
+      console.error('Error creating location:', err);
+      error = 'Failed to create location. Please try again.';
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function handleCreateAndAddMedia() {
+    if (!validateForm()) return;
+
+    try {
+      saving = true;
+      error = '';
+
+      const newLocation = await window.electronAPI.locations.create(buildLocationData());
+      closeImportModal();
+      toasts.success('Location created - select media to import');
+
+      if (newLocation?.locid) {
+        router.navigate(`/location/${newLocation.locid}?autoImport=true`);
+      }
+
       resetForm();
     } catch (err) {
       console.error('Error creating location:', err);
@@ -328,7 +354,7 @@
         <!-- Name (required) -->
         <div>
           <label for="loc-name" class="block text-sm font-medium text-gray-700 mb-1">
-            Name <span class="text-red-500">*</span>
+            Name
           </label>
           <input
             id="loc-name"
@@ -343,7 +369,7 @@
         <!-- State (required) - Now with AutocompleteInput -->
         <div>
           <label for="loc-state" class="block text-sm font-medium text-gray-700 mb-1">
-            State <span class="text-red-500">*</span>
+            State
           </label>
           <AutocompleteInput
             value={selectedState}
@@ -359,7 +385,7 @@
         <!-- Type (required) - AutocompleteInput with suggestions from database -->
         <div>
           <label for="loc-type" class="block text-sm font-medium text-gray-700 mb-1">
-            Type <span class="text-red-500">*</span>
+            Type
           </label>
           <AutocompleteInput
             value={type}
@@ -446,11 +472,18 @@
           Cancel
         </button>
         <button
-          onclick={handleSubmit}
+          onclick={handleCreate}
           disabled={saving}
-          class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+          class="px-4 py-2 border-2 border-accent bg-accent text-white rounded hover:bg-transparent hover:text-accent transition disabled:opacity-50"
         >
-          {saving ? 'Creating...' : 'Create Location'}
+          {saving ? 'Creating...' : 'Create'}
+        </button>
+        <button
+          onclick={handleCreateAndAddMedia}
+          disabled={saving}
+          class="px-4 py-2 border-2 border-accent text-accent bg-transparent rounded hover:bg-accent hover:text-white transition disabled:opacity-50"
+        >
+          {saving ? 'Creating...' : 'Add Media'}
         </button>
       </div>
     </div>

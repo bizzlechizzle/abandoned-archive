@@ -26,6 +26,10 @@
       cameraModel?: string | null;
       gpsLat?: number | null;
       gpsLng?: number | null;
+      // Hidden status (Migration 23)
+      hidden?: number;
+      hidden_reason?: string | null;
+      is_live_photo?: number;
     }>;
     startIndex?: number;
     onClose: () => void;
@@ -34,9 +38,11 @@
     focalX?: number;
     focalY?: number;
     onSetHeroImage?: (imgsha: string, focalX: number, focalY: number) => void;
+    // Hidden status callback
+    onHiddenChanged?: (hash: string, hidden: boolean) => void;
   }
 
-  let { mediaList, startIndex = 0, onClose, heroImgsha, focalX = 0.5, focalY = 0.5, onSetHeroImage }: Props = $props();
+  let { mediaList, startIndex = 0, onClose, heroImgsha, focalX = 0.5, focalY = 0.5, onSetHeroImage, onHiddenChanged }: Props = $props();
 
   let currentIndex = $state(startIndex);
   let showExif = $state(false);
@@ -60,6 +66,12 @@
   const currentMedia = $derived(mediaList[currentIndex]);
   const isCurrentHero = $derived(currentMedia?.hash === heroImgsha);
   const canBeHero = $derived(currentMedia?.type === 'image');
+
+  // Hidden status
+  const isCurrentHidden = $derived(currentMedia?.hidden === 1);
+  const hiddenReason = $derived(currentMedia?.hidden_reason);
+  const isLivePhoto = $derived(currentMedia?.is_live_photo === 1);
+  let togglingHidden = $state(false);
 
   // Cache version for busting browser cache after thumbnail regeneration
   const cacheVersion = $derived($thumbnailCache);
@@ -132,6 +144,37 @@
   async function showInFinder() {
     if (currentMedia) {
       await window.electronAPI?.media?.showInFolder(currentMedia.path);
+    }
+  }
+
+  // Toggle hidden status for current media
+  async function toggleHidden() {
+    if (!currentMedia || togglingHidden) return;
+
+    togglingHidden = true;
+    const newHiddenState = !isCurrentHidden;
+
+    try {
+      await window.electronAPI?.media?.setHidden({
+        hash: currentMedia.hash,
+        mediaType: currentMedia.type,
+        hidden: newHiddenState,
+        reason: newHiddenState ? 'user' : null,
+      });
+
+      // Update local state in mediaList
+      mediaList[currentIndex] = {
+        ...currentMedia,
+        hidden: newHiddenState ? 1 : 0,
+        hidden_reason: newHiddenState ? 'user' : null,
+      };
+
+      // Notify parent component
+      onHiddenChanged?.(currentMedia.hash, newHiddenState);
+    } catch (err) {
+      console.error('Failed to toggle hidden status:', err);
+    } finally {
+      togglingHidden = false;
     }
   }
 
@@ -779,6 +822,31 @@
       class="px-4 py-2 bg-white text-foreground rounded shadow hover:bg-gray-50 transition text-sm"
     >
       Show in Finder
+    </button>
+    <button
+      onclick={toggleHidden}
+      disabled={togglingHidden}
+      class="px-4 py-2 rounded shadow transition text-sm disabled:opacity-50 disabled:cursor-not-allowed {isCurrentHidden ? 'bg-amber-100 text-amber-800 hover:bg-amber-200' : 'bg-white text-foreground hover:bg-gray-50'}"
+      title={isCurrentHidden ? (isLivePhoto ? 'Live Photo video' : hiddenReason === 'sdr_duplicate' ? 'SDR duplicate' : 'Hidden by user') : 'Hide this item'}
+    >
+      {#if togglingHidden}
+        ...
+      {:else if isCurrentHidden}
+        <span class="flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
+          Unhide
+        </span>
+      {:else}
+        <span class="flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+          </svg>
+          Hide
+        </span>
+      {/if}
     </button>
   </div>
 </div>

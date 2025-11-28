@@ -27,6 +27,10 @@ export interface MediaImage {
   preview_extracted: number;
   xmp_synced: number;
   xmp_modified_at: string | null;
+  // Hidden/Live Photo fields (Migration 23)
+  hidden: number;
+  hidden_reason: string | null;
+  is_live_photo: number;
   // NOTE: darktable columns exist in DB but are deprecated/unused
 }
 
@@ -59,6 +63,10 @@ export interface MediaVideo {
   poster_extracted: number;
   xmp_synced: number;
   xmp_modified_at: string | null;
+  // Hidden/Live Photo fields (Migration 23)
+  hidden: number;
+  hidden_reason: string | null;
+  is_live_photo: number;
 }
 
 export interface MediaDocument {
@@ -75,6 +83,9 @@ export interface MediaDocument {
   meta_page_count: number | null;
   meta_author: string | null;
   meta_title: string | null;
+  // Hidden fields (Migration 23)
+  hidden: number;
+  hidden_reason: string | null;
 }
 
 /**
@@ -358,6 +369,96 @@ export class SQLiteMediaRepository {
       })
       .where('imgsha', '=', imgsha)
       .execute();
+  }
+
+  // ==================== HIDDEN/LIVE PHOTO OPERATIONS ====================
+
+  /**
+   * Set hidden status for an image
+   */
+  async setImageHidden(imgsha: string, hidden: boolean, reason: string | null = 'user'): Promise<void> {
+    await this.db
+      .updateTable('imgs')
+      .set({
+        hidden: hidden ? 1 : 0,
+        hidden_reason: hidden ? reason : null
+      })
+      .where('imgsha', '=', imgsha)
+      .execute();
+  }
+
+  /**
+   * Set hidden status for a video
+   */
+  async setVideoHidden(vidsha: string, hidden: boolean, reason: string | null = 'user'): Promise<void> {
+    await this.db
+      .updateTable('vids')
+      .set({
+        hidden: hidden ? 1 : 0,
+        hidden_reason: hidden ? reason : null
+      })
+      .where('vidsha', '=', vidsha)
+      .execute();
+  }
+
+  /**
+   * Set hidden status for a document
+   */
+  async setDocumentHidden(docsha: string, hidden: boolean, reason: string | null = 'user'): Promise<void> {
+    await this.db
+      .updateTable('docs')
+      .set({
+        hidden: hidden ? 1 : 0,
+        hidden_reason: hidden ? reason : null
+      })
+      .where('docsha', '=', docsha)
+      .execute();
+  }
+
+  /**
+   * Mark image as Live Photo
+   */
+  async setImageLivePhoto(imgsha: string, isLivePhoto: boolean): Promise<void> {
+    await this.db
+      .updateTable('imgs')
+      .set({ is_live_photo: isLivePhoto ? 1 : 0 })
+      .where('imgsha', '=', imgsha)
+      .execute();
+  }
+
+  /**
+   * Mark video as Live Photo (the video component)
+   */
+  async setVideoLivePhoto(vidsha: string, isLivePhoto: boolean): Promise<void> {
+    await this.db
+      .updateTable('vids')
+      .set({ is_live_photo: isLivePhoto ? 1 : 0 })
+      .where('vidsha', '=', vidsha)
+      .execute();
+  }
+
+  /**
+   * Get all images by location with their original filenames (for Live Photo matching)
+   */
+  async getImageFilenamesByLocation(locid: string): Promise<Array<{ imgsha: string; imgnamo: string }>> {
+    const rows = await this.db
+      .selectFrom('imgs')
+      .select(['imgsha', 'imgnamo'])
+      .where('locid', '=', locid)
+      .execute();
+    return rows;
+  }
+
+  /**
+   * Get all videos by location with their original filenames (for Live Photo matching)
+   */
+  async getVideoFilenamesByLocation(locid: string): Promise<Array<{ vidsha: string; vidnamo: string }>> {
+    const rows = await this.db
+      .selectFrom('vids')
+      .select(['vidsha', 'vidnamo'])
+      .where('locid', '=', locid)
+      .execute();
+    return rows;
   }
 
 }

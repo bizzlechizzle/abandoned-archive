@@ -57,6 +57,10 @@
     dateTaken: img.meta_date_taken, cameraMake: img.meta_camera_make || null,
     cameraModel: img.meta_camera_model || null,
     gpsLat: img.meta_gps_lat || null, gpsLng: img.meta_gps_lng || null,
+    // Hidden status (Migration 23)
+    hidden: img.hidden ?? 0,
+    hidden_reason: img.hidden_reason ?? null,
+    is_live_photo: img.is_live_photo ?? 0,
   })));
 
   const videoMediaList = $derived(videos.map(vid => ({
@@ -66,6 +70,10 @@
     name: vid.vidnam, width: vid.meta_width, height: vid.meta_height,
     dateTaken: null, cameraMake: null, cameraModel: null,
     gpsLat: vid.meta_gps_lat || null, gpsLng: vid.meta_gps_lng || null,
+    // Hidden status (Migration 23)
+    hidden: vid.hidden ?? 0,
+    hidden_reason: vid.hidden_reason ?? null,
+    is_live_photo: vid.is_live_photo ?? 0,
   })));
 
   // Combined list: images first, then videos
@@ -319,6 +327,22 @@
     } catch (err) { console.error('Error setting hero image:', err); }
   }
 
+  /** Migration 23: Handle hidden status changes from MediaViewer */
+  function handleHiddenChanged(hash: string, hidden: boolean) {
+    // Update local state immediately for responsive UI
+    const imgIndex = images.findIndex(i => i.imgsha === hash);
+    if (imgIndex >= 0) {
+      images[imgIndex] = { ...images[imgIndex], hidden: hidden ? 1 : 0, hidden_reason: hidden ? 'user' : null };
+      images = [...images]; // Trigger reactivity
+      return;
+    }
+    const vidIndex = videos.findIndex(v => v.vidsha === hash);
+    if (vidIndex >= 0) {
+      videos[vidIndex] = { ...videos[vidIndex], hidden: hidden ? 1 : 0, hidden_reason: hidden ? 'user' : null };
+      videos = [...videos]; // Trigger reactivity
+    }
+  }
+
   function navigateToFilter(type: string, value: string, additionalFilters?: Record<string, string>) {
     // DECISION-013: Support multiple filters (e.g., county + state to avoid duplicates)
     const filters: Record<string, string> = { [type]: value, ...additionalFilters };
@@ -418,6 +442,15 @@
     // DECISION-014: Removed ensureGpsFromAddress() - GPS should only come from EXIF or user action
     try { const settings = await window.electronAPI.settings.getAll(); currentUser = settings.current_user || 'default'; }
     catch (err) { console.error('Error loading user settings:', err); }
+
+    // Auto-open file browser if navigated from "Add Media" button on Import form
+    const hash = window.location.hash;
+    if (hash.includes('autoImport=true')) {
+      // Small delay to ensure UI is ready, then open file browser
+      setTimeout(() => handleSelectFiles(), 100);
+      // Clear the query param to prevent re-triggering on refresh
+      router.navigate(`/location/${locationId}`);
+    }
   });
 </script>
 
@@ -529,6 +562,7 @@
       focalX={location?.hero_focal_x ?? 0.5}
       focalY={location?.hero_focal_y ?? 0.5}
       onSetHeroImage={setHeroImageWithFocal}
+      onHiddenChanged={handleHiddenChanged}
     />
   {/if}
 </div>

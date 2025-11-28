@@ -503,4 +503,108 @@ export function registerMediaProcessingHandlers(
     }
   });
 
+  // Set hidden status for media items (user-initiated hide/unhide)
+  ipcMain.handle('media:setHidden', async (_event, input: unknown) => {
+    try {
+      const validInput = z.object({
+        hash: z.string().min(1),
+        type: z.enum(['image', 'video', 'document']),
+        hidden: z.boolean(),
+        reason: z.string().optional(),
+      }).parse(input);
+
+      const { hash, type, hidden, reason } = validInput;
+
+      if (type === 'image') {
+        await mediaRepo.setImageHidden(hash, hidden, reason ?? 'user');
+      } else if (type === 'video') {
+        await mediaRepo.setVideoHidden(hash, hidden, reason ?? 'user');
+      } else if (type === 'document') {
+        await mediaRepo.setDocumentHidden(hash, hidden, reason ?? 'user');
+      }
+
+      console.log(`[media:setHidden] ${type} ${hash} hidden=${hidden} reason=${reason ?? 'user'}`);
+      return { success: true };
+    } catch (error) {
+      console.error('Error setting hidden status:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  // Scan location for Live Photos and SDR duplicates (one-time or manual trigger)
+  ipcMain.handle('media:detectLivePhotosAndSDR', async (_event, locid: unknown) => {
+    try {
+      const validLocid = z.string().uuid().parse(locid);
+
+      // Get all images and videos for this location
+      const images = await mediaRepo.getImageFilenamesByLocation(validLocid);
+      const videos = await mediaRepo.getVideoFilenamesByLocation(validLocid);
+
+      console.log(`[media:detectLivePhotosAndSDR] Scanning ${images.length} images and ${videos.length} videos`);
+
+      // Build set of image base names for fast lookup
+      const imageBaseNames = new Map<string, string>();
+      for (const img of images) {
+        const ext = path.extname(img.imgnamo);
+        const baseName = path.basename(img.imgnamo, ext).toLowerCase();
+        imageBaseNames.set(baseName, img.imgsha);
+      }
+
+      let livePhotosHidden = 0;
+      let sdrHidden = 0;
+
+      // Detect Live Photo videos
+      for (const vid of videos) {
+        const ext = path.extname(vid.vidnamo).toLowerCase();
+        if (ext === '.mov' || ext === '.mp4') {
+          const baseName = path.basename(vid.vidnamo, ext).toLowerCase();
+          if (imageBaseNames.has(baseName)) {
+            await mediaRepo.setVideoHidden(vid.vidsha, true, 'live_photo');
+            await mediaRepo.setVideoLivePhoto(vid.vidsha, true);
+            const imgsha = imageBaseNames.get(baseName);
+            if (imgsha) {
+              await mediaRepo.setImageLivePhoto(imgsha, true);
+            }
+            livePhotosHidden++;
+          }
+        }
+      }
+
+      // Detect SDR duplicates
+      for (const img of images) {
+        if (/_sdr\./i.test(img.imgnamo)) {
+          const hdrBaseName = path.basename(img.imgnamo.replace(/_sdr\./i, '.'), path.extname(img.imgnamo)).toLowerCase();
+          if (imageBaseNames.has(hdrBaseName)) {
+            await mediaRepo.setImageHidden(img.imgsha, true, 'sdr_duplicate');
+            sdrHidden++;
+          }
+        }
+      }
+
+      // Check for Android Motion Photos (EXIF flag)
+      for (const img of images) {
+        try {
+          const imgData = await mediaRepo.findImageByHash(img.imgsha);
+          if (imgData?.meta_exiftool) {
+            const exif = JSON.parse(imgData.meta_exiftool);
+            if (exif.MotionPhoto === 1 || exif.MicroVideo || exif.MicroVideoOffset) {
+              await mediaRepo.setImageLivePhoto(img.imgsha, true);
+            }
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      }
+
+      console.log(`[media:detectLivePhotosAndSDR] Done: ${livePhotosHidden} Live Photo videos, ${sdrHidden} SDR duplicates`);
+      return { success: true, livePhotosHidden, sdrHidden };
+    } catch (error) {
+      console.error('Error detecting Live Photos/SDR:', error);
+      throw error;
+    }
+  });
+
 }

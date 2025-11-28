@@ -18,6 +18,10 @@ export interface MediaImage {
   thumb_path_sm: string | null;
   thumb_path_lg: string | null;
   preview_path: string | null;
+  // Hidden status (Migration 23)
+  hidden?: number;
+  hidden_reason?: string | null;
+  is_live_photo?: number;
 }
 
 export interface MediaVideo {
@@ -34,12 +38,19 @@ export interface MediaVideo {
   thumb_path_sm: string | null;
   thumb_path_lg: string | null;
   preview_path: string | null;
+  // Hidden status (Migration 23)
+  hidden?: number;
+  hidden_reason?: string | null;
+  is_live_photo?: number;
 }
 
 export interface MediaDocument {
   docsha: string;
   docnam: string;
   docloc: string;
+  // Hidden status (Migration 23)
+  hidden?: number;
+  hidden_reason?: string | null;
 }
 
 export interface Bookmark {

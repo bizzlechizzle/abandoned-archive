@@ -28,6 +28,10 @@
   let backfillingRegions = $state(false);
   let backfillMessage = $state('');
 
+  // Migration 23: Live Photo detection state
+  let detectingLivePhotos = $state(false);
+  let livePhotoMessage = $state('');
+
   // P6: Darktable state removed per v010steps.md
 
   async function loadSettings() {
@@ -214,6 +218,55 @@
       backfillMessage = 'Region backfill failed';
     } finally {
       backfillingRegions = false;
+    }
+  }
+
+  /**
+   * Migration 23: Detect and hide Live Photo videos and SDR duplicates
+   * Scans all locations and auto-hides companion files
+   */
+  async function detectAllLivePhotos() {
+    if (!window.electronAPI?.media?.detectLivePhotosAndSDR || !window.electronAPI?.locations) {
+      livePhotoMessage = 'Live Photo detection not available';
+      return;
+    }
+
+    try {
+      detectingLivePhotos = true;
+      livePhotoMessage = 'Scanning locations...';
+
+      // Get all locations
+      const locations = await window.electronAPI.locations.findAll();
+      let processed = 0;
+      let totalHidden = 0;
+
+      for (const loc of locations) {
+        processed++;
+        livePhotoMessage = `Scanning ${processed} of ${locations.length} locations...`;
+
+        const result = await window.electronAPI.media.detectLivePhotosAndSDR(loc.locid);
+        if (result?.livePhotosHidden) {
+          totalHidden += result.livePhotosHidden;
+        }
+        if (result?.sdrHidden) {
+          totalHidden += result.sdrHidden;
+        }
+      }
+
+      if (totalHidden === 0) {
+        livePhotoMessage = `Scanned ${locations.length} locations. No new Live Photos or SDR duplicates found.`;
+      } else {
+        livePhotoMessage = `Done! Found and hid ${totalHidden} Live Photo videos and SDR duplicates across ${locations.length} locations.`;
+      }
+
+      setTimeout(() => {
+        livePhotoMessage = '';
+      }, 8000);
+    } catch (error) {
+      console.error('Live Photo detection failed:', error);
+      livePhotoMessage = 'Detection failed';
+    } finally {
+      detectingLivePhotos = false;
     }
   }
 
@@ -423,6 +476,28 @@
             </div>
             <p class="text-xs text-gray-500 mt-2">
               Adds Census Region (Northeast/Midwest/South/West), Division, state direction (e.g., "Eastern NY"), and Cultural Region fields.
+            </p>
+          </div>
+
+          <!-- Migration 23: Live Photo Detection -->
+          <div class="mt-6 pt-6 border-t border-gray-200">
+            <p class="text-sm text-gray-700 mb-2">
+              Detect and auto-hide Live Photo companion videos and SDR duplicate images across all locations.
+            </p>
+            <div class="flex items-center gap-4">
+              <button
+                onclick={detectAllLivePhotos}
+                disabled={detectingLivePhotos}
+                class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+              >
+                {detectingLivePhotos ? 'Scanning...' : 'Detect Live Photos'}
+              </button>
+              {#if livePhotoMessage}
+                <span class="text-sm text-gray-600">{livePhotoMessage}</span>
+              {/if}
+            </div>
+            <p class="text-xs text-gray-500 mt-2">
+              iPhone Live Photo videos (.MOV paired with images) and SDR duplicates (_SDR suffix files) will be hidden from the gallery but remain accessible via "Show All".
             </p>
           </div>
         </div>

@@ -312,6 +312,7 @@
           selectedLocation = newLoc.locid;
         }
       }}
+      onNavigateToLocation={(locid) => router.navigate(`/location/${locid}?autoImport=true`)}
       defaultAuthor={currentUser}
     />
 

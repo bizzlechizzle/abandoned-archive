@@ -188,6 +188,11 @@ export interface ImgsTable {
   xmp_synced: number;
   xmp_modified_at: string | null;
 
+  // Hidden/Live Photo fields (Migration 23)
+  hidden: number;
+  hidden_reason: string | null;
+  is_live_photo: number;
+
   // NOTE: darktable columns exist in DB but are deprecated/unused
   // darktable_path, darktable_processed, darktable_processed_at - REMOVED from app
 }
@@ -232,6 +237,11 @@ export interface VidsTable {
   // XMP sync status (Migration 8)
   xmp_synced: number;
   xmp_modified_at: string | null;
+
+  // Hidden/Live Photo fields (Migration 23)
+  hidden: number;
+  hidden_reason: string | null;
+  is_live_photo: number;
 }
 
 // Documents table
@@ -254,6 +264,10 @@ export interface DocsTable {
   meta_page_count: number | null;
   meta_author: string | null;
   meta_title: string | null;
+
+  // Hidden fields (Migration 23)
+  hidden: number;
+  hidden_reason: string | null;
 }
 
 // Maps table

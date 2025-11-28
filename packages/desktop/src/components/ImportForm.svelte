@@ -19,6 +19,8 @@
     onDragLeave: () => void;
     onDrop: (event: DragEvent) => void;
     onLocationCreated?: (location: Location) => void;
+    // Navigate to location detail page (for "Add Media" button)
+    onNavigateToLocation?: (locid: string) => void;
     // DECISION-013: Auto-fill author from Settings
     defaultAuthor?: string;
   }
@@ -39,6 +41,7 @@
     onDragLeave,
     onDrop,
     onLocationCreated,
+    onNavigateToLocation,
     // DECISION-013: Auto-fill author from Settings
     defaultAuthor = '',
   }: Props = $props();
@@ -212,62 +215,77 @@
     newState = value.toUpperCase().substring(0, 2);
   }
 
-  async function handleCreateLocation() {
+  function validateForm(): boolean {
     if (!newLocName.trim()) {
       createError = 'Location name is required';
-      return;
+      return false;
     }
-
     if (!newState.trim()) {
       createError = 'State is required (2-letter abbreviation)';
-      return;
+      return false;
     }
-
     if (newState.length !== 2) {
       createError = 'State must be 2-letter postal abbreviation (e.g., NY, CA)';
-      return;
+      return false;
     }
-
     if (isSubLocation && !parentLocId) {
       createError = 'Please select a parent location for this sub-location';
-      return;
+      return false;
     }
+    return true;
+  }
+
+  function buildLocationData(): Record<string, unknown> {
+    return {
+      locnam: newLocName.trim(),
+      slocnam: newShortName.trim() || undefined,
+      akanam: newAkaName.trim() || undefined,
+      type: newType.trim() || undefined,
+      stype: newSubType.trim() || undefined,
+      documentation: newDocumentation || undefined,
+      access: newAccess || undefined,
+      historic: newHistoric,
+      auth_imp: newAuthor.trim() || undefined,
+      address: {
+        street: newStreet.trim() || undefined,
+        city: newCity.trim() || undefined,
+        county: newCounty.trim() || undefined,
+        state: newState.trim().toUpperCase(),
+        zipcode: newZipcode.trim() || undefined,
+      },
+    };
+  }
+
+  async function handleCreateLocation() {
+    if (!validateForm()) return;
 
     try {
       creatingLocation = true;
       createError = '';
 
-      const locationData: Record<string, unknown> = {
-        locnam: newLocName.trim(),
-        slocnam: newShortName.trim() || undefined,
-        akanam: newAkaName.trim() || undefined,
-        type: newType.trim() || undefined,
-        stype: newSubType.trim() || undefined,
-        // P0: condition and status removed - use access only
-        documentation: newDocumentation || undefined,
-        access: newAccess || undefined,
-        historic: newHistoric,
-        auth_imp: newAuthor.trim() || undefined,
-        address: {
-          street: newStreet.trim() || undefined,
-          city: newCity.trim() || undefined,
-          county: newCounty.trim() || undefined,
-          state: newState.trim().toUpperCase(),
-          zipcode: newZipcode.trim() || undefined,
-        },
-      };
-
-      // DECISION-013: GPS removed from import form - GPS comes only from EXIF data on imported media
-      const newLocation = await window.electronAPI.locations.create(locationData);
-
-      // Auto-select the new location
+      const newLocation = await window.electronAPI.locations.create(buildLocationData());
       onLocationChange(newLocation.locid);
-
-      // Notify parent to refresh locations list
       onLocationCreated?.(newLocation);
-
-      // Reset form
       resetForm();
+    } catch (error) {
+      console.error('Error creating location:', error);
+      createError = error instanceof Error ? error.message : 'Failed to create location';
+    } finally {
+      creatingLocation = false;
+    }
+  }
+
+  async function handleCreateAndAddMedia() {
+    if (!validateForm()) return;
+
+    try {
+      creatingLocation = true;
+      createError = '';
+
+      const newLocation = await window.electronAPI.locations.create(buildLocationData());
+      onLocationCreated?.(newLocation);
+      resetForm();
+      onNavigateToLocation?.(newLocation.locid);
     } catch (error) {
       console.error('Error creating location:', error);
       createError = error instanceof Error ? error.message : 'Failed to create location';
@@ -693,9 +711,17 @@
             type="button"
             onclick={handleCreateLocation}
             disabled={creatingLocation || !newLocName.trim() || !newState.trim()}
-            class="flex-1 px-4 py-3 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50 font-medium"
+            class="px-6 py-3 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50 font-medium"
           >
-            {creatingLocation ? 'Creating Location...' : 'Create Location & Continue to Import'}
+            {creatingLocation ? 'Creating...' : 'Create'}
+          </button>
+          <button
+            type="button"
+            onclick={handleCreateAndAddMedia}
+            disabled={creatingLocation || !newLocName.trim() || !newState.trim()}
+            class="px-6 py-3 bg-blue-600 text-white rounded hover:opacity-90 transition disabled:opacity-50 font-medium"
+          >
+            {creatingLocation ? 'Creating...' : 'Add Media'}
           </button>
           <button
             type="button"
