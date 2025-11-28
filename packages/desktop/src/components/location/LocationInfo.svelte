@@ -94,7 +94,8 @@
   const hasBuiltOrAbandoned = $derived(!!location.builtYear || !!location.abandonedYear);
   const hasType = $derived(!!location.type);
   const hasFlags = $derived(location.historic || location.favorite || location.project);
-  const hasAuthors = $derived(authors.length > 0);
+  const hasAuthor = $derived(!!location.auth_imp);  // Original author field
+  const hasAuthors = $derived(authors.length > 0);  // Tracked contributors from location_authors
 
   // Role display labels
   const roleLabels: Record<string, string> = {
@@ -117,7 +118,7 @@
   // Check if we have any info to display at all
   const hasAnyInfo = $derived(
     hasHistoricalName || hasAkaName || hasStatus || hasDocumentation ||
-    hasBuiltOrAbandoned || hasType || hasFlags || hasAuthors
+    hasBuiltOrAbandoned || hasType || hasFlags || hasAuthor || hasAuthors
   );
 
   // Documentation labels for display
@@ -418,11 +419,15 @@
         </div>
       {/if}
 
-      <!-- Authors (from location_authors table) -->
-      {#if hasAuthors}
+      <!-- Author / Contributors -->
+      {#if hasAuthor || hasAuthors}
         <div>
-          <h3 class="section-title mb-1">Authors</h3>
+          <h3 class="section-title mb-1">{hasAuthors ? 'Authors' : 'Author'}</h3>
           <div class="flex flex-wrap gap-2">
+            {#if hasAuthor && !authors.some(a => a.username === location.auth_imp || a.display_name === location.auth_imp)}
+              <!-- Show auth_imp if not already in location_authors -->
+              <span class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm">{location.auth_imp}</span>
+            {/if}
             {#each authors as author}
               <button
                 onclick={() => router.navigate('/locations', undefined, { authorId: author.user_id })}
