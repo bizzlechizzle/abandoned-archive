@@ -15,7 +15,6 @@
   let nickname = $state('');
   let pin = $state('');
   let confirmPin = $state('');
-  let showPinFields = $state(false);
   let archivePath = $state('');
   let deleteOriginals = $state(false);
   let isProcessing = $state(false);
@@ -55,39 +54,44 @@
 
   function validatePin(): boolean {
     pinError = '';
-    // Validate PIN if fields are shown and PIN is entered
-    if (showPinFields && pin.length > 0) {
-      if (pin.length < 4) {
-        pinError = 'PIN must be at least 4 digits';
-        return false;
-      }
-      if (!/^\d+$/.test(pin)) {
-        pinError = 'PIN must contain only numbers';
-        return false;
-      }
-      if (pin !== confirmPin) {
-        pinError = 'PINs do not match';
-        return false;
-      }
+    // PIN is required for all users
+    if (pin.length < 4) {
+      pinError = 'PIN must be at least 4 digits';
+      return false;
+    }
+    if (pin.length > 6) {
+      pinError = 'PIN must be 4-6 digits';
+      return false;
+    }
+    if (!/^\d+$/.test(pin)) {
+      pinError = 'PIN must contain only numbers';
+      return false;
+    }
+    if (pin !== confirmPin) {
+      pinError = 'PINs do not match';
+      return false;
     }
     return true;
   }
 
   function validateNewUserPin(): boolean {
     newUserPinError = '';
-    if (newUserPin.length > 0) {
-      if (newUserPin.length < 4) {
-        newUserPinError = 'PIN must be at least 4 digits';
-        return false;
-      }
-      if (!/^\d+$/.test(newUserPin)) {
-        newUserPinError = 'PIN must contain only numbers';
-        return false;
-      }
-      if (newUserPin !== newUserConfirmPin) {
-        newUserPinError = 'PINs do not match';
-        return false;
-      }
+    // PIN is required for all users
+    if (newUserPin.length < 4) {
+      newUserPinError = 'PIN must be at least 4 digits';
+      return false;
+    }
+    if (newUserPin.length > 6) {
+      newUserPinError = 'PIN must be 4-6 digits';
+      return false;
+    }
+    if (!/^\d+$/.test(newUserPin)) {
+      newUserPinError = 'PIN must contain only numbers';
+      return false;
+    }
+    if (newUserPin !== newUserConfirmPin) {
+      newUserPinError = 'PINs do not match';
+      return false;
     }
     return true;
   }
@@ -112,7 +116,7 @@
     additionalUsers = [...additionalUsers, {
       name: newUserName.trim(),
       nickname: newUserNickname.trim(),
-      pin: newUserPin.length >= 4 ? newUserPin : '',
+      pin: newUserPin,
     }];
     closeAddUserModal();
   }
@@ -126,11 +130,12 @@
       case 1:
         return true; // Welcome screen, always can proceed
       case 2:
-        // Username required, PIN validation if shown
+        // Username and PIN required
         if (username.trim().length === 0) return false;
-        if (showPinFields && pin.length > 0) {
-          return pin.length >= 4 && pin === confirmPin;
-        }
+        // PIN is required: 4-6 digits and must match
+        if (pin.length < 4 || pin.length > 6) return false;
+        if (!/^\d+$/.test(pin)) return false;
+        if (pin !== confirmPin) return false;
         return true;
       case 3:
         return archivePath.trim().length > 0; // Archive path required
@@ -146,20 +151,20 @@
     try {
       isProcessing = true;
 
-      // Create primary user record in database (PIN for any mode if provided)
+      // Create primary user record in database (PIN is required)
       const user = await window.electronAPI.users.create({
         username: username.trim(),
         display_name: nickname.trim() || null,
-        pin: showPinFields && pin.length >= 4 ? pin : null,
+        pin: pin,
       });
 
-      // Create additional users for multi-user mode
+      // Create additional users for multi-user mode (all have required PINs)
       if (appMode === 'multi' && additionalUsers.length > 0) {
         for (const additionalUser of additionalUsers) {
           await window.electronAPI.users.create({
             username: additionalUser.name,
             display_name: additionalUser.nickname || null,
-            pin: additionalUser.pin || null,
+            pin: additionalUser.pin,
           });
         }
       }
@@ -284,67 +289,41 @@
               />
             </div>
 
-            <!-- PIN Toggle Button -->
-            {#if !showPinFields}
-              <button
-                type="button"
-                onclick={() => showPinFields = true}
-                class="text-accent hover:text-accent/80 text-sm font-medium flex items-center gap-1"
-              >
-                <span>+</span> Add PIN
-              </button>
-            {:else}
-              <!-- PIN Fields -->
-              <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                <div class="flex items-center justify-between mb-3">
-                  <h3 class="font-medium text-foreground">PIN Protection</h3>
-                  <button
-                    type="button"
-                    onclick={() => { showPinFields = false; pin = ''; confirmPin = ''; pinError = ''; }}
-                    class="text-gray-500 hover:text-gray-700 text-sm"
-                  >
-                    Remove
-                  </button>
-                </div>
-                <p class="text-xs text-gray-600 mb-3">
-                  Set a 4-6 digit PIN to protect your account.
-                </p>
-                <div class="grid grid-cols-2 gap-4">
-                  <div>
-                    <label for="pin" class="block text-sm font-medium text-gray-700 mb-2">
-                      PIN
-                    </label>
-                    <input
-                      id="pin"
-                      type="password"
-                      inputmode="numeric"
-                      pattern="[0-9]*"
-                      maxlength="6"
-                      bind:value={pin}
-                      placeholder="4-6 digits"
-                      class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition text-center tracking-widest"
-                    />
-                  </div>
-                  <div>
-                    <label for="confirmPin" class="block text-sm font-medium text-gray-700 mb-2">
-                      Confirm PIN
-                    </label>
-                    <input
-                      id="confirmPin"
-                      type="password"
-                      inputmode="numeric"
-                      pattern="[0-9]*"
-                      maxlength="6"
-                      bind:value={confirmPin}
-                      placeholder="Re-enter PIN"
-                      class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition text-center tracking-widest"
-                    />
-                  </div>
-                </div>
-                {#if pinError}
-                  <p class="text-red-500 text-sm mt-2">{pinError}</p>
-                {/if}
+            <!-- PIN Fields (Required) -->
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label for="pin" class="block text-sm font-medium text-gray-700 mb-2">
+                  PIN *
+                </label>
+                <input
+                  id="pin"
+                  type="password"
+                  inputmode="numeric"
+                  pattern="[0-9]*"
+                  maxlength="6"
+                  bind:value={pin}
+                  placeholder="4-6 digits"
+                  class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition text-center tracking-widest"
+                />
               </div>
+              <div>
+                <label for="confirmPin" class="block text-sm font-medium text-gray-700 mb-2">
+                  Confirm PIN *
+                </label>
+                <input
+                  id="confirmPin"
+                  type="password"
+                  inputmode="numeric"
+                  pattern="[0-9]*"
+                  maxlength="6"
+                  bind:value={confirmPin}
+                  placeholder="Re-enter PIN"
+                  class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition text-center tracking-widest"
+                />
+              </div>
+            </div>
+            {#if pinError}
+              <p class="text-red-500 text-sm mt-2">{pinError}</p>
             {/if}
 
             <!-- Mode Selection -->
@@ -407,9 +386,6 @@
                           <span class="font-medium text-foreground">{user.name}</span>
                           {#if user.nickname}
                             <span class="text-gray-500 text-sm"> ({user.nickname})</span>
-                          {/if}
-                          {#if user.pin}
-                            <span class="text-xs text-gray-400 ml-2">PIN set</span>
                           {/if}
                         </div>
                         <button
@@ -573,11 +549,11 @@
           />
         </div>
 
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">
-            PIN (optional)
-          </label>
-          <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+              PIN *
+            </label>
             <input
               type="password"
               inputmode="numeric"
@@ -587,6 +563,11 @@
               placeholder="4-6 digits"
               class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition text-center tracking-widest"
             />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+              Confirm PIN *
+            </label>
             <input
               type="password"
               inputmode="numeric"
@@ -597,10 +578,10 @@
               class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition text-center tracking-widest"
             />
           </div>
-          {#if newUserPinError}
-            <p class="text-red-500 text-sm mt-2">{newUserPinError}</p>
-          {/if}
         </div>
+        {#if newUserPinError}
+          <p class="text-red-500 text-sm mt-2">{newUserPinError}</p>
+        {/if}
       </div>
 
       <div class="flex justify-end gap-3 mt-6">
@@ -614,7 +595,7 @@
         <button
           type="button"
           onclick={addUser}
-          disabled={!newUserName.trim()}
+          disabled={!newUserName.trim() || newUserPin.length < 4 || newUserPin !== newUserConfirmPin}
           class="px-4 py-2 bg-accent text-white rounded-lg hover:opacity-90 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Add User
