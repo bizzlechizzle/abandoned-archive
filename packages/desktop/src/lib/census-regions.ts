@@ -3763,10 +3763,17 @@ export function getCulturalRegionFromCounty(
     return countyMapping[countyWithoutSuffix];
   }
 
+  // Normalize Saint → St. (geocoders return "Saint" but mappings use "St.")
+  const normalizedCounty = countyWithoutSuffix.replace(/^Saint\s+/i, 'St. ');
+  if (normalizedCounty !== countyWithoutSuffix && countyMapping[normalizedCounty]) {
+    return countyMapping[normalizedCounty];
+  }
+
   // Try case-insensitive
   for (const [key, value] of Object.entries(countyMapping)) {
     if (key.toLowerCase() === county.toLowerCase() ||
-        key.toLowerCase() === countyWithoutSuffix.toLowerCase()) {
+        key.toLowerCase() === countyWithoutSuffix.toLowerCase() ||
+        key.toLowerCase() === normalizedCounty.toLowerCase()) {
       return value;
     }
   }
