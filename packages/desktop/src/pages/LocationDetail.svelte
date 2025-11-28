@@ -91,10 +91,10 @@
   let newBuildingIsPrimary = $state(false);
   let addingBuilding = $state(false);
 
-  // Hero title text fitting - premium single-line scaling
-  let titleContainer: HTMLDivElement | undefined = $state();
-  let titleElement: HTMLHeadingElement | undefined = $state();
-  let titleFontSize = $state(60);
+  // Hero title auto-sizing: max 2 lines, never truncate
+  let heroTitleEl = $state<HTMLElement | null>(null);
+  let heroTitleFontSize = $state(108); // Start at max, shrink as needed
+  let heroContainerEl = $state<HTMLElement | null>(null);
 
   // Derived: Combined media list for MediaViewer (images first, then videos)
   const imageMediaList = $derived(images.map(img => ({
@@ -187,32 +187,66 @@
     return prefix + baseName;
   });
 
-  // Text fitting effect - scales font to fit container width
-  function fitTitleText() {
-    if (!titleContainer || !titleElement) return;
+  // Function to calculate and set title size for max 2 lines
+  // RULE: Never cut off titles, always max 2 lines, no exceptions
+  function fitTitleToTwoLines() {
+    const el = heroTitleEl;
+    const container = heroContainerEl;
+    if (!el || !container) return;
 
-    const maxSize = 60;
-    const minSize = 16;
+    const MAX_LINES = 2;
+    const maxSize = 128; // Max size cap
+    const minSize = 14;
     let size = maxSize;
 
-    // Reset to max size first
-    titleElement.style.fontSize = `${size}px`;
+    // Binary search for optimal size (faster and more accurate)
+    let low = minSize;
+    let high = maxSize;
+    let bestFit = minSize;
 
-    // Shrink until it fits
-    while (titleElement.scrollWidth > titleContainer.clientWidth && size > minSize) {
-      size -= 2;
-      titleElement.style.fontSize = `${size}px`;
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+      el.style.fontSize = `${mid}px`;
+
+      // Force reflow to get accurate measurements
+      const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || mid * 1.2;
+      const maxAllowedHeight = lineHeight * MAX_LINES * 1.05; // 2 lines with 5% tolerance
+      const actualHeight = el.scrollHeight;
+
+      if (actualHeight <= maxAllowedHeight) {
+        // Fits in 2 lines - try larger
+        bestFit = mid;
+        low = mid + 1;
+      } else {
+        // Too many lines - try smaller
+        high = mid - 1;
+      }
     }
 
-    titleFontSize = size;
+    el.style.fontSize = `${bestFit}px`;
+    heroTitleFontSize = bestFit;
   }
 
-  // Re-fit when heroDisplayName changes or elements mount
+  // Effect: Auto-size title to fit max 2 lines (never truncate)
   $effect(() => {
-    if (heroDisplayName && titleContainer && titleElement) {
-      // Small delay to ensure DOM is ready
-      requestAnimationFrame(() => fitTitleText());
+    const name = heroDisplayName; // Track dependency
+    const el = heroTitleEl;
+    const container = heroContainerEl;
+    if (!el || !name) return;
+
+    // Initial fit
+    requestAnimationFrame(fitTitleToTwoLines);
+
+    // Refit on resize
+    const resizeObserver = new ResizeObserver(() => {
+      fitTitleToTwoLines();
+    });
+
+    if (container) {
+      resizeObserver.observe(container);
     }
+
+    return () => resizeObserver.disconnect();
   });
 
   // Load functions
@@ -738,58 +772,29 @@
       }}
     />
 
-    <!-- Title below hero: left-anchored, premium text fitting - always one line -->
-    <div class="max-w-6xl mx-auto px-8 pt-2 pb-2">
-      {#if isViewingSubLocation}
-        <!-- Parent location tagline (for sub-locations) -->
-        <button
-          onclick={() => router.navigate(`/location/${locationId}`)}
-          class="text-sm text-accent hover:underline flex items-center gap-1 mb-1"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-          {location.locnam}
-        </button>
-      {/if}
-
-      <div
-        bind:this={titleContainer}
-        class="w-full lg:w-[70%] text-left"
-      >
+    <!-- Title overlaps hero gradient: centered, premium text fitting - up to 2 lines -->
+    <div class="max-w-6xl mx-auto px-8 pb-4 relative z-20 -mt-12">
+      <div bind:this={heroContainerEl} class="w-[88%] mx-auto text-center">
         <h1
-          bind:this={titleElement}
-          class="font-bold leading-tight whitespace-nowrap text-left"
-          style="color: #454545; font-size: {titleFontSize}px;"
+          bind:this={heroTitleEl}
+          class="hero-title font-bold uppercase leading-tight text-center mb-0"
+          style="font-size: {heroTitleFontSize}px;"
           title={isViewingSubLocation ? currentSubLocation?.subnam : location.locnam}
         >
           {heroDisplayName}
-        </h1>
+        </h1>{#if isViewingSubLocation}
+          <!-- Host location tagline (cinematic style) -->
+          <button
+            onclick={() => router.navigate(`/location/${locationId}`)}
+            class="host-tagline block w-[90%] mx-auto mt-0 uppercase hover:underline text-center"
+          >
+            {location.locnam}
+          </button>
+        {/if}
       </div>
-
-      {#if isViewingSubLocation && currentSubLocation}
-        <!-- Sub-location info chips -->
-        <div class="flex flex-wrap gap-2 mt-3">
-          {#if currentSubLocation.type}
-            <span class="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm">
-              {currentSubLocation.type}
-            </span>
-          {/if}
-          {#if currentSubLocation.status}
-            <span class="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm">
-              {currentSubLocation.status}
-            </span>
-          {/if}
-          {#if currentSubLocation.is_primary}
-            <span class="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-sm font-medium">
-              Primary Building
-            </span>
-          {/if}
-        </div>
-      {/if}
     </div>
 
-    <div class="max-w-6xl mx-auto px-8 pb-8">
+    <div class="max-w-6xl mx-auto px-8 pt-6 pb-8">
 
       {#if isEditing}
         <LocationEditForm {location} onSave={handleSave} onCancel={() => isEditing = false} />
@@ -834,8 +839,8 @@
         <!-- Notes scoped to sub-location when viewing one -->
         <NotesSection locid={isViewingSubLocation && currentSubLocation ? currentSubLocation.subid : location.locid} {currentUser} />
 
-        <!-- Migration 28: Sub-Location Grid (hide when viewing a sub-location) -->
-        {#if !isViewingSubLocation}
+        <!-- Migration 28: Sub-Location Grid (only for host locations, hide when viewing a sub-location) -->
+        {#if !isViewingSubLocation && isHostLocation}
           <SubLocationGrid
             locid={location.locid}
             {sublocations}
@@ -1076,3 +1081,25 @@
     </div>
   {/if}
 </div>
+
+<style>
+  /* Hero title: auto-sized to fit max 2 lines, never truncate */
+  .hero-title {
+    color: #454545;
+    letter-spacing: 0.02em; /* Tight, premium spacing */
+    word-spacing: -0.02em; /* Cohesive word blocks */
+    font-weight: 800;
+    text-wrap: balance; /* Balances word distribution across lines */
+    /* Hand-painted sign style - hard offset shadow, accent gold */
+    text-shadow: 3px 3px 0 rgba(185, 151, 92, 0.5);
+  }
+
+  /* Host location tagline (cinematic - tiny link under title) */
+  .host-tagline {
+    color: var(--color-accent, #b9975c); /* Accent color */
+    font-size: 18px; /* Taller tagline */
+    letter-spacing: 0.08em;
+    font-weight: 700; /* Bold */
+    white-space: nowrap; /* Single line ALWAYS */
+  }
+</style>

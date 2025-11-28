@@ -398,15 +398,6 @@
   <div class="flex items-start justify-between px-8 pt-6 pb-4">
     <h2 class="text-2xl font-semibold text-foreground leading-none">Information</h2>
     <div class="flex items-center gap-3">
-      {#if canConvertToHost}
-        <button
-          onclick={openConvertModal}
-          class="text-sm text-gray-500 hover:text-accent hover:underline leading-none mt-1"
-          title="Enable sub-locations for this location"
-        >
-          convert to host
-        </button>
-      {/if}
       {#if onSave}
         <button
           onclick={openEditModal}
@@ -938,6 +929,16 @@
 
       <!-- Footer -->
       <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+        {#if canConvertToHost}
+          <button
+            type="button"
+            onclick={openConvertModal}
+            class="mr-auto text-sm text-gray-500 hover:text-accent hover:underline"
+            title="Enable sub-locations for this location"
+          >
+            Convert to Host Location
+          </button>
+        {/if}
         <button
           type="button"
           onclick={() => showEditModal = false}

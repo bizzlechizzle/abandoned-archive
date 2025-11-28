@@ -33,19 +33,8 @@
 </script>
 
 <section class="mt-8">
-  <div class="flex items-center justify-between mb-4">
+  <div class="mb-4">
     <h2 class="text-lg font-semibold text-foreground">Buildings & Structures</h2>
-    {#if onAddSubLocation}
-      <button
-        onclick={onAddSubLocation}
-        class="px-3 py-1.5 text-sm bg-accent text-white rounded-full hover:opacity-90 transition flex items-center gap-1 shadow-sm"
-      >
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-        </svg>
-        Add Building
-      </button>
-    {/if}
   </div>
 
   {#if sublocations.length === 0}

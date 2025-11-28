@@ -216,10 +216,6 @@
     return GPS_ZOOM_LEVELS.MANUAL;
   }
 
-  // Calculate base zoom, then subtract 1 for host locations to show more area
-  const baseZoom = $derived(getZoomLevel(location.gps, !!location.address?.state));
-  const mapZoom = $derived(isHostLocation ? Math.max(1, baseZoom - 1) : baseZoom);
-
   // Migration 31: Create location object for map that uses sub-location GPS when available
   const mapLocation = $derived(subLocation && subLocation.gps_lat && subLocation.gps_lng
     ? {
@@ -233,6 +229,11 @@
       }
     : location
   );
+
+  // Calculate base zoom, then subtract 1 for host locations to show more area
+  // Uses mapLocation.gps so sub-locations use their own GPS verification status
+  const baseZoom = $derived(getZoomLevel(mapLocation.gps, !!location.address?.state));
+  const mapZoom = $derived(isHostLocation ? Math.max(1, baseZoom - 1) : baseZoom);
 </script>
 
 <div class="bg-white rounded-lg shadow-md">
