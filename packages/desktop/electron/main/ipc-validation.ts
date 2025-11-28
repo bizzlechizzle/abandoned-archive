@@ -57,8 +57,11 @@ export const SettingKeySchema = z.enum([
   // Core app settings (used by Setup/Settings pages)
   'archive_folder',
   'current_user',
+  'current_user_id',
   'delete_on_import',
   'setup_complete',
+  'app_mode',
+  'require_login',
   'login_required',
   'import_map',
   'map_import',
