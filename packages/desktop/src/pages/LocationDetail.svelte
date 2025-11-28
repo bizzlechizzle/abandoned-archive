@@ -46,8 +46,10 @@
   // Migration 26: Import attribution modal
   let showAttributionModal = $state(false);
   let pendingImportPaths = $state<string[]>([]);
-  let isContributed = $state(0); // 0 = Author, 1 = Contributor
-  let contributionSource = $state('');
+  let isSomeoneElse = $state(false); // false = current user, true = someone else
+  let selectedAuthor = $state(''); // username of selected author (or 'external')
+  let contributionSource = $state(''); // for external contributors
+  let users = $state<Array<{user_id: string, username: string, display_name: string | null}>>([]);
 
   // Hero title text fitting - premium single-line scaling
   let titleContainer: HTMLDivElement | undefined = $state();
@@ -376,7 +378,8 @@
     if (expandedPaths.length > 0) {
       // Show attribution modal instead of importing directly
       pendingImportPaths = expandedPaths;
-      isContributed = 0;
+      isSomeoneElse = false;
+      selectedAuthor = '';
       contributionSource = '';
       showAttributionModal = true;
       importProgress = '';
@@ -395,7 +398,8 @@
         if (expandedPaths.length > 0) {
           // Show attribution modal instead of importing directly
           pendingImportPaths = expandedPaths;
-          isContributed = 0;
+          isSomeoneElse = false;
+          selectedAuthor = '';
           contributionSource = '';
           showAttributionModal = true;
           importProgress = '';
@@ -403,7 +407,8 @@
         else { importProgress = 'No supported media files found'; setTimeout(() => importProgress = '', 3000); }
       } else {
         pendingImportPaths = filePaths;
-        isContributed = 0;
+        isSomeoneElse = false;
+        selectedAuthor = '';
         contributionSource = '';
         showAttributionModal = true;
       }
@@ -414,7 +419,25 @@
   function confirmImport() {
     showAttributionModal = false;
     if (pendingImportPaths.length > 0) {
-      importFilePaths(pendingImportPaths, isContributed, contributionSource);
+      // Determine author and contribution status
+      let author = currentUser;
+      let isContributed = 0;
+      let source = '';
+
+      if (isSomeoneElse) {
+        if (selectedAuthor === 'external') {
+          // External contributor
+          isContributed = 1;
+          source = contributionSource;
+          author = currentUser; // Current user is importing on behalf of external
+        } else {
+          // Another registered user is the author
+          author = selectedAuthor;
+          isContributed = 0;
+        }
+      }
+
+      importFilePaths(pendingImportPaths, author, isContributed, source);
       pendingImportPaths = [];
     }
   }
@@ -422,11 +445,12 @@
   function cancelImport() {
     showAttributionModal = false;
     pendingImportPaths = [];
-    isContributed = 0;
+    isSomeoneElse = false;
+    selectedAuthor = '';
     contributionSource = '';
   }
 
-  async function importFilePaths(filePaths: string[], contributed: number = 0, source: string = '') {
+  async function importFilePaths(filePaths: string[], author: string, contributed: number = 0, source: string = '') {
     if (!location || $isImporting) return;
     const filesForImport = filePaths.map(fp => ({ filePath: fp, originalName: fp.split(/[\\/]/).pop()! }));
     importStore.startJob(location.locid, location.locnam, filePaths.length);
@@ -435,7 +459,7 @@
     window.electronAPI.media.import({
       files: filesForImport,
       locid: location.locid,
-      auth_imp: currentUser,
+      auth_imp: author,
       deleteOriginals: false,
       is_contributed: contributed,
       contribution_source: source || null,
@@ -472,8 +496,8 @@
     if (failedFiles.length === 0) return;
     const paths = failedFiles.map(f => f.filePath);
     failedFiles = [];
-    // Retry with same attribution as last import
-    await importFilePaths(paths, isContributed, contributionSource);
+    // Retry with current user as author
+    await importFilePaths(paths, currentUser, 0, '');
   }
 
   // Bookmark handlers
@@ -495,7 +519,14 @@
     await loadLocation();
     loadBookmarks();
     // DECISION-014: Removed ensureGpsFromAddress() - GPS should only come from EXIF or user action
-    try { const settings = await window.electronAPI.settings.getAll(); currentUser = settings.current_user || 'default'; }
+    try {
+      const settings = await window.electronAPI.settings.getAll();
+      currentUser = settings.current_user || 'default';
+      // Load users for attribution modal
+      if (window.electronAPI?.users) {
+        users = await window.electronAPI.users.findAll();
+      }
+    }
     catch (err) { console.error('Error loading user settings:', err); }
 
     // Auto-open file browser if navigated from "Add Media" button on Import form
@@ -622,51 +653,72 @@
         </div>
 
         <div class="p-4 space-y-4">
+          <!-- Current user or Someone Else -->
           <div class="space-y-3">
-            <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition {isContributed === 0 ? 'border-accent bg-accent/5' : 'border-gray-200'}">
+            <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition {!isSomeoneElse ? 'border-accent bg-accent/5' : 'border-gray-200'}">
               <input
                 type="radio"
                 name="attribution"
-                value={0}
-                checked={isContributed === 0}
-                onchange={() => { isContributed = 0; contributionSource = ''; }}
+                checked={!isSomeoneElse}
+                onchange={() => { isSomeoneElse = false; selectedAuthor = ''; contributionSource = ''; }}
                 class="w-4 h-4 text-accent"
               />
               <div>
-                <p class="font-medium text-foreground">Author Photos</p>
-                <p class="text-sm text-gray-500">I shot these photos/videos</p>
+                <p class="font-medium text-foreground">{users.find(u => u.username === currentUser)?.display_name || currentUser}</p>
+                <p class="text-sm text-gray-500">I shot these</p>
               </div>
             </label>
 
-            <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition {isContributed === 1 ? 'border-accent bg-accent/5' : 'border-gray-200'}">
+            <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition {isSomeoneElse ? 'border-accent bg-accent/5' : 'border-gray-200'}">
               <input
                 type="radio"
                 name="attribution"
-                value={1}
-                checked={isContributed === 1}
-                onchange={() => isContributed = 1}
+                checked={isSomeoneElse}
+                onchange={() => isSomeoneElse = true}
                 class="w-4 h-4 text-accent"
               />
               <div>
-                <p class="font-medium text-foreground">Contributor Photos</p>
-                <p class="text-sm text-gray-500">Someone else shared these with me</p>
+                <p class="font-medium text-foreground">Someone Else</p>
+                <p class="text-sm text-gray-500">Another user or external contributor</p>
               </div>
             </label>
           </div>
 
-          {#if isContributed === 1}
-            <div class="pt-2">
-              <label for="contribution-source" class="block text-sm font-medium text-gray-700 mb-1">
-                Source
-              </label>
-              <input
-                id="contribution-source"
-                type="text"
-                bind:value={contributionSource}
-                placeholder="e.g., John Smith via text, Facebook group"
-                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-              />
-              <p class="text-xs text-gray-500 mt-1">Who contributed these or where they came from</p>
+          <!-- If Someone Else: show author dropdown -->
+          {#if isSomeoneElse}
+            <div class="pt-2 space-y-3">
+              <div>
+                <label for="author-select" class="block text-sm font-medium text-gray-700 mb-1">
+                  Who shot these?
+                </label>
+                <select
+                  id="author-select"
+                  bind:value={selectedAuthor}
+                  class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                >
+                  <option value="">Select...</option>
+                  {#each users.filter(u => u.username !== currentUser) as user}
+                    <option value={user.username}>{user.display_name || user.username}</option>
+                  {/each}
+                  <option value="external">External Contributor</option>
+                </select>
+              </div>
+
+              <!-- If External: show source field -->
+              {#if selectedAuthor === 'external'}
+                <div>
+                  <label for="contribution-source" class="block text-sm font-medium text-gray-700 mb-1">
+                    Source
+                  </label>
+                  <input
+                    id="contribution-source"
+                    type="text"
+                    bind:value={contributionSource}
+                    placeholder="e.g., John Smith via text"
+                    class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                  />
+                </div>
+              {/if}
             </div>
           {/if}
         </div>
@@ -680,7 +732,7 @@
           </button>
           <button
             onclick={confirmImport}
-            disabled={isContributed === 1 && !contributionSource.trim()}
+            disabled={isSomeoneElse && !selectedAuthor || (selectedAuthor === 'external' && !contributionSource.trim())}
             class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Import
