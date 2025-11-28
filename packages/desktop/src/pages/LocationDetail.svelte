@@ -69,6 +69,11 @@
     hidden: img.hidden ?? 0,
     hidden_reason: img.hidden_reason ?? null,
     is_live_photo: img.is_live_photo ?? 0,
+    // Author tracking (Migration 25/26)
+    auth_imp: img.auth_imp ?? null,
+    imported_by: img.imported_by ?? null,
+    is_contributed: img.is_contributed ?? 0,
+    contribution_source: img.contribution_source ?? null,
   })));
 
   const videoMediaList = $derived(videos.map(vid => ({
@@ -82,6 +87,11 @@
     hidden: vid.hidden ?? 0,
     hidden_reason: vid.hidden_reason ?? null,
     is_live_photo: vid.is_live_photo ?? 0,
+    // Author tracking (Migration 25/26)
+    auth_imp: vid.auth_imp ?? null,
+    imported_by: vid.imported_by ?? null,
+    is_contributed: vid.is_contributed ?? 0,
+    contribution_source: vid.contribution_source ?? null,
   })));
 
   // Combined list: images first, then videos
@@ -585,7 +595,7 @@
         <LocationEditForm {location} onSave={handleSave} onCancel={() => isEditing = false} />
       {:else}
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <LocationInfo {location} onNavigateFilter={navigateToFilter} onSave={handleSave} />
+          <LocationInfo {location} {images} {videos} {documents} onNavigateFilter={navigateToFilter} onSave={handleSave} />
           <div class="location-map-section">
             <!-- DECISION-011: Unified location box with verification checkmarks, edit modal -->
             <LocationMapSection {location} onSave={handleLocationSave} onNavigateFilter={navigateToFilter} />

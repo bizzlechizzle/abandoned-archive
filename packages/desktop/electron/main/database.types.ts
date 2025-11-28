@@ -299,6 +299,10 @@ export interface DocsTable {
   imported_by_id: string | null;   // User ID who imported this media
   imported_by: string | null;      // Username for display
   media_source: string | null;     // e.g., "Personal camera", "Facebook archive", "Web archive"
+
+  // Contributor Tracking (Migration 27)
+  is_contributed: number;          // 0 = author shot it, 1 = contributor
+  contribution_source: string | null; // e.g., "John Smith via text", "FB group"
 }
 
 // Maps table

@@ -958,6 +958,22 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 26 completed: media contributor tracking columns added');
     }
+
+    // Migration 27: Add contributor tracking to docs table
+    // Consistency with imgs/vids - docs can also be contributed by others
+    const docsColsForContrib = sqlite.prepare('PRAGMA table_info(docs)').all() as Array<{ name: string }>;
+    const docsHasContributed = docsColsForContrib.some(col => col.name === 'is_contributed');
+
+    if (!docsHasContributed) {
+      console.log('Running migration 27: Adding contributor tracking to docs table');
+
+      sqlite.exec(`
+        ALTER TABLE docs ADD COLUMN is_contributed INTEGER DEFAULT 0;
+        ALTER TABLE docs ADD COLUMN contribution_source TEXT;
+      `);
+
+      console.log('Migration 27 completed: docs contributor tracking columns added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

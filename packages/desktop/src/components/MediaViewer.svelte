@@ -30,6 +30,11 @@
       hidden?: number;
       hidden_reason?: string | null;
       is_live_photo?: number;
+      // Author tracking (Migration 25/26)
+      auth_imp?: string | null;
+      imported_by?: string | null;
+      is_contributed?: number;
+      contribution_source?: string | null;
     }>;
     startIndex?: number;
     onClose: () => void;
@@ -759,6 +764,33 @@
                       <span>{typeof altitude === 'number' ? `${altitude.toFixed(1)} m` : altitude}</span>
                     </div>
                   {/if}
+                {/if}
+              </div>
+            {/if}
+
+            <!-- Author / Attribution -->
+            {#if currentMedia.auth_imp || currentMedia.imported_by || currentMedia.is_contributed}
+              <div class="pb-3 border-b border-gray-100">
+                <div class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Attribution</div>
+                {#if currentMedia.auth_imp}
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Photographer</span>
+                    <span class="text-accent">{currentMedia.auth_imp}</span>
+                  </div>
+                {/if}
+                {#if currentMedia.imported_by && currentMedia.imported_by !== currentMedia.auth_imp}
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Imported by</span>
+                    <span>{currentMedia.imported_by}</span>
+                  </div>
+                {/if}
+                {#if currentMedia.is_contributed === 1}
+                  <div class="flex justify-between items-center">
+                    <span class="text-gray-500">Contributed</span>
+                    <span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">
+                      {currentMedia.contribution_source || 'External'}
+                    </span>
+                  </div>
                 {/if}
               </div>
             {/if}

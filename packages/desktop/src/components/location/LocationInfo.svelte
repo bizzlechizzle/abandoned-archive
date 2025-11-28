@@ -18,13 +18,24 @@
     added_at: string;
   }
 
+  // Media types for author extraction
+  interface MediaWithAuthor {
+    auth_imp?: string | null;
+    imported_by?: string | null;
+    is_contributed?: number;
+    contribution_source?: string | null;
+  }
+
   interface Props {
     location: Location;
+    images?: MediaWithAuthor[];
+    videos?: MediaWithAuthor[];
+    documents?: MediaWithAuthor[];
     onNavigateFilter: (type: string, value: string) => void;
     onSave?: (updates: Partial<LocationInput>) => Promise<void>;
   }
 
-  let { location, onNavigateFilter, onSave }: Props = $props();
+  let { location, images = [], videos = [], documents = [], onNavigateFilter, onSave }: Props = $props();
 
   // Edit modal state
   let showEditModal = $state(false);
@@ -104,6 +115,38 @@
     contributor: 'Contributor',
   };
 
+  // Extract unique authors from media (dedup against location_authors)
+  const mediaAuthors = $derived(() => {
+    const allMedia = [...images, ...videos, ...documents];
+    const authorSet = new Set<string>();
+    const locationAuthorNames = new Set(authors.map(a => a.username).concat(authors.map(a => a.display_name).filter(Boolean) as string[]));
+
+    // Also include location.auth_imp in dedup check
+    if (location.auth_imp) locationAuthorNames.add(location.auth_imp);
+
+    for (const m of allMedia) {
+      if (m.auth_imp && !locationAuthorNames.has(m.auth_imp)) {
+        authorSet.add(m.auth_imp);
+      }
+    }
+    return Array.from(authorSet);
+  });
+
+  // Extract unique external contributors (is_contributed = 1)
+  const externalContributors = $derived(() => {
+    const allMedia = [...images, ...videos, ...documents];
+    const sources = new Set<string>();
+    for (const m of allMedia) {
+      if (m.is_contributed === 1 && m.contribution_source) {
+        sources.add(m.contribution_source);
+      }
+    }
+    return Array.from(sources);
+  });
+
+  const hasMediaAuthors = $derived(mediaAuthors().length > 0);
+  const hasExternalContributors = $derived(externalContributors().length > 0);
+
   // Parse AKA names for display (split by comma)
   const displayAkaNames = $derived(
     location.akanam ? location.akanam.split(',').map(s => s.trim()).filter(Boolean) : []
@@ -118,7 +161,8 @@
   // Check if we have any info to display at all
   const hasAnyInfo = $derived(
     hasHistoricalName || hasAkaName || hasStatus || hasDocumentation ||
-    hasBuiltOrAbandoned || hasType || hasFlags || hasAuthor || hasAuthors
+    hasBuiltOrAbandoned || hasType || hasFlags || hasAuthor || hasAuthors ||
+    hasMediaAuthors || hasExternalContributors
   );
 
   // Documentation labels for display
@@ -420,13 +464,19 @@
       {/if}
 
       <!-- Author / Contributors -->
-      {#if hasAuthor || hasAuthors}
+      {#if hasAuthor || hasAuthors || hasMediaAuthors || hasExternalContributors}
         <div>
-          <h3 class="section-title mb-1">{hasAuthors ? 'Authors' : 'Author'}</h3>
+          <h3 class="section-title mb-1">{(hasAuthors || hasMediaAuthors || hasExternalContributors) ? 'Authors' : 'Author'}</h3>
           <div class="flex flex-wrap gap-2">
             {#if hasAuthor && !authors.some(a => a.username === location.auth_imp || a.display_name === location.auth_imp)}
               <!-- Show auth_imp if not already in location_authors -->
-              <span class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm">{location.auth_imp}</span>
+              <button
+                onclick={() => onNavigateFilter('author', location.auth_imp!)}
+                class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm hover:bg-accent/20 transition"
+                title="View all locations by {location.auth_imp}"
+              >
+                {location.auth_imp}
+              </button>
             {/if}
             {#each authors as author}
               <button
@@ -437,6 +487,25 @@
                 <span>{author.display_name || author.username}</span>
                 <span class="text-xs text-accent/60">({roleLabels[author.role] || author.role})</span>
               </button>
+            {/each}
+            <!-- Media authors (from photos/videos, not in location_authors) -->
+            {#each mediaAuthors() as mediaAuthor}
+              <button
+                onclick={() => onNavigateFilter('author', mediaAuthor)}
+                class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm hover:bg-accent/20 transition"
+                title="View all locations by {mediaAuthor}"
+              >
+                {mediaAuthor}
+              </button>
+            {/each}
+            <!-- External contributors (contributed media) -->
+            {#each externalContributors() as source}
+              <span
+                class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-sm"
+                title="Contributed media"
+              >
+                {source}
+              </span>
             {/each}
           </div>
         </div>
