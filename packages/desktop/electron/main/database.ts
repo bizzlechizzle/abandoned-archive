@@ -933,6 +933,31 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 25 completed: activity tracking and author attribution columns added');
     }
+
+    // Migration 26: Media contributor tracking
+    // Track whether media was shot by the user (author) or contributed by someone else
+    // - is_contributed: 0 = author shot it, 1 = someone else contributed it
+    // - contribution_source: Free text describing who/where from (e.g., "John Smith via text")
+    const imgsColsForContrib = sqlite.prepare('PRAGMA table_info(imgs)').all() as Array<{ name: string }>;
+    const hasContributed = imgsColsForContrib.some(col => col.name === 'is_contributed');
+
+    if (!hasContributed) {
+      console.log('Running migration 26: Adding media contributor tracking');
+
+      // Add contributor columns to imgs table
+      sqlite.exec(`
+        ALTER TABLE imgs ADD COLUMN is_contributed INTEGER DEFAULT 0;
+        ALTER TABLE imgs ADD COLUMN contribution_source TEXT;
+      `);
+
+      // Add contributor columns to vids table
+      sqlite.exec(`
+        ALTER TABLE vids ADD COLUMN is_contributed INTEGER DEFAULT 0;
+        ALTER TABLE vids ADD COLUMN contribution_source TEXT;
+      `);
+
+      console.log('Migration 26 completed: media contributor tracking columns added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

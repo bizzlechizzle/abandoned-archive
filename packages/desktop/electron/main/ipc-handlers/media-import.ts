@@ -128,6 +128,9 @@ export function registerMediaImportHandlers(
         subid: z.string().uuid().nullable().optional(),
         auth_imp: z.string().nullable(),
         deleteOriginals: z.boolean().default(false),
+        // Migration 26: Contributor tracking
+        is_contributed: z.number().default(0),
+        contribution_source: z.string().nullable().optional(),
       });
 
       const validatedInput = ImportInputSchema.parse(input);
@@ -152,6 +155,9 @@ export function registerMediaImportHandlers(
         imported_by_id: currentUser?.userId || null,
         imported_by: currentUser?.username || null,
         media_source: null, // Can be set in future for external sources
+        // Migration 26: Contributor tracking
+        is_contributed: validatedInput.is_contributed,
+        contribution_source: validatedInput.contribution_source || null,
       }));
 
       const importId = `import-${Date.now()}`;

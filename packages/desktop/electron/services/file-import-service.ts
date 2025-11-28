@@ -34,6 +34,9 @@ export interface ImportFileInput {
   imported_by_id?: string | null;
   imported_by?: string | null;
   media_source?: string | null;
+  // Migration 26: Contributor tracking
+  is_contributed?: number;           // 0 = author, 1 = contributor
+  contribution_source?: string | null; // e.g., "John Smith via text"
 }
 
 export interface ImportResult {
@@ -952,6 +955,9 @@ export class FileImportService {
           imported_by_id: file.imported_by_id || null,
           imported_by: file.imported_by || null,
           media_source: file.media_source || null,
+          // Migration 26: Contributor tracking
+          is_contributed: file.is_contributed ?? 0,
+          contribution_source: file.contribution_source || null,
         })
         .execute();
     } else if (type === 'video') {
@@ -989,6 +995,9 @@ export class FileImportService {
           imported_by_id: file.imported_by_id || null,
           imported_by: file.imported_by || null,
           media_source: file.media_source || null,
+          // Migration 26: Contributor tracking
+          is_contributed: file.is_contributed ?? 0,
+          contribution_source: file.contribution_source || null,
         })
         .execute();
     } else if (type === 'map') {

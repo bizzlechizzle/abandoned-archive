@@ -206,6 +206,10 @@ export interface ImgsTable {
   imported_by: string | null;      // Username for display
   media_source: string | null;     // e.g., "Personal camera", "Facebook archive", "Web archive"
 
+  // Contributor Tracking (Migration 26)
+  is_contributed: number;          // 0 = author shot it, 1 = contributor
+  contribution_source: string | null; // e.g., "John Smith via text", "FB group"
+
   // NOTE: darktable columns exist in DB but are deprecated/unused
   // darktable_path, darktable_processed, darktable_processed_at - REMOVED from app
 }
@@ -260,6 +264,10 @@ export interface VidsTable {
   imported_by_id: string | null;   // User ID who imported this media
   imported_by: string | null;      // Username for display
   media_source: string | null;     // e.g., "Personal camera", "Facebook archive", "Web archive"
+
+  // Contributor Tracking (Migration 26)
+  is_contributed: number;          // 0 = author shot it, 1 = contributor
+  contribution_source: string | null; // e.g., "John Smith via text", "FB group"
 }
 
 // Documents table
