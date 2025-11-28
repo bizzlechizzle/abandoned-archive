@@ -108,13 +108,6 @@
   const hasAuthor = $derived(!!location.auth_imp);  // Original author field
   const hasAuthors = $derived(authors.length > 0);  // Tracked contributors from location_authors
 
-  // Role display labels
-  const roleLabels: Record<string, string> = {
-    creator: 'Creator',
-    documenter: 'Documenter',
-    contributor: 'Contributor',
-  };
-
   // Extract unique authors from media (dedup against location_authors)
   const mediaAuthors = $derived(() => {
     const allMedia = [...images, ...videos, ...documents];
@@ -481,11 +474,10 @@
             {#each authors as author}
               <button
                 onclick={() => router.navigate('/locations', undefined, { authorId: author.user_id })}
-                class="inline-flex items-center gap-1.5 px-2 py-0.5 bg-accent/10 text-accent rounded text-sm hover:bg-accent/20 transition"
+                class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm hover:bg-accent/20 transition"
                 title="View all locations by {author.display_name || author.username}"
               >
-                <span>{author.display_name || author.username}</span>
-                <span class="text-xs text-accent/60">({roleLabels[author.role] || author.role})</span>
+                {author.display_name || author.username}
               </button>
             {/each}
             <!-- Media authors (from photos/videos, not in location_authors) -->
