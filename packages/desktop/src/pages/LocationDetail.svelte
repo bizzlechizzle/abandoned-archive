@@ -525,30 +525,6 @@
           onOpenDocument={openMediaFile}
         />
         <LocationNerdStats {location} imageCount={images.length} videoCount={videos.length} documentCount={documents.length} />
-
-        <!-- Add Media button -->
-        <div class="mt-8">
-          <button
-            onclick={handleSelectFiles}
-            disabled={$isImporting}
-            class="w-full py-3 px-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-accent hover:text-accent transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-            </svg>
-            Add Media
-          </button>
-        </div>
-
-        <!-- Bottom navigation -->
-        <div class="mt-8 pt-6 border-t border-gray-200">
-          <button
-            onclick={() => router.navigate('/locations')}
-            class="text-accent hover:underline"
-          >
-            &larr; View All Locations
-          </button>
-        </div>
       {/if}
     </div>
   {/if}
