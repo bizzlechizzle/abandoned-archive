@@ -289,8 +289,23 @@ app.whenReady().then(async () => {
         return new Response('File not found', { status: 404 });
       }
 
-      // Use net.fetch to serve the file (handles streaming, range requests, etc.)
-      return net.fetch(`file://${filePath}`);
+      // CRITICAL: No-cache headers required! See DECISION-021-protocol-caching.md
+      // Electron's net.fetch caches file:// responses internally. Without these headers,
+      // regenerated thumbnails appear stale even though files on disk are correct.
+      // DO NOT REMOVE these headers - it will break thumbnail regeneration.
+      const response = await net.fetch(`file://${filePath}`);
+
+      // Clone response with cache-busting headers
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: {
+          ...Object.fromEntries(response.headers.entries()),
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+        },
+      });
     } catch (error) {
       console.error('[media protocol] Error serving file:', error);
       return new Response('Internal error', { status: 500 });

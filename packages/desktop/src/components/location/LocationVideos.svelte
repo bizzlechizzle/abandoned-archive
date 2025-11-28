@@ -7,6 +7,7 @@
    */
   import type { MediaVideo } from './types';
   import { formatDuration } from './types';
+  import { thumbnailCache } from '../../stores/thumbnail-cache-store';
 
   interface Props {
     videos: MediaVideo[];
@@ -20,6 +21,9 @@
   let showAllVideos = $state(false);
 
   const displayedVideos = $derived(showAllVideos ? videos : videos.slice(0, VIDEO_LIMIT));
+
+  // Cache-bust param to force reload after thumbnail regeneration
+  const cacheVersion = $derived($thumbnailCache);
 </script>
 
 {#if videos.length > 0}
@@ -53,7 +57,7 @@
             >
               {#if video.thumb_path_sm || video.thumb_path}
                 <img
-                  src={`media://${video.thumb_path_sm || video.thumb_path}`}
+                  src={`media://${video.thumb_path_sm || video.thumb_path}?v=${cacheVersion}`}
                   alt={video.vidnam}
                   loading="lazy"
                   class="w-full h-full object-cover"

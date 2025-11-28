@@ -9,6 +9,7 @@
    * - Two-tier metadata panel: Summary + All Fields
    * - Hero image selection with focal point editor
    */
+  import { thumbnailCache } from '../stores/thumbnail-cache-store';
 
   interface Props {
     mediaList: Array<{
@@ -60,15 +61,19 @@
   const isCurrentHero = $derived(currentMedia?.hash === heroImgsha);
   const canBeHero = $derived(currentMedia?.type === 'image');
 
+  // Cache version for busting browser cache after thumbnail regeneration
+  const cacheVersion = $derived($thumbnailCache);
+
   // Get the best available image source
   // Uses custom media:// protocol registered in main process to bypass file:// restrictions
   const imageSrc = $derived(() => {
     if (!currentMedia) return '';
     // Priority: preview (for RAW) -> original path
+    // Append cache version to force reload after regeneration
     if (currentMedia.previewPath) {
-      return `media://${currentMedia.previewPath}`;
+      return `media://${currentMedia.previewPath}?v=${cacheVersion}`;
     }
-    return `media://${currentMedia.path}`;
+    return `media://${currentMedia.path}?v=${cacheVersion}`;
   });
 
   function handleKeydown(event: KeyboardEvent) {

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import DatabaseSettings from '../components/DatabaseSettings.svelte';
   import HealthMonitoring from '../components/HealthMonitoring.svelte';
+  import { thumbnailCache } from '../stores/thumbnail-cache-store';
 
   let archivePath = $state('');
   let deleteOriginals = $state(false);
@@ -117,6 +118,9 @@
         const previewMsg = result.rawTotal > 0 ? `${result.previewsExtracted}/${result.rawTotal} RAW previews` : '';
         const failMsg = (result.failed + (result.previewsFailed || 0)) > 0 ? `(${result.failed + (result.previewsFailed || 0)} failed)` : '';
         regenMessage = `Processed: ${[thumbMsg, previewMsg].filter(Boolean).join(', ')} ${failMsg}`.trim();
+
+        // Bust the cache to force all images to reload with new thumbnails
+        thumbnailCache.bust();
       }
 
       setTimeout(() => {

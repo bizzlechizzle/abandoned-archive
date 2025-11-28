@@ -117,6 +117,27 @@ export class ExifToolService {
   }
 
   /**
+   * Get the EXIF orientation value from a file
+   * Returns the orientation string (e.g., 'Rotate 90 CW', 'Horizontal (normal)')
+   * or null if not found
+   */
+  async getOrientation(filePath: string): Promise<string | null> {
+    try {
+      const tags = await exiftool.read(filePath);
+      // Orientation can be a number (1-8) or string description
+      const orientation = tags.Orientation;
+      if (orientation === undefined || orientation === null) {
+        return null;
+      }
+      // exiftool-vendored returns the string description
+      return String(orientation);
+    } catch (error) {
+      console.log(`[ExifTool] Could not read orientation from ${filePath}:`, error);
+      return null;
+    }
+  }
+
+  /**
    * Close the ExifTool process
    * Should be called when the application is shutting down
    */

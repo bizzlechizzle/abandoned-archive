@@ -9,6 +9,8 @@
    * - Shows poster frames for videos
    */
 
+  import { thumbnailCache } from '../stores/thumbnail-cache-store';
+
   interface MediaItem {
     hash: string;
     path: string;
@@ -27,14 +29,17 @@
 
   let { items, onSelect }: Props = $props();
 
+  // Cache-bust param to force reload after thumbnail regeneration
+  const cacheVersion = $derived($thumbnailCache);
+
   // Get thumbnail source for an item
   // Uses custom media:// protocol registered in main process to bypass file:// restrictions
   function getThumbnailSrc(item: MediaItem): string {
     if (item.thumbPath) {
-      return `media://${item.thumbPath}`;
+      return `media://${item.thumbPath}?v=${cacheVersion}`;
     }
     // Fallback to original file for standard formats
-    return `media://${item.path}`;
+    return `media://${item.path}?v=${cacheVersion}`;
   }
 
   // Check if file is a supported browser format

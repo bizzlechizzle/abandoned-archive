@@ -6,6 +6,7 @@
    * Premium UX: Accent ring hover, hero badge
    */
   import type { MediaImage } from './types';
+  import { thumbnailCache } from '../../stores/thumbnail-cache-store';
 
   interface Props {
     images: MediaImage[];
@@ -20,6 +21,9 @@
   let showAllImages = $state(false);
 
   const displayedImages = $derived(showAllImages ? images : images.slice(0, IMAGE_LIMIT));
+
+  // Cache-bust param to force reload after thumbnail regeneration
+  const cacheVersion = $derived($thumbnailCache);
 </script>
 
 {#if images.length > 0}
@@ -54,10 +58,10 @@
             >
               {#if image.thumb_path_sm || image.thumb_path}
                 <img
-                  src={`media://${image.thumb_path_sm || image.thumb_path}`}
+                  src={`media://${image.thumb_path_sm || image.thumb_path}?v=${cacheVersion}`}
                   srcset={`
-                    media://${image.thumb_path_sm || image.thumb_path} 1x
-                    ${image.thumb_path_lg ? `, media://${image.thumb_path_lg} 2x` : ''}
+                    media://${image.thumb_path_sm || image.thumb_path}?v=${cacheVersion} 1x
+                    ${image.thumb_path_lg ? `, media://${image.thumb_path_lg}?v=${cacheVersion} 2x` : ''}
                   `}
                   alt={image.imgnam}
                   loading="lazy"

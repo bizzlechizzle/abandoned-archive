@@ -56,6 +56,32 @@ export class PreviewExtractorService {
   ) {}
 
   /**
+   * Convert EXIF orientation string to rotation degrees
+   * EXIF orientation values: https://exiftool.org/TagNames/EXIF.html
+   * 1 = Horizontal (normal) = 0°
+   * 3 = Rotate 180 = 180°
+   * 6 = Rotate 90 CW = 90°
+   * 8 = Rotate 270 CW = 270° (or -90°)
+   */
+  private orientationToDegrees(orientation: string | null): number {
+    if (!orientation) return 0;
+
+    // Handle string descriptions from exiftool-vendored
+    const lower = orientation.toLowerCase();
+    if (lower.includes('rotate 90 cw') || lower.includes('90')) return 90;
+    if (lower.includes('rotate 180') || lower.includes('180')) return 180;
+    if (lower.includes('rotate 270 cw') || lower.includes('270') || lower.includes('rotate 90 ccw')) return 270;
+
+    // Handle numeric values (1-8)
+    const num = parseInt(orientation, 10);
+    if (num === 3) return 180;
+    if (num === 6) return 90;
+    if (num === 8) return 270;
+
+    return 0; // Normal orientation or unrecognized
+  }
+
+  /**
    * Check if a file format requires preview extraction (RAW or HEIC)
    * These formats either can't be decoded by sharp or benefit from embedded JPEG extraction
    */
@@ -174,11 +200,22 @@ export class PreviewExtractorService {
       }
 
       if (bestBuffer && bestTag) {
-        // Apply EXIF rotation to fix sideways DSLR images
-        // sharp.rotate() without arguments auto-rotates based on EXIF orientation tag
-        const rotatedBuffer = await sharp(bestBuffer).rotate().toBuffer();
-        await fs.writeFile(previewPath, rotatedBuffer);
-        console.log(`[PreviewExtractor] Extracted ${bestTag} (${bestBuffer.length} bytes, rotated: ${rotatedBuffer.length} bytes) from ${sourcePath}`);
+        // The embedded JPEG preview often lacks orientation EXIF - read from parent RAW file
+        // and apply rotation manually. sharp.rotate() without args only works if JPEG has EXIF.
+        const rawOrientation = await this.exifToolService.getOrientation(sourcePath);
+        const rotationDegrees = this.orientationToDegrees(rawOrientation);
+
+        let finalBuffer: Buffer;
+        if (rotationDegrees !== 0) {
+          finalBuffer = await sharp(bestBuffer).rotate(rotationDegrees).toBuffer();
+          console.log(`[PreviewExtractor] Applied ${rotationDegrees}° rotation from RAW EXIF`);
+        } else {
+          // No rotation needed, but still process through sharp to strip any embedded rotation
+          finalBuffer = await sharp(bestBuffer).rotate().toBuffer();
+        }
+
+        await fs.writeFile(previewPath, finalBuffer);
+        console.log(`[PreviewExtractor] Extracted ${bestTag} (${bestBuffer.length} bytes) from ${sourcePath}`);
         return previewPath;
       }
 

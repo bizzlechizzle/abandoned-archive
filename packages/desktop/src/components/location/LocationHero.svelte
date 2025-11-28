@@ -6,6 +6,7 @@
    * Migration 22: Uses focal point from location data
    */
   import type { MediaImage } from './types';
+  import { thumbnailCache } from '../../stores/thumbnail-cache-store';
 
   interface Props {
     images: MediaImage[];
@@ -15,6 +16,9 @@
   }
 
   let { images, heroImgsha, focalX = 0.5, focalY = 0.5 }: Props = $props();
+
+  // Cache version for busting browser cache after thumbnail regeneration
+  const cacheVersion = $derived($thumbnailCache);
 
   const heroImage = $derived(
     heroImgsha
@@ -41,7 +45,7 @@
     >
       {#if heroSrc}
         <img
-          src={`media://${heroSrc}`}
+          src={`media://${heroSrc}?v=${cacheVersion}`}
           alt={heroImage.imgnam || 'Hero Image'}
           class="absolute inset-0 w-full h-full object-cover"
           style="object-position: {objectPosition};"
