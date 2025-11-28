@@ -692,6 +692,23 @@
             </div>
           {/each}
 
+          <!-- Security Settings -->
+          <div class="border-t border-gray-200 pt-4 mt-4">
+            <h3 class="text-sm font-medium text-gray-700 mb-3">Security</h3>
+            <label class="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={requireLogin}
+                onchange={toggleRequireLogin}
+                class="mt-0.5 h-4 w-4 rounded border-gray-300 text-accent focus:ring-accent"
+              />
+              <div>
+                <span class="text-sm text-foreground">Require PIN on startup</span>
+                <p class="text-xs text-gray-500 mt-0.5">App will prompt for PIN each time it launches</p>
+              </div>
+            </label>
+          </div>
+
           <!-- Add User Form -->
           {#if showAddUser}
             <div class="border border-accent rounded-lg p-4 bg-accent/5">

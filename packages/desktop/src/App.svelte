@@ -51,8 +51,7 @@
   let unsubscribeBackup: (() => void) | null = null;
 
   /**
-   * Check if login is required
-   * Since all users now have required PINs, always require login on app restart
+   * Check if login is required based on user setting
    */
   async function checkAuthRequired(): Promise<boolean> {
     if (!window.electronAPI?.settings || !window.electronAPI?.users) {
@@ -60,8 +59,8 @@
     }
 
     try {
-      // All users have PINs now - always require login
-      return true;
+      const requireLogin = await window.electronAPI.settings.get('require_login');
+      return requireLogin === 'true';
     } catch (error) {
       console.error('Error checking auth requirement:', error);
       return false;
