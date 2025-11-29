@@ -985,6 +985,8 @@ export class FileImportService {
           // FIX 3.2: Store GPS extracted from video metadata
           meta_gps_lat: metadata?.gps?.lat || null,
           meta_gps_lng: metadata?.gps?.lng || null,
+          // Migration 36: Video rotation for playback orientation
+          meta_rotation: metadata?.rotation || null,
           // Kanye3: Multi-tier thumbnail paths
           thumb_path_sm: thumbPathSm,
           thumb_path_lg: thumbPathLg,

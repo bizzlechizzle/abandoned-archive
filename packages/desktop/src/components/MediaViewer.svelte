@@ -35,6 +35,8 @@
       imported_by?: string | null;
       is_contributed?: number;
       contribution_source?: string | null;
+      // Migration 36: Video rotation
+      rotation?: number | null;
     }>;
     startIndex?: number;
     onClose: () => void;
@@ -56,6 +58,11 @@
   let imageError = $state(false);
   let regenerating = $state(false);
   let regenerateError = $state<string | null>(null);
+  let videoLoading = $state(false);
+
+  // MPV Integration: Video playback state
+  let launchingVideo = $state(false);
+  let videoPlayMessage = $state<string | null>(null);
 
   // Full metadata state (lazy-loaded)
   let fullMetadata = $state<Record<string, unknown> | null>(null);
@@ -95,6 +102,19 @@
     return `media://${currentMedia.path}?v=${cacheVersion}`;
   });
 
+  // Video poster: use thumbnail as preview while loading
+  const videoPosterSrc = $derived(() => {
+    if (!currentMedia?.thumbPath) return undefined;
+    return `media://${currentMedia.thumbPath}?v=${cacheVersion}`;
+  });
+
+  // Initialize video loading state based on starting media
+  $effect(() => {
+    if (mediaList[startIndex]?.type === 'video') {
+      videoLoading = true;
+    }
+  });
+
   function handleKeydown(event: KeyboardEvent) {
     switch (event.key) {
       case 'Escape':
@@ -122,6 +142,7 @@
       imageError = false;
       showAllFields = false;
       isEditingFocal = false;
+      videoLoading = mediaList[currentIndex]?.type === 'video';
       triggerPreload();
       if (showExif) loadFullMetadata();
     }
@@ -133,6 +154,7 @@
       imageError = false;
       showAllFields = false;
       isEditingFocal = false;
+      videoLoading = mediaList[currentIndex]?.type === 'video';
       triggerPreload();
       if (showExif) loadFullMetadata();
     }
@@ -151,6 +173,43 @@
   async function showInFinder() {
     if (currentMedia) {
       await window.electronAPI?.media?.showInFolder(currentMedia.path);
+    }
+  }
+
+  /**
+   * MPV Integration: Play video in external MPV player
+   * Provides professional-grade playback with full codec support, rotation handling, and scrubbing
+   */
+  async function playVideoInMpv() {
+    if (!currentMedia || currentMedia.type !== 'video') return;
+
+    launchingVideo = true;
+    videoPlayMessage = null;
+
+    try {
+      const result = await window.electronAPI?.media?.playVideo(
+        currentMedia.path,
+        currentMedia.name || 'Video'
+      );
+
+      if (result?.success) {
+        if (result.method === 'mpv') {
+          videoPlayMessage = 'Opened in MPV';
+        } else if (result.method === 'system') {
+          videoPlayMessage = 'Opened in system player';
+        }
+        // Clear message after 3 seconds
+        setTimeout(() => {
+          videoPlayMessage = null;
+        }, 3000);
+      } else {
+        videoPlayMessage = result?.message || 'Failed to play video';
+      }
+    } catch (err) {
+      console.error('Failed to play video:', err);
+      videoPlayMessage = 'Failed to launch video player';
+    } finally {
+      launchingVideo = false;
     }
   }
 
@@ -432,14 +491,53 @@
   <div class="flex-1 flex items-center justify-center p-16 max-h-full">
     {#if currentMedia}
       {#if currentMedia.type === 'video'}
-        <!-- Video player -->
-        <video
-          src={`media://${currentMedia.path}`}
-          controls
-          class="max-w-full max-h-full object-contain"
-        >
-          <track kind="captions" />
-        </video>
+        <!-- Video preview with MPV launch button -->
+        <div class="relative group">
+          <!-- Video poster/thumbnail -->
+          {#if videoPosterSrc()}
+            <img
+              src={videoPosterSrc()}
+              alt={currentMedia.name || 'Video thumbnail'}
+              class="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+            />
+          {:else}
+            <!-- Fallback if no poster available -->
+            <div class="w-96 h-64 bg-gray-800 rounded-lg flex items-center justify-center">
+              <svg class="w-24 h-24 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </div>
+          {/if}
+
+          <!-- Play button overlay -->
+          <button
+            onclick={playVideoInMpv}
+            disabled={launchingVideo}
+            class="absolute inset-0 flex flex-col items-center justify-center bg-black/40 hover:bg-black/50 transition-all cursor-pointer group-hover:bg-black/30"
+          >
+            {#if launchingVideo}
+              <!-- Loading spinner -->
+              <div class="w-20 h-20 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>
+              <span class="mt-4 text-white text-lg font-medium">Opening player...</span>
+            {:else}
+              <!-- Play icon -->
+              <div class="w-24 h-24 rounded-full bg-white/90 flex items-center justify-center shadow-2xl transform transition-transform group-hover:scale-110">
+                <svg class="w-12 h-12 text-gray-900 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </div>
+              <span class="mt-4 text-white text-lg font-medium drop-shadow-lg">Play Video</span>
+              <span class="mt-1 text-white/70 text-sm drop-shadow">Opens in MPV player</span>
+            {/if}
+          </button>
+
+          <!-- Success/status message -->
+          {#if videoPlayMessage}
+            <div class="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/80 text-white rounded-lg text-sm">
+              {videoPlayMessage}
+            </div>
+          {/if}
+        </div>
       {:else if imageError}
         <!-- Error state - show extract preview prompt -->
         <div class="text-center text-foreground">
@@ -996,3 +1094,19 @@
     </button>
   </div>
 </div>
+
+<style>
+  /* Premium video fade-in animation */
+  .video-fade-in {
+    animation: videoFadeIn 150ms ease-out;
+  }
+
+  @keyframes videoFadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+</style>

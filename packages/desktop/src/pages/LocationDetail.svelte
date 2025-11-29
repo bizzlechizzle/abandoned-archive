@@ -131,6 +131,8 @@
     name: vid.vidnam, width: vid.meta_width, height: vid.meta_height,
     dateTaken: null, cameraMake: null, cameraModel: null,
     gpsLat: vid.meta_gps_lat || null, gpsLng: vid.meta_gps_lng || null,
+    // Migration 36: Video rotation for correct playback orientation
+    rotation: vid.meta_rotation ?? null,
     // Hidden status (Migration 23)
     hidden: vid.hidden ?? 0,
     hidden_reason: vid.hidden_reason ?? null,

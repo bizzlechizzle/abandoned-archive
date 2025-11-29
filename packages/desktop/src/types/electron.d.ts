@@ -236,6 +236,21 @@ export interface ElectronAPI {
       description?: string;
     }) => Promise<{ success: boolean }>;
     regenerateAllThumbnails: (options?: { force?: boolean }) => Promise<{ generated: number; failed: number; total: number; rawTotal?: number; previewsExtracted?: number; previewsFailed?: number }>;
+    regenerateVideoThumbnails: (options?: { force?: boolean }) => Promise<{ generated: number; failed: number; total: number }>;
+    backfillVideoRotation: () => Promise<{ updated: number; failed: number; total: number }>;
+    // MPV Integration: Play video in MPV player (premium playback experience)
+    playVideo: (videoPath: string, title?: string) => Promise<{
+      success: boolean;
+      method: 'mpv' | 'system' | 'failed';
+      message?: string;
+    }>;
+    // MPV Integration: Check if MPV is installed
+    checkMpvStatus: () => Promise<{
+      installed: boolean;
+      path: string | null;
+      version: string | null;
+      installInstructions: string;
+    }>;
   };
 
   notes: {
