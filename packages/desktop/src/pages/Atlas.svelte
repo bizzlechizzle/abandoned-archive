@@ -159,26 +159,6 @@
     closeContextMenu();
   }
 
-  // FEAT-P1: Verify location GPS - updates coordinates and marks as verified
-  async function handleLocationVerify(locid: string, lat: number, lng: number) {
-    try {
-      await window.electronAPI.locations.update(locid, {
-        gps: {
-          lat,
-          lng,
-          source: 'user_map_click',
-          verifiedOnMap: true,
-        },
-      });
-      toasts.success('Location verified');
-      // Reload locations to update the map
-      await loadLocations();
-    } catch (err) {
-      console.error('Failed to verify location:', err);
-      toasts.error('Failed to verify location');
-    }
-  }
-
   // FEAT-P2: Load default Atlas view from settings
   async function loadDefaultView() {
     if (!window.electronAPI?.settings) return;
@@ -318,7 +298,6 @@
       onMapClick={handleMapClick}
       onMapRightClick={handleMapRightClick}
       showHeatMap={showHeatMap}
-      onLocationVerify={handleLocationVerify}
       zoom={urlZoom ?? undefined}
       center={urlCenter ?? undefined}
       defaultLayer={urlLayer ?? 'satellite-labels'}
