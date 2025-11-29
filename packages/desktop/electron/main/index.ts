@@ -11,9 +11,11 @@ import { getLogger } from '../services/logger-service';
 import { getBackupScheduler } from '../services/backup-scheduler';
 import { initBrowserViewManager, destroyBrowserViewManager } from '../services/browser-view-manager';
 import { startBookmarkAPIServer, stopBookmarkAPIServer } from '../services/bookmark-api-server';
+import { startWebSocketServer, stopWebSocketServer } from '../services/websocket-server';
 import { closeResearchBrowser } from '../services/research-browser-service';
 import { SQLiteBookmarksRepository } from '../repositories/sqlite-bookmarks-repository';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
+import { SQLiteSubLocationRepository } from '../repositories/sqlite-sublocation-repository';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -234,12 +236,23 @@ async function startupOrchestrator(): Promise<void> {
     const db = getDatabase();
     const bookmarksRepo = new SQLiteBookmarksRepository(db);
     const locationsRepo = new SQLiteLocationRepository(db);
+    const subLocationsRepo = new SQLiteSubLocationRepository(db);
     try {
-      await startBookmarkAPIServer(bookmarksRepo, locationsRepo);
+      await startBookmarkAPIServer(bookmarksRepo, locationsRepo, subLocationsRepo);
       logger.info('Main', 'Bookmark API Server started successfully');
     } catch (error) {
       // Non-fatal: log warning but continue startup (research browser feature may not work)
       logger.warn('Main', 'Failed to start Bookmark API Server', error as Error);
+    }
+
+    // Step 5c: Start WebSocket Server for real-time extension updates
+    logger.info('Main', 'Starting WebSocket Server');
+    try {
+      await startWebSocketServer();
+      logger.info('Main', 'WebSocket Server started successfully');
+    } catch (error) {
+      // Non-fatal: extension will work without real-time updates
+      logger.warn('Main', 'Failed to start WebSocket Server', error as Error);
     }
 
     // FIX 5.1: Step 6 - Auto backup on startup (if enabled)
@@ -370,6 +383,14 @@ app.on('before-quit', async () => {
     console.log('Bookmark API Server stopped successfully');
   } catch (error) {
     console.error('Failed to stop Bookmark API Server:', error);
+  }
+
+  // Stop WebSocket Server
+  try {
+    await stopWebSocketServer();
+    console.log('WebSocket Server stopped successfully');
+  } catch (error) {
+    console.error('Failed to stop WebSocket Server:', error);
   }
 
   // Destroy browser view manager

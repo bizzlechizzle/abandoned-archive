@@ -1177,6 +1177,21 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 34 completed: location_views table created');
     }
+
+    // Migration 35: Add subid column to bookmarks table for sub-location support
+    const bookmarkColumns = sqlite.pragma('table_info(bookmarks)') as Array<{ name: string }>;
+    const bookmarksHasSubid = bookmarkColumns.some(col => col.name === 'subid');
+
+    if (!bookmarksHasSubid) {
+      console.log('Running migration 35: Adding subid column to bookmarks table');
+
+      sqlite.exec(`
+        ALTER TABLE bookmarks ADD COLUMN subid TEXT REFERENCES slocs(subid) ON DELETE SET NULL;
+        CREATE INDEX idx_bookmarks_subid ON bookmarks(subid);
+      `);
+
+      console.log('Migration 35 completed: subid column added to bookmarks');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

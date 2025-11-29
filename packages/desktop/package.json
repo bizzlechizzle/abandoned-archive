@@ -30,6 +30,7 @@
     "sharp": "^0.33.1",
     "supercluster": "^8.0.1",
     "utf-8-validate": "^6.0.5",
+    "ws": "^8.18.3",
     "zod": "^3.22.4"
   },
   "devDependencies": {
@@ -37,6 +38,7 @@
     "@sveltejs/vite-plugin-svelte": "^4.0.0",
     "@types/better-sqlite3": "^7.6.8",
     "@types/leaflet": "^1.9.8",
+    "@types/ws": "^8.18.1",
     "autoprefixer": "^10.4.16",
     "concurrently": "^8.2.2",
     "electron": "^28.1.0",

@@ -423,6 +423,7 @@ export interface BookmarksTable {
   url: string;
   title: string | null;
   locid: string | null;
+  subid: string | null;  // Migration 35: Sub-location support
   bookmark_date: string;
   auth_imp: string | null;
   thumbnail_path: string | null;

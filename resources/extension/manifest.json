@@ -1,27 +1,42 @@
 {
   "manifest_version": 3,
   "name": "AU Archive Clipper",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Save pages to Abandoned Upstate Archive",
 
   "permissions": [
     "activeTab",
+    "tabs",
     "storage",
-    "contextMenus"
+    "contextMenus",
+    "sidePanel"
   ],
+
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+A",
+        "mac": "Alt+Shift+A"
+      },
+      "description": "Open AU Archive side panel"
+    }
+  },
 
   "host_permissions": [
     "http://localhost:47123/*"
   ],
 
   "action": {
-    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "Save to AU Archive"
+    "default_title": "Open AU Archive Panel"
+  },
+
+  "side_panel": {
+    "default_path": "sidepanel.html"
   },
 
   "background": {

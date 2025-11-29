@@ -6,6 +6,7 @@ export interface BookmarkInput {
   url: string;
   title?: string | null;
   locid?: string | null;
+  subid?: string | null;
   auth_imp?: string | null;
   thumbnail_path?: string | null;
 }
@@ -14,6 +15,7 @@ export interface BookmarkUpdate {
   url?: string;
   title?: string | null;
   locid?: string | null;
+  subid?: string | null;
   thumbnail_path?: string | null;
 }
 
@@ -22,11 +24,13 @@ export interface Bookmark {
   url: string;
   title: string | null;
   locid: string | null;
+  subid: string | null;
   bookmark_date: string;
   auth_imp: string | null;
   thumbnail_path: string | null;
-  // Joined fields from locs table
+  // Joined fields from locs/slocs tables
   locnam?: string;
+  subnam?: string;
 }
 
 /**
@@ -47,6 +51,7 @@ export class SQLiteBookmarksRepository {
       url: input.url,
       title: input.title || null,
       locid: input.locid || null,
+      subid: input.subid || null,
       bookmark_date,
       auth_imp: input.auth_imp || null,
       thumbnail_path: input.thumbnail_path || null,
@@ -64,8 +69,9 @@ export class SQLiteBookmarksRepository {
     const result = await this.db
       .selectFrom('bookmarks')
       .leftJoin('locs', 'bookmarks.locid', 'locs.locid')
+      .leftJoin('slocs', 'bookmarks.subid', 'slocs.subid')
       .selectAll('bookmarks')
-      .select('locs.locnam')
+      .select(['locs.locnam', 'slocs.subnam'])
       .where('bookmarks.bookmark_id', '=', bookmark_id)
       .executeTakeFirstOrThrow();
 
@@ -79,9 +85,27 @@ export class SQLiteBookmarksRepository {
     const results = await this.db
       .selectFrom('bookmarks')
       .leftJoin('locs', 'bookmarks.locid', 'locs.locid')
+      .leftJoin('slocs', 'bookmarks.subid', 'slocs.subid')
       .selectAll('bookmarks')
-      .select('locs.locnam')
+      .select(['locs.locnam', 'slocs.subnam'])
       .where('bookmarks.locid', '=', locid)
+      .orderBy('bookmarks.bookmark_date', 'desc')
+      .execute();
+
+    return results as Bookmark[];
+  }
+
+  /**
+   * Find all bookmarks for a specific sub-location
+   */
+  async findBySubLocation(subid: string): Promise<Bookmark[]> {
+    const results = await this.db
+      .selectFrom('bookmarks')
+      .leftJoin('locs', 'bookmarks.locid', 'locs.locid')
+      .leftJoin('slocs', 'bookmarks.subid', 'slocs.subid')
+      .selectAll('bookmarks')
+      .select(['locs.locnam', 'slocs.subnam'])
+      .where('bookmarks.subid', '=', subid)
       .orderBy('bookmarks.bookmark_date', 'desc')
       .execute();
 
@@ -95,8 +119,9 @@ export class SQLiteBookmarksRepository {
     const results = await this.db
       .selectFrom('bookmarks')
       .leftJoin('locs', 'bookmarks.locid', 'locs.locid')
+      .leftJoin('slocs', 'bookmarks.subid', 'slocs.subid')
       .selectAll('bookmarks')
-      .select('locs.locnam')
+      .select(['locs.locnam', 'slocs.subnam'])
       .orderBy('bookmarks.bookmark_date', 'desc')
       .limit(limit)
       .execute();
@@ -111,8 +136,9 @@ export class SQLiteBookmarksRepository {
     const results = await this.db
       .selectFrom('bookmarks')
       .leftJoin('locs', 'bookmarks.locid', 'locs.locid')
+      .leftJoin('slocs', 'bookmarks.subid', 'slocs.subid')
       .selectAll('bookmarks')
-      .select('locs.locnam')
+      .select(['locs.locnam', 'slocs.subnam'])
       .orderBy('bookmarks.bookmark_date', 'desc')
       .execute();
 
@@ -159,6 +185,19 @@ export class SQLiteBookmarksRepository {
       .selectFrom('bookmarks')
       .select((eb) => eb.fn.count<number>('bookmark_id').as('count'))
       .where('locid', '=', locid)
+      .executeTakeFirstOrThrow();
+
+    return result.count;
+  }
+
+  /**
+   * Get bookmark count for a specific sub-location
+   */
+  async countBySubLocation(subid: string): Promise<number> {
+    const result = await this.db
+      .selectFrom('bookmarks')
+      .select((eb) => eb.fn.count<number>('bookmark_id').as('count'))
+      .where('subid', '=', subid)
       .executeTakeFirstOrThrow();
 
     return result.count;

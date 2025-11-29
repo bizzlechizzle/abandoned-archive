@@ -7,6 +7,7 @@
 import puppeteer, { Browser } from 'puppeteer-core';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { exec } from 'child_process';
 import { app } from 'electron';
 import { getLogger } from './logger-service';
 
@@ -129,6 +130,23 @@ export async function launchResearchBrowser(): Promise<{ success: boolean; error
     const pages = await browser.pages();
     if (pages.length > 0) {
       await pages[0].goto('https://duckduckgo.com');
+
+      // Auto-open side panel via OS-level keyboard shortcut (macOS only)
+      // Chrome's sidePanel.open() requires user gesture - Puppeteer keyboard goes to page DOM, not browser
+      // AppleScript sends real OS keystrokes that Chrome's browser process receives
+      if (process.platform === 'darwin') {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        exec(
+          `osascript -e 'tell application "System Events" to keystroke "a" using {option down, shift down}'`,
+          (error) => {
+            if (error) {
+              logger.error('ResearchBrowser', `AppleScript keystroke failed: ${error.message}`);
+            } else {
+              logger.info('ResearchBrowser', 'Sent OS keystroke (Alt+Shift+A) to open side panel');
+            }
+          }
+        );
+      }
     }
 
     logger.info('ResearchBrowser', 'Browser launched successfully');
