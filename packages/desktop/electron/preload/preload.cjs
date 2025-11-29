@@ -148,12 +148,6 @@ const api = {
     regenerateSingleFile: (hash, filePath) => ipcRenderer.invoke("media:regenerateSingleFile", hash, filePath),
     // Migration 30: Regenerate DNG previews using LibRaw for full quality
     regenerateDngPreviews: () => ipcRenderer.invoke("media:regenerateDngPreviews"),
-    // Migration 36: Backfill video rotation metadata
-    backfillVideoRotation: () => ipcRenderer.invoke("media:backfillVideoRotation"),
-    // MPV Integration: Play video in MPV player (premium playback experience)
-    playVideo: (videoPath, title) => ipcRenderer.invoke("media:playVideo", videoPath, title),
-    // MPV Integration: Check if MPV is installed
-    checkMpvStatus: () => ipcRenderer.invoke("media:checkMpvStatus"),
     // Hidden/Live Photo operations (Migration 23)
     setHidden: (input) => ipcRenderer.invoke("media:setHidden", input),
     detectLivePhotosAndSDR: (locid) => ipcRenderer.invoke("media:detectLivePhotosAndSDR", locid),

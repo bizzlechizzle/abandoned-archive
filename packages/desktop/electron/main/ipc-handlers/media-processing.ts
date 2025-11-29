@@ -17,7 +17,6 @@ import { PosterFrameService } from '../../services/poster-frame-service';
 import { MediaCacheService } from '../../services/media-cache-service';
 import { PreloadService } from '../../services/preload-service';
 import { XmpService } from '../../services/xmp-service';
-import { mpvService } from '../../services/mpv-service';
 
 export function registerMediaProcessingHandlers(
   db: Kysely<Database>,
@@ -442,48 +441,6 @@ export function registerMediaProcessingHandlers(
     }
   });
 
-  // Migration 36: Backfill rotation metadata for existing videos
-  ipcMain.handle('media:backfillVideoRotation', async () => {
-    try {
-      // Get all videos without rotation metadata
-      const videos = await db
-        .selectFrom('vids')
-        .select(['vidsha', 'vidloc'])
-        .where('meta_rotation', 'is', null)
-        .execute();
-
-      let updated = 0;
-      let failed = 0;
-
-      console.log(`[Migration36] Backfilling rotation for ${videos.length} videos...`);
-
-      for (const vid of videos) {
-        try {
-          const metadata = await ffmpegService.extractMetadata(vid.vidloc);
-
-          if (metadata.rotation !== null) {
-            await db
-              .updateTable('vids')
-              .set({ meta_rotation: metadata.rotation })
-              .where('vidsha', '=', vid.vidsha)
-              .execute();
-            updated++;
-            console.log(`[Migration36] Updated rotation for ${vid.vidsha}: ${metadata.rotation}°`);
-          }
-        } catch (err) {
-          console.error(`[Migration36] Failed to extract rotation for ${vid.vidsha}:`, err);
-          failed++;
-        }
-      }
-
-      console.log(`[Migration36] Rotation backfill complete: ${updated} updated, ${failed} failed`);
-      return { updated, failed, total: videos.length };
-    } catch (error) {
-      console.error('Error backfilling video rotation:', error);
-      throw error;
-    }
-  });
-
   // Kanye11: Regenerate preview/thumbnails for a single file
   // Used when MediaViewer can't display a file due to missing preview
   ipcMain.handle('media:regenerateSingleFile', async (_event, hash: unknown, filePath: unknown) => {
@@ -695,53 +652,6 @@ export function registerMediaProcessingHandlers(
     } catch (error) {
       console.error('Error regenerating DNG previews:', error);
       throw error;
-    }
-  });
-
-  // MPV Integration: Play video in MPV player for professional-grade playback
-  // Falls back to system player if MPV is not installed
-  ipcMain.handle('media:playVideo', async (_event, videoPath: unknown, title?: unknown) => {
-    try {
-      const validPath = z.string().min(1).max(4096).parse(videoPath);
-      const validTitle = title ? z.string().max(200).parse(title) : undefined;
-
-      // Security: Verify the file is within the archive folder
-      const archivePath = await db.selectFrom('settings').select('value').where('key', '=', 'archive_folder').executeTakeFirst();
-      if (archivePath?.value) {
-        const normalizedFilePath = path.resolve(validPath);
-        const normalizedArchivePath = path.resolve(archivePath.value);
-        if (!normalizedFilePath.startsWith(normalizedArchivePath + path.sep)) {
-          throw new Error('Access denied: file is outside the archive folder');
-        }
-      }
-
-      const result = await mpvService.playVideo(validPath, validTitle);
-      return result;
-    } catch (error) {
-      console.error('Error playing video:', error);
-      if (error instanceof z.ZodError) {
-        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
-      }
-      throw error;
-    }
-  });
-
-  // MPV Integration: Check if MPV is installed
-  ipcMain.handle('media:checkMpvStatus', async () => {
-    try {
-      const status = await mpvService.checkMpvInstalled();
-      return {
-        ...status,
-        installInstructions: mpvService.getInstallInstructions(),
-      };
-    } catch (error) {
-      console.error('Error checking MPV status:', error);
-      return {
-        installed: false,
-        path: null,
-        version: null,
-        installInstructions: mpvService.getInstallInstructions(),
-      };
     }
   });
 

@@ -273,8 +273,6 @@ export interface VidsTable {
   // FIX 3.2: GPS from video metadata (dashcams, phones)
   meta_gps_lat: number | null;
   meta_gps_lng: number | null;
-  // Migration 36: Video rotation metadata
-  meta_rotation: number | null;
 
   // Poster frames (Migration 8)
   thumb_path: string | null;

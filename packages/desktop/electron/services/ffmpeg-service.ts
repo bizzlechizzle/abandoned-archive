@@ -1,8 +1,4 @@
 import ffmpeg from 'fluent-ffmpeg';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
-
-const execFileAsync = promisify(execFile);
 
 export interface VideoMetadata {
   duration: number | null;
@@ -11,7 +7,6 @@ export interface VideoMetadata {
   codec: string | null;
   fps: number | null;
   dateTaken: string | null;
-  rotation: number | null;  // Degrees: 0, 90, 180, 270, -90, etc.
   rawMetadata: string;
 }
 
@@ -20,53 +15,11 @@ export interface VideoMetadata {
  */
 export class FFmpegService {
   /**
-   * Extract rotation from video using direct ffprobe call
-   * fluent-ffmpeg doesn't expose side_data_list which contains displaymatrix rotation
-   */
-  private async extractRotation(filePath: string): Promise<number | null> {
-    try {
-      const { stdout } = await execFileAsync('ffprobe', [
-        '-v', 'quiet',
-        '-print_format', 'json',
-        '-show_streams',
-        filePath
-      ]);
-
-      const data = JSON.parse(stdout);
-      const videoStream = data.streams?.find((s: { codec_type: string }) => s.codec_type === 'video');
-
-      if (!videoStream) return null;
-
-      // Check side_data_list for displaymatrix rotation (iPhone/modern videos)
-      if (videoStream.side_data_list) {
-        for (const sideData of videoStream.side_data_list) {
-          if (sideData.side_data_type === 'Display Matrix' && typeof sideData.rotation === 'number') {
-            return sideData.rotation;
-          }
-        }
-      }
-
-      // Fallback: check stream tags for rotate (older format)
-      if (videoStream.tags?.rotate) {
-        return parseInt(videoStream.tags.rotate, 10) || null;
-      }
-
-      return null;
-    } catch (err) {
-      console.error('Error extracting rotation via ffprobe:', err);
-      return null;
-    }
-  }
-
-  /**
    * Extract metadata from a video file
    * @param filePath - Absolute path to the video file
    * @returns Promise resolving to extracted metadata
    */
   async extractMetadata(filePath: string): Promise<VideoMetadata> {
-    // Extract rotation separately since fluent-ffmpeg doesn't expose side_data_list
-    const rotation = await this.extractRotation(filePath);
-
     return new Promise((resolve, reject) => {
       ffmpeg.ffprobe(filePath, (err, metadata) => {
         if (err) {
@@ -92,7 +45,6 @@ export class FFmpegService {
             ? this.parseFrameRate(videoStream.r_frame_rate)
             : null,
           dateTaken: creationTime ? new Date(creationTime).toISOString() : null,
-          rotation,
           rawMetadata: JSON.stringify(metadata, null, 2),
         });
       });
@@ -119,33 +71,24 @@ export class FFmpegService {
   /**
    * Extract a single frame from a video at a specific timestamp
    *
-   * Uses -vf scale filter instead of -s flag to ensure FFmpeg's autorotate
-   * filter (enabled by default) applies BEFORE scaling. This fixes phone
-   * videos with rotation metadata (90°/180°/270°).
-   *
    * @param sourcePath - Absolute path to video file
    * @param outputPath - Absolute path for output JPEG
    * @param timestampSeconds - Time offset in seconds (default: 1)
-   * @param maxHeight - Maximum height in pixels (preserves aspect ratio, default: 1920 for preview tier)
+   * @param size - Output size in pixels (square crop, default: 256)
    * @returns Promise that resolves when frame is extracted
    */
   async extractFrame(
     sourcePath: string,
     outputPath: string,
     timestampSeconds: number = 1,
-    maxHeight: number = 1920
+    size: number = 256
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       ffmpeg(sourcePath)
         .seekInput(timestampSeconds)
         .frames(1)
-        // Use -vf scale instead of -s to ensure autorotate applies first
-        // -1:maxHeight = auto-calculate width, constrain height
-        .outputOptions([
-          '-vf', `scale=-1:${maxHeight}`,
-          '-q:v', '2',
-          '-update', '1'  // Single image mode (FFmpeg 7.x)
-        ])
+        .size(`${size}x${size}`)
+        .outputOptions(['-q:v', '2', '-update', '1']) // JPEG quality + single image mode (FFmpeg 7.x)
         .output(outputPath)
         .on('end', () => resolve())
         .on('error', (err) => reject(err))

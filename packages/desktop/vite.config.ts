@@ -73,8 +73,6 @@ export default defineConfig({
                 // Sharp is a native module with platform-specific binaries
                 // that use dynamic requires - must be external to the bundle
                 'sharp',
-                // fluent-ffmpeg uses __dirname internally which fails in ESM bundles
-                'fluent-ffmpeg',
               ],
             },
           },

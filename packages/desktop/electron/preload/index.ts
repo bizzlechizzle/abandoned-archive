@@ -425,9 +425,6 @@ const api = {
     // DECISION-020: Regenerate video thumbnails (poster frames)
     regenerateVideoThumbnails: (options?: { force?: boolean }): Promise<{ generated: number; failed: number; total: number }> =>
       ipcRenderer.invoke('media:regenerateVideoThumbnails', options),
-    // Migration 36: Backfill video rotation metadata
-    backfillVideoRotation: (): Promise<{ updated: number; failed: number; total: number }> =>
-      ipcRenderer.invoke('media:backfillVideoRotation'),
     // Kanye11: Regenerate preview/thumbnails for a single file
     regenerateSingleFile: (hash: string, filePath: string): Promise<{
       success: boolean;
@@ -437,21 +434,6 @@ const api = {
       thumbPathLg?: string;
     }> =>
       ipcRenderer.invoke('media:regenerateSingleFile', hash, filePath),
-    // MPV Integration: Play video in MPV player (premium playback experience)
-    playVideo: (videoPath: string, title?: string): Promise<{
-      success: boolean;
-      method: 'mpv' | 'system' | 'failed';
-      message?: string;
-    }> =>
-      ipcRenderer.invoke('media:playVideo', videoPath, title),
-    // MPV Integration: Check if MPV is installed
-    checkMpvStatus: (): Promise<{
-      installed: boolean;
-      path: string | null;
-      version: string | null;
-      installInstructions: string;
-    }> =>
-      ipcRenderer.invoke('media:checkMpvStatus'),
   },
 
   notes: {

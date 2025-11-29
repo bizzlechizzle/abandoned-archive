@@ -43,7 +43,6 @@ export interface MediaVideo {
   meta_codec: string | null;
   meta_gps_lat: number | null;
   meta_gps_lng: number | null;
-  meta_rotation: number | null;  // Migration 36: Video rotation
   thumb_path: string | null;
   thumb_path_sm: string | null;
   thumb_path_lg: string | null;

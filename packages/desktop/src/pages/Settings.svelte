@@ -54,14 +54,6 @@
   let regenTotal = $state(0);
   let regenMessage = $state('');
 
-  // Video thumbnail regeneration state
-  let regeneratingVideos = $state(false);
-  let videoRegenMessage = $state('');
-
-  // Migration 36: Video rotation backfill state
-  let backfillingRotation = $state(false);
-  let rotationBackfillMessage = $state('');
-
   // Kanye9: Address normalization state
   let normalizing = $state(false);
   let normalizeMessage = $state('');
@@ -397,73 +389,6 @@
       regenMessage = 'Thumbnail regeneration failed';
     } finally {
       regenerating = false;
-    }
-  }
-
-  /**
-   * Regenerate thumbnails for all videos
-   * Extracts poster frame at random timestamp (20-50% of duration) then generates multi-tier thumbnails
-   */
-  async function regenerateVideoThumbnails(force: boolean = false) {
-    if (!window.electronAPI?.media?.regenerateVideoThumbnails) {
-      videoRegenMessage = 'Video thumbnail regeneration not available';
-      return;
-    }
-
-    try {
-      regeneratingVideos = true;
-      videoRegenMessage = force ? 'Regenerating ALL video thumbnails...' : 'Generating missing video thumbnails...';
-
-      const result = await window.electronAPI.media.regenerateVideoThumbnails({ force });
-
-      if (result.total === 0) {
-        videoRegenMessage = 'All videos already have thumbnails';
-      } else {
-        videoRegenMessage = `Generated ${result.generated}/${result.total} video thumbnails${result.failed > 0 ? ` (${result.failed} failed)` : ''}`;
-        thumbnailCache.bust();
-      }
-
-      setTimeout(() => {
-        videoRegenMessage = '';
-      }, 5000);
-    } catch (error) {
-      console.error('Video thumbnail regeneration failed:', error);
-      videoRegenMessage = 'Video thumbnail regeneration failed';
-    } finally {
-      regeneratingVideos = false;
-    }
-  }
-
-  /**
-   * Migration 36: Backfill video rotation metadata for existing videos
-   * Extracts rotation from FFmpeg metadata and stores in DB for CSS transform
-   */
-  async function backfillVideoRotation() {
-    if (!window.electronAPI?.media?.backfillVideoRotation) {
-      rotationBackfillMessage = 'Video rotation backfill not available';
-      return;
-    }
-
-    try {
-      backfillingRotation = true;
-      rotationBackfillMessage = 'Scanning videos for rotation metadata...';
-
-      const result = await window.electronAPI.media.backfillVideoRotation();
-
-      if (result.total === 0) {
-        rotationBackfillMessage = 'No videos need rotation backfill';
-      } else {
-        rotationBackfillMessage = `Updated ${result.updated}/${result.total} videos${result.failed > 0 ? ` (${result.failed} failed)` : ''}`;
-      }
-
-      setTimeout(() => {
-        rotationBackfillMessage = '';
-      }, 5000);
-    } catch (error) {
-      console.error('Video rotation backfill failed:', error);
-      rotationBackfillMessage = 'Rotation backfill failed';
-    } finally {
-      backfillingRotation = false;
     }
   }
 
@@ -1028,59 +953,6 @@
             <p class="text-xs text-gray-500 mt-2">
               "Regenerate Missing" processes only images without thumbnails. "Fix All Rotations" re-processes everything to fix sideways DSLR images. "Fix DNG Quality" uses LibRaw to render full-resolution DNG previews for drone shots.
             </p>
-          </div>
-
-          <!-- Video Thumbnails -->
-          <div class="mt-6 pt-6 border-t border-gray-200">
-            <p class="text-sm text-gray-700 mb-2">
-              Generate thumbnails for videos. Extracts a frame at a random point (20-50% of duration) to avoid black frames and title cards.
-            </p>
-            <div class="flex flex-wrap items-center gap-3">
-              <button
-                onclick={() => regenerateVideoThumbnails(false)}
-                disabled={regeneratingVideos}
-                class="px-4 py-2 bg-purple-600 text-white rounded hover:opacity-90 transition disabled:opacity-50"
-              >
-                {regeneratingVideos ? 'Generating...' : 'Generate Missing'}
-              </button>
-              <button
-                onclick={() => regenerateVideoThumbnails(true)}
-                disabled={regeneratingVideos}
-                class="px-4 py-2 bg-purple-800 text-white rounded hover:opacity-90 transition disabled:opacity-50"
-                title="Re-extract poster frames for ALL videos at new random timestamps"
-              >
-                {regeneratingVideos ? 'Generating...' : 'Regenerate All'}
-              </button>
-              {#if videoRegenMessage}
-                <span class="text-sm text-gray-600">{videoRegenMessage}</span>
-              {/if}
-            </div>
-            <p class="text-xs text-gray-500 mt-2">
-              "Generate Missing" creates thumbnails only for videos without them. "Regenerate All" re-extracts frames for every video.
-            </p>
-
-            <!-- Video Rotation Fix -->
-            <div class="mt-4 pt-4 border-t border-gray-100">
-              <p class="text-sm text-gray-700 mb-2">
-                Fix upside-down videos. Extracts rotation metadata from video files and applies CSS transform for correct display.
-              </p>
-              <div class="flex flex-wrap items-center gap-3">
-                <button
-                  onclick={backfillVideoRotation}
-                  disabled={backfillingRotation}
-                  class="px-4 py-2 bg-indigo-600 text-white rounded hover:opacity-90 transition disabled:opacity-50"
-                  title="Extract rotation metadata from videos and store for CSS correction"
-                >
-                  {backfillingRotation ? 'Scanning...' : 'Fix Video Rotation'}
-                </button>
-                {#if rotationBackfillMessage}
-                  <span class="text-sm text-gray-600">{rotationBackfillMessage}</span>
-                {/if}
-              </div>
-              <p class="text-xs text-gray-500 mt-2">
-                Scans videos for rotation metadata (from displaymatrix/rotate tag) and stores it for CSS-based orientation correction.
-              </p>
-            </div>
           </div>
 
           <!-- Kanye9: Address Normalization -->

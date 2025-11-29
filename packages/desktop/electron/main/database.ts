@@ -1192,20 +1192,6 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 35 completed: subid column added to bookmarks');
     }
-
-    // Migration 36: Add meta_rotation column to vids table for video orientation
-    const vidsTableInfo = sqlite.prepare("PRAGMA table_info(vids)").all() as Array<{ name: string }>;
-    const vidsHasRotation = vidsTableInfo.some(col => col.name === 'meta_rotation');
-
-    if (!vidsHasRotation) {
-      console.log('Running migration 36: Adding meta_rotation column to vids');
-
-      sqlite.exec(`
-        ALTER TABLE vids ADD COLUMN meta_rotation INTEGER;
-      `);
-
-      console.log('Migration 36 completed: meta_rotation column added to vids');
-    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;
