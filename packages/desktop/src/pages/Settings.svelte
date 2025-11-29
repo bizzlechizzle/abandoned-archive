@@ -66,6 +66,18 @@
   let detectingLivePhotos = $state(false);
   let livePhotoMessage = $state('');
 
+  // Migration 36: Video Proxy state
+  let proxyCacheStats = $state<{
+    totalCount: number;
+    totalSizeBytes: number;
+    totalSizeMB: number;
+    oldestAccess: string | null;
+    newestAccess: string | null;
+  } | null>(null);
+  let purgingProxies = $state(false);
+  let clearingProxies = $state(false);
+  let proxyMessage = $state('');
+
   // P6: Darktable state removed per v010steps.md
 
   async function loadSettings() {
@@ -563,8 +575,88 @@
     }
   }
 
+  /**
+   * Migration 36: Load video proxy cache statistics
+   */
+  async function loadProxyCacheStats() {
+    if (!window.electronAPI?.media?.getProxyCacheStats) return;
+    try {
+      proxyCacheStats = await window.electronAPI.media.getProxyCacheStats();
+    } catch (error) {
+      console.error('Failed to load proxy cache stats:', error);
+    }
+  }
+
+  /**
+   * Migration 36: Purge old proxies (30 days)
+   */
+  async function purgeOldProxies() {
+    if (!window.electronAPI?.media?.purgeOldProxies) {
+      proxyMessage = 'Proxy purge not available';
+      return;
+    }
+
+    try {
+      purgingProxies = true;
+      proxyMessage = 'Purging old proxies...';
+
+      const result = await window.electronAPI.media.purgeOldProxies(30);
+
+      if (result.deleted === 0) {
+        proxyMessage = 'No proxies older than 30 days found';
+      } else {
+        proxyMessage = `Purged ${result.deleted} old proxies (freed ${result.freedMB} MB)`;
+      }
+
+      await loadProxyCacheStats();
+
+      setTimeout(() => {
+        proxyMessage = '';
+      }, 5000);
+    } catch (error) {
+      console.error('Proxy purge failed:', error);
+      proxyMessage = 'Purge failed';
+    } finally {
+      purgingProxies = false;
+    }
+  }
+
+  /**
+   * Migration 36: Clear all video proxies
+   */
+  async function clearAllProxies() {
+    if (!window.electronAPI?.media?.clearAllProxies) {
+      proxyMessage = 'Proxy clear not available';
+      return;
+    }
+
+    if (!confirm('Are you sure you want to clear all video proxies? They will be regenerated as needed.')) {
+      return;
+    }
+
+    try {
+      clearingProxies = true;
+      proxyMessage = 'Clearing all proxies...';
+
+      const result = await window.electronAPI.media.clearAllProxies();
+      proxyMessage = `Cleared ${result.deleted} proxies (freed ${result.freedMB} MB)`;
+
+      await loadProxyCacheStats();
+
+      setTimeout(() => {
+        proxyMessage = '';
+      }, 5000);
+    } catch (error) {
+      console.error('Proxy clear failed:', error);
+      proxyMessage = 'Clear failed';
+    } finally {
+      clearingProxies = false;
+    }
+  }
+
   onMount(() => {
     loadSettings();
+    loadProxyCacheStats();
   });
 </script>
 
@@ -1018,6 +1110,57 @@
             </div>
             <p class="text-xs text-gray-500 mt-2">
               iPhone Live Photo videos (.MOV paired with images) and SDR duplicates (_SDR suffix files) will be hidden from the gallery but remain accessible via "Show All".
+            </p>
+          </div>
+
+          <!-- Migration 36: Video Proxy Cache -->
+          <div class="mt-6 pt-6 border-t border-gray-200">
+            <h3 class="text-sm font-semibold text-foreground mb-2">Video Preview Cache</h3>
+            <p class="text-sm text-gray-700 mb-3">
+              Optimized H.264 proxy videos are generated for smooth playback with instant scrubbing. Old proxies are automatically purged after 30 days.
+            </p>
+
+            <!-- Cache Stats -->
+            {#if proxyCacheStats}
+              <div class="bg-gray-50 rounded-lg p-4 mb-3">
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span class="text-gray-500">Cached videos:</span>
+                    <span class="font-medium ml-2">{proxyCacheStats.totalCount}</span>
+                  </div>
+                  <div>
+                    <span class="text-gray-500">Cache size:</span>
+                    <span class="font-medium ml-2">{proxyCacheStats.totalSizeMB} MB</span>
+                  </div>
+                </div>
+              </div>
+            {:else}
+              <div class="bg-gray-50 rounded-lg p-4 mb-3 text-sm text-gray-500">
+                Loading cache stats...
+              </div>
+            {/if}
+
+            <div class="flex items-center gap-3">
+              <button
+                onclick={purgeOldProxies}
+                disabled={purgingProxies || clearingProxies}
+                class="px-4 py-2 bg-gray-600 text-white rounded hover:opacity-90 transition disabled:opacity-50"
+              >
+                {purgingProxies ? 'Purging...' : 'Purge Old (30+ days)'}
+              </button>
+              <button
+                onclick={clearAllProxies}
+                disabled={purgingProxies || clearingProxies}
+                class="px-4 py-2 bg-red-600 text-white rounded hover:opacity-90 transition disabled:opacity-50"
+              >
+                {clearingProxies ? 'Clearing...' : 'Clear All'}
+              </button>
+              {#if proxyMessage}
+                <span class="text-sm text-gray-600">{proxyMessage}</span>
+              {/if}
+            </div>
+            <p class="text-xs text-gray-500 mt-2">
+              Proxies are regenerated automatically when you view a video. "Purge Old" removes proxies for locations not viewed in 30+ days. "Clear All" removes everything.
             </p>
           </div>
         </div>

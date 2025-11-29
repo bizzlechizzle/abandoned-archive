@@ -1192,6 +1192,43 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 35 completed: subid column added to bookmarks');
     }
+
+    // Migration 36: Create video_proxies table for optimized video playback
+    // Stores H.264 proxy videos with faststart for instant scrubbing
+    // Per video-proxy-system-plan.md: Solves slow loading, no scrubbing, and rotation issues
+    const videoProxiesExists = sqlite.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='video_proxies'"
+    ).get();
+
+    if (!videoProxiesExists) {
+      console.log('Running migration 36: Creating video_proxies table');
+
+      sqlite.exec(`
+        CREATE TABLE video_proxies (
+          vidsha TEXT PRIMARY KEY,
+          proxy_path TEXT NOT NULL,
+          generated_at TEXT NOT NULL,
+          last_accessed TEXT NOT NULL,
+          file_size_bytes INTEGER,
+          original_width INTEGER,
+          original_height INTEGER,
+          proxy_width INTEGER,
+          proxy_height INTEGER
+        );
+
+        -- Index for finding old proxies to purge
+        CREATE INDEX idx_video_proxies_last_accessed ON video_proxies(last_accessed);
+
+        -- Trigger to auto-delete proxy records when video is deleted
+        CREATE TRIGGER video_proxies_fk_delete
+        AFTER DELETE ON vids
+        BEGIN
+          DELETE FROM video_proxies WHERE vidsha = OLD.vidsha;
+        END;
+      `);
+
+      console.log('Migration 36 completed: video_proxies table created');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

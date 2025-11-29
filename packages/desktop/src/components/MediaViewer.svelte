@@ -57,6 +57,12 @@
   let regenerating = $state(false);
   let regenerateError = $state<string | null>(null);
 
+  // Video proxy state (Migration 36)
+  let proxyPath = $state<string | null>(null);
+  let generatingProxy = $state(false);
+  let proxyError = $state<string | null>(null);
+  let playOriginal = $state(false); // Fallback to original when proxy fails
+
   // Full metadata state (lazy-loaded)
   let fullMetadata = $state<Record<string, unknown> | null>(null);
   let ffmpegMetadata = $state<Record<string, unknown> | null>(null);
@@ -122,6 +128,10 @@
       imageError = false;
       showAllFields = false;
       isEditingFocal = false;
+      // Reset proxy state (effect will load new proxy if needed)
+      proxyPath = null;
+      proxyError = null;
+      playOriginal = false;
       triggerPreload();
       if (showExif) loadFullMetadata();
     }
@@ -133,6 +143,10 @@
       imageError = false;
       showAllFields = false;
       isEditingFocal = false;
+      // Reset proxy state (effect will load new proxy if needed)
+      proxyPath = null;
+      proxyError = null;
+      playOriginal = false;
       triggerPreload();
       if (showExif) loadFullMetadata();
     }
@@ -379,6 +393,59 @@
     }
   }
 
+  // Video Proxy: Load or generate proxy for smooth playback
+  async function loadVideoProxy(video: {
+    hash: string;
+    path: string;
+    width?: number | null;
+    height?: number | null;
+  }) {
+    proxyPath = null;
+    proxyError = null;
+    generatingProxy = false;
+
+    // Check for existing proxy
+    const existingProxy = await window.electronAPI?.media?.getProxyPath(video.hash);
+
+    if (existingProxy) {
+      proxyPath = existingProxy;
+      return;
+    }
+
+    // Generate proxy
+    generatingProxy = true;
+    const result = await window.electronAPI?.media?.generateProxy(
+      video.hash,
+      video.path,
+      { width: video.width || 1920, height: video.height || 1080 }
+    );
+    generatingProxy = false;
+
+    if (result?.success && result.proxyPath) {
+      proxyPath = result.proxyPath;
+    } else {
+      proxyError = result?.error || 'Failed to generate preview';
+    }
+  }
+
+  // Auto-load proxy when switching to a video
+  // Track currentIndex explicitly to ensure effect re-runs on navigation
+  $effect(() => {
+    const _index = currentIndex; // Force dependency on index
+    const media = currentMedia;
+
+    if (media?.type === 'video') {
+      console.log('[MediaViewer] Loading proxy for video:', media.hash?.slice(0, 8), 'at index:', _index);
+      playOriginal = false; // Reset fallback
+      loadVideoProxy(media);
+    } else {
+      proxyPath = null;
+      proxyError = null;
+      generatingProxy = false;
+      playOriginal = false;
+    }
+  });
+
   // Initialize preload on mount
   $effect(() => {
     triggerPreload();
@@ -432,14 +499,67 @@
   <div class="flex-1 flex items-center justify-center p-16 max-h-full">
     {#if currentMedia}
       {#if currentMedia.type === 'video'}
-        <!-- Video player -->
-        <video
-          src={`media://${currentMedia.path}`}
-          controls
-          class="max-w-full max-h-full object-contain"
-        >
-          <track kind="captions" />
-        </video>
+        <!-- Video player with proxy support (Migration 36) -->
+        {#if playOriginal}
+          <!-- Fallback: Play original video (slower but works) -->
+          <div class="flex flex-col items-center gap-2">
+            <video
+              src={`media://${currentMedia.path}`}
+              controls
+              autoplay
+              class="max-w-full max-h-full object-contain"
+            >
+              <track kind="captions" />
+            </video>
+            <p class="text-xs text-gray-500">Playing original (may be slower)</p>
+          </div>
+        {:else if generatingProxy}
+          <!-- Generating proxy indicator -->
+          <div class="flex flex-col items-center gap-4 text-foreground">
+            <div class="animate-spin w-12 h-12 border-4 border-accent border-t-transparent rounded-full"></div>
+            <p class="text-lg">Preparing preview...</p>
+            <p class="text-sm text-gray-500">Optimizing video for smooth playback</p>
+          </div>
+        {:else if proxyError}
+          <!-- Proxy generation failed, offer fallback -->
+          <div class="flex flex-col items-center gap-4 text-foreground text-center">
+            <svg class="w-16 h-16 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <p class="text-lg">Preview generation failed</p>
+            <p class="text-sm text-gray-500 max-w-md">{proxyError}</p>
+            <div class="flex gap-3 mt-2">
+              <button
+                onclick={() => loadVideoProxy(currentMedia)}
+                class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition"
+              >
+                Retry
+              </button>
+              <button
+                onclick={() => playOriginal = true}
+                class="px-4 py-2 bg-gray-600 text-white rounded hover:opacity-90 transition"
+              >
+                Play Original
+              </button>
+            </div>
+          </div>
+        {:else if proxyPath}
+          <!-- Proxy ready - smooth playback with scrubbing -->
+          <video
+            src={`media://${proxyPath}`}
+            controls
+            autoplay
+            class="max-w-full max-h-full object-contain"
+          >
+            <track kind="captions" />
+          </video>
+        {:else}
+          <!-- Fallback: loading state before proxy check completes -->
+          <div class="flex flex-col items-center gap-4 text-foreground">
+            <div class="animate-pulse w-12 h-12 bg-gray-300 rounded-full"></div>
+            <p class="text-sm text-gray-500">Loading video...</p>
+          </div>
+        {/if}
       {:else if imageError}
         <!-- Error state - show extract preview prompt -->
         <div class="text-center text-foreground">

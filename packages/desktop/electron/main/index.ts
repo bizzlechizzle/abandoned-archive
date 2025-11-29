@@ -319,6 +319,85 @@ app.whenReady().then(async () => {
         return new Response('File not found', { status: 404 });
       }
 
+      const stats = fs.statSync(filePath);
+      const fileSize = stats.size;
+
+      // Check if this is a video file (for range request handling)
+      const ext = filePath.toLowerCase().split('.').pop();
+      const isVideo = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v'].includes(ext || '');
+
+      // Handle Range requests for videos (enables scrubbing)
+      const rangeHeader = request.headers.get('range');
+      if (isVideo && rangeHeader) {
+        const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+        if (match) {
+          const start = parseInt(match[1], 10);
+          const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
+          const chunkSize = end - start + 1;
+
+          // Create readable stream for the requested range
+          const fsPromises = await import('fs/promises');
+          const fileHandle = await fsPromises.open(filePath, 'r');
+          const stream = fileHandle.createReadStream({ start, end, autoClose: true });
+
+          // Convert Node stream to Web ReadableStream
+          const webStream = new ReadableStream({
+            start(controller) {
+              stream.on('data', (chunk) => controller.enqueue(chunk));
+              stream.on('end', () => controller.close());
+              stream.on('error', (err) => controller.error(err));
+            },
+            cancel() {
+              stream.destroy();
+            }
+          });
+
+          return new Response(webStream, {
+            status: 206,
+            statusText: 'Partial Content',
+            headers: {
+              'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+              'Accept-Ranges': 'bytes',
+              'Content-Length': String(chunkSize),
+              'Content-Type': ext === 'mp4' || ext === 'm4v' ? 'video/mp4' :
+                              ext === 'mov' ? 'video/quicktime' :
+                              ext === 'webm' ? 'video/webm' : 'video/mp4',
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+            },
+          });
+        }
+      }
+
+      // For videos without range header, return with Accept-Ranges to enable scrubbing
+      if (isVideo) {
+        const fsPromises = await import('fs/promises');
+        const fileHandle = await fsPromises.open(filePath, 'r');
+        const stream = fileHandle.createReadStream({ autoClose: true });
+
+        const webStream = new ReadableStream({
+          start(controller) {
+            stream.on('data', (chunk) => controller.enqueue(chunk));
+            stream.on('end', () => controller.close());
+            stream.on('error', (err) => controller.error(err));
+          },
+          cancel() {
+            stream.destroy();
+          }
+        });
+
+        return new Response(webStream, {
+          status: 200,
+          headers: {
+            'Accept-Ranges': 'bytes',
+            'Content-Length': String(fileSize),
+            'Content-Type': ext === 'mp4' || ext === 'm4v' ? 'video/mp4' :
+                            ext === 'mov' ? 'video/quicktime' :
+                            ext === 'webm' ? 'video/webm' : 'video/mp4',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+          },
+        });
+      }
+
       // CRITICAL: No-cache headers required! See DECISION-021-protocol-caching.md
       // Electron's net.fetch caches file:// responses internally. Without these headers,
       // regenerated thumbnails appear stale even though files on disk are correct.

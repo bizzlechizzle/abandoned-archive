@@ -434,6 +434,76 @@ const api = {
       thumbPathLg?: string;
     }> =>
       ipcRenderer.invoke('media:regenerateSingleFile', hash, filePath),
+
+    // Video Proxy System (Migration 36)
+    // Generate optimized H.264 proxy for smooth playback
+    generateProxy: (vidsha: string, sourcePath: string, metadata: { width: number; height: number }): Promise<{
+      success: boolean;
+      proxyPath?: string;
+      error?: string;
+      proxyWidth?: number;
+      proxyHeight?: number;
+    }> =>
+      ipcRenderer.invoke('media:generateProxy', vidsha, sourcePath, metadata),
+
+    // Get proxy path for a video (returns null if not exists)
+    getProxyPath: (vidsha: string): Promise<string | null> =>
+      ipcRenderer.invoke('media:getProxyPath', vidsha),
+
+    // Get cache statistics
+    getProxyCacheStats: (): Promise<{
+      totalCount: number;
+      totalSizeBytes: number;
+      totalSizeMB: number;
+      oldestAccess: string | null;
+      newestAccess: string | null;
+    }> =>
+      ipcRenderer.invoke('media:getProxyCacheStats'),
+
+    // Purge old proxies (30 days default)
+    purgeOldProxies: (daysOld?: number): Promise<{
+      deleted: number;
+      freedBytes: number;
+      freedMB: number;
+    }> =>
+      ipcRenderer.invoke('media:purgeOldProxies', daysOld),
+
+    // Clear all proxies
+    clearAllProxies: (): Promise<{
+      deleted: number;
+      freedBytes: number;
+      freedMB: number;
+    }> =>
+      ipcRenderer.invoke('media:clearAllProxies'),
+
+    // Touch location proxies (update last_accessed to prevent purge)
+    touchLocationProxies: (locid: string): Promise<number> =>
+      ipcRenderer.invoke('media:touchLocationProxies', locid),
+
+    // Generate proxies for all videos in a location (background batch)
+    generateProxiesForLocation: (locid: string): Promise<{
+      generated: number;
+      failed: number;
+      total: number;
+    }> =>
+      ipcRenderer.invoke('media:generateProxiesForLocation', locid),
+
+    // Subscribe to proxy generation progress events
+    onProxyProgress: (callback: (progress: {
+      locid: string;
+      generated: number;
+      failed: number;
+      total: number;
+    }) => void) => {
+      const listener = (_event: unknown, progress: {
+        locid: string;
+        generated: number;
+        failed: number;
+        total: number;
+      }) => callback(progress);
+      ipcRenderer.on('media:proxyProgress', listener);
+      return () => ipcRenderer.removeListener('media:proxyProgress', listener);
+    },
   },
 
   notes: {

@@ -13,6 +13,7 @@ import { MediaCacheService } from './media-cache-service';
 interface MediaItem {
   hash: string;
   path: string;
+  type?: 'image' | 'video' | 'document';
 }
 
 export class PreloadService {
@@ -73,13 +74,17 @@ export class PreloadService {
       }
     }
 
-    // Preload each item
+    // Preload each item (skip videos - they're streamed, not cached)
     for (const idx of indicesToPreload) {
       if (signal.aborted) {
         return;
       }
 
       const item = this.mediaList[idx];
+      // Skip videos - they're too large for memory cache and should be streamed
+      if (item.type === 'video') {
+        continue;
+      }
       if (!this.cache.has(item.hash)) {
         await this.cache.loadFile(item.hash, item.path);
       }

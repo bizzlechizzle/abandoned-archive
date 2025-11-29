@@ -17,6 +17,8 @@ import { PosterFrameService } from '../../services/poster-frame-service';
 import { MediaCacheService } from '../../services/media-cache-service';
 import { PreloadService } from '../../services/preload-service';
 import { XmpService } from '../../services/xmp-service';
+import { generateProxy, getProxyPath } from '../../services/video-proxy-service';
+import { getCacheStats, purgeOldProxies, clearAllProxies, touchLocationProxies, getVideosNeedingProxies } from '../../services/proxy-cache-service';
 
 export function registerMediaProcessingHandlers(
   db: Kysely<Database>,
@@ -652,6 +654,145 @@ export function registerMediaProcessingHandlers(
     } catch (error) {
       console.error('Error regenerating DNG previews:', error);
       throw error;
+    }
+  });
+
+  // ============================================
+  // Video Proxy Handlers (Migration 36)
+  // Per video-proxy-system-plan.md
+  // ============================================
+
+  // Generate proxy for a single video
+  ipcMain.handle('media:generateProxy', async (_event, vidsha: unknown, sourcePath: unknown, metadata: unknown) => {
+    try {
+      const validVidsha = z.string().min(1).parse(vidsha);
+      const validPath = z.string().min(1).parse(sourcePath);
+      const validMeta = z.object({
+        width: z.number().positive(),
+        height: z.number().positive()
+      }).parse(metadata);
+
+      const archivePath = await getArchivePath();
+      return await generateProxy(db, archivePath, validVidsha, validPath, validMeta);
+    } catch (error) {
+      console.error('Error generating proxy:', error);
+      if (error instanceof z.ZodError) {
+        return { success: false, error: `Validation error: ${error.errors.map(e => e.message).join(', ')}` };
+      }
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
+  // Get proxy path for a video (returns null if not exists)
+  ipcMain.handle('media:getProxyPath', async (_event, vidsha: unknown) => {
+    try {
+      const validVidsha = z.string().min(1).parse(vidsha);
+      return await getProxyPath(db, validVidsha);
+    } catch (error) {
+      console.error('Error getting proxy path:', error);
+      return null;
+    }
+  });
+
+  // Get cache statistics
+  ipcMain.handle('media:getProxyCacheStats', async () => {
+    try {
+      return await getCacheStats(db);
+    } catch (error) {
+      console.error('Error getting cache stats:', error);
+      return { totalCount: 0, totalSizeBytes: 0, totalSizeMB: 0, oldestAccess: null, newestAccess: null };
+    }
+  });
+
+  // Purge old proxies (30 days default)
+  ipcMain.handle('media:purgeOldProxies', async (_event, daysOld?: unknown) => {
+    try {
+      const validDays = daysOld !== undefined ? z.number().positive().parse(daysOld) : 30;
+      return await purgeOldProxies(db, validDays);
+    } catch (error) {
+      console.error('Error purging old proxies:', error);
+      return { deleted: 0, freedBytes: 0, freedMB: 0 };
+    }
+  });
+
+  // Clear all proxies
+  ipcMain.handle('media:clearAllProxies', async () => {
+    try {
+      const archivePath = await getArchivePath();
+      return await clearAllProxies(db, archivePath);
+    } catch (error) {
+      console.error('Error clearing all proxies:', error);
+      return { deleted: 0, freedBytes: 0, freedMB: 0 };
+    }
+  });
+
+  // Touch location proxies (update last_accessed)
+  ipcMain.handle('media:touchLocationProxies', async (_event, locid: unknown) => {
+    try {
+      const validLocid = z.string().uuid().parse(locid);
+      return await touchLocationProxies(db, validLocid);
+    } catch (error) {
+      console.error('Error touching location proxies:', error);
+      return 0;
+    }
+  });
+
+  // Generate proxies for all videos in a location (background batch)
+  ipcMain.handle('media:generateProxiesForLocation', async (event, locid: unknown) => {
+    try {
+      const validLocid = z.string().uuid().parse(locid);
+      const archivePath = await getArchivePath();
+
+      // Get videos without proxies
+      const videos = await getVideosNeedingProxies(db, validLocid);
+
+      if (videos.length === 0) {
+        return { generated: 0, failed: 0, total: 0 };
+      }
+
+      console.log(`[VideoProxy] Generating proxies for ${videos.length} videos in location ${validLocid}...`);
+
+      // Log each video that needs a proxy
+      for (const v of videos) {
+        console.log(`[VideoProxy]   Queued: ${v.vidsha.slice(0, 12)} - ${v.vidloc.split('/').pop()} (${v.meta_width || 1920}x${v.meta_height || 1080})`);
+      }
+
+      let generated = 0;
+      let failed = 0;
+
+      for (const video of videos) {
+        console.log(`[VideoProxy] Processing ${generated + failed + 1}/${videos.length}: ${video.vidsha.slice(0, 12)}`);
+
+        const result = await generateProxy(
+          db,
+          archivePath,
+          video.vidsha,
+          video.vidloc,
+          { width: video.meta_width || 1920, height: video.meta_height || 1080 }
+        );
+
+        if (result.success) {
+          generated++;
+          console.log(`[VideoProxy] ✓ Proxy generated: ${video.vidsha.slice(0, 12)}`);
+        } else {
+          failed++;
+          console.error(`[VideoProxy] ✗ Proxy failed: ${video.vidsha.slice(0, 12)} - ${result.error}`);
+        }
+
+        // Emit progress to renderer
+        event.sender.send('media:proxyProgress', {
+          locid: validLocid,
+          generated,
+          failed,
+          total: videos.length
+        });
+      }
+
+      console.log(`[VideoProxy] Batch complete: ${generated} generated, ${failed} failed`);
+      return { generated, failed, total: videos.length };
+    } catch (error) {
+      console.error('Error generating proxies for location:', error);
+      return { generated: 0, failed: 0, total: 0 };
     }
   });
 

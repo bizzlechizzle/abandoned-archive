@@ -765,6 +765,24 @@
       });
     }
 
+    // Migration 36: Video Proxy Pre-generation
+    // Touch all proxies for this location (updates last_accessed to prevent purge)
+    // Then generate proxies for any videos that don't have them yet
+    if (locationId) {
+      window.electronAPI?.media?.touchLocationProxies(locationId).catch((err: unknown) => {
+        console.warn('[LocationDetail] Failed to touch location proxies:', err);
+      });
+
+      // Start background proxy generation (non-blocking)
+      window.electronAPI?.media?.generateProxiesForLocation(locationId).then((result) => {
+        if (result && result.generated > 0) {
+          console.log(`[LocationDetail] Generated ${result.generated} video proxies for location`);
+        }
+      }).catch((err: unknown) => {
+        console.warn('[LocationDetail] Failed to generate proxies:', err);
+      });
+    }
+
     try {
       const settings = await window.electronAPI.settings.getAll();
       currentUser = settings.current_user || 'default';

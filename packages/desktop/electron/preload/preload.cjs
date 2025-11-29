@@ -151,6 +151,28 @@ const api = {
     // Hidden/Live Photo operations (Migration 23)
     setHidden: (input) => ipcRenderer.invoke("media:setHidden", input),
     detectLivePhotosAndSDR: (locid) => ipcRenderer.invoke("media:detectLivePhotosAndSDR", locid),
+
+    // Video Proxy System (Migration 36)
+    // Generate optimized H.264 proxy for smooth playback
+    generateProxy: (vidsha, sourcePath, metadata) =>
+      ipcRenderer.invoke("media:generateProxy", vidsha, sourcePath, metadata),
+    getProxyPath: (vidsha) =>
+      ipcRenderer.invoke("media:getProxyPath", vidsha),
+    getProxyCacheStats: () =>
+      ipcRenderer.invoke("media:getProxyCacheStats"),
+    purgeOldProxies: (daysOld) =>
+      ipcRenderer.invoke("media:purgeOldProxies", daysOld),
+    clearAllProxies: () =>
+      ipcRenderer.invoke("media:clearAllProxies"),
+    touchLocationProxies: (locid) =>
+      ipcRenderer.invoke("media:touchLocationProxies", locid),
+    generateProxiesForLocation: (locid) =>
+      ipcRenderer.invoke("media:generateProxiesForLocation", locid),
+    onProxyProgress: (callback) => {
+      const listener = (_event, progress) => callback(progress);
+      ipcRenderer.on("media:proxyProgress", listener);
+      return () => ipcRenderer.removeListener("media:proxyProgress", listener);
+    },
   },
 
   notes: {

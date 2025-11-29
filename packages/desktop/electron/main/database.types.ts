@@ -16,6 +16,7 @@ export interface Database {
   users: UsersTable;
   location_authors: LocationAuthorsTable;
   location_views: LocationViewsTable;
+  video_proxies: VideoProxiesTable;
 }
 
 // Locations table
@@ -455,4 +456,18 @@ export interface LocationViewsTable {
   locid: string;
   user_id: string;
   viewed_at: string;  // ISO timestamp
+}
+
+// Video Proxies table (Migration 36) - Optimized H.264 preview videos
+// Per video-proxy-system-plan.md: Enables instant playback, smooth scrubbing, and correct rotation
+export interface VideoProxiesTable {
+  vidsha: string;           // Primary key, matches vids table
+  proxy_path: string;       // Absolute path to proxy file
+  generated_at: string;     // ISO timestamp when proxy was created
+  last_accessed: string;    // ISO timestamp for 30-day purge
+  file_size_bytes: number | null;
+  original_width: number | null;
+  original_height: number | null;
+  proxy_width: number | null;
+  proxy_height: number | null;
 }

@@ -236,6 +236,45 @@ export interface ElectronAPI {
       description?: string;
     }) => Promise<{ success: boolean }>;
     regenerateAllThumbnails: (options?: { force?: boolean }) => Promise<{ generated: number; failed: number; total: number; rawTotal?: number; previewsExtracted?: number; previewsFailed?: number }>;
+
+    // Video Proxy System (Migration 36)
+    generateProxy: (vidsha: string, sourcePath: string, metadata: { width: number; height: number }) => Promise<{
+      success: boolean;
+      proxyPath?: string;
+      error?: string;
+      proxyWidth?: number;
+      proxyHeight?: number;
+    }>;
+    getProxyPath: (vidsha: string) => Promise<string | null>;
+    getProxyCacheStats: () => Promise<{
+      totalCount: number;
+      totalSizeBytes: number;
+      totalSizeMB: number;
+      oldestAccess: string | null;
+      newestAccess: string | null;
+    }>;
+    purgeOldProxies: (daysOld?: number) => Promise<{
+      deleted: number;
+      freedBytes: number;
+      freedMB: number;
+    }>;
+    clearAllProxies: () => Promise<{
+      deleted: number;
+      freedBytes: number;
+      freedMB: number;
+    }>;
+    touchLocationProxies: (locid: string) => Promise<number>;
+    generateProxiesForLocation: (locid: string) => Promise<{
+      generated: number;
+      failed: number;
+      total: number;
+    }>;
+    onProxyProgress: (callback: (progress: {
+      locid: string;
+      generated: number;
+      failed: number;
+      total: number;
+    }) => void) => () => void;
   };
 
   notes: {
