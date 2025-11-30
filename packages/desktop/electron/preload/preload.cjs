@@ -187,6 +187,11 @@ const api = {
     getLocation: () => invokeAuto("database:getLocation")(),
     changeLocation: () => invokeAuto("database:changeLocation")(),
     resetLocation: () => invokeAuto("database:resetLocation")(),
+    // Phase 2: Database stats and internal backup management
+    getStats: () => invokeAuto("database:getStats")(),
+    exportBackup: () => invokeAuto("database:exportBackup")(),
+    listBackups: () => invokeAuto("database:listBackups")(),
+    restoreFromInternal: (backupId) => invokeAuto("database:restoreFromInternal")(backupId),
   },
 
   imports: {

@@ -66,6 +66,13 @@
   } | null>(null);
   let loadingStorage = $state(false);
 
+  // Database health state
+  let dbHealthy = $state(true);
+  let backupCount = $state(0);
+  let internalBackups = $state<Array<{ id: string; date: string; size: string; path: string }>>([]);
+  let showRestoreModal = $state(false);
+  let userExporting = $state(false);
+
   // PIN verification modal state
   let showPinModal = $state(false);
   let pinAction = $state<'archive' | 'deleteOnImport' | 'startupPin' | null>(null);
@@ -1414,6 +1421,103 @@
     }
   }
 
+  // User Backup: Export database to user-selected location
+  async function userBackupDatabase() {
+    if (!window.electronAPI?.database?.exportBackup) {
+      backupMessage = 'User backup not available';
+      setTimeout(() => { backupMessage = ''; }, 5000);
+      return;
+    }
+
+    try {
+      userExporting = true;
+      backupMessage = '';
+
+      const result = await window.electronAPI.database.exportBackup();
+
+      if (result.success) {
+        backupMessage = `Exported to: ${result.path}`;
+        await loadDatabaseHealth(); // Refresh stats
+      } else {
+        backupMessage = result.message || 'Export canceled';
+      }
+
+      setTimeout(() => { backupMessage = ''; }, 5000);
+    } catch (error) {
+      console.error('Error exporting database:', error);
+      backupMessage = 'Error exporting database';
+      setTimeout(() => { backupMessage = ''; }, 5000);
+    } finally {
+      userExporting = false;
+    }
+  }
+
+  // Open restore modal with list of internal backups
+  async function openRestoreModal() {
+    if (!window.electronAPI?.database?.listBackups) {
+      restoreMessage = 'Internal restore not available';
+      setTimeout(() => { restoreMessage = ''; }, 5000);
+      return;
+    }
+
+    try {
+      const result = await window.electronAPI.database.listBackups();
+      if (result.success) {
+        internalBackups = result.backups || [];
+        showRestoreModal = true;
+      } else {
+        restoreMessage = result.message || 'Failed to list backups';
+        setTimeout(() => { restoreMessage = ''; }, 5000);
+      }
+    } catch (error) {
+      console.error('Error listing backups:', error);
+      restoreMessage = 'Error listing backups';
+      setTimeout(() => { restoreMessage = ''; }, 5000);
+    }
+  }
+
+  // Restore from internal backup
+  async function restoreFromBackup(backupId: string) {
+    if (!window.electronAPI?.database?.restoreFromInternal) {
+      restoreMessage = 'Internal restore not available';
+      setTimeout(() => { restoreMessage = ''; }, 5000);
+      return;
+    }
+
+    try {
+      restoring = true;
+      showRestoreModal = false;
+      restoreMessage = '';
+
+      const result = await window.electronAPI.database.restoreFromInternal(backupId);
+
+      if (result.success) {
+        restoreMessage = result.message || 'Database restored. Please restart.';
+      } else {
+        restoreMessage = result.message || 'Restore failed';
+        setTimeout(() => { restoreMessage = ''; }, 5000);
+      }
+    } catch (error) {
+      console.error('Error restoring from backup:', error);
+      restoreMessage = 'Error restoring from backup';
+      setTimeout(() => { restoreMessage = ''; }, 5000);
+    } finally {
+      restoring = false;
+    }
+  }
+
+  // Load database health stats
+  async function loadDatabaseHealth() {
+    if (!window.electronAPI?.database?.getStats) return;
+    try {
+      const stats = await window.electronAPI.database.getStats();
+      dbHealthy = stats.integrityOk;
+      backupCount = stats.backupCount;
+    } catch (error) {
+      console.error('Failed to load database health:', error);
+    }
+  }
+
   // Helper to format bytes to human readable
   function formatBytes(bytes: number): string {
     if (bytes === 0) return '0 B';
@@ -1441,6 +1545,7 @@
     loadProxyCacheStats();
     loadRefMaps();
     loadStorageStats();
+    loadDatabaseHealth();
   });
 </script>
 
@@ -1776,40 +1881,13 @@
             </button>
           </div>
 
-          <!-- Storage Bar -->
-          <div class="py-3 border-b border-gray-100">
-            <span class="text-sm font-medium text-gray-700 mb-2 block">Storage</span>
-            {#if storageStats}
-              {@const archivePercent = (storageStats.archiveBytes / storageStats.totalBytes) * 100}
-              {@const otherUsedBytes = storageStats.totalBytes - storageStats.availableBytes - storageStats.archiveBytes}
-              {@const otherUsedPercent = Math.max(0, (otherUsedBytes / storageStats.totalBytes) * 100)}
-              <div class="h-4 bg-gray-200 rounded-full overflow-hidden flex">
-                <div class="bg-accent" style="width: {archivePercent}%"></div>
-                <div class="bg-gray-400" style="width: {otherUsedPercent}%"></div>
-              </div>
-              <div class="flex justify-between text-xs text-gray-500 mt-1">
-                <span>Total: {formatBytes(storageStats.totalBytes)}</span>
-                <span>Available: {formatBytes(storageStats.availableBytes)}</span>
-                <span>Archive: {formatBytes(storageStats.archiveBytes)}</span>
-              </div>
-            {:else if loadingStorage}
-              <div class="h-4 bg-gray-200 rounded-full animate-pulse"></div>
-              <p class="text-xs text-gray-400 mt-1">Loading storage info...</p>
-            {:else}
-              <p class="text-xs text-gray-400">Storage info unavailable</p>
-            {/if}
-          </div>
-
           <!-- Database Sub-Accordion -->
           <div>
             <button
               onclick={() => databaseExpanded = !databaseExpanded}
               class="w-full flex items-center justify-between py-2 border-b border-gray-100 text-left hover:bg-gray-50 transition-colors"
             >
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-medium text-gray-700">Database</span>
-                <span class="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700">healthy</span>
-              </div>
+              <span class="text-sm font-medium text-gray-700">Database</span>
               <svg
                 class="w-4 h-4 text-accent transition-transform duration-200 {databaseExpanded ? 'rotate-180' : ''}"
                 fill="none"
@@ -1822,20 +1900,45 @@
 
             {#if databaseExpanded}
             <div class="py-3">
+              <!-- Status pills inside accordion -->
+              <div class="flex items-center gap-2 mb-3">
+                <span class="text-xs px-1.5 py-0.5 rounded {dbHealthy ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
+                  {dbHealthy ? 'healthy' : 'needs attention'}
+                </span>
+                <span class="text-xs px-1.5 py-0.5 rounded {backupCount > 0 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}">
+                  {backupCount} backups
+                </span>
+              </div>
+
+              <!-- 4 database buttons -->
               <div class="flex flex-wrap gap-2">
                 <button
                   onclick={backupDatabase}
-                  disabled={backingUp || restoring}
+                  disabled={backingUp || restoring || userExporting}
                   class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
                 >
                   {backingUp ? 'Backing up...' : 'Backup'}
                 </button>
                 <button
-                  onclick={restoreDatabase}
-                  disabled={restoring || backingUp}
+                  onclick={userBackupDatabase}
+                  disabled={userExporting || backingUp || restoring}
                   class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
                 >
-                  {restoring ? 'Restoring...' : 'Restore'}
+                  {userExporting ? 'Exporting...' : 'User Backup'}
+                </button>
+                <button
+                  onclick={openRestoreModal}
+                  disabled={restoring || backingUp || userExporting}
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+                >
+                  Restore
+                </button>
+                <button
+                  onclick={restoreDatabase}
+                  disabled={restoring || backingUp || userExporting}
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+                >
+                  {restoring ? 'Restoring...' : 'User Restore'}
                 </button>
               </div>
               {#if backupMessage}
@@ -1847,63 +1950,6 @@
                 <p class="text-sm mt-2 {restoreMessage.includes('Error') || restoreMessage.includes('canceled') || restoreMessage.includes('Invalid') ? 'text-red-600' : 'text-green-600'}">
                   {restoreMessage}
                 </p>
-              {/if}
-            </div>
-            {/if}
-          </div>
-
-          <!-- Maps Sub-Accordion -->
-          <div>
-            <button
-              onclick={() => mapsExpanded = !mapsExpanded}
-              class="w-full flex items-center justify-between py-2 border-b border-gray-100 text-left hover:bg-gray-50 transition-colors"
-            >
-              <span class="text-sm font-medium text-gray-700">Maps</span>
-              <svg
-                class="w-4 h-4 text-accent transition-transform duration-200 {mapsExpanded ? 'rotate-180' : ''}"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {#if mapsExpanded}
-            <div class="pl-4 py-2">
-              {#if refMaps.length > 0}
-                <div class="space-y-2 mb-3 max-h-48 overflow-y-auto">
-                  {#each refMaps as map}
-                    <div class="flex items-center justify-between text-sm py-2 border-b border-gray-100 last:border-b-0">
-                      <span class="font-medium text-foreground truncate flex-1">{map.mapName}</span>
-                      <span class="text-gray-500 mx-4">{new Date(map.importedAt).toLocaleDateString()}</span>
-                      <span class="text-gray-500 mr-4">{map.pointCount.toLocaleString()} points</span>
-                      <button
-                        onclick={() => deleteRefMap(map.mapId)}
-                        class="p-1 text-gray-400 hover:text-red-600 rounded"
-                        title="Delete map"
-                      >
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                        </svg>
-                      </button>
-                    </div>
-                  {/each}
-                </div>
-              {:else}
-                <p class="text-sm text-gray-500 py-2">No reference maps imported</p>
-              {/if}
-              <div class="flex justify-end">
-                <button
-                  onclick={importRefMap}
-                  disabled={importingRefMap}
-                  class="text-sm text-accent hover:underline"
-                >
-                  {importingRefMap ? 'importing...' : 'import map'}
-                </button>
-              </div>
-              {#if refMapMessage}
-                <p class="text-sm text-gray-600 mt-2">{refMapMessage}</p>
               {/if}
             </div>
             {/if}
@@ -1983,6 +2029,30 @@
             <div class="py-3">
               <HealthMonitoring />
             </div>
+            {/if}
+          </div>
+
+          <!-- Storage Bar (at bottom) -->
+          <div class="py-3 mt-2">
+            <span class="text-sm font-medium text-gray-700 mb-2 block">Storage</span>
+            {#if storageStats}
+              {@const archivePercent = (storageStats.archiveBytes / storageStats.totalBytes) * 100}
+              {@const otherUsedBytes = storageStats.totalBytes - storageStats.availableBytes - storageStats.archiveBytes}
+              {@const otherUsedPercent = Math.max(0, (otherUsedBytes / storageStats.totalBytes) * 100)}
+              <div class="h-4 bg-gray-200 rounded-full overflow-hidden flex">
+                <div class="bg-accent" style="width: {archivePercent}%"></div>
+                <div class="bg-gray-400" style="width: {otherUsedPercent}%"></div>
+              </div>
+              <div class="flex justify-between text-xs text-gray-500 mt-1">
+                <span>Total: {formatBytes(storageStats.totalBytes)}</span>
+                <span>Available: {formatBytes(storageStats.availableBytes)}</span>
+                <span>Archive: {formatBytes(storageStats.archiveBytes)}</span>
+              </div>
+            {:else if loadingStorage}
+              <div class="h-4 bg-gray-200 rounded-full animate-pulse"></div>
+              <p class="text-xs text-gray-400 mt-1">Loading storage info...</p>
+            {:else}
+              <p class="text-xs text-gray-400">Storage info unavailable</p>
             {/if}
           </div>
         </div>
@@ -2330,6 +2400,51 @@
           class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition"
         >
           Enable Deletion
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Restore from Backup Modal -->
+{#if showRestoreModal}
+  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[80vh] flex flex-col">
+      <!-- Header -->
+      <div class="p-4 border-b">
+        <h2 class="text-lg font-semibold text-foreground">Restore from Backup</h2>
+        <p class="text-sm text-gray-500 mt-1">Select a backup to restore</p>
+      </div>
+
+      <!-- Content -->
+      <div class="p-4 flex-1 overflow-y-auto">
+        {#if internalBackups.length > 0}
+          <div class="space-y-2">
+            {#each internalBackups as backup}
+              <button
+                onclick={() => restoreFromBackup(backup.id)}
+                disabled={restoring}
+                class="w-full text-left p-3 border rounded-lg hover:border-accent hover:bg-accent/5 transition disabled:opacity-50"
+              >
+                <div class="flex justify-between items-center">
+                  <span class="font-medium text-foreground">{backup.date}</span>
+                  <span class="text-sm text-gray-500">{backup.size}</span>
+                </div>
+              </button>
+            {/each}
+          </div>
+        {:else}
+          <p class="text-sm text-gray-500 text-center py-8">No internal backups available</p>
+        {/if}
+      </div>
+
+      <!-- Footer -->
+      <div class="p-4 border-t bg-gray-50 rounded-b-lg flex justify-end">
+        <button
+          onclick={() => showRestoreModal = false}
+          class="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition"
+        >
+          Cancel
         </button>
       </div>
     </div>

@@ -5,11 +5,12 @@
 import { ipcMain, dialog } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
-import { getDatabasePath, getDefaultDbPath, closeDatabase } from '../database';
+import { getDatabasePath, getDefaultDbPath, closeDatabase, getDatabase } from '../database';
 import {
   getCustomDatabasePath,
   setCustomDatabasePath,
 } from '../../services/bootstrap-config';
+import { getBackupScheduler } from '../../services/backup-scheduler';
 
 export function registerDatabaseHandlers() {
   ipcMain.handle('database:backup', async () => {
@@ -207,4 +208,133 @@ export function registerDatabaseHandlers() {
       throw error;
     }
   });
+
+  // Phase 2: Get database stats (health + backup count)
+  ipcMain.handle('database:getStats', async () => {
+    try {
+      const db = getDatabase();
+      const scheduler = getBackupScheduler();
+
+      // Check database integrity
+      let integrityOk = true;
+      try {
+        const result = db.pragma('integrity_check') as Array<{ integrity_check: string }>;
+        integrityOk = result.length === 1 && result[0].integrity_check === 'ok';
+      } catch {
+        integrityOk = false;
+      }
+
+      // Get backup count from scheduler
+      const backupStats = await scheduler.getBackupStats();
+
+      return {
+        integrityOk,
+        backupCount: backupStats.totalBackups,
+        lastBackup: backupStats.lastBackup,
+      };
+    } catch (error) {
+      console.error('Error getting database stats:', error);
+      return { integrityOk: true, backupCount: 0, lastBackup: null };
+    }
+  });
+
+  // Phase 2: Export backup to user-selected location
+  ipcMain.handle('database:exportBackup', async () => {
+    try {
+      const dbPath = getDatabasePath();
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const defaultFilename = `au-archive-backup-${timestamp}.db`;
+
+      const result = await dialog.showSaveDialog({
+        title: 'Export Database Backup',
+        defaultPath: defaultFilename,
+        filters: [
+          { name: 'SQLite Database', extensions: ['db'] },
+          { name: 'All Files', extensions: ['*'] }
+        ],
+      });
+
+      if (result.canceled || !result.filePath) {
+        return { success: false, message: 'Export canceled' };
+      }
+
+      await fs.copyFile(dbPath, result.filePath);
+      return { success: true, path: result.filePath };
+    } catch (error) {
+      console.error('Error exporting database:', error);
+      throw error;
+    }
+  });
+
+  // Phase 2: List internal backups
+  ipcMain.handle('database:listBackups', async () => {
+    try {
+      const scheduler = getBackupScheduler();
+      const manifest = await scheduler.getManifest();
+
+      // Format backups for UI
+      const backups = manifest.backups
+        .sort((a, b) => b.timestamp.localeCompare(a.timestamp)) // Newest first
+        .map(backup => ({
+          id: backup.backupId,
+          date: new Date(backup.timestamp).toLocaleString(),
+          size: formatSize(backup.size),
+          path: backup.filePath,
+        }));
+
+      return { success: true, backups };
+    } catch (error) {
+      console.error('Error listing backups:', error);
+      return { success: false, message: 'Failed to list backups', backups: [] };
+    }
+  });
+
+  // Phase 2: Restore from internal backup
+  ipcMain.handle('database:restoreFromInternal', async (_, backupId: string) => {
+    try {
+      const scheduler = getBackupScheduler();
+      const manifest = await scheduler.getManifest();
+
+      const backup = manifest.backups.find(b => b.backupId === backupId);
+      if (!backup) {
+        return { success: false, message: 'Backup not found' };
+      }
+
+      // Verify backup file exists
+      try {
+        await fs.access(backup.filePath);
+      } catch {
+        return { success: false, message: 'Backup file not found on disk' };
+      }
+
+      const dbPath = getDatabasePath();
+
+      // Create pre-restore backup
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const autoBackupPath = dbPath.replace('.db', `-pre-restore-${timestamp}.db`);
+      await fs.copyFile(dbPath, autoBackupPath);
+
+      closeDatabase();
+      await fs.copyFile(backup.filePath, dbPath);
+
+      return {
+        success: true,
+        message: 'Database restored successfully. Please restart the application.',
+        requiresRestart: true,
+        autoBackupPath,
+      };
+    } catch (error) {
+      console.error('Error restoring from internal backup:', error);
+      throw error;
+    }
+  });
+}
+
+// Helper to format file size
+function formatSize(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
