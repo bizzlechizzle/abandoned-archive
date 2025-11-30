@@ -23,49 +23,16 @@
   let showFilters = $state(false);
   let filterState = $state('');
   let filterType = $state('');
-  // FIX 6.8: Heat map toggle
-  let showHeatMap = $state(false);
   // Reference map layer toggle
   let showRefMapLayer = $state(false);
   let refMapPoints = $state<RefMapPoint[]>([]);
 
-  // FEAT-P2: Default Atlas view settings
-  let defaultCenter = $state<{ lat: number; lng: number } | null>(null);
-  let defaultZoom = $state<number | null>(null);
-  let savingDefaultView = $state(false);
-
   // DECISION-016: Read URL params from router store (hash-based routing)
-  // Router parses #/atlas?lat=X&lng=Y&zoom=Z into { query: { lat, lng, zoom } }
   let routeQuery = $state<Record<string, string>>({});
 
   // Subscribe to router to get query params
   router.subscribe(route => {
     routeQuery = route.query || {};
-  });
-
-  // Derive URL params from router query
-  const urlCenter = $derived.by(() => {
-    const lat = routeQuery.lat;
-    const lng = routeQuery.lng;
-    if (lat && lng) {
-      const latNum = parseFloat(lat);
-      const lngNum = parseFloat(lng);
-      if (!isNaN(latNum) && !isNaN(lngNum)) {
-        return { lat: latNum, lng: lngNum };
-      }
-    }
-    return null;
-  });
-
-  const urlZoom = $derived.by(() => {
-    const zoom = routeQuery.zoom;
-    if (zoom) {
-      const zoomNum = parseInt(zoom, 10);
-      if (!isNaN(zoomNum) && zoomNum >= 1 && zoomNum <= 19) {
-        return zoomNum;
-      }
-    }
-    return null;
   });
 
   const highlightLocid = $derived(routeQuery.locid || null);
@@ -174,25 +141,6 @@
     closeContextMenu();
   }
 
-  // FEAT-P2: Load default Atlas view from settings
-  async function loadDefaultView() {
-    if (!window.electronAPI?.settings) return;
-    try {
-      const settings = await window.electronAPI.settings.getAll();
-      if (settings.atlas_default_lat && settings.atlas_default_lng) {
-        defaultCenter = {
-          lat: parseFloat(settings.atlas_default_lat),
-          lng: parseFloat(settings.atlas_default_lng),
-        };
-      }
-      if (settings.atlas_default_zoom) {
-        defaultZoom = parseInt(settings.atlas_default_zoom, 10);
-      }
-    } catch (err) {
-      console.error('Error loading default view:', err);
-    }
-  }
-
   // Load reference map points from imported maps
   async function loadRefMapPoints() {
     if (!window.electronAPI?.refMaps) return;
@@ -235,38 +183,8 @@
     }
   }
 
-  // FEAT-P2: Save current map view as default
-  async function saveDefaultView() {
-    if (!window.electronAPI?.settings) return;
-    // Get current center from context menu (last right-click position as proxy)
-    // In practice, we'd need to get this from the Map component
-    // For now, use a simple approach: save the center of the US or current context
-    savingDefaultView = true;
-    try {
-      // We'll use current context menu position if available, else US center
-      const lat = contextMenu.lat || 39.8283;
-      const lng = contextMenu.lng || -98.5795;
-      const zoom = 5; // Default zoom for US view
-
-      await window.electronAPI.settings.set('atlas_default_lat', String(lat));
-      await window.electronAPI.settings.set('atlas_default_lng', String(lng));
-      await window.electronAPI.settings.set('atlas_default_zoom', String(zoom));
-
-      defaultCenter = { lat, lng };
-      defaultZoom = zoom;
-
-      toasts.success('Default view saved');
-    } catch (err) {
-      console.error('Error saving default view:', err);
-      toasts.error('Failed to save default view');
-    } finally {
-      savingDefaultView = false;
-    }
-  }
-
   onMount(() => {
     loadLocations();
-    loadDefaultView(); // FEAT-P2: Load saved default view
     loadRefMapPoints(); // Load imported reference map points
     // Close context menu on click outside
     const handleClickOutside = () => closeContextMenu();
@@ -276,50 +194,14 @@
 </script>
 
 <div class="h-full flex flex-col">
-  <div class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
-    <div>
-      <h1 class="text-xl font-semibold text-foreground">Atlas</h1>
-      <p class="text-xs text-gray-500">
-        {#if !loading}
-          Showing {filteredLocations().length} of {locations.length} mappable locations
-        {/if}
-      </p>
-    </div>
-    <div class="flex items-center gap-2">
-      <!-- FEAT-P2: Set as Default View button -->
-      <button
-        onclick={saveDefaultView}
-        disabled={savingDefaultView}
-        class="px-4 py-2 bg-gray-100 text-foreground rounded hover:bg-gray-200 transition text-sm disabled:opacity-50"
-        title="Save current view as default when opening Atlas"
-      >
-        {savingDefaultView ? 'Saving...' : 'Set Default View'}
-      </button>
-      <!-- FIX 6.8: Heat map toggle button - NME: No emoji per claude.md -->
-      <button
-        onclick={() => showHeatMap = !showHeatMap}
-        class="px-4 py-2 rounded transition text-sm {showHeatMap ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-foreground hover:bg-gray-200'}"
-        title="Toggle heat map visualization"
-      >
-        {showHeatMap ? 'Heat On' : 'Heat Off'}
-      </button>
-      <!-- Reference Maps layer toggle -->
-      {#if refMapPoints.length > 0}
-        <button
-          onclick={() => showRefMapLayer = !showRefMapLayer}
-          class="px-4 py-2 rounded transition text-sm {showRefMapLayer ? 'bg-accent/20 text-accent' : 'bg-gray-100 text-foreground hover:bg-gray-200'}"
-          title="Toggle imported reference maps ({refMapPoints.length} points)"
-        >
-          {showRefMapLayer ? 'Refs On' : 'Refs Off'}
-        </button>
-      {/if}
-      <button
-        onclick={() => showFilters = !showFilters}
-        class="px-4 py-2 bg-gray-100 text-foreground rounded hover:bg-gray-200 transition text-sm"
-      >
-        {showFilters ? 'Hide' : 'Show'} Filters
-      </button>
-    </div>
+  <div class="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+    <h1 class="text-xl font-semibold text-foreground">Atlas</h1>
+    <button
+      onclick={() => showFilters = !showFilters}
+      class="px-4 py-2 bg-gray-100 text-foreground rounded hover:bg-gray-200 transition text-sm"
+    >
+      {showFilters ? 'Hide' : 'Show'} Filters
+    </button>
   </div>
 
   {#if showFilters}
@@ -353,27 +235,39 @@
           </select>
         </div>
       </div>
+      <!-- Import Pins checkbox for reference map points -->
+      <div class="flex items-center gap-2 pt-3 mt-3 border-t border-gray-200">
+        <input
+          type="checkbox"
+          id="import-pins"
+          bind:checked={showRefMapLayer}
+          class="w-4 h-4 accent-accent rounded"
+        />
+        <label for="import-pins" class="text-sm text-gray-700 cursor-pointer">
+          Import Pins
+          {#if refMapPoints.length > 0}
+            <span class="text-gray-400">({refMapPoints.length})</span>
+          {/if}
+        </label>
+      </div>
     </div>
   {/if}
 
   <div class="flex-1 relative">
     <!-- ALWAYS show the map - it's an atlas, not a placeholder -->
-    <!-- DECISION-011: Pass URL zoom/layer if available, default to satellite-labels -->
-    <!-- DECISION-016: Pass URL center for mini-map expand to maintain same view -->
     <Map
       locations={filteredLocations()}
       onLocationClick={handleLocationClick}
       onMapClick={handleMapClick}
       onMapRightClick={handleMapRightClick}
-      showHeatMap={showHeatMap}
       popupMode="minimal"
-      zoom={urlZoom ?? undefined}
-      center={urlCenter ?? undefined}
       defaultLayer={urlLayer ?? 'satellite-labels'}
       refMapPoints={refMapPoints}
       showRefMapLayer={showRefMapLayer}
       onCreateFromRefPoint={handleCreateFromRefPoint}
       onDeleteRefPoint={handleDeleteRefPoint}
+      hideAttribution={true}
+      fitBounds={true}
     />
     {#if loading}
       <div class="absolute top-2 left-1/2 -translate-x-1/2 bg-white px-4 py-2 rounded shadow-lg z-10">

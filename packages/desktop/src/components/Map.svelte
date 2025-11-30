@@ -197,6 +197,8 @@
     onCreateFromRefPoint?: (data: { name: string; lat: number; lng: number; state: string | null }) => void;
     // Callback when user clicks "Delete" on a reference point popup
     onDeleteRefPoint?: (pointId: string, name: string) => void;
+    // Auto-fit map to show all locations on load
+    fitBounds?: boolean;
   }
 
   let {
@@ -222,7 +224,8 @@
     refMapPoints = [],
     showRefMapLayer = false,
     onCreateFromRefPoint,
-    onDeleteRefPoint
+    onDeleteRefPoint,
+    fitBounds = false
   }: Props = $props();
 
   /**
@@ -423,9 +426,8 @@
 
       const overlayLayers: { [key: string]: TileLayer } = {
         'Labels': L.tileLayer(TILE_LAYERS.LABELS, {
-          attribution: hideAttribution ? '' : '&copy; CartoDB',
+          attribution: hideAttribution ? '' : '&copy; Stamen Design',
           maxZoom: MAP_CONFIG.MAX_ZOOM,
-          subdomains: 'abcd',
         }),
       };
 
@@ -546,6 +548,25 @@
 
       initCluster();
       updateClusters(L);
+
+      // Auto-fit map to show all location pins
+      if (fitBounds && locations.length > 0) {
+        const validLocs = locations.filter(loc => {
+          const coords = getLocationCoordinates(loc);
+          return coords && !coords.isApproximate;
+        });
+        if (validLocs.length > 0) {
+          const bounds = L.latLngBounds(
+            validLocs.map(loc => {
+              const coords = getLocationCoordinates(loc)!;
+              return [coords.lat, coords.lng] as [number, number];
+            })
+          );
+          if (bounds.isValid()) {
+            map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+          }
+        }
+      }
     }
   });
 
