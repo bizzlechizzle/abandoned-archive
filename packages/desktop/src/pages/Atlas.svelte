@@ -153,12 +153,14 @@
   }
 
   // Handle creating a new location from a reference point popup
-  function handleCreateFromRefPoint(data: { name: string; lat: number; lng: number; state: string | null }) {
+  // Migration 38: Include refPointId for deletion after location creation
+  function handleCreateFromRefPoint(data: { pointId: string; name: string; lat: number; lng: number; state: string | null }) {
     openImportModal({
       name: data.name,
       gps_lat: data.lat,
       gps_lng: data.lng,
       state: data.state || undefined,
+      refPointId: data.pointId,
     });
   }
 

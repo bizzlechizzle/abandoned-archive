@@ -429,6 +429,53 @@ The name check queries all locations. For large archives (10,000+), consider:
 
 ---
 
+## UI Integration (Complete)
+
+### DuplicateWarningPanel Component
+
+The `DuplicateWarningPanel.svelte` component is the inline warning panel shown when a duplicate is detected:
+
+```svelte
+<DuplicateWarningPanel
+  proposedName={name.trim()}
+  match={duplicateMatch}
+  onSamePlace={handleDuplicateSamePlace}
+  onDifferentPlace={handleDuplicateDifferentPlace}
+  processing={duplicateProcessing}
+/>
+```
+
+**Location:** `packages/desktop/src/components/DuplicateWarningPanel.svelte`
+
+### Integration Points
+
+1. **ImportModal.svelte** - Main location creation modal
+   - Debounced duplicate check on name change (300ms)
+   - Shows DuplicateWarningPanel when match found
+   - Handles "Same place" → navigates to existing location
+   - Handles "Different place" → adds exclusion, clears panel
+
+2. **Atlas.svelte** → **Map.svelte** - Reference point conversion
+   - Passes `refPointId` when clicking "Create Location" on ref point
+   - Ref point is deleted after successful location creation
+
+3. **import-modal-store.ts** - Stores prefilled data including refPointId
+
+### Ref Point Deletion Flow
+
+When a user converts a reference map point to a location:
+
+```
+1. User clicks "Create Location" on ref point popup
+2. Map.svelte passes { pointId, name, lat, lng, state } to callback
+3. Atlas.svelte opens ImportModal with refPointId in prefilledData
+4. ImportModal tracks creatingFromRefPointId
+5. On successful location creation, ref point is deleted
+6. Original KML/GPX/GeoJSON file is preserved (only point removed)
+```
+
+---
+
 ## Future Enhancements
 
 See ADR for planned features:

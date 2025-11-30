@@ -194,7 +194,8 @@
     // Whether to show reference map layer
     showRefMapLayer?: boolean;
     // Callback when user clicks "Create Location" on a reference point popup
-    onCreateFromRefPoint?: (data: { name: string; lat: number; lng: number; state: string | null }) => void;
+    // Migration 38: Added pointId for deletion after location creation
+    onCreateFromRefPoint?: (data: { pointId: string; name: string; lat: number; lng: number; state: string | null }) => void;
     // Callback when user clicks "Delete" on a reference point popup
     onDeleteRefPoint?: (pointId: string, name: string) => void;
     // Auto-fit map to show all locations on load
@@ -514,17 +515,19 @@
       document.addEventListener('click', viewDetailsClickHandler);
 
       // Event delegation for "Create Location" button on reference point popups
+      // Migration 38: Include pointId for deletion after location creation
       createFromRefClickHandler = (e: MouseEvent) => {
         const target = e.target as HTMLElement;
         if (target.classList.contains('create-from-ref-btn')) {
           e.preventDefault();
           e.stopPropagation();
+          const pointId = target.getAttribute('data-point-id') || '';
           const name = target.getAttribute('data-name') || 'Unnamed Point';
           const lat = parseFloat(target.getAttribute('data-lat') || '0');
           const lng = parseFloat(target.getAttribute('data-lng') || '0');
           const state = target.getAttribute('data-state') || null;
-          if (onCreateFromRefPoint && lat !== 0 && lng !== 0) {
-            onCreateFromRefPoint({ name, lat, lng, state: state || null });
+          if (onCreateFromRefPoint && lat !== 0 && lng !== 0 && pointId) {
+            onCreateFromRefPoint({ pointId, name, lat, lng, state: state || null });
           }
         }
       };

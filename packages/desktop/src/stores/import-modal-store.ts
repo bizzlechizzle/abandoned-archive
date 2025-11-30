@@ -14,6 +14,8 @@ interface ImportModalState {
     gps_lng?: number;
     state?: string;
     type?: string;
+    // Migration 38: Track ref point ID for deletion after location creation
+    refPointId?: string;
   };
 }
 

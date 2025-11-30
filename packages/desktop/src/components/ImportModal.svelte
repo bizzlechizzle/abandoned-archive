@@ -18,6 +18,7 @@
   import { toasts } from '../stores/toast-store';
   import AutocompleteInput from './AutocompleteInput.svelte';
   import ImportIntelligence from './ImportIntelligence.svelte';
+  import DuplicateWarningPanel from './DuplicateWarningPanel.svelte';
   import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
   import { ACCESS_OPTIONS } from '../constants/location-enums';
   import { getTypeForSubtype } from '../lib/type-hierarchy';
@@ -70,6 +71,27 @@
   let matchesLoading = $state(false);
   let matchesDismissed = $state(false);
   let matchSearchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  // Migration 38: Duplicate detection state
+  // ADR: ADR-pin-conversion-duplicate-prevention.md
+  interface DuplicateMatch {
+    locationId: string;
+    locnam: string;
+    akanam: string | null;
+    historicalName: string | null;
+    state: string | null;
+    matchType: 'gps' | 'name';
+    distanceMeters?: number;
+    nameSimilarity?: number;
+    matchedField?: 'locnam' | 'akanam' | 'historicalName';
+    mediaCount: number;
+  }
+  let duplicateMatch = $state<DuplicateMatch | null>(null);
+  let duplicateProcessing = $state(false);
+  let duplicateDismissed = $state(false);
+  let duplicateCheckTimeout: ReturnType<typeof setTimeout> | null = null;
+  // Track ref point ID when creating from a reference map point
+  let creatingFromRefPointId = $state<string | null>(null);
 
   // Auto-fill sub-location name when location name changes (if adding first building)
   $effect(() => {
@@ -199,6 +221,10 @@
       if ($importModal.prefilledData.type) {
         type = $importModal.prefilledData.type;
       }
+      // Migration 38: Track ref point ID for deletion after location creation
+      if ($importModal.prefilledData.refPointId) {
+        creatingFromRefPointId = $importModal.prefilledData.refPointId;
+      }
     }
   });
 
@@ -252,6 +278,51 @@
     }, 300);
   });
 
+  // Migration 38: Debounced duplicate check when name or GPS changes
+  // Checks for existing locations with similar name OR nearby GPS
+  $effect(() => {
+    // Skip if user already dismissed the warning
+    if (duplicateDismissed) return;
+
+    // Need at least a name to check
+    const trimmedName = name.trim();
+    if (trimmedName.length < 3) {
+      duplicateMatch = null;
+      return;
+    }
+
+    // Clear previous timeout
+    if (duplicateCheckTimeout) {
+      clearTimeout(duplicateCheckTimeout);
+    }
+
+    // Get GPS if available
+    const gpsLat = $importModal.prefilledData?.gps_lat ?? null;
+    const gpsLng = $importModal.prefilledData?.gps_lng ?? null;
+
+    // Debounce the check (300ms)
+    duplicateCheckTimeout = setTimeout(async () => {
+      if (!window.electronAPI?.locations?.checkDuplicateByNameAndGps) return;
+
+      try {
+        const result = await window.electronAPI.locations.checkDuplicateByNameAndGps({
+          name: trimmedName,
+          lat: gpsLat,
+          lng: gpsLng,
+        });
+
+        if (result.hasDuplicate && result.match) {
+          duplicateMatch = result.match;
+        } else {
+          duplicateMatch = null;
+        }
+      } catch (err) {
+        console.error('[ImportModal] Duplicate check failed:', err);
+        duplicateMatch = null;
+      }
+    }, 300);
+  });
+
   // Apply GPS from a matched reference point
   function applyMatchGps(match: RefMapMatch) {
     // Update the prefilled data in the store to include GPS
@@ -272,6 +343,39 @@
   function dismissMatches() {
     matchesDismissed = true;
     refMapMatches = [];
+  }
+
+  // Migration 38: Handle "This is the same place" - navigate to existing location
+  async function handleDuplicateSamePlace(locationId: string, locationName: string) {
+    duplicateProcessing = true;
+    try {
+      closeImportModal();
+      resetForm();
+      toasts.success(`Navigating to "${locationName}"`);
+      router.navigate(`/location/${locationId}`);
+    } finally {
+      duplicateProcessing = false;
+    }
+  }
+
+  // Migration 38: Handle "Different place" - add exclusion and allow creation
+  async function handleDuplicateDifferentPlace(matchName: string) {
+    duplicateProcessing = true;
+    try {
+      // Add exclusion so we don't ask again for this pair
+      if (window.electronAPI?.locations?.addExclusion) {
+        await window.electronAPI.locations.addExclusion(name.trim(), matchName);
+      }
+      // Clear the warning and allow creation
+      duplicateDismissed = true;
+      duplicateMatch = null;
+      toasts.success('Got it! You can proceed with creating this location.');
+    } catch (err) {
+      console.error('[ImportModal] Failed to add exclusion:', err);
+      toasts.error('Failed to save preference');
+    } finally {
+      duplicateProcessing = false;
+    }
   }
 
   function validateForm(): boolean {
@@ -352,6 +456,18 @@
         });
       }
 
+      // Migration 38: Delete the ref point if we created from one
+      // ADR: ADR-pin-conversion-duplicate-prevention.md - original map file preserved
+      if (creatingFromRefPointId && window.electronAPI?.refMaps?.deletePoint) {
+        try {
+          await window.electronAPI.refMaps.deletePoint(creatingFromRefPointId);
+          console.log(`[ImportModal] Deleted ref point: ${creatingFromRefPointId}`);
+        } catch (delErr) {
+          console.error('[ImportModal] Failed to delete ref point:', delErr);
+          // Non-fatal - location was created successfully
+        }
+      }
+
       closeImportModal();
       const successMsg = addFirstBuilding
         ? 'Host location and first building created'
@@ -394,6 +510,17 @@
           created_by: author.trim() || null,
         });
         createdSubId = subloc.subid;
+      }
+
+      // Migration 38: Delete the ref point if we created from one
+      if (creatingFromRefPointId && window.electronAPI?.refMaps?.deletePoint) {
+        try {
+          await window.electronAPI.refMaps.deletePoint(creatingFromRefPointId);
+          console.log(`[ImportModal] Deleted ref point: ${creatingFromRefPointId}`);
+        } catch (delErr) {
+          console.error('[ImportModal] Failed to delete ref point:', delErr);
+          // Non-fatal - location was created successfully
+        }
       }
 
       closeImportModal();
@@ -440,6 +567,15 @@
     // Reset intelligence state
     showIntelligence = false;
     intelligenceDismissed = false;
+    // Migration 38: Reset duplicate detection state
+    duplicateMatch = null;
+    duplicateDismissed = false;
+    duplicateProcessing = false;
+    creatingFromRefPointId = null;
+    if (duplicateCheckTimeout) {
+      clearTimeout(duplicateCheckTimeout);
+      duplicateCheckTimeout = null;
+    }
   }
 
   function handleCancel() {
@@ -472,6 +608,8 @@
   function handleIntelligenceCreateFromRefPoint(pointId: string, pointName: string, lat: number, lng: number) {
     // Apply the ref point data and show create form
     name = pointName;
+    // Migration 38: Track the ref point ID for deletion after location creation
+    creatingFromRefPointId = pointId;
     importModal.update(current => ({
       ...current,
       prefilledData: {
@@ -574,6 +712,17 @@
             onSelectSubLocation={handleIntelligenceSelectSubLocation}
             onCreateFromRefPoint={handleIntelligenceCreateFromRefPoint}
             onCreateNew={handleIntelligenceCreateNew}
+          />
+        {/if}
+
+        <!-- Migration 38: Duplicate Warning Panel - shown when similar location detected -->
+        {#if duplicateMatch && !duplicateDismissed && (!showIntelligence || intelligenceDismissed)}
+          <DuplicateWarningPanel
+            proposedName={name.trim()}
+            match={duplicateMatch}
+            onSamePlace={handleDuplicateSamePlace}
+            onDifferentPlace={handleDuplicateDifferentPlace}
+            processing={duplicateProcessing}
           />
         {/if}
 

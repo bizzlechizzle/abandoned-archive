@@ -8,7 +8,7 @@
  * ADR: ADR-pin-conversion-duplicate-prevention.md
  */
 
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import type { Kysely } from 'kysely';
 import type { Database } from '../main/database';
 
@@ -42,7 +42,7 @@ export class SQLiteLocationExclusionsRepository {
     }
 
     await this.db.insertInto('location_exclusions').values({
-      exclusion_id: uuidv4(),
+      exclusion_id: randomUUID(),
       name_a: first,
       name_b: second,
       decided_at: new Date().toISOString(),
