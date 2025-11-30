@@ -3,6 +3,7 @@
  * Handles all location:* IPC channels
  * Migration 25: Activity tracking - passes current user to repository
  * Migration 25 - Phase 3: Author attribution via location_authors table
+ * Migration 38: Duplicate detection for pin-to-location conversion
  */
 import { ipcMain } from 'electron';
 import { z } from 'zod';
@@ -11,9 +12,11 @@ import type { Database } from '../database';
 import { SQLiteLocationRepository } from '../../repositories/sqlite-location-repository';
 import { SQLiteLocationAuthorsRepository } from '../../repositories/sqlite-location-authors-repository';
 import { SQLiteLocationViewsRepository } from '../../repositories/sqlite-location-views-repository';
+import { SQLiteLocationExclusionsRepository } from '../../repositories/sqlite-location-exclusions-repository';
 import { LocationInputSchema } from '@au-archive/core';
 import type { LocationFilters } from '@au-archive/core';
 import { AddressService, type NormalizedAddress } from '../../services/address-service';
+import { LocationDuplicateService } from '../../services/location-duplicate-service';
 
 /**
  * Get current user context from settings
@@ -40,6 +43,9 @@ export function registerLocationHandlers(db: Kysely<Database>) {
   const authorsRepo = new SQLiteLocationAuthorsRepository(db);
   // Migration 34: Location views repository for per-user view tracking
   const viewsRepo = new SQLiteLocationViewsRepository(db);
+  // Migration 38: Duplicate detection for pin-to-location conversion
+  const exclusionsRepo = new SQLiteLocationExclusionsRepository(db);
+  const duplicateService = new LocationDuplicateService(db);
 
   ipcMain.handle('location:findAll', async (_event, filters?: LocationFilters) => {
     try {
@@ -482,6 +488,72 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.findProjects(limit ?? 5);
     } catch (error) {
       console.error('Error finding project locations:', error);
+      throw error;
+    }
+  });
+
+  /**
+   * Migration 38: Check for duplicate locations before creation
+   * ADR: ADR-pin-conversion-duplicate-prevention.md
+   *
+   * Checks by GPS proximity (≤150m) OR name similarity (≥50%)
+   * Returns match info if duplicate found, null otherwise
+   */
+  ipcMain.handle('location:checkDuplicateByNameAndGps', async (_event, input: unknown) => {
+    try {
+      const InputSchema = z.object({
+        name: z.string().min(1),
+        lat: z.number().nullable().optional(),
+        lng: z.number().nullable().optional(),
+      });
+
+      const validatedInput = InputSchema.parse(input);
+
+      // Get all exclusions for filtering
+      const exclusions = await exclusionsRepo.getAllExclusions();
+
+      return await duplicateService.checkForDuplicate(validatedInput, exclusions);
+    } catch (error) {
+      console.error('Error checking for duplicates:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => e.message).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  /**
+   * Migration 38: Record that two names refer to different places
+   * ADR: ADR-pin-conversion-duplicate-prevention.md
+   *
+   * Prevents future duplicate prompts for this pair
+   */
+  ipcMain.handle('location:addExclusion', async (_event, nameA: unknown, nameB: unknown) => {
+    try {
+      const validatedNameA = z.string().min(1).parse(nameA);
+      const validatedNameB = z.string().min(1).parse(nameB);
+
+      const currentUser = await getCurrentUser(db);
+      await exclusionsRepo.addExclusion(validatedNameA, validatedNameB, currentUser?.username);
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error adding exclusion:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => e.message).join(', ')}`);
+      }
+      throw error;
+    }
+  });
+
+  /**
+   * Migration 38: Get count of stored exclusions (for debugging/stats)
+   */
+  ipcMain.handle('location:getExclusionCount', async () => {
+    try {
+      return await exclusionsRepo.count();
+    } catch (error) {
+      console.error('Error getting exclusion count:', error);
       throw error;
     }
   });

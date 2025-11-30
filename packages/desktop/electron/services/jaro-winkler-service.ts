@@ -205,10 +205,59 @@ export function findMatchesInItems<T extends { name: string | null }>(
     .slice(0, limit);
 }
 
+/**
+ * Migration 38: Normalize a name for comparison
+ * ADR: ADR-pin-conversion-duplicate-prevention.md
+ *
+ * - Lowercase
+ * - Strip leading articles (The, A, An)
+ * - Expand common abbreviations
+ */
+export function normalizeName(name: string): string {
+  if (!name) return '';
+
+  let normalized = name.toLowerCase().trim();
+
+  // Strip leading articles
+  normalized = normalized.replace(/^(the|a|an)\s+/i, '');
+
+  // Expand abbreviations (order matters - process longer patterns first)
+  const abbreviations: [RegExp, string][] = [
+    [/\bst\.\s*/gi, 'saint '],
+    [/\bmt\.\s*/gi, 'mount '],
+    [/\bhosp\.\s*/gi, 'hospital '],
+    [/\bmfg\.\s*/gi, 'manufacturing '],
+    [/\bco\.\s*/gi, 'company '],
+    [/\bcorp\.\s*/gi, 'corporation '],
+    [/\binc\.\s*/gi, 'incorporated '],
+    [/\bave\.\s*/gi, 'avenue '],
+    [/\bblvd\.\s*/gi, 'boulevard '],
+    [/\brd\.\s*/gi, 'road '],
+  ];
+
+  for (const [pattern, replacement] of abbreviations) {
+    normalized = normalized.replace(pattern, replacement);
+  }
+
+  // Collapse multiple spaces
+  normalized = normalized.replace(/\s+/g, ' ').trim();
+
+  return normalized;
+}
+
+/**
+ * Compare two names with normalization applied
+ */
+export function normalizedSimilarity(name1: string, name2: string): number {
+  return jaroWinklerSimilarity(normalizeName(name1), normalizeName(name2));
+}
+
 // Default export for convenience
 export default {
   jaroWinklerSimilarity,
   isMatch,
   findBestMatches,
   findMatchesInItems,
+  normalizeName,
+  normalizedSimilarity,
 };

@@ -346,4 +346,41 @@ export class SqliteRefMapsRepository {
 
     return rows.map(rowToRefMapPoint);
   }
+
+  /**
+   * Migration 38: Delete a single ref_map_point after conversion to location
+   * ADR: ADR-pin-conversion-duplicate-prevention.md
+   *
+   * Original map file (ref_maps) is preserved - only the point is deleted.
+   * This removes the pin from the map while keeping the source file reference.
+   */
+  async deletePoint(pointId: string): Promise<boolean> {
+    const result = await this.db
+      .deleteFrom('ref_map_points')
+      .where('point_id', '=', pointId)
+      .execute();
+
+    const deleted = (result[0]?.numDeletedRows ?? 0) > 0;
+    if (deleted) {
+      console.log(`[RefMaps] Deleted ref_map_point: ${pointId}`);
+    }
+    return deleted;
+  }
+
+  /**
+   * Migration 38: Delete multiple ref_map_points
+   * Used for bulk conversion cleanup
+   */
+  async deletePoints(pointIds: string[]): Promise<number> {
+    if (pointIds.length === 0) return 0;
+
+    const result = await this.db
+      .deleteFrom('ref_map_points')
+      .where('point_id', 'in', pointIds)
+      .execute();
+
+    const deleted = Number(result[0]?.numDeletedRows ?? 0);
+    console.log(`[RefMaps] Deleted ${deleted} ref_map_points`);
+    return deleted;
+  }
 }

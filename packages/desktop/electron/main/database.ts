@@ -1273,6 +1273,35 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 37 completed: reference maps tables created');
     }
+
+    // Migration 38: Create location_exclusions table for "different place" decisions
+    // ADR: ADR-pin-conversion-duplicate-prevention.md
+    // Stores user decisions that two names refer to different places
+    // Prevents re-prompting for the same pair during location creation
+    const locationExclusionsExists = sqlite.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='location_exclusions'"
+    ).get();
+
+    if (!locationExclusionsExists) {
+      console.log('Running migration 38: Creating location_exclusions table');
+
+      sqlite.exec(`
+        -- Stores user decisions that two names refer to different places
+        -- Prevents re-prompting for the same pair
+        CREATE TABLE location_exclusions (
+          exclusion_id TEXT PRIMARY KEY,
+          name_a TEXT NOT NULL,
+          name_b TEXT NOT NULL,
+          decided_at TEXT NOT NULL,
+          decided_by TEXT
+        );
+
+        -- Index for efficient lookup (both directions)
+        CREATE INDEX idx_location_exclusions_names ON location_exclusions(name_a, name_b);
+      `);
+
+      console.log('Migration 38 completed: location_exclusions table created');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

@@ -19,6 +19,7 @@ export interface Database {
   video_proxies: VideoProxiesTable;
   ref_maps: RefMapsTable;
   ref_map_points: RefMapPointsTable;
+  location_exclusions: LocationExclusionsTable;
 }
 
 // Locations table
@@ -496,4 +497,15 @@ export interface RefMapPointsTable {
   state: string | null;
   category: string | null;
   raw_metadata: string | null;  // JSON blob
+}
+
+// Migration 38: Location Exclusions - "Different place" decisions
+// ADR: ADR-pin-conversion-duplicate-prevention.md
+// Stores user decisions that two names refer to different places
+export interface LocationExclusionsTable {
+  exclusion_id: string;
+  name_a: string;
+  name_b: string;
+  decided_at: string;
+  decided_by: string | null;
 }

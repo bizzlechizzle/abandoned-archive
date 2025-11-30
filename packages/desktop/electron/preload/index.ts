@@ -112,6 +112,37 @@ const api = {
       heroThumbPath?: string;
     }>> =>
       ipcRenderer.invoke('location:findRecentlyViewed', limit),
+
+    // Migration 38: Duplicate detection for pin-to-location conversion
+    // ADR: ADR-pin-conversion-duplicate-prevention.md
+    checkDuplicateByNameAndGps: (input: {
+      name: string;
+      lat?: number | null;
+      lng?: number | null;
+    }): Promise<{
+      hasDuplicate: boolean;
+      match?: {
+        locationId: string;
+        locnam: string;
+        akanam: string | null;
+        historicalName: string | null;
+        state: string | null;
+        matchType: 'gps' | 'name';
+        distanceMeters?: number;
+        nameSimilarity?: number;
+        matchedField?: 'locnam' | 'akanam' | 'historicalName';
+        mediaCount: number;
+      };
+    }> =>
+      ipcRenderer.invoke('location:checkDuplicateByNameAndGps', input),
+
+    // Migration 38: Record that two names refer to different places
+    addExclusion: (nameA: string, nameB: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('location:addExclusion', nameA, nameB),
+
+    // Migration 38: Get count of stored exclusions
+    getExclusionCount: (): Promise<number> =>
+      ipcRenderer.invoke('location:getExclusionCount'),
   },
 
   stats: {
