@@ -68,8 +68,10 @@ export class ConfigService {
   private config: AppConfig | null = null;
 
   constructor() {
-    // Use project-relative path for development convenience
-    this.configPath = join(process.cwd(), 'data', 'config.json');
+    // Always use userData for config - it's a safe, writable location on all platforms
+    // In development, this is ~/Library/Application Support/Electron (or similar)
+    // In production, this is ~/Library/Application Support/Abandoned Archive
+    this.configPath = join(app.getPath('userData'), 'config.json');
   }
 
   /**

@@ -33,8 +33,8 @@ export class BackupScheduler {
   private isRunning: boolean = false;
 
   constructor() {
-    // Use project-relative path for development convenience
-    this.backupDir = path.join(process.cwd(), 'data', 'backups');
+    // Use userData directory which is writable on all platforms
+    this.backupDir = path.join(app.getPath('userData'), 'backups');
     this.manifestPath = path.join(this.backupDir, 'backups.json');
   }
 

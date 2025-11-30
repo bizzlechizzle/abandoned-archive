@@ -120,7 +120,7 @@
 
 <svelte:window on:keydown={handleKeydown} />
 
-<div class="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-8">
+<div class="h-full min-h-0 bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4 overflow-auto">
   <div class="max-w-md w-full">
     <!-- Logo and Title -->
     <div class="text-center mb-8">

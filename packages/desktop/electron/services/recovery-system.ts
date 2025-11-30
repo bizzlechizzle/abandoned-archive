@@ -1,6 +1,7 @@
 import { app, dialog } from 'electron';
 import { promises as fs } from 'fs';
 import { existsSync } from 'fs';
+import { join } from 'path';
 import { getLogger } from './logger-service';
 import { getIntegrityChecker } from './integrity-checker';
 import { getBackupScheduler } from './backup-scheduler';
@@ -159,8 +160,8 @@ export class RecoverySystem {
    */
   private async createEmergencyBackup(): Promise<void> {
     try {
-      // Use project-relative path for development convenience
-      const emergencyDir = join(process.cwd(), 'data', 'emergency-backups');
+      // Use userData directory which is writable on all platforms
+      const emergencyDir = join(app.getPath('userData'), 'emergency-backups');
       if (!existsSync(emergencyDir)) {
         await fs.mkdir(emergencyDir, { recursive: true });
       }

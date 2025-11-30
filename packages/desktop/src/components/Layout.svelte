@@ -8,6 +8,9 @@
   let { children }: Props = $props();
 </script>
 
+<!-- macOS: Drag region at top of window for hiddenInset titlebar -->
+<div class="drag-region"></div>
+
 <div class="flex h-screen overflow-hidden">
   <Navigation />
 
@@ -15,3 +18,16 @@
     {@render children?.()}
   </main>
 </div>
+
+<style>
+  .drag-region {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 32px;
+    -webkit-app-region: drag;
+    z-index: 9999;
+    pointer-events: none;
+  }
+</style>

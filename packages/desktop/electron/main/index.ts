@@ -107,6 +107,9 @@ function createWindow() {
     minWidth: 800,
     minHeight: 600,
     title: 'AU Archive',
+    // macOS: Hide title bar, show traffic lights inline with content
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 12 },
     webPreferences: {
       // CRITICAL: Use .cjs extension for preload script
       // This ensures Node.js treats it as CommonJS regardless of "type": "module" in package.json
@@ -132,6 +135,7 @@ function createWindow() {
   });
 
   // SECURITY: Set Content Security Policy for production
+  // Allows map tile providers (ESRI, OSM, OpenTopo, Carto) and Nominatim geocoding
   if (!isDev) {
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
       callback({
@@ -141,9 +145,9 @@ function createWindow() {
             "default-src 'self'; " +
             "script-src 'self'; " +
             "style-src 'self' 'unsafe-inline'; " +
-            "img-src 'self' data: blob:; " +
+            "img-src 'self' data: blob: https://server.arcgisonline.com https://*.tile.openstreetmap.org https://*.tile.opentopomap.org https://*.basemaps.cartocdn.com; " +
             "font-src 'self'; " +
-            "connect-src 'self'; " +
+            "connect-src 'self' https://server.arcgisonline.com https://*.tile.openstreetmap.org https://*.tile.opentopomap.org https://*.basemaps.cartocdn.com https://nominatim.openstreetmap.org; " +
             "frame-ancestors 'none';"
           ],
         },

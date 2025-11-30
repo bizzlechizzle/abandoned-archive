@@ -30,6 +30,7 @@
   import Settings from './pages/Settings.svelte';
   import Search from './pages/Search.svelte';
   import WebBrowser from './pages/WebBrowser.svelte';
+  import Research from './pages/Research.svelte';
   import LocationDetail from './pages/LocationDetail.svelte';
   // SubLocationDetail merged into LocationDetail (Phase 3)
   import Setup from './pages/Setup.svelte';
@@ -228,6 +229,8 @@
         <Search />
       {:else if currentRoute.path === '/browser'}
         <WebBrowser />
+      {:else if currentRoute.path === '/research'}
+        <Research />
       {:else if currentRoute.path === '/settings'}
         <Settings />
       {:else if currentRoute.path === '/location/:id'}

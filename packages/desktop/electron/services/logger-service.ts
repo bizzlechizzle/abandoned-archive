@@ -47,8 +47,10 @@ export class Logger {
   }
 
   constructor() {
-    // Use project-relative path for development convenience
-    this.logDir = path.join(process.cwd(), 'data', 'logs');
+    // Always use userData for logs - it's a safe, writable location on all platforms
+    // In development, this is ~/Library/Application Support/Electron (or similar)
+    // In production, this is ~/Library/Application Support/Abandoned Archive
+    this.logDir = path.join(app.getPath('userData'), 'logs');
     this.currentLogFile = path.join(this.logDir, 'au-archive.log');
     this.ensureLogDirectory();
     // Don't rotate in constructor - config may not be loaded yet

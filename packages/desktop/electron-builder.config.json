@@ -1,14 +1,20 @@
 {
   "appId": "com.abandonedupstate.archive",
-  "productName": "AU Archive",
+  "productName": "Abandoned Archive",
+  "copyright": "Copyright © 2025",
   "directories": {
     "output": "release",
-    "buildResources": "../../resources"
+    "buildResources": "build"
   },
   "files": [
     "dist/**/*",
     "dist-electron/**/*",
     "package.json"
+  ],
+  "asarUnpack": [
+    "node_modules/@img/**/*",
+    "node_modules/sharp/**/*",
+    "node_modules/better-sqlite3/**/*"
   ],
   "extraResources": [
     {
@@ -18,9 +24,36 @@
     }
   ],
   "mac": {
-    "target": ["dmg", "zip"],
-    "category": "public.app-category.productivity",
-    "icon": "../../resources/icons/abandoned-upstate-icon.png"
+    "target": [
+      {
+        "target": "dmg",
+        "arch": ["arm64", "x64"]
+      }
+    ],
+    "category": "public.app-category.photography",
+    "icon": "build/icon.icns",
+    "hardenedRuntime": true,
+    "gatekeeperAssess": false,
+    "entitlements": "build/entitlements.mac.plist",
+    "entitlementsInherit": "build/entitlements.mac.plist"
+  },
+  "dmg": {
+    "contents": [
+      {
+        "x": 130,
+        "y": 220
+      },
+      {
+        "x": 410,
+        "y": 220,
+        "type": "link",
+        "path": "/Applications"
+      }
+    ],
+    "window": {
+      "width": 540,
+      "height": 380
+    }
   },
   "linux": {
     "target": ["AppImage", "deb"],
