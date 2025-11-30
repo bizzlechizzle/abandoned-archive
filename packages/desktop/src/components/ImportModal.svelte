@@ -18,6 +18,7 @@
   import AutocompleteInput from './AutocompleteInput.svelte';
   import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
   import { ACCESS_OPTIONS } from '../constants/location-enums';
+  import { getTypeForSubtype } from '../lib/type-hierarchy';
 
   // Form state
   let name = $state('');
@@ -37,7 +38,6 @@
 
   // P2: Database-driven lists
   let allLocations = $state<Location[]>([]);
-  let availableTypes = $state<string[]>([]);
   let allTypes = $state<string[]>([]);
 
   // Users for author dropdown
@@ -113,14 +113,11 @@
     return Array.from(types).sort();
   }
 
-  // DECISION-015/016: Get sub-type suggestions filtered by selected Type
+  // Get sub-type suggestions from all locations (database-wide)
   function getSubTypeSuggestions(): string[] {
     const subTypes = new Set<string>();
     allLocations.forEach(loc => {
-      // Only include sub-types from locations matching selected type
-      if ((!type || loc.type === type) && (loc as any).subtype) {
-        subTypes.add((loc as any).subtype);
-      }
+      if (loc.stype) subTypes.add(loc.stype);
     });
     return Array.from(subTypes).sort();
   }
@@ -138,7 +135,6 @@
       });
 
       allTypes = Array.from(types).sort();
-      availableTypes = allTypes;
 
       // Load users for author dropdown
       if (window.electronAPI?.users) {
@@ -157,38 +153,13 @@
     }
   }
 
-  // P2: Filter types by selected state
-  async function filterTypesByState(state: string) {
-    if (!state) {
-      availableTypes = allTypes;
-      return;
-    }
-
-    try {
-      const locations = await window.electronAPI.locations.findAll({ state });
-      const types = new Set<string>();
-      locations.forEach((loc: any) => {
-        if (loc.type) types.add(loc.type);
-      });
-
-      availableTypes = Array.from(types).sort();
-
-      // Reset type if not available in new state
-      if (type && !availableTypes.includes(type)) {
-        type = '';
-      }
-    } catch (err) {
-      console.error('Error filtering types:', err);
-      availableTypes = allTypes;
-    }
-  }
-
-  // Watch for state changes to filter types
+  // Auto-fill type when user enters a known sub-type
   $effect(() => {
-    if (selectedState) {
-      filterTypesByState(selectedState);
-    } else {
-      availableTypes = allTypes;
+    if (subType && !type) {
+      const matchedType = getTypeForSubtype(subType);
+      if (matchedType) {
+        type = matchedType;
+      }
     }
   });
 
@@ -553,14 +524,11 @@
             <AutocompleteInput
               value={type}
               onchange={(val) => type = val}
-              suggestions={availableTypes}
+              suggestions={allTypes}
               id="loc-type"
               placeholder="e.g., Factory, Hospital"
               class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition"
             />
-            {#if selectedState && availableTypes.length > 0}
-              <p class="text-xs text-gray-500 mt-1">Types in {selectedState}</p>
-            {/if}
           </div>
           <div>
             <label for="loc-subtype" class="block text-sm font-medium text-gray-700 mb-1.5">
