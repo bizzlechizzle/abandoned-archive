@@ -746,7 +746,6 @@
 
     // Campus map: Add sub-location markers
     if (campusMarkersLayer && campusSubLocations.length > 0) {
-      console.log('[Map] Adding', campusSubLocations.length, 'campus markers in updateClusters');
       campusMarkersLayer.clearLayers();
       const accentColor = '#b9975c';
 
@@ -803,7 +802,6 @@
       }
       if (campusChanged) {
         lastCampusHash = currentCampusHash;
-        console.log('[Map] Campus hash changed, updating markers');
       }
       import('leaflet').then((L) => updateClusters(L.default));
     }
@@ -900,14 +898,11 @@
 
           layerRef.addLayer(marker);
         });
-
-        console.log(`[Map] Rendered ${points.length} reference map points`);
       } else {
         // Remove layer from map if currently added
         if (mapRef.hasLayer(layerRef)) {
           mapRef.removeLayer(layerRef);
         }
-        console.log('[Map] Reference map layer hidden');
       }
     });
   });

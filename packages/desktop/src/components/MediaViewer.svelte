@@ -435,7 +435,6 @@
     const media = currentMedia;
 
     if (media?.type === 'video') {
-      console.log('[MediaViewer] Loading proxy for video:', media.hash?.slice(0, 8), 'at index:', _index);
       playOriginal = false; // Reset fallback
       loadVideoProxy(media);
     } else {

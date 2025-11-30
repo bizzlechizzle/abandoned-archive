@@ -461,9 +461,7 @@
       if (creatingFromRefPointId && window.electronAPI?.refMaps?.deletePoint) {
         try {
           await window.electronAPI.refMaps.deletePoint(creatingFromRefPointId);
-          console.log(`[ImportModal] Deleted ref point: ${creatingFromRefPointId}`);
         } catch (delErr) {
-          console.error('[ImportModal] Failed to delete ref point:', delErr);
           // Non-fatal - location was created successfully
         }
       }
@@ -516,9 +514,7 @@
       if (creatingFromRefPointId && window.electronAPI?.refMaps?.deletePoint) {
         try {
           await window.electronAPI.refMaps.deletePoint(creatingFromRefPointId);
-          console.log(`[ImportModal] Deleted ref point: ${creatingFromRefPointId}`);
         } catch (delErr) {
-          console.error('[ImportModal] Failed to delete ref point:', delErr);
           // Non-fatal - location was created successfully
         }
       }

@@ -126,7 +126,6 @@
     // Get paths extracted by preload's drop event handler
     // The preload captures drop events and extracts paths using webUtils.getPathForFile()
     const droppedPaths = window.getDroppedFilePaths?.() || [];
-    console.log('[Imports] Got dropped paths from preload:', droppedPaths);
 
     if (droppedPaths.length === 0) {
       importProgress = 'No valid files found in dropped items';
