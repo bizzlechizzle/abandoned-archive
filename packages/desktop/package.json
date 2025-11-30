@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@au-archive/core": "workspace:*",
+    "@aws-sdk/client-s3": "^3.940.0",
     "@skeletonlabs/skeleton": "^4.4.1",
     "@skeletonlabs/tw-plugin": "^0.4.1",
     "better-sqlite3": "^11.0.0",
