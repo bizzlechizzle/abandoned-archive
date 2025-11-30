@@ -36,6 +36,16 @@ export class GeocodingCache {
   constructor(private readonly db: Kysely<Database>) {}
 
   /**
+   * ADV-001/ADV-004: Escape LIKE pattern special characters
+   * Prevents SQL injection and unexpected wildcard matching
+   */
+  private escapeLikePattern(value: string): string {
+    // Escape LIKE wildcards: % and _
+    // Also escape the escape character itself if we use one
+    return value.replace(/[%_\\]/g, '\\$&');
+  }
+
+  /**
    * Generate a normalized cache key for deduplication
    */
   private generateCacheKey(queryType: 'forward' | 'reverse', query: string | { lat: number; lng: number }): string {
@@ -124,14 +134,17 @@ export class GeocodingCache {
   /**
    * Search the cache for matching locations
    * Useful for autocomplete and location suggestions
+   * ADV-001: Uses escaped LIKE pattern to prevent injection
    */
   async search(query: string, limit: number = 10): Promise<GeocodeCacheEntry[]> {
     const normalized = query.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+    // ADV-001: Escape LIKE wildcards before building pattern
+    const escapedPattern = this.escapeLikePattern(normalized);
 
     const results = await this.db
       .selectFrom('geocode_cache' as any)
       .selectAll()
-      .where('query_key', 'like', `%${normalized}%`)
+      .where('query_key', 'like', `%${escapedPattern}%`)
       .orderBy('hit_count', 'desc')
       .limit(limit)
       .execute();
@@ -141,12 +154,15 @@ export class GeocodingCache {
 
   /**
    * Find cached entries by city and state
+   * ADV-004: Uses escaped LIKE pattern to prevent wildcard injection
    */
   async findByLocation(city?: string, state?: string): Promise<GeocodeCacheEntry[]> {
     let query = this.db.selectFrom('geocode_cache' as any).selectAll();
 
     if (city) {
-      query = query.where('city', 'like', `%${city}%`);
+      // ADV-004: Escape LIKE wildcards in city parameter
+      const escapedCity = this.escapeLikePattern(city);
+      query = query.where('city', 'like', `%${escapedCity}%`);
     }
     if (state) {
       query = query.where('state', '=', state.toUpperCase());

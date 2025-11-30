@@ -15,6 +15,8 @@ import { AddressService } from '../services/address-service';
 import { GPSValidator } from '../services/gps-validator';
 // DECISION-012: Region auto-population service
 import { calculateRegionFields } from '../services/region-service';
+// ADV-005: Import logger for deletion audit
+import { getLogger } from '../services/logger-service';
 
 export class SQLiteLocationRepository implements LocationRepository {
   constructor(private readonly db: Kysely<Database>) {}
@@ -409,6 +411,34 @@ export class SQLiteLocationRepository implements LocationRepository {
   }
 
   async delete(id: string): Promise<void> {
+    // ADV-005: Log deletion for audit trail before cascade deletes occur
+    const logger = getLogger();
+    try {
+      const location = await this.findById(id);
+      if (location) {
+        // Get counts of associated media for audit log
+        const imgCount = await this.db.selectFrom('imgs').select((eb) => eb.fn.countAll().as('count')).where('locid', '=', id).executeTakeFirst();
+        const vidCount = await this.db.selectFrom('vids').select((eb) => eb.fn.countAll().as('count')).where('locid', '=', id).executeTakeFirst();
+        const docCount = await this.db.selectFrom('docs').select((eb) => eb.fn.countAll().as('count')).where('locid', '=', id).executeTakeFirst();
+
+        logger.info('LocationRepository', `DELETION AUDIT: Deleting location`, {
+          locid: id,
+          locnam: location.locnam,
+          state: location.address?.state,
+          type: location.type,
+          cascade_media: {
+            images: Number(imgCount?.count || 0),
+            videos: Number(vidCount?.count || 0),
+            documents: Number(docCount?.count || 0),
+          },
+          deleted_at: new Date().toISOString(),
+        });
+      }
+    } catch (auditError) {
+      // Don't block deletion if audit logging fails
+      console.warn('[LocationRepository] Audit logging failed:', auditError);
+    }
+
     await this.db
       .deleteFrom('locs')
       .where('locid', '=', id)
