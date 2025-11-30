@@ -491,6 +491,7 @@ export interface ElectronAPI {
 
   // Reference Maps - imported KML, GPX, GeoJSON, CSV files
   refMaps: {
+    selectFile: () => Promise<string | null>;
     import: (importedBy?: string) => Promise<{
       success: boolean;
       canceled?: boolean;
@@ -522,6 +523,33 @@ export interface ElectronAPI {
       limit?: number;
       state?: string | null;
     }) => Promise<RefMapMatch[]>;
+    // Phase 3: Deduplication on import
+    previewImport: (filePath: string) => Promise<ImportPreviewResult>;
+    importWithOptions: (filePath: string, options: {
+      skipDuplicates: boolean;
+      importedBy?: string;
+    }) => Promise<{
+      success: boolean;
+      error?: string;
+      skippedAll?: boolean;
+      message?: string;
+      map?: RefMap;
+      pointCount?: number;
+      skippedCount?: number;
+    }>;
+    // Phase 4: Purge catalogued points
+    findCataloguedPoints: () => Promise<{
+      success: boolean;
+      error?: string;
+      matches: CataloguedPointMatch[];
+      count: number;
+    }>;
+    purgeCataloguedPoints: () => Promise<{
+      success: boolean;
+      deleted: number;
+      error?: string;
+      message?: string;
+    }>;
   };
 
 }
@@ -565,6 +593,42 @@ export interface RefMapMatch {
   category: string | null;
   mapName: string;
   score: number;
+}
+
+// Phase 3: Import preview with deduplication
+export interface ImportPreviewResult {
+  success: boolean;
+  error?: string;
+  fileName?: string;
+  filePath?: string;
+  fileType?: string;
+  totalPoints?: number;
+  newPoints?: number;
+  cataloguedCount?: number;
+  referenceCount?: number;
+  cataloguedMatches?: DuplicateMatchPreview[];
+  referenceMatches?: DuplicateMatchPreview[];
+}
+
+export interface DuplicateMatchPreview {
+  type: 'catalogued' | 'reference';
+  newPointName: string;
+  existingName: string;
+  existingId: string;
+  nameSimilarity: number;
+  distanceMeters: number;
+  mapName?: string;
+}
+
+// Phase 4: Catalogued point match for purging
+export interface CataloguedPointMatch {
+  pointId: string;
+  pointName: string;
+  mapName: string;
+  matchedLocid: string;
+  matchedLocName: string;
+  nameSimilarity: number;
+  distanceMeters: number;
 }
 
 declare global {

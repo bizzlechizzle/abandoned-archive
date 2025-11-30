@@ -309,6 +309,7 @@ const api = {
 
   // Reference Maps - imported KML, GPX, GeoJSON, CSV files
   refMaps: {
+    selectFile: () => ipcRenderer.invoke("refMaps:selectFile"),
     import: (importedBy) => ipcRenderer.invoke("refMaps:import", importedBy),
     importFromPath: (filePath, importedBy) => ipcRenderer.invoke("refMaps:importFromPath", filePath, importedBy),
     findAll: () => ipcRenderer.invoke("refMaps:findAll"),
@@ -320,6 +321,12 @@ const api = {
     getSupportedExtensions: () => ipcRenderer.invoke("refMaps:getSupportedExtensions"),
     // Phase 2: Auto-matching for location creation
     findMatches: (query, options) => ipcRenderer.invoke("refMaps:findMatches", query, options),
+    // Phase 3: Deduplication on import
+    previewImport: (filePath) => ipcRenderer.invoke("refMaps:previewImport", filePath),
+    importWithOptions: (filePath, options) => ipcRenderer.invoke("refMaps:importWithOptions", filePath, options),
+    // Phase 4: Purge catalogued points
+    findCataloguedPoints: () => ipcRenderer.invoke("refMaps:findCataloguedPoints"),
+    purgeCataloguedPoints: () => ipcRenderer.invoke("refMaps:purgeCataloguedPoints"),
   },
 };
 

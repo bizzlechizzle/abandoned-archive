@@ -193,6 +193,8 @@
     refMapPoints?: RefMapPoint[];
     // Whether to show reference map layer
     showRefMapLayer?: boolean;
+    // Callback when user clicks "Create Location" on a reference point popup
+    onCreateFromRefPoint?: (data: { name: string; lat: number; lng: number; state: string | null }) => void;
   }
 
   let {
@@ -216,7 +218,8 @@
     campusSubLocations = [],
     onCampusSubLocationClick,
     refMapPoints = [],
-    showRefMapLayer = false
+    showRefMapLayer = false,
+    onCreateFromRefPoint
   }: Props = $props();
 
   /**
@@ -253,6 +256,8 @@
   let locationLookup = new Map<string, Location>();
   // BUG-V1 FIX: Store cleanup function for event delegation
   let viewDetailsClickHandler: ((e: MouseEvent) => void) | null = null;
+  // Event handler for "Create Location" button on reference point popups
+  let createFromRefClickHandler: ((e: MouseEvent) => void) | null = null;
 
   /**
    * Kanye9: Generate hash from location IDs and GPS coordinates
@@ -495,6 +500,23 @@
         }
       };
       document.addEventListener('click', viewDetailsClickHandler);
+
+      // Event delegation for "Create Location" button on reference point popups
+      createFromRefClickHandler = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        if (target.classList.contains('create-from-ref-btn')) {
+          e.preventDefault();
+          e.stopPropagation();
+          const name = target.getAttribute('data-name') || 'Unnamed Point';
+          const lat = parseFloat(target.getAttribute('data-lat') || '0');
+          const lng = parseFloat(target.getAttribute('data-lng') || '0');
+          const state = target.getAttribute('data-state') || null;
+          if (onCreateFromRefPoint && lat !== 0 && lng !== 0) {
+            onCreateFromRefPoint({ name, lat, lng, state: state || null });
+          }
+        }
+      };
+      document.addEventListener('click', createFromRefClickHandler);
 
       map.on('zoomend moveend', () => {
         updateClusters(L);
@@ -759,21 +781,27 @@
 
   // Toggle reference map layer based on showRefMapLayer prop
   $effect(() => {
-    if (!map || !refMapLayer) return;
+    // Track dependencies synchronously before async code
+    const shouldShow = showRefMapLayer;
+    const points = refMapPoints;
+    const mapRef = map;
+    const layerRef = refMapLayer;
+
+    if (!mapRef || !layerRef) return;
 
     import('leaflet').then((L) => {
       // Clear existing reference markers
-      refMapLayer!.clearLayers();
+      layerRef.clearLayers();
 
-      if (showRefMapLayer && refMapPoints.length > 0) {
+      if (shouldShow && points.length > 0) {
         // Add layer to map if not already added
-        if (!map!.hasLayer(refMapLayer!)) {
-          refMapLayer!.addTo(map!);
+        if (!mapRef.hasLayer(layerRef)) {
+          layerRef.addTo(mapRef);
         }
 
         // Create markers for each reference point
-        refMapPoints.forEach((point) => {
-          // Use a distinct color for reference map points (purple/magenta)
+        points.forEach((point) => {
+          // Use a distinct color for reference map points (teal)
           const refIcon = L.default.divIcon({
             html: `<div class="ref-map-marker"></div>`,
             className: 'ref-map-icon',
@@ -789,20 +817,32 @@
           const category = point.category ? `<br/><span style="color: #888; font-size: 10px;">${escapeHtml(point.category)}</span>` : '';
 
           marker.bindPopup(`
-            <div class="ref-map-popup" style="min-width: 150px;">
+            <div class="ref-map-popup" style="min-width: 180px;">
               <strong style="font-size: 13px;">${escapeHtml(name)}</strong>
               ${desc}
               ${category}
+              <button
+                class="create-from-ref-btn"
+                data-name="${escapeHtml(name)}"
+                data-lat="${point.lat}"
+                data-lng="${point.lng}"
+                data-state="${point.state || ''}"
+              >
+                + Create Location
+              </button>
             </div>
           `);
 
-          refMapLayer!.addLayer(marker);
+          layerRef.addLayer(marker);
         });
+
+        console.log(`[Map] Rendered ${points.length} reference map points`);
       } else {
         // Remove layer from map if currently added
-        if (map!.hasLayer(refMapLayer!)) {
-          map!.removeLayer(refMapLayer!);
+        if (mapRef.hasLayer(layerRef)) {
+          mapRef.removeLayer(layerRef);
         }
+        console.log('[Map] Reference map layer hidden');
       }
     });
   });
@@ -812,6 +852,11 @@
     if (viewDetailsClickHandler) {
       document.removeEventListener('click', viewDetailsClickHandler);
       viewDetailsClickHandler = null;
+    }
+    // Clean up reference point button listener
+    if (createFromRefClickHandler) {
+      document.removeEventListener('click', createFromRefClickHandler);
+      createFromRefClickHandler = null;
     }
     locationLookup.clear();
     if (map) {
@@ -871,8 +916,24 @@
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background-color: #9333ea; /* Purple for reference points */
+    background-color: #356C6E; /* Dark teal for reference points */
     border: 2px solid white;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+
+  :global(.create-from-ref-btn) {
+    margin-top: 8px;
+    padding: 4px 8px;
+    background: #b9975c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    width: 100%;
+  }
+
+  :global(.create-from-ref-btn:hover) {
+    background: #a68550;
   }
 </style>

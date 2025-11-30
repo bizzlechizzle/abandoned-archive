@@ -9,6 +9,7 @@ import { writable } from 'svelte/store';
 interface ImportModalState {
   isOpen: boolean;
   prefilledData?: {
+    name?: string;
     gps_lat?: number;
     gps_lng?: number;
     state?: string;

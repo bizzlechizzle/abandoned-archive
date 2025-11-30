@@ -184,6 +184,9 @@
   // Handle pre-filled data from store
   $effect(() => {
     if ($importModal.prefilledData) {
+      if ($importModal.prefilledData.name) {
+        name = $importModal.prefilledData.name;
+      }
       if ($importModal.prefilledData.state) {
         selectedState = $importModal.prefilledData.state;
       }
@@ -554,29 +557,29 @@
 
         <!-- Phase 2: Reference Map Match Suggestions -->
         {#if refMapMatches.length > 0 && !matchesDismissed}
-          <div class="bg-purple-50 border border-purple-200 rounded-lg p-3 animate-in fade-in duration-200">
+          <div class="bg-accent/10 border border-accent/30 rounded-lg p-3 animate-in fade-in duration-200">
             <div class="flex items-start gap-2">
-              <svg class="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg class="w-5 h-5 text-accent flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
               <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-purple-900">
+                <p class="text-sm font-medium text-foreground">
                   {refMapMatches.length === 1 ? 'Possible match found' : `${refMapMatches.length} possible matches found`}
                 </p>
                 <div class="mt-2 space-y-2">
                   {#each refMapMatches as match}
-                    <div class="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-purple-100">
+                    <div class="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-accent/20">
                       <div class="min-w-0 flex-1">
                         <p class="text-sm font-medium text-gray-900 truncate">{match.name}</p>
                         <p class="text-xs text-gray-500">
                           From: {match.mapName}
-                          <span class="ml-2 text-purple-600">{Math.round(match.score * 100)}% match</span>
+                          <span class="ml-2 text-accent">{Math.round(match.score * 100)}% match</span>
                         </p>
                       </div>
                       <button
                         onclick={() => applyMatchGps(match)}
-                        class="ml-3 px-3 py-1.5 bg-purple-600 text-white text-xs font-medium rounded hover:bg-purple-700 transition flex-shrink-0"
+                        class="ml-3 px-3 py-1.5 bg-accent text-white text-xs font-medium rounded hover:opacity-90 transition flex-shrink-0"
                       >
                         Apply GPS
                       </button>
@@ -585,7 +588,7 @@
                 </div>
                 <button
                   onclick={dismissMatches}
-                  class="mt-2 text-xs text-purple-600 hover:text-purple-800 transition"
+                  class="mt-2 text-xs text-accent hover:opacity-80 transition"
                 >
                   Dismiss suggestions
                 </button>

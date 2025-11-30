@@ -91,10 +91,43 @@
     importedBy: string | null;
   }
 
+  interface DuplicateMatchPreview {
+    type: 'catalogued' | 'reference';
+    newPointName: string;
+    existingName: string;
+    existingId: string;
+    nameSimilarity: number;
+    distanceMeters: number;
+    mapName?: string;
+  }
+
+  interface ImportPreview {
+    fileName: string;
+    filePath: string;
+    fileType: string;
+    totalPoints: number;
+    newPoints: number;
+    cataloguedCount: number;
+    referenceCount: number;
+    cataloguedMatches: DuplicateMatchPreview[];
+    referenceMatches: DuplicateMatchPreview[];
+  }
+
   let refMaps = $state<RefMap[]>([]);
   let refMapStats = $state<{ mapCount: number; pointCount: number } | null>(null);
   let importingRefMap = $state(false);
   let refMapMessage = $state('');
+
+  // Phase 3: Import preview modal state
+  let showImportPreview = $state(false);
+  let importPreview = $state<ImportPreview | null>(null);
+  let previewLoading = $state(false);
+  let skipDuplicates = $state(true);
+
+  // Phase 4: Purge catalogued points state
+  let cataloguedCount = $state(0);
+  let purgingPoints = $state(false);
+  let purgeMessage = $state('');
 
   async function loadSettings() {
     try {
@@ -771,13 +804,51 @@
       refMaps = await window.electronAPI.refMaps.findAll();
       const stats = await window.electronAPI.refMaps.getStats();
       refMapStats = { mapCount: stats.mapCount, pointCount: stats.pointCount };
+
+      // Load catalogued points count for purge button
+      const cataloguedResult = await window.electronAPI.refMaps.findCataloguedPoints();
+      if (cataloguedResult.success) {
+        cataloguedCount = cataloguedResult.count;
+      }
     } catch (error) {
       console.error('Failed to load reference maps:', error);
     }
   }
 
   /**
-   * Import a new reference map file
+   * Purge reference points that are already catalogued
+   */
+  async function purgeCataloguedPoints() {
+    if (!window.electronAPI?.refMaps?.purgeCataloguedPoints) {
+      purgeMessage = 'Purge not available';
+      return;
+    }
+
+    try {
+      purgingPoints = true;
+      purgeMessage = 'Purging catalogued points...';
+
+      const result = await window.electronAPI.refMaps.purgeCataloguedPoints();
+
+      if (!result.success) {
+        purgeMessage = result.error || 'Purge failed';
+      } else {
+        purgeMessage = result.message || `Purged ${result.deleted} points`;
+        await loadRefMaps(); // Refresh stats
+      }
+
+      setTimeout(() => { purgeMessage = ''; }, 5000);
+    } catch (error) {
+      console.error('Purge failed:', error);
+      purgeMessage = 'Purge failed';
+      setTimeout(() => { purgeMessage = ''; }, 5000);
+    } finally {
+      purgingPoints = false;
+    }
+  }
+
+  /**
+   * Import a new reference map file (with preview dialog)
    */
   async function importRefMap() {
     if (!window.electronAPI?.refMaps) {
@@ -789,21 +860,82 @@
       importingRefMap = true;
       refMapMessage = 'Selecting file...';
 
-      const result = await window.electronAPI.refMaps.import(currentUserId || undefined);
+      // Open file dialog
+      const result = await window.electronAPI.refMaps.selectFile();
 
-      if (result.canceled) {
+      if (!result) {
         refMapMessage = '';
+        importingRefMap = false;
         return;
       }
 
-      if (!result.success) {
-        refMapMessage = result.error || 'Import failed';
+      // Show preview with deduplication check
+      previewLoading = true;
+      refMapMessage = 'Analyzing file...';
+
+      const preview = await window.electronAPI.refMaps.previewImport(result);
+
+      if (!preview.success) {
+        refMapMessage = preview.error || 'Failed to analyze file';
+        previewLoading = false;
+        importingRefMap = false;
         setTimeout(() => { refMapMessage = ''; }, 5000);
         return;
       }
 
-      refMapMessage = `Imported "${result.map?.mapName}" with ${result.pointCount} points`;
-      await loadRefMaps();
+      // Show preview modal
+      importPreview = {
+        fileName: preview.fileName || '',
+        filePath: preview.filePath || '',
+        fileType: preview.fileType || '',
+        totalPoints: preview.totalPoints || 0,
+        newPoints: preview.newPoints || 0,
+        cataloguedCount: preview.cataloguedCount || 0,
+        referenceCount: preview.referenceCount || 0,
+        cataloguedMatches: preview.cataloguedMatches || [],
+        referenceMatches: preview.referenceMatches || [],
+      };
+      skipDuplicates = true;
+      showImportPreview = true;
+      previewLoading = false;
+      refMapMessage = '';
+    } catch (error) {
+      console.error('Reference map import failed:', error);
+      refMapMessage = 'Import failed';
+      setTimeout(() => { refMapMessage = ''; }, 5000);
+      previewLoading = false;
+    } finally {
+      importingRefMap = false;
+    }
+  }
+
+  /**
+   * Confirm import with deduplication options
+   */
+  async function confirmImport() {
+    if (!window.electronAPI?.refMaps || !importPreview) return;
+
+    try {
+      importingRefMap = true;
+      refMapMessage = 'Importing...';
+
+      const result = await window.electronAPI.refMaps.importWithOptions(importPreview.filePath, {
+        skipDuplicates,
+        importedBy: currentUserId || undefined,
+      });
+
+      showImportPreview = false;
+      importPreview = null;
+
+      if (result.skippedAll) {
+        refMapMessage = result.message || 'All points were duplicates';
+      } else if (!result.success) {
+        refMapMessage = result.error || 'Import failed';
+      } else {
+        const skippedMsg = result.skippedCount ? ` (${result.skippedCount} duplicates skipped)` : '';
+        refMapMessage = `Imported "${result.map?.mapName}" with ${result.pointCount} points${skippedMsg}`;
+        await loadRefMaps();
+      }
 
       setTimeout(() => { refMapMessage = ''; }, 5000);
     } catch (error) {
@@ -813,6 +945,15 @@
     } finally {
       importingRefMap = false;
     }
+  }
+
+  /**
+   * Cancel import preview
+   */
+  function cancelImportPreview() {
+    showImportPreview = false;
+    importPreview = null;
+    refMapMessage = '';
   }
 
   /**
@@ -1398,7 +1539,7 @@
           </div>
         {/if}
 
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 flex-wrap">
           <button
             onclick={importRefMap}
             disabled={importingRefMap}
@@ -1406,12 +1547,25 @@
           >
             {importingRefMap ? 'Importing...' : 'Import Map File'}
           </button>
+          {#if cataloguedCount > 0}
+            <button
+              onclick={purgeCataloguedPoints}
+              disabled={purgingPoints}
+              class="px-4 py-2 bg-gray-600 text-white rounded hover:opacity-90 transition disabled:opacity-50"
+              title="Remove reference points that are already in your locations database"
+            >
+              {purgingPoints ? 'Purging...' : `Purge ${cataloguedCount} Catalogued`}
+            </button>
+          {/if}
           {#if refMapMessage}
             <span class="text-sm text-gray-600">{refMapMessage}</span>
           {/if}
+          {#if purgeMessage}
+            <span class="text-sm text-gray-600">{purgeMessage}</span>
+          {/if}
         </div>
         <p class="text-xs text-gray-500 mt-2">
-          Imported points appear as a separate "Reference Maps" layer on the Atlas.
+          Imported points appear as a separate "Reference Maps" layer on the Atlas. Points already in your database are automatically hidden.
         </p>
       </div>
 
@@ -1429,3 +1583,154 @@
     </div>
   {/if}
 </div>
+
+<!-- Import Preview Modal -->
+{#if showImportPreview && importPreview}
+  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[80vh] flex flex-col">
+      <!-- Header -->
+      <div class="p-4 border-b">
+        <h2 class="text-lg font-semibold text-foreground">Import Reference Map</h2>
+        <p class="text-sm text-gray-500">{importPreview.fileName}</p>
+      </div>
+
+      <!-- Content -->
+      <div class="p-4 overflow-y-auto flex-1">
+        <!-- Summary Stats -->
+        <div class="bg-gray-50 rounded-lg p-4 mb-4">
+          <div class="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <span class="text-gray-500">Total points:</span>
+              <span class="font-medium ml-2">{importPreview.totalPoints}</span>
+            </div>
+            <div>
+              <span class="text-gray-500">New points:</span>
+              <span class="font-medium ml-2 text-green-600">{importPreview.newPoints}</span>
+            </div>
+            {#if importPreview.cataloguedCount > 0}
+              <div>
+                <span class="text-gray-500">Already catalogued:</span>
+                <span class="font-medium ml-2 text-amber-600">{importPreview.cataloguedCount}</span>
+              </div>
+            {/if}
+            {#if importPreview.referenceCount > 0}
+              <div>
+                <span class="text-gray-500">Duplicate refs:</span>
+                <span class="font-medium ml-2 text-blue-600">{importPreview.referenceCount}</span>
+              </div>
+            {/if}
+          </div>
+        </div>
+
+        <!-- Duplicate Details -->
+        {#if importPreview.cataloguedCount > 0 || importPreview.referenceCount > 0}
+          <div class="mb-4">
+            <h3 class="text-sm font-medium text-foreground mb-2">Duplicate Matches</h3>
+            <p class="text-xs text-gray-500 mb-3">
+              Points matching existing data (name similarity 85%+ within 500m)
+            </p>
+
+            <!-- Catalogued Matches -->
+            {#if importPreview.cataloguedMatches.length > 0}
+              <div class="mb-3">
+                <div class="text-xs font-medium text-amber-600 mb-1">
+                  Already in Locations ({importPreview.cataloguedCount})
+                </div>
+                <div class="space-y-1 max-h-32 overflow-y-auto">
+                  {#each importPreview.cataloguedMatches as match}
+                    <div class="text-xs bg-amber-50 border border-amber-100 rounded px-2 py-1">
+                      <span class="font-medium">{match.newPointName}</span>
+                      <span class="text-gray-500"> matches </span>
+                      <span class="font-medium">{match.existingName}</span>
+                      <span class="text-gray-400 ml-1">
+                        ({Math.round(match.nameSimilarity * 100)}%, {match.distanceMeters}m)
+                      </span>
+                    </div>
+                  {/each}
+                  {#if importPreview.cataloguedCount > 10}
+                    <div class="text-xs text-gray-500 italic">
+                      ...and {importPreview.cataloguedCount - 10} more
+                    </div>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+
+            <!-- Reference Matches -->
+            {#if importPreview.referenceMatches.length > 0}
+              <div>
+                <div class="text-xs font-medium text-blue-600 mb-1">
+                  Already in Reference Maps ({importPreview.referenceCount})
+                </div>
+                <div class="space-y-1 max-h-32 overflow-y-auto">
+                  {#each importPreview.referenceMatches as match}
+                    <div class="text-xs bg-blue-50 border border-blue-100 rounded px-2 py-1">
+                      <span class="font-medium">{match.newPointName}</span>
+                      <span class="text-gray-500"> matches </span>
+                      <span class="font-medium">{match.existingName}</span>
+                      {#if match.mapName}
+                        <span class="text-gray-400"> in {match.mapName}</span>
+                      {/if}
+                      <span class="text-gray-400 ml-1">
+                        ({Math.round(match.nameSimilarity * 100)}%, {match.distanceMeters}m)
+                      </span>
+                    </div>
+                  {/each}
+                  {#if importPreview.referenceCount > 10}
+                    <div class="text-xs text-gray-500 italic">
+                      ...and {importPreview.referenceCount - 10} more
+                    </div>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+          </div>
+
+          <!-- Skip Duplicates Option -->
+          <div class="border-t border-gray-200 pt-3">
+            <label class="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                bind:checked={skipDuplicates}
+                class="mt-0.5 h-4 w-4 rounded border-gray-300 text-accent focus:ring-accent"
+              />
+              <div>
+                <span class="text-sm text-foreground">Skip duplicates</span>
+                <p class="text-xs text-gray-500 mt-0.5">
+                  Only import {importPreview.newPoints} new points, skip {importPreview.cataloguedCount + importPreview.referenceCount} duplicates
+                </p>
+              </div>
+            </label>
+          </div>
+        {:else}
+          <div class="bg-green-50 border border-green-100 rounded-lg p-3 text-sm text-green-700">
+            All {importPreview.totalPoints} points are new. No duplicates found.
+          </div>
+        {/if}
+      </div>
+
+      <!-- Footer -->
+      <div class="p-4 border-t bg-gray-50 rounded-b-lg flex justify-end gap-3">
+        <button
+          onclick={cancelImportPreview}
+          class="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition"
+        >
+          Cancel
+        </button>
+        <button
+          onclick={confirmImport}
+          disabled={importingRefMap}
+          class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+        >
+          {#if importingRefMap}
+            Importing...
+          {:else if skipDuplicates && (importPreview.cataloguedCount + importPreview.referenceCount > 0)}
+            Import {importPreview.newPoints} Points
+          {:else}
+            Import All {importPreview.totalPoints} Points
+          {/if}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
