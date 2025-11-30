@@ -42,6 +42,7 @@ import { registerSubLocationHandlers } from './sublocations';
 import { registerResearchBrowserHandlers } from './research-browser';
 import { registerRefMapsHandlers } from './ref-maps';
 import { registerImportIntelligenceHandlers } from './import-intelligence';
+import { registerStorageHandlers } from './storage';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
@@ -96,6 +97,9 @@ export function registerIpcHandlers() {
 
   // Import intelligence (smart location matching)
   registerImportIntelligenceHandlers(db);
+
+  // Storage monitoring
+  registerStorageHandlers();
 
   console.log('IPC handlers registered (modular)');
 }

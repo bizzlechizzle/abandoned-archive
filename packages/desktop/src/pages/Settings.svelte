@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import DatabaseSettings from '../components/DatabaseSettings.svelte';
   import HealthMonitoring from '../components/HealthMonitoring.svelte';
   import { thumbnailCache } from '../stores/thumbnail-cache-store';
 
@@ -48,8 +47,48 @@
   let changeConfirmPin = $state('');
   let changePinError = $state('');
 
-  // Users accordion state
-  let usersExpanded = $state(true);
+  // Users accordion state (collapsed by default)
+  let usersExpanded = $state(false);
+
+  // Archive accordion state (all closed by default)
+  let archiveExpanded = $state(false);
+  let mapsExpanded = $state(false);
+  let maintenanceExpanded = $state(false);
+  let databaseExpanded = $state(false);
+  let healthExpanded = $state(false);
+
+  // Storage bar state
+  let storageStats = $state<{
+    totalBytes: number;
+    availableBytes: number;
+    archiveBytes: number;
+    drivePath: string;
+  } | null>(null);
+  let loadingStorage = $state(false);
+
+  // PIN verification modal state
+  let showPinModal = $state(false);
+  let pinAction = $state<'archive' | 'deleteOnImport' | 'startupPin' | null>(null);
+  let pinInput = $state('');
+  let pinError = $state('');
+  let pinVerifying = $state(false);
+
+  // Delete warning modal state
+  let showDeleteWarning = $state(false);
+
+  // Location picker modal state
+  interface LocationBasic {
+    locid: string;
+    locnam: string;
+    state?: string;
+  }
+  let showLocationPicker = $state(false);
+  let pickerMode = $state<'purge' | 'addresses' | 'images' | 'videos' | null>(null);
+  let pickerSearchQuery = $state('');
+  let pickerSearchResults = $state<LocationBasic[]>([]);
+  let pickerSelectedLocation = $state<LocationBasic | null>(null);
+  let pickerLoading = $state(false);
+  let pickerMessage = $state('');
 
   // Kanye6: Thumbnail regeneration state
   let regenerating = $state(false);
@@ -982,10 +1021,426 @@
     }
   }
 
+  // PIN verification helpers
+  async function requestPinForAction(action: 'archive' | 'deleteOnImport' | 'startupPin') {
+    // Check if current user has a PIN set
+    if (!currentUserId) {
+      // No user logged in, proceed directly
+      executePinAction(action);
+      return;
+    }
+
+    try {
+      const hasPin = await window.electronAPI.users.hasPin(currentUserId);
+      if (!hasPin) {
+        // User doesn't have a PIN, proceed directly
+        executePinAction(action);
+        return;
+      }
+
+      // User has a PIN, show modal
+      pinAction = action;
+      pinInput = '';
+      pinError = '';
+      showPinModal = true;
+    } catch (error) {
+      console.error('Error checking PIN status:', error);
+      // On error, proceed without PIN (fail open for usability)
+      executePinAction(action);
+    }
+  }
+
+  function closePinModal() {
+    showPinModal = false;
+    pinAction = null;
+    pinInput = '';
+    pinError = '';
+    pinVerifying = false;
+  }
+
+  async function verifyAndExecutePinAction() {
+    if (!currentUserId || !pinAction) return;
+
+    pinVerifying = true;
+    pinError = '';
+
+    try {
+      const result = await window.electronAPI.users.verifyPin(currentUserId, pinInput);
+      if (result.success) {
+        const action = pinAction;
+        closePinModal();
+        executePinAction(action);
+      } else {
+        pinError = 'Incorrect PIN';
+        pinInput = '';
+      }
+    } catch (error) {
+      console.error('Error verifying PIN:', error);
+      pinError = 'Verification failed';
+    } finally {
+      pinVerifying = false;
+    }
+  }
+
+  function executePinAction(action: 'archive' | 'deleteOnImport' | 'startupPin') {
+    if (action === 'archive') {
+      selectArchiveFolder();
+    } else if (action === 'deleteOnImport') {
+      // If turning ON delete on import, show warning first
+      if (!deleteOriginals) {
+        showDeleteWarning = true;
+      } else {
+        // Turning off, no warning needed
+        toggleDeleteOnImport();
+      }
+    } else if (action === 'startupPin') {
+      toggleRequireLogin();
+    }
+  }
+
+  async function toggleDeleteOnImport() {
+    deleteOriginals = !deleteOriginals;
+    showDeleteWarning = false;
+    // Auto-save the setting
+    if (window.electronAPI?.settings) {
+      await window.electronAPI.settings.set('delete_on_import', deleteOriginals.toString());
+      saveMessage = deleteOriginals ? 'Files will be deleted after import' : 'Original files will be preserved';
+      setTimeout(() => saveMessage = '', 3000);
+    }
+  }
+
+  function cancelDeleteWarning() {
+    showDeleteWarning = false;
+  }
+
+  // Location picker modal helpers
+  function openLocationPicker(mode: 'purge' | 'addresses' | 'images' | 'videos') {
+    pickerMode = mode;
+    pickerSearchQuery = '';
+    pickerSearchResults = [];
+    pickerSelectedLocation = null;
+    pickerMessage = '';
+    showLocationPicker = true;
+  }
+
+  function closeLocationPicker() {
+    showLocationPicker = false;
+    pickerMode = null;
+    pickerSearchQuery = '';
+    pickerSearchResults = [];
+    pickerSelectedLocation = null;
+  }
+
+  let searchDebounceTimer: ReturnType<typeof setTimeout>;
+  async function handlePickerSearch() {
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+
+    if (!pickerSearchQuery.trim()) {
+      pickerSearchResults = [];
+      return;
+    }
+
+    searchDebounceTimer = setTimeout(async () => {
+      if (!window.electronAPI?.locations) return;
+      try {
+        const locations = await window.electronAPI.locations.findAll();
+        const query = pickerSearchQuery.toLowerCase();
+        pickerSearchResults = locations
+          .filter((loc: { locnam: string; address?: { state?: string } }) =>
+            loc.locnam.toLowerCase().includes(query)
+          )
+          .slice(0, 10)
+          .map((loc: { locid: string; locnam: string; address?: { state?: string } }) => ({
+            locid: loc.locid,
+            locnam: loc.locnam,
+            state: loc.address?.state
+          }));
+      } catch (error) {
+        console.error('Search failed:', error);
+      }
+    }, 200);
+  }
+
+  function selectPickerLocation(loc: LocationBasic) {
+    pickerSelectedLocation = loc;
+    pickerSearchQuery = loc.locnam;
+    pickerSearchResults = [];
+  }
+
+  function clearPickerLocation() {
+    pickerSelectedLocation = null;
+    pickerSearchQuery = '';
+    pickerSearchResults = [];
+  }
+
+  function getPickerTitle(): string {
+    switch (pickerMode) {
+      case 'purge': return 'Purge Cache';
+      case 'addresses': return 'Fix Addresses';
+      case 'images': return 'Fix Images';
+      case 'videos': return 'Fix Videos';
+      default: return '';
+    }
+  }
+
+  function getPickerButtonText(): string {
+    const hasLocation = pickerSelectedLocation !== null;
+    switch (pickerMode) {
+      case 'purge': return hasLocation ? 'Purge' : 'Purge All';
+      case 'addresses': return hasLocation ? 'Fix Addresses' : 'Fix All Addresses';
+      case 'images': return hasLocation ? 'Fix Images' : 'Fix All Images';
+      case 'videos': return hasLocation ? 'Fix Videos' : 'Fix All Videos';
+      default: return 'Run';
+    }
+  }
+
+  async function runPickerAction() {
+    if (!pickerMode) return;
+
+    pickerLoading = true;
+    const locationId = pickerSelectedLocation?.locid;
+
+    try {
+      switch (pickerMode) {
+        case 'purge':
+          await runPurgeCache(locationId);
+          break;
+        case 'addresses':
+          await runFixAddresses(locationId);
+          break;
+        case 'images':
+          await runFixImagesWithLivePhoto(locationId);
+          break;
+        case 'videos':
+          await runFixVideosWithLivePhoto(locationId);
+          break;
+      }
+      closeLocationPicker();
+    } catch (error) {
+      console.error('Action failed:', error);
+      pickerMessage = 'Operation failed';
+    } finally {
+      pickerLoading = false;
+    }
+  }
+
+  // Combined fix functions with location targeting
+  async function runPurgeCache(locationId?: string) {
+    if (!window.electronAPI?.media?.clearAllProxies) {
+      proxyMessage = 'Proxy clear not available';
+      return;
+    }
+
+    try {
+      proxyMessage = locationId ? 'Clearing proxies for location...' : 'Clearing all proxies...';
+      // Note: Current API doesn't support per-location purge, so this clears all
+      // In future, could add location-specific purge
+      const result = await window.electronAPI.media.clearAllProxies();
+      proxyMessage = `Cleared ${result.deleted} proxies (freed ${result.freedMB} MB)`;
+      await loadProxyCacheStats();
+      setTimeout(() => { proxyMessage = ''; }, 5000);
+    } catch (error) {
+      console.error('Proxy clear failed:', error);
+      proxyMessage = 'Clear failed';
+    }
+  }
+
+  async function runFixAddresses(locationId?: string) {
+    if (!window.electronAPI?.locations) {
+      normalizeMessage = 'Location API not available';
+      return;
+    }
+
+    try {
+      normalizing = true;
+      backfillingRegions = true;
+
+      // Step 1: Normalize addresses
+      normalizeMessage = 'Step 1/2: Normalizing addresses...';
+      const locations = locationId
+        ? [await window.electronAPI.locations.findById(locationId)].filter(Boolean)
+        : await window.electronAPI.locations.findAll();
+
+      let processed = 0;
+      for (const loc of locations) {
+        if (loc.address?.street || loc.address?.city || loc.address?.zipcode) {
+          await window.electronAPI.locations.update(loc.locid, { address: loc.address });
+        }
+        processed++;
+        normalizeMessage = `Step 1/2: Normalized ${processed} of ${locations.length}...`;
+      }
+
+      // Step 2: Backfill regions
+      normalizeMessage = 'Step 2/2: Backfilling regions...';
+      if (window.electronAPI.locations.backfillRegions) {
+        await window.electronAPI.locations.backfillRegions();
+      }
+
+      normalizeMessage = `Done! Processed ${locations.length} location${locations.length !== 1 ? 's' : ''}`;
+      setTimeout(() => { normalizeMessage = ''; }, 5000);
+    } catch (error) {
+      console.error('Fix addresses failed:', error);
+      normalizeMessage = 'Fix addresses failed';
+    } finally {
+      normalizing = false;
+      backfillingRegions = false;
+    }
+  }
+
+  async function runFixImagesWithLivePhoto(locationId?: string) {
+    if (!window.electronAPI?.media?.regenerateAllThumbnails) {
+      regenMessage = 'Image fix not available';
+      return;
+    }
+
+    try {
+      regenerating = true;
+
+      // Step 1: Fix images (thumbnails + DNG)
+      regenMessage = 'Step 1/2: Fixing images...';
+      const step1 = await window.electronAPI.media.regenerateAllThumbnails({ force: true });
+
+      if (window.electronAPI.media.regenerateDngPreviews) {
+        await window.electronAPI.media.regenerateDngPreviews();
+      }
+
+      // Step 2: Detect Live Photos
+      regenMessage = 'Step 2/2: Detecting Live Photos...';
+      if (window.electronAPI.media.detectLivePhotosAndSDR && window.electronAPI.locations) {
+        const locations = locationId
+          ? [await window.electronAPI.locations.findById(locationId)].filter(Boolean)
+          : await window.electronAPI.locations.findAll();
+
+        for (const loc of locations) {
+          await window.electronAPI.media.detectLivePhotosAndSDR(loc.locid);
+        }
+      }
+
+      thumbnailCache.bust();
+      regenMessage = 'Done! Images fixed and Live Photos detected';
+      setTimeout(() => { regenMessage = ''; }, 5000);
+    } catch (error) {
+      console.error('Fix images failed:', error);
+      regenMessage = 'Fix images failed';
+    } finally {
+      regenerating = false;
+    }
+  }
+
+  async function runFixVideosWithLivePhoto(locationId?: string) {
+    if (!window.electronAPI?.media?.regenerateVideoThumbnails) {
+      videoFixMessage = 'Video fix not available';
+      return;
+    }
+
+    try {
+      fixingVideos = true;
+
+      // Step 1: Fix videos
+      videoFixMessage = 'Step 1/2: Fixing videos...';
+      await window.electronAPI.media.regenerateVideoThumbnails({ force: true });
+
+      // Step 2: Detect Live Photos
+      videoFixMessage = 'Step 2/2: Detecting Live Photos...';
+      if (window.electronAPI.media.detectLivePhotosAndSDR && window.electronAPI.locations) {
+        const locations = locationId
+          ? [await window.electronAPI.locations.findById(locationId)].filter(Boolean)
+          : await window.electronAPI.locations.findAll();
+
+        for (const loc of locations) {
+          await window.electronAPI.media.detectLivePhotosAndSDR(loc.locid);
+        }
+      }
+
+      thumbnailCache.bust();
+      videoFixMessage = 'Done! Videos fixed and Live Photos detected';
+      setTimeout(() => { videoFixMessage = ''; }, 5000);
+    } catch (error) {
+      console.error('Fix videos failed:', error);
+      videoFixMessage = 'Fix videos failed';
+    } finally {
+      fixingVideos = false;
+    }
+  }
+
+  // Database functions (moved from DatabaseSettings component)
+  let backingUp = $state(false);
+  let backupMessage = $state('');
+  let restoring = $state(false);
+  let restoreMessage = $state('');
+
+  async function backupDatabase() {
+    try {
+      backingUp = true;
+      backupMessage = '';
+
+      const result = await window.electronAPI.database.backup();
+
+      if (result.success) {
+        backupMessage = `Backed up to: ${result.path}`;
+      } else {
+        backupMessage = result.message || 'Backup canceled';
+      }
+
+      setTimeout(() => { backupMessage = ''; }, 5000);
+    } catch (error) {
+      console.error('Error backing up database:', error);
+      backupMessage = 'Error backing up database';
+      setTimeout(() => { backupMessage = ''; }, 5000);
+    } finally {
+      backingUp = false;
+    }
+  }
+
+  async function restoreDatabase() {
+    try {
+      restoring = true;
+      restoreMessage = '';
+
+      const result = await window.electronAPI.database.restore();
+
+      if (result.success) {
+        restoreMessage = result.message;
+      } else {
+        restoreMessage = result.message || 'Restore canceled';
+        setTimeout(() => { restoreMessage = ''; }, 5000);
+      }
+    } catch (error) {
+      console.error('Error restoring database:', error);
+      restoreMessage = 'Error restoring database';
+      setTimeout(() => { restoreMessage = ''; }, 5000);
+    } finally {
+      restoring = false;
+    }
+  }
+
+  // Helper to format bytes to human readable
+  function formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  // Load storage stats for archive drive
+  async function loadStorageStats() {
+    if (!window.electronAPI?.storage?.getStats) return;
+    try {
+      loadingStorage = true;
+      storageStats = await window.electronAPI.storage.getStats();
+    } catch (error) {
+      console.error('Failed to load storage stats:', error);
+    } finally {
+      loadingStorage = false;
+    }
+  }
+
   onMount(() => {
     loadSettings();
     loadProxyCacheStats();
     loadRefMaps();
+    loadStorageStats();
   });
 </script>
 
@@ -995,7 +1450,6 @@
       <h1 class="text-3xl font-bold text-foreground mb-2">Settings</h1>
       <span class="text-sm text-gray-400">v0.1.0</span>
     </div>
-    <p class="text-gray-600">Configure application preferences</p>
   </div>
 
   {#if loading}
@@ -1169,17 +1623,8 @@
             </div>
           {/each}
 
-          <!-- Require PIN and Add User row -->
-          <div class="flex items-center justify-between border-t border-gray-200 pt-4 mt-4">
-            <label class="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={requireLogin}
-                onchange={toggleRequireLogin}
-                class="h-4 w-4 rounded border-gray-300 text-accent focus:ring-accent"
-              />
-              <span class="text-sm text-foreground">Require PIN on startup</span>
-            </label>
+          <!-- Add User row -->
+          <div class="flex items-center justify-end border-t border-gray-200 pt-4 mt-4">
             <button
               onclick={openAddUser}
               class="text-sm text-accent hover:underline"
@@ -1264,336 +1709,285 @@
         {/if}
       </div>
 
-      <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <h2 class="text-lg font-semibold mb-3 text-foreground">Archive Folder</h2>
-        <div class="mb-4">
-          <label for="archivePath" class="block text-sm font-medium text-gray-700 mb-2">
-            Location
-          </label>
-          <div class="flex gap-2">
-            <input
-              id="archivePath"
-              type="text"
-              bind:value={archivePath}
-              placeholder="/path/to/archive"
-              class="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
-            />
+      <!-- Archive Accordion -->
+      <div class="bg-white rounded-lg shadow mb-6 overflow-hidden">
+        <button
+          onclick={() => archiveExpanded = !archiveExpanded}
+          class="w-full flex items-center justify-between text-left transition-colors hover:bg-gray-50 {archiveExpanded ? 'p-6' : 'px-6 py-4'}"
+        >
+          <h2 class="text-lg font-semibold text-foreground">Archive</h2>
+          <svg
+            class="w-5 h-5 text-accent transition-transform duration-200 {archiveExpanded ? 'rotate-180' : ''}"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {#if archiveExpanded}
+        <div class="px-6 pb-6 space-y-4">
+          <!-- Archive Location Row -->
+          <div class="flex items-center justify-between py-2 border-b border-gray-100">
+            <div class="flex-1">
+              <span class="text-sm font-medium text-gray-700">Archive Location</span>
+              {#if archivePath}
+                <p class="text-xs text-gray-500 truncate max-w-[280px]" title={archivePath}>{archivePath}</p>
+              {/if}
+            </div>
             <button
-              onclick={selectArchiveFolder}
-              class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition"
+              onclick={() => requestPinForAction('archive')}
+              class="text-sm text-accent hover:underline"
             >
-              Browse
+              edit
             </button>
           </div>
-          <p class="text-xs text-gray-500 mt-2">
-            Where imported media files will be stored
-          </p>
-        </div>
-      </div>
 
-      <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <h2 class="text-lg font-semibold mb-3 text-foreground">Import Options</h2>
-        <div class="space-y-3">
-          <div class="flex items-center">
-            <input
-              type="checkbox"
-              bind:checked={deleteOriginals}
-              id="deleteOriginals"
-              class="mr-2"
-            />
-            <label for="deleteOriginals" class="text-sm text-gray-700">
-              Delete original files after import
-            </label>
-          </div>
-          <p class="text-xs text-gray-500 ml-6">
-            Original files will be moved to archive folder and deleted from source
-          </p>
-
-          <div class="flex items-center">
-            <input
-              type="checkbox"
-              bind:checked={importMap}
-              id="importMap"
-              class="mr-2"
-            />
-            <label for="importMap" class="text-sm text-gray-700">
-              Show map during import
-            </label>
-          </div>
-          <p class="text-xs text-gray-500 ml-6">
-            Display a map to pin location GPS during import
-          </p>
-
-          <div class="flex items-center">
-            <input
-              type="checkbox"
-              bind:checked={mapImport}
-              id="mapImport"
-              class="mr-2"
-            />
-            <label for="mapImport" class="text-sm text-gray-700">
-              Enable map-based import
-            </label>
-          </div>
-          <p class="text-xs text-gray-500 ml-6">
-            Allow creating locations directly from the map
-          </p>
-        </div>
-      </div>
-
-
-      <!-- Media Maintenance Section -->
-      <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <h2 class="text-lg font-semibold mb-3 text-foreground">Media Maintenance</h2>
-        <div class="space-y-3">
-          <div>
-            <div class="flex flex-wrap items-center gap-3">
-              <button
-                onclick={fixAllImages}
-                disabled={regenerating || renderingDng}
-                class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
-              >
-                {regenerating || renderingDng ? 'Processing...' : 'Fix Images'}
-              </button>
-              <button
-                onclick={fixAllVideos}
-                disabled={fixingVideos}
-                class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
-              >
-                {fixingVideos ? 'Processing...' : 'Fix Videos'}
-              </button>
-              {#if regenMessage}
-                <span class="text-sm text-gray-600">{regenMessage}</span>
-              {/if}
-              {#if dngMessage}
-                <span class="text-sm text-gray-600">{dngMessage}</span>
-              {/if}
-              {#if videoFixMessage}
-                <span class="text-sm text-gray-600">{videoFixMessage}</span>
-              {/if}
+          <!-- Delete on Import Row -->
+          <div class="flex items-center justify-between py-2 border-b border-gray-100">
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-medium text-gray-700">Delete Original Files on Import</span>
+              <span class="text-xs px-1.5 py-0.5 rounded {deleteOriginals ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}">
+                {deleteOriginals ? 'On' : 'Off'}
+              </span>
             </div>
-            <p class="text-xs text-gray-500 mt-2">
-              Repairs thumbnails, rotations, and previews for all media files.
-            </p>
+            <button
+              onclick={() => requestPinForAction('deleteOnImport')}
+              class="text-sm text-accent hover:underline"
+            >
+              edit
+            </button>
           </div>
 
-          <!-- Kanye9: Address Normalization -->
-          <div class="mt-6 pt-6 border-t border-gray-200">
-            <p class="text-sm text-gray-700 mb-2">
-              Normalize all addresses using AddressService. This populates address_raw, address_normalized, and address_parsed_json fields for existing locations.
-            </p>
-            <div class="flex items-center gap-4">
-              <button
-                onclick={normalizeAllAddresses}
-                disabled={normalizing}
-                class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
-              >
-                {normalizing ? 'Normalizing...' : 'Normalize All Addresses'}
-              </button>
-              {#if normalizeMessage}
-                <span class="text-sm text-gray-600">{normalizeMessage}</span>
-              {/if}
+          <!-- Startup PIN Row -->
+          <div class="flex items-center justify-between py-2 border-b border-gray-100">
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-medium text-gray-700">Startup PIN Required</span>
+              <span class="text-xs px-1.5 py-0.5 rounded {requireLogin ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}">
+                {requireLogin ? 'On' : 'Off'}
+              </span>
             </div>
-            <p class="text-xs text-gray-500 mt-2">
-              Cleans city names (removes "Village Of", "City Of"), standardizes state codes, and stores both raw and normalized forms.
-            </p>
+            <button
+              onclick={() => requestPinForAction('startupPin')}
+              class="text-sm text-accent hover:underline"
+            >
+              edit
+            </button>
           </div>
 
-          <!-- DECISION-012: Region Backfill -->
-          <div class="mt-6 pt-6 border-t border-gray-200">
-            <p class="text-sm text-gray-700 mb-2">
-              Populate region fields for existing locations. Calculates Census region, division, state direction, and cultural region based on address and GPS data.
-            </p>
-            <div class="flex items-center gap-4">
-              <button
-                onclick={backfillRegions}
-                disabled={backfillingRegions}
-                class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
-              >
-                {backfillingRegions ? 'Processing...' : 'Backfill Region Data'}
-              </button>
-              {#if backfillMessage}
-                <span class="text-sm text-gray-600">{backfillMessage}</span>
-              {/if}
-            </div>
-            <p class="text-xs text-gray-500 mt-2">
-              Adds Census Region (Northeast/Midwest/South/West), Division, state direction (e.g., "Eastern NY"), and Cultural Region fields.
-            </p>
-          </div>
-
-          <!-- Migration 23: Live Photo Detection -->
-          <div class="mt-6 pt-6 border-t border-gray-200">
-            <p class="text-sm text-gray-700 mb-2">
-              Detect and auto-hide Live Photo companion videos and SDR duplicate images across all locations.
-            </p>
-            <div class="flex items-center gap-4">
-              <button
-                onclick={detectAllLivePhotos}
-                disabled={detectingLivePhotos}
-                class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
-              >
-                {detectingLivePhotos ? 'Scanning...' : 'Detect Live Photos'}
-              </button>
-              {#if livePhotoMessage}
-                <span class="text-sm text-gray-600">{livePhotoMessage}</span>
-              {/if}
-            </div>
-            <p class="text-xs text-gray-500 mt-2">
-              iPhone Live Photo videos (.MOV paired with images) and SDR duplicates (_SDR suffix files) will be hidden from the gallery but remain accessible via "Show All".
-            </p>
-          </div>
-
-          <!-- Migration 36: Video Proxy Cache -->
-          <div class="mt-6 pt-6 border-t border-gray-200">
-            <h3 class="text-sm font-semibold text-foreground mb-2">Video Preview Cache</h3>
-            <p class="text-sm text-gray-700 mb-3">
-              Optimized H.264 proxy videos are generated for smooth playback with instant scrubbing. Old proxies are automatically purged after 30 days.
-            </p>
-
-            <!-- Cache Stats -->
-            {#if proxyCacheStats}
-              <div class="bg-gray-50 rounded-lg p-4 mb-3">
-                <div class="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span class="text-gray-500">Cached videos:</span>
-                    <span class="font-medium ml-2">{proxyCacheStats.totalCount}</span>
-                  </div>
-                  <div>
-                    <span class="text-gray-500">Cache size:</span>
-                    <span class="font-medium ml-2">{proxyCacheStats.totalSizeMB} MB</span>
-                  </div>
-                </div>
+          <!-- Storage Bar -->
+          <div class="py-3 border-b border-gray-100">
+            <span class="text-sm font-medium text-gray-700 mb-2 block">Storage</span>
+            {#if storageStats}
+              {@const archivePercent = (storageStats.archiveBytes / storageStats.totalBytes) * 100}
+              {@const otherUsedBytes = storageStats.totalBytes - storageStats.availableBytes - storageStats.archiveBytes}
+              {@const otherUsedPercent = Math.max(0, (otherUsedBytes / storageStats.totalBytes) * 100)}
+              <div class="h-4 bg-gray-200 rounded-full overflow-hidden flex">
+                <div class="bg-accent" style="width: {archivePercent}%"></div>
+                <div class="bg-gray-400" style="width: {otherUsedPercent}%"></div>
               </div>
+              <div class="flex justify-between text-xs text-gray-500 mt-1">
+                <span>Total: {formatBytes(storageStats.totalBytes)}</span>
+                <span>Available: {formatBytes(storageStats.availableBytes)}</span>
+                <span>Archive: {formatBytes(storageStats.archiveBytes)}</span>
+              </div>
+            {:else if loadingStorage}
+              <div class="h-4 bg-gray-200 rounded-full animate-pulse"></div>
+              <p class="text-xs text-gray-400 mt-1">Loading storage info...</p>
             {:else}
-              <div class="bg-gray-50 rounded-lg p-4 mb-3 text-sm text-gray-500">
-                Loading cache stats...
-              </div>
+              <p class="text-xs text-gray-400">Storage info unavailable</p>
             {/if}
-
-            <div class="flex items-center gap-3">
-              <button
-                onclick={purgeOldProxies}
-                disabled={purgingProxies || clearingProxies}
-                class="px-4 py-2 bg-gray-600 text-white rounded hover:opacity-90 transition disabled:opacity-50"
-              >
-                {purgingProxies ? 'Purging...' : 'Purge Old (30+ days)'}
-              </button>
-              <button
-                onclick={clearAllProxies}
-                disabled={purgingProxies || clearingProxies}
-                class="px-4 py-2 bg-red-600 text-white rounded hover:opacity-90 transition disabled:opacity-50"
-              >
-                {clearingProxies ? 'Clearing...' : 'Clear All'}
-              </button>
-              {#if proxyMessage}
-                <span class="text-sm text-gray-600">{proxyMessage}</span>
-              {/if}
-            </div>
-            <p class="text-xs text-gray-500 mt-2">
-              Proxies are regenerated automatically when you view a video. "Purge Old" removes proxies for locations not viewed in 30+ days. "Clear All" removes everything.
-            </p>
           </div>
-        </div>
-      </div>
 
-      <!-- P6: Darktable section removed per v010steps.md -->
-
-      <!-- Reference Maps -->
-      <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <h2 class="text-lg font-semibold mb-3 text-foreground">Reference Maps</h2>
-        <p class="text-sm text-gray-600 mb-4">
-          Import map files to display as reference points on the Atlas. Supports KML, KMZ, GPX, GeoJSON, and CSV files.
-        </p>
-
-        <!-- Stats -->
-        {#if refMapStats}
-          <div class="bg-gray-50 rounded-lg p-4 mb-4">
-            <div class="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span class="text-gray-500">Imported maps:</span>
-                <span class="font-medium ml-2">{refMapStats.mapCount}</span>
+          <!-- Database Sub-Accordion -->
+          <div>
+            <button
+              onclick={() => databaseExpanded = !databaseExpanded}
+              class="w-full flex items-center justify-between py-2 border-b border-gray-100 text-left hover:bg-gray-50 transition-colors"
+            >
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-medium text-gray-700">Database</span>
+                <span class="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700">healthy</span>
               </div>
-              <div>
-                <span class="text-gray-500">Total points:</span>
-                <span class="font-medium ml-2">{refMapStats.pointCount.toLocaleString()}</span>
-              </div>
-            </div>
-          </div>
-        {/if}
+              <svg
+                class="w-4 h-4 text-accent transition-transform duration-200 {databaseExpanded ? 'rotate-180' : ''}"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
 
-        <!-- Map List -->
-        {#if refMaps.length > 0}
-          <div class="space-y-2 mb-4 max-h-64 overflow-y-auto">
-            {#each refMaps as map}
-              <div class="flex items-center justify-between border border-gray-200 rounded-lg p-3">
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-2">
-                    <span class="font-medium text-foreground truncate">{map.mapName}</span>
-                    <span class="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded uppercase">{map.fileType}</span>
-                  </div>
-                  <p class="text-xs text-gray-500 mt-0.5">
-                    {map.pointCount} points - {new Date(map.importedAt).toLocaleDateString()}
-                  </p>
-                </div>
+            {#if databaseExpanded}
+            <div class="py-3">
+              <div class="flex flex-wrap gap-2">
                 <button
-                  onclick={() => deleteRefMap(map.mapId)}
-                  class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
-                  title="Delete map"
+                  onclick={backupDatabase}
+                  disabled={backingUp || restoring}
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
                 >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                  </svg>
+                  {backingUp ? 'Backing up...' : 'Backup'}
+                </button>
+                <button
+                  onclick={restoreDatabase}
+                  disabled={restoring || backingUp}
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+                >
+                  {restoring ? 'Restoring...' : 'Restore'}
                 </button>
               </div>
-            {/each}
+              {#if backupMessage}
+                <p class="text-sm mt-2 {backupMessage.includes('Error') || backupMessage.includes('canceled') ? 'text-red-600' : 'text-green-600'}">
+                  {backupMessage}
+                </p>
+              {/if}
+              {#if restoreMessage}
+                <p class="text-sm mt-2 {restoreMessage.includes('Error') || restoreMessage.includes('canceled') || restoreMessage.includes('Invalid') ? 'text-red-600' : 'text-green-600'}">
+                  {restoreMessage}
+                </p>
+              {/if}
+            </div>
+            {/if}
           </div>
-        {:else}
-          <div class="text-center text-gray-500 py-6 bg-gray-50 rounded-lg mb-4">
-            <p class="text-sm">No reference maps imported yet</p>
-          </div>
-        {/if}
 
-        <div class="flex items-center gap-3 flex-wrap">
-          <button
-            onclick={importRefMap}
-            disabled={importingRefMap}
-            class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
-          >
-            {importingRefMap ? 'Importing...' : 'Import Map File'}
-          </button>
-          {#if cataloguedCount > 0}
+          <!-- Maps Sub-Accordion -->
+          <div>
             <button
-              onclick={purgeCataloguedPoints}
-              disabled={purgingPoints}
-              class="px-4 py-2 bg-gray-600 text-white rounded hover:opacity-90 transition disabled:opacity-50"
-              title="Remove reference points that are already in your locations database"
+              onclick={() => mapsExpanded = !mapsExpanded}
+              class="w-full flex items-center justify-between py-2 border-b border-gray-100 text-left hover:bg-gray-50 transition-colors"
             >
-              {purgingPoints ? 'Purging...' : `Purge ${cataloguedCount} Catalogued`}
+              <span class="text-sm font-medium text-gray-700">Maps</span>
+              <svg
+                class="w-4 h-4 text-accent transition-transform duration-200 {mapsExpanded ? 'rotate-180' : ''}"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
             </button>
-          {/if}
-          {#if refMapMessage}
-            <span class="text-sm text-gray-600">{refMapMessage}</span>
-          {/if}
-          {#if purgeMessage}
-            <span class="text-sm text-gray-600">{purgeMessage}</span>
-          {/if}
+
+            {#if mapsExpanded}
+            <div class="pl-4 py-2">
+              {#if refMaps.length > 0}
+                <div class="space-y-2 mb-3 max-h-48 overflow-y-auto">
+                  {#each refMaps as map}
+                    <div class="flex items-center justify-between text-sm py-2 border-b border-gray-100 last:border-b-0">
+                      <span class="font-medium text-foreground truncate flex-1">{map.mapName}</span>
+                      <span class="text-gray-500 mx-4">{new Date(map.importedAt).toLocaleDateString()}</span>
+                      <span class="text-gray-500 mr-4">{map.pointCount.toLocaleString()} points</span>
+                      <button
+                        onclick={() => deleteRefMap(map.mapId)}
+                        class="p-1 text-gray-400 hover:text-red-600 rounded"
+                        title="Delete map"
+                      >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                      </button>
+                    </div>
+                  {/each}
+                </div>
+              {:else}
+                <p class="text-sm text-gray-500 py-2">No reference maps imported</p>
+              {/if}
+              <div class="flex justify-end">
+                <button
+                  onclick={importRefMap}
+                  disabled={importingRefMap}
+                  class="text-sm text-accent hover:underline"
+                >
+                  {importingRefMap ? 'importing...' : 'import map'}
+                </button>
+              </div>
+              {#if refMapMessage}
+                <p class="text-sm text-gray-600 mt-2">{refMapMessage}</p>
+              {/if}
+            </div>
+            {/if}
+          </div>
+
+          <!-- Maps Repair Sub-Accordion -->
+          <div>
+            <button
+              onclick={() => maintenanceExpanded = !maintenanceExpanded}
+              class="w-full flex items-center justify-between py-2 border-b border-gray-100 text-left hover:bg-gray-50 transition-colors"
+            >
+              <span class="text-sm font-medium text-gray-700">Maps Repair</span>
+              <svg
+                class="w-4 h-4 text-accent transition-transform duration-200 {maintenanceExpanded ? 'rotate-180' : ''}"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {#if maintenanceExpanded}
+            <div class="py-3">
+              <div class="flex flex-wrap gap-2">
+                <button
+                  onclick={() => openLocationPicker('purge')}
+                  disabled={purgingProxies || clearingProxies}
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+                >
+                  Purge Cache
+                </button>
+                <button
+                  onclick={() => openLocationPicker('addresses')}
+                  disabled={normalizing || backfillingRegions}
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+                >
+                  Fix Addresses
+                </button>
+                <button
+                  onclick={() => openLocationPicker('images')}
+                  disabled={regenerating || renderingDng || detectingLivePhotos}
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+                >
+                  Fix Images
+                </button>
+                <button
+                  onclick={() => openLocationPicker('videos')}
+                  disabled={fixingVideos || detectingLivePhotos}
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+                >
+                  Fix Videos
+                </button>
+              </div>
+            </div>
+            {/if}
+          </div>
+
+          <!-- Health Sub-Accordion -->
+          <div>
+            <button
+              onclick={() => healthExpanded = !healthExpanded}
+              class="w-full flex items-center justify-between py-2 border-b border-gray-100 text-left hover:bg-gray-50 transition-colors"
+            >
+              <span class="text-sm font-medium text-gray-700">Health</span>
+              <svg
+                class="w-4 h-4 text-accent transition-transform duration-200 {healthExpanded ? 'rotate-180' : ''}"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {#if healthExpanded}
+            <div class="py-3">
+              <HealthMonitoring />
+            </div>
+            {/if}
+          </div>
         </div>
-        <p class="text-xs text-gray-500 mt-2">
-          Imported points appear as a separate "Reference Maps" layer on the Atlas. Points already in your database are automatically hidden.
-        </p>
+        {/if}
       </div>
-
-      <DatabaseSettings />
-
-      <HealthMonitoring />
-
-      <button
-        onclick={saveSettings}
-        disabled={saving}
-        class="px-6 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
-      >
-        {saving ? 'Saving...' : 'Save Settings'}
-      </button>
     </div>
   {/if}
 </div>
@@ -1743,6 +2137,199 @@
           {:else}
             Import All {importPreview.totalPoints} Points
           {/if}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Location Picker Modal -->
+{#if showLocationPicker && pickerMode}
+  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+      <!-- Header -->
+      <div class="p-4 border-b flex items-center justify-between">
+        <h2 class="text-lg font-semibold text-foreground">{getPickerTitle()}</h2>
+        <button
+          onclick={closeLocationPicker}
+          class="p-1 text-gray-400 hover:text-gray-600 rounded"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Content -->
+      <div class="p-4">
+        <!-- Search Input -->
+        <div class="relative">
+          <input
+            type="text"
+            bind:value={pickerSearchQuery}
+            oninput={handlePickerSearch}
+            placeholder="Search location..."
+            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+          />
+          {#if pickerSelectedLocation}
+            <button
+              onclick={clearPickerLocation}
+              class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          {/if}
+        </div>
+
+        <!-- Search Results Dropdown -->
+        {#if pickerSearchResults.length > 0 && !pickerSelectedLocation}
+          <div class="mt-2 border border-gray-200 rounded-lg max-h-48 overflow-y-auto">
+            {#each pickerSearchResults as loc}
+              <button
+                onclick={() => selectPickerLocation(loc)}
+                class="w-full px-3 py-2 text-left hover:bg-gray-50 text-sm flex items-center justify-between border-b border-gray-100 last:border-b-0"
+              >
+                <span class="font-medium text-foreground truncate">{loc.locnam}</span>
+                {#if loc.state}
+                  <span class="text-gray-500 ml-2">{loc.state}</span>
+                {/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
+
+        <!-- Selected Location Display -->
+        {#if pickerSelectedLocation}
+          <div class="mt-2 bg-accent/10 border border-accent/30 rounded-lg px-3 py-2 flex items-center justify-between">
+            <span class="text-sm font-medium text-foreground">{pickerSelectedLocation.locnam}</span>
+            {#if pickerSelectedLocation.state}
+              <span class="text-sm text-gray-500">{pickerSelectedLocation.state}</span>
+            {/if}
+          </div>
+        {/if}
+
+        <!-- Message -->
+        {#if pickerMessage}
+          <p class="mt-3 text-sm {pickerMessage.includes('Error') || pickerMessage.includes('failed') ? 'text-red-600' : 'text-green-600'}">
+            {pickerMessage}
+          </p>
+        {/if}
+      </div>
+
+      <!-- Footer -->
+      <div class="p-4 border-t bg-gray-50 rounded-b-lg flex justify-end">
+        <button
+          onclick={runPickerAction}
+          disabled={pickerLoading}
+          class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+        >
+          {pickerLoading ? 'Processing...' : getPickerButtonText()}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- PIN Verification Modal -->
+{#if showPinModal}
+  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-xl max-w-sm w-full mx-4">
+      <!-- Header -->
+      <div class="p-4 border-b flex items-center justify-between">
+        <h2 class="text-lg font-semibold text-foreground">Enter PIN</h2>
+        <button
+          onclick={closePinModal}
+          class="p-1 text-gray-400 hover:text-gray-600 rounded"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Content -->
+      <div class="p-4">
+        <p class="text-sm text-gray-600 mb-4">
+          {#if pinAction === 'archive'}
+            Enter your PIN to change the archive location.
+          {:else if pinAction === 'deleteOnImport'}
+            Enter your PIN to change the delete on import setting.
+          {:else if pinAction === 'startupPin'}
+            Enter your PIN to change the startup PIN requirement.
+          {/if}
+        </p>
+        <input
+          type="password"
+          bind:value={pinInput}
+          placeholder="Enter 4-6 digit PIN"
+          maxlength="6"
+          class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent text-center text-xl tracking-widest"
+          onkeydown={(e) => e.key === 'Enter' && verifyAndExecutePinAction()}
+        />
+        {#if pinError}
+          <p class="text-sm text-red-600 mt-2">{pinError}</p>
+        {/if}
+      </div>
+
+      <!-- Footer -->
+      <div class="p-4 border-t bg-gray-50 rounded-b-lg flex justify-end gap-2">
+        <button
+          onclick={closePinModal}
+          class="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition"
+        >
+          Cancel
+        </button>
+        <button
+          onclick={verifyAndExecutePinAction}
+          disabled={pinVerifying || pinInput.length < 4}
+          class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+        >
+          {pinVerifying ? 'Verifying...' : 'Confirm'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Delete Warning Modal -->
+{#if showDeleteWarning}
+  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+      <!-- Header -->
+      <div class="p-4 border-b flex items-center gap-3">
+        <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+          <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+        </div>
+        <h2 class="text-lg font-semibold text-foreground">Permanent File Deletion</h2>
+      </div>
+
+      <!-- Content -->
+      <div class="p-4">
+        <p class="text-sm text-gray-700 mb-3">
+          Enabling this setting will <strong class="text-red-600">permanently delete original files</strong> after they are imported into the archive.
+        </p>
+        <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+          <strong>Warning:</strong> There is no way to recover deleted files from this software. Make sure you have backups before enabling this feature.
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="p-4 border-t bg-gray-50 rounded-b-lg flex justify-end gap-2">
+        <button
+          onclick={cancelDeleteWarning}
+          class="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition"
+        >
+          Cancel
+        </button>
+        <button
+          onclick={toggleDeleteOnImport}
+          class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition"
+        >
+          Enable Deletion
         </button>
       </div>
     </div>

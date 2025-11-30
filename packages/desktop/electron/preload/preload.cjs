@@ -392,6 +392,10 @@ const api = {
   },
 
   // Reference Maps - imported KML, GPX, GeoJSON, CSV files
+  storage: {
+    getStats: () => invokeAuto("storage:getStats")(),
+  },
+
   refMaps: {
     selectFile: () => invokeAuto("refMaps:selectFile")(),
     import: (importedBy) => invokeAuto("refMaps:import")(importedBy),
