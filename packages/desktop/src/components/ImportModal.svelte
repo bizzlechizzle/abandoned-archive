@@ -12,10 +12,12 @@
    */
   import { onMount } from 'svelte';
   import type { Location } from '@au-archive/core';
+  import type { IntelligenceMatch, IntelligenceScanResult } from '../types/electron';
   import { importModal, closeImportModal } from '../stores/import-modal-store';
   import { router } from '../stores/router';
   import { toasts } from '../stores/toast-store';
   import AutocompleteInput from './AutocompleteInput.svelte';
+  import ImportIntelligence from './ImportIntelligence.svelte';
   import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
   import { ACCESS_OPTIONS } from '../constants/location-enums';
   import { getTypeForSubtype } from '../lib/type-hierarchy';
@@ -46,6 +48,10 @@
   // UI state
   let saving = $state(false);
   let error = $state('');
+
+  // Import Intelligence state
+  let showIntelligence = $state(false);
+  let intelligenceDismissed = $state(false);
 
   // Phase 2: Reference map matching
   interface RefMapMatch {
@@ -200,6 +206,10 @@
   $effect(() => {
     if ($importModal.isOpen) {
       loadOptions();
+      // Show intelligence panel if GPS is prefilled and not dismissed
+      if ($importModal.prefilledData?.gps_lat && $importModal.prefilledData?.gps_lng && !intelligenceDismissed) {
+        showIntelligence = true;
+      }
     }
   });
 
@@ -427,6 +437,9 @@
       clearTimeout(matchSearchTimeout);
       matchSearchTimeout = null;
     }
+    // Reset intelligence state
+    showIntelligence = false;
+    intelligenceDismissed = false;
   }
 
   function handleCancel() {
@@ -438,6 +451,45 @@
     if (event.key === 'Escape') {
       handleCancel();
     }
+  }
+
+  // Import Intelligence handlers
+  function handleIntelligenceSelectLocation(locid: string, locName: string) {
+    // User selected an existing location - navigate to it for import
+    closeImportModal();
+    resetForm();
+    toasts.success(`Selected "${locName}" - add media from location page`);
+    router.navigate(`/location/${locid}?autoImport=true`);
+  }
+
+  function handleIntelligenceSelectSubLocation(subid: string, locid: string, subName: string) {
+    closeImportModal();
+    resetForm();
+    toasts.success(`Selected "${subName}" - add media from building page`);
+    router.navigate(`/location/${locid}/sub/${subid}?autoImport=true`);
+  }
+
+  function handleIntelligenceCreateFromRefPoint(pointId: string, pointName: string, lat: number, lng: number) {
+    // Apply the ref point data and show create form
+    name = pointName;
+    importModal.update(current => ({
+      ...current,
+      prefilledData: {
+        ...current.prefilledData,
+        gps_lat: lat,
+        gps_lng: lng,
+        name: pointName,
+      },
+    }));
+    showIntelligence = false;
+    intelligenceDismissed = true;
+    toasts.success(`GPS applied from reference point`);
+  }
+
+  function handleIntelligenceCreateNew() {
+    // User explicitly wants to create new location
+    showIntelligence = false;
+    intelligenceDismissed = true;
   }
 
   // Handle host location checkbox toggle
@@ -507,6 +559,26 @@
 
       <!-- Content -->
       <div class="p-5 space-y-5">
+        <!-- Import Intelligence Panel - shown when GPS is prefilled -->
+        {#if showIntelligence && $importModal.prefilledData?.gps_lat && $importModal.prefilledData?.gps_lng}
+          <ImportIntelligence
+            lat={$importModal.prefilledData.gps_lat}
+            lng={$importModal.prefilledData.gps_lng}
+            hints={{
+              filename: undefined,
+              inferredType: type || undefined,
+              inferredState: selectedState || undefined,
+            }}
+            proposedName={name || $importModal.prefilledData?.name || undefined}
+            onSelectLocation={handleIntelligenceSelectLocation}
+            onSelectSubLocation={handleIntelligenceSelectSubLocation}
+            onCreateFromRefPoint={handleIntelligenceCreateFromRefPoint}
+            onCreateNew={handleIntelligenceCreateNew}
+          />
+        {/if}
+
+        <!-- Show form only when intelligence is dismissed or no GPS -->
+        {#if !showIntelligence || intelligenceDismissed || !$importModal.prefilledData?.gps_lat}
         {#if error}
           <div class="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center gap-2">
             <svg class="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -731,9 +803,12 @@
             </p>
           </div>
         {/if}
+        {/if}
+        <!-- End form conditional -->
       </div>
 
-      <!-- Footer -->
+      <!-- Footer - hide when showing intelligence -->
+      {#if !showIntelligence || intelligenceDismissed || !$importModal.prefilledData?.gps_lat}
       <div class="p-5 border-t border-gray-200 bg-gray-50 flex justify-end items-center">
         <div class="flex gap-3">
           <button
@@ -759,6 +834,7 @@
           </button>
         </div>
       </div>
+      {/if}
     </div>
   </div>
 {/if}

@@ -41,6 +41,7 @@ import { registerGeocodeHandlers } from './geocode';
 import { registerSubLocationHandlers } from './sublocations';
 import { registerResearchBrowserHandlers } from './research-browser';
 import { registerRefMapsHandlers } from './ref-maps';
+import { registerImportIntelligenceHandlers } from './import-intelligence';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
@@ -92,6 +93,9 @@ export function registerIpcHandlers() {
 
   // Reference maps (imported KML, GPX, GeoJSON, CSV)
   registerRefMapsHandlers(db);
+
+  // Import intelligence (smart location matching)
+  registerImportIntelligenceHandlers(db);
 
   console.log('IPC handlers registered (modular)');
 }

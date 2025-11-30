@@ -30,8 +30,6 @@ export const TILE_LAYERS = {
   // P3c: New layers
   CARTO_LIGHT: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
   CARTO_DARK: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-  // Regrid parcel boundaries (free tier - boundaries only, no owner data)
-  PARCELS: 'https://tiles.regrid.com/api/v1/parcels/{z}/{x}/{y}.mvt',
 } as const;
 
 // UI Configuration

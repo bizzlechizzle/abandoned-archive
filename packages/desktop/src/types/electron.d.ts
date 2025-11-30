@@ -558,6 +558,21 @@ export interface ElectronAPI {
     }>;
   };
 
+  // Import Intelligence - Smart location matching during import
+  importIntelligence: {
+    scan: (
+      lat: number,
+      lng: number,
+      hints?: { filename?: string; inferredType?: string; inferredState?: string }
+    ) => Promise<IntelligenceScanResult>;
+    hasNearby: (lat: number, lng: number) => Promise<{
+      hasNearby: boolean;
+      count: number;
+      topMatch: IntelligenceMatch | null;
+    }>;
+    addAkaName: (locid: string, newName: string) => Promise<{ success: boolean }>;
+  };
+
 }
 
 // Reference Map types
@@ -635,6 +650,34 @@ export interface CataloguedPointMatch {
   matchedLocName: string;
   nameSimilarity: number;
   distanceMeters: number;
+}
+
+// Import Intelligence types
+export interface IntelligenceMatch {
+  source: 'location' | 'sublocation' | 'refmap';
+  id: string;
+  name: string;
+  type: string | null;
+  state: string | null;
+  distanceMeters: number;
+  distanceFeet: number;
+  confidence: number;
+  confidenceLabel: string;
+  reasons: string[];
+  mediaCount?: number;
+  heroThumbPath?: string | null;
+  parentName?: string;  // For sub-locations
+  mapName?: string;     // For reference map points
+}
+
+export interface IntelligenceScanResult {
+  scanned: {
+    locations: number;
+    sublocations: number;
+    refmaps: number;
+  };
+  matches: IntelligenceMatch[];
+  scanTimeMs: number;
 }
 
 declare global {

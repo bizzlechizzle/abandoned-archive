@@ -363,8 +363,6 @@
   onMount(async () => {
     const L = await import('leaflet');
     await import('leaflet/dist/leaflet.css');
-    // Import vectorgrid for MVT parcel tiles (extends L.vectorGrid)
-    await import('leaflet.vectorgrid');
 
     if (!map && mapContainer) {
       // DECISION-010: Lock all interaction when readonly is true
@@ -426,24 +424,6 @@
         }),
       };
 
-      // @ts-expect-error - leaflet.vectorgrid extends L
-      const parcelsLayer = L.vectorGrid?.protobuf
-        ? L.vectorGrid.protobuf(TILE_LAYERS.PARCELS, {
-            vectorTileLayerStyles: {
-              parcels: {
-                weight: 1,
-                color: '#ff6600',
-                fillColor: '#ff6600',
-                fillOpacity: 0.05,
-                fill: true,
-              },
-            },
-            maxZoom: MAP_CONFIG.MAX_ZOOM,
-            minZoom: 14, // Only show parcels when zoomed in
-            attribution: hideAttribution ? '' : 'Regrid',
-          })
-        : null;
-
       const overlayLayers: { [key: string]: TileLayer } = {
         'Labels': L.tileLayer(TILE_LAYERS.LABELS, {
           attribution: hideAttribution ? '' : 'Esri',
@@ -453,7 +433,6 @@
           attribution: hideAttribution ? '' : 'Esri',
           maxZoom: MAP_CONFIG.MAX_ZOOM,
         }),
-        ...(parcelsLayer ? { 'Parcels': parcelsLayer } : {}),
       };
 
       // DECISION-011: Default layer based on prop

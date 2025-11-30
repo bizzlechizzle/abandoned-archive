@@ -195,17 +195,32 @@
     return prefix + baseName;
   });
 
-  // Function to calculate and set title size for max 2 lines
-  // RULE: Never cut off titles, always max 2 lines, no exceptions
-  function fitTitleToTwoLines() {
+  // Function to calculate and set title size
+  // RULES:
+  // 1. Never cut off titles, no exceptions
+  // 2. If only 2 words, always 1 line (never wrap)
+  // 3. If 3+ words, max 2 lines allowed
+  function fitTitle() {
     const el = heroTitleEl;
     const container = heroContainerEl;
     if (!el || !container) return;
 
-    const MAX_LINES = 2;
     const maxSize = 128; // Max size cap
     const minSize = 14;
-    let size = maxSize;
+
+    // Count words in the display name
+    const wordCount = heroDisplayName.split(/\s+/).filter(w => w.length > 0).length;
+    const isTwoWordTitle = wordCount <= 2;
+
+    // For 2-word titles: force single line (no wrap)
+    // For 3+ word titles: allow up to 2 lines
+    if (isTwoWordTitle) {
+      el.style.whiteSpace = 'nowrap';
+    } else {
+      el.style.whiteSpace = 'normal';
+    }
+
+    const MAX_LINES = isTwoWordTitle ? 1 : 2;
 
     // Binary search for optimal size (faster and more accurate)
     let low = minSize;
@@ -218,15 +233,20 @@
 
       // Force reflow to get accurate measurements
       const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || mid * 1.2;
-      const maxAllowedHeight = lineHeight * MAX_LINES * 1.05; // 2 lines with 5% tolerance
+      const maxAllowedHeight = lineHeight * MAX_LINES * 1.05; // lines with 5% tolerance
       const actualHeight = el.scrollHeight;
 
-      if (actualHeight <= maxAllowedHeight) {
-        // Fits in 2 lines - try larger
+      // Also check horizontal overflow for single-line titles
+      const containerWidth = container.clientWidth;
+      const textWidth = el.scrollWidth;
+      const fitsHorizontally = isTwoWordTitle ? textWidth <= containerWidth : true;
+
+      if (actualHeight <= maxAllowedHeight && fitsHorizontally) {
+        // Fits - try larger
         bestFit = mid;
         low = mid + 1;
       } else {
-        // Too many lines - try smaller
+        // Doesn't fit - try smaller
         high = mid - 1;
       }
     }
@@ -235,7 +255,7 @@
     heroTitleFontSize = bestFit;
   }
 
-  // Effect: Auto-size title to fit max 2 lines (never truncate)
+  // Effect: Auto-size title (2-word = 1 line, 3+ words = max 2 lines)
   $effect(() => {
     const name = heroDisplayName; // Track dependency
     const el = heroTitleEl;
@@ -243,11 +263,11 @@
     if (!el || !name) return;
 
     // Initial fit
-    requestAnimationFrame(fitTitleToTwoLines);
+    requestAnimationFrame(fitTitle);
 
     // Refit on resize
     const resizeObserver = new ResizeObserver(() => {
-      fitTitleToTwoLines();
+      fitTitle();
     });
 
     if (container) {
@@ -805,7 +825,7 @@
 </script>
 
 <!-- Resize handler for title text fitting -->
-<svelte:window onresize={fitTitleText} />
+<svelte:window onresize={fitTitle} />
 
 <div class="h-full overflow-auto">
   {#if loading}

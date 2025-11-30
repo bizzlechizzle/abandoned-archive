@@ -1,68 +1,65 @@
 <script lang="ts">
   import { importProgress, isImporting, importStore } from '../stores/import-store';
 
-  // Format time elapsed
-  function formatElapsed(startedAt: Date): string {
-    const seconds = Math.floor((Date.now() - startedAt.getTime()) / 1000);
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}m ${remainingSeconds}s`;
+  // Estimate time remaining based on progress rate
+  function formatTimeRemaining(startedAt: Date, current: number, total: number): string {
+    if (current === 0) return '';
+    const elapsedMs = Date.now() - startedAt.getTime();
+    const msPerItem = elapsedMs / current;
+    const remainingItems = total - current;
+    const remainingMs = msPerItem * remainingItems;
+    const remainingSeconds = Math.ceil(remainingMs / 1000);
+
+    if (remainingSeconds < 60) return `${remainingSeconds}s left`;
+    const minutes = Math.floor(remainingSeconds / 60);
+    const seconds = remainingSeconds % 60;
+    return `${minutes}m ${seconds}s left`;
   }
 
-  // Get the active job for elapsed time (Svelte 5 runes syntax)
+  // Get the active job for time calculation
   let activeJob = $derived($importStore.activeJob);
 </script>
 
 {#if $isImporting && $importProgress}
-  <div class="fixed bottom-4 right-4 bg-white rounded-lg shadow-lg border border-gray-200 p-4 w-80 z-50">
-    <div class="flex items-center justify-between mb-2">
-      <div class="flex items-center gap-2">
-        <div class="w-2 h-2 bg-accent rounded-full animate-pulse"></div>
-        <span class="text-sm font-medium text-gray-700">Importing Files</span>
-      </div>
-      <span class="text-xs text-gray-500">
-        {$importProgress.current}/{$importProgress.total}
+  <!-- Top center, thin horizontal bar, z-60 to stay above MediaViewer -->
+  <div class="fixed top-4 left-1/2 -translate-x-1/2 bg-white rounded-lg shadow-lg border border-gray-200 px-4 py-2 z-[60] flex items-center gap-4">
+    <!-- Pulsing indicator + count -->
+    <div class="flex items-center gap-2 shrink-0">
+      <div class="w-2 h-2 bg-accent rounded-full animate-pulse"></div>
+      <span class="text-sm font-medium text-gray-700">
+        Importing {$importProgress.current}/{$importProgress.total}
       </span>
     </div>
 
-    <div class="w-full bg-gray-200 rounded-full h-2.5 mb-2">
+    <!-- Progress bar -->
+    <div class="w-32 bg-gray-200 rounded-full h-2 shrink-0">
       <div
-        class="bg-accent h-2.5 rounded-full transition-all duration-300 ease-out"
+        class="bg-accent h-2 rounded-full transition-all duration-300 ease-out"
         style="width: {$importProgress.percent}%"
       ></div>
     </div>
 
-    <div class="flex items-center justify-between text-xs text-gray-500">
-      <span class="truncate max-w-[180px]" title={$importProgress.locationName}>
-        {$importProgress.locationName}
-      </span>
-      <span>
-        {$importProgress.percent}%
-        {#if activeJob}
-          - {formatElapsed(activeJob.startedAt)}
-        {/if}
-      </span>
-    </div>
+    <!-- Percentage + time remaining -->
+    <span class="text-xs text-gray-500 shrink-0">
+      {$importProgress.percent}%
+      {#if activeJob}
+        <span class="text-gray-400 ml-1">
+          {formatTimeRemaining(activeJob.startedAt, $importProgress.current, $importProgress.total)}
+        </span>
+      {/if}
+    </span>
 
-    <!-- FIX 4.1: Show current filename being processed -->
-    {#if $importProgress.currentFilename}
-      <p class="text-xs text-gray-500 mt-1 truncate" title={$importProgress.currentFilename}>
-        Processing: {$importProgress.currentFilename}
-      </p>
-    {/if}
+    <!-- Location name (truncated) -->
+    <span class="text-xs text-gray-500 truncate max-w-[150px]" title={$importProgress.locationName}>
+      {$importProgress.locationName}
+    </span>
 
-    <!-- FIX 4.3: Cancel button -->
-    <div class="flex items-center justify-between mt-2">
-      <p class="text-xs text-gray-400">
-        You can continue using the app
-      </p>
-      <button
-        onclick={() => importStore.cancelImport()}
-        class="text-xs text-red-600 hover:text-red-800 hover:underline"
-      >
-        Cancel
-      </button>
-    </div>
+    <!-- Cancel button -->
+    <button
+      onclick={() => importStore.cancelImport()}
+      class="text-xs text-red-600 hover:text-red-800 hover:underline shrink-0 ml-2"
+    >
+      Cancel
+    </button>
   </div>
 {/if}

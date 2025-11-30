@@ -908,6 +908,52 @@ const api = {
       ipcRenderer.invoke('research:status'),
   },
 
+  // Import Intelligence - Smart location matching during import
+  importIntelligence: {
+    // Full scan for matches near GPS point
+    scan: (
+      lat: number,
+      lng: number,
+      hints?: { filename?: string; inferredType?: string; inferredState?: string }
+    ): Promise<{
+      scanned: { locations: number; sublocations: number; refmaps: number };
+      matches: Array<{
+        source: 'location' | 'sublocation' | 'refmap';
+        id: string;
+        name: string;
+        type: string | null;
+        state: string | null;
+        distanceMeters: number;
+        distanceFeet: number;
+        confidence: number;
+        confidenceLabel: string;
+        reasons: string[];
+        mediaCount?: number;
+        heroThumbPath?: string | null;
+        parentName?: string;
+        mapName?: string;
+      }>;
+      scanTimeMs: number;
+    }> => ipcRenderer.invoke('import-intelligence:scan', lat, lng, hints),
+
+    // Quick check if GPS has nearby matches
+    hasNearby: (lat: number, lng: number): Promise<{
+      hasNearby: boolean;
+      count: number;
+      topMatch: {
+        source: 'location' | 'sublocation' | 'refmap';
+        id: string;
+        name: string;
+        confidence: number;
+        distanceFeet: number;
+      } | null;
+    }> => ipcRenderer.invoke('import-intelligence:hasNearby', lat, lng),
+
+    // Add AKA name to existing location
+    addAkaName: (locid: string, newName: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('import-intelligence:addAkaName', locid, newName),
+  },
+
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);
