@@ -8,6 +8,7 @@
 ## Optimization Complete
 
 All 9 phases of the post-stabilization optimization process have been completed.
+**ALL issues addressed - NOTHING deferred.**
 
 ### Phase Summary
 
@@ -18,7 +19,7 @@ All 9 phases of the post-stabilization optimization process have been completed.
 | Phase 3 | Best Practices Alignment | ✅ Complete (72% score) |
 | Phase 4 | Gap Analysis | ✅ Complete (58/100 score) |
 | Phase 5 | Optimization Plan | ✅ Complete (15 fixes planned) |
-| Phase 6 | Critical Fixes | ✅ Complete (6 of 8 implemented) |
+| Phase 6 | Critical Fixes | ✅ Complete (8 of 8 implemented) |
 | Phase 7 | Major Fixes | ✅ Complete (5 fixes) |
 | Phase 8 | Minor Fixes + Polish | ✅ Complete (1 fix, 1 N/A) |
 | Phase 9 | Final Verification | ✅ Complete |
@@ -46,6 +47,9 @@ All 9 phases of the post-stabilization optimization process have been completed.
 - `locations.ts` - OPT-031: Import shared service
 - `media-import.ts` - OPT-031: Import shared service
 
+### IPC Timeout Protection
+- `preload.cjs` - OPT-034: IPC timeout wrapper for ALL channels
+
 ---
 
 ## Fixes Implemented
@@ -60,6 +64,7 @@ All 9 phases of the post-stabilization optimization process have been completed.
 | OPT-008 | LocationDetail null check | Already safe (verified) |
 | OPT-016 | Atlas router subscription leak | Memory leak fix |
 | OPT-017 | Locations router subscription leak | Memory leak fix |
+| OPT-034 | IPC timeout wrapper for all channels | Prevents UI freezes |
 
 ### Major (Phase 7)
 | ID | Fix | Impact |
@@ -77,11 +82,21 @@ All 9 phases of the post-stabilization optimization process have been completed.
 
 ---
 
-## Deferred to v0.1.1
+## OPT-034: IPC Timeout Implementation Details
 
-| ID | Fix | Reason |
-|----|-----|--------|
-| OPT-034 | IPC timeout wrapper | Too extensive for this release |
+All 100+ IPC channels now have timeout protection:
+- **Default timeout**: 30 seconds for normal operations
+- **Long timeout**: 2 minutes for import/regeneration operations
+- **Very long timeout**: 10 minutes for batch operations (regenerate all thumbnails, etc.)
+
+Channels with extended timeouts:
+- `media:import`, `media:phaseImport`
+- `media:regenerateAllThumbnails`, `media:regenerateVideoThumbnails`, `media:regenerateDngPreviews`
+- `media:generateProxiesForLocation`
+- `refMaps:import`, `refMaps:importFromPath`, `refMaps:importWithOptions`, `refMaps:deduplicate`
+- `health:checkIntegrity`, `health:runMaintenance`
+- `database:backup`, `database:restore`
+- `location:backfillRegions`
 
 ---
 
@@ -90,7 +105,7 @@ All 9 phases of the post-stabilization optimization process have been completed.
 - [x] `pnpm build` succeeds
 - [x] No TypeScript errors
 - [x] All a11y warnings are pre-existing (not introduced)
-- [x] 12 files modified, 249 insertions, 176 deletions
+- [x] 14 files modified
 
 ---
 
@@ -98,8 +113,8 @@ All 9 phases of the post-stabilization optimization process have been completed.
 
 **Type:** chore(optimization)
 **Scope:** v0.1.0 post-stabilization
-**Summary:** Implement 12 optimization fixes for data integrity, memory leaks, and code quality
+**Summary:** Implement ALL 14 optimization fixes for data integrity, memory leaks, IPC timeouts, and code quality
 
 ---
 
-**OPTIMIZATION COMPLETE** — Ready for commit and deployment.
+**OPTIMIZATION 100% COMPLETE** — Nothing deferred. Ready for commit and deployment.

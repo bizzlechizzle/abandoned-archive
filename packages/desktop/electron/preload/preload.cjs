@@ -2,6 +2,7 @@
 // AU Archive Preload Script - Pure CommonJS
 // This file is NOT processed by Vite - it's used directly by Electron
 // IMPORTANT: Keep in sync with electron/preload/index.ts
+// OPT-034: Added IPC timeout wrapper for all invoke calls
 
 // DEBUG: Check what electron exports
 const electronModule = require("electron");
@@ -28,6 +29,89 @@ console.log("[Preload] contextBridge available:", !!contextBridge);
 console.log("[Preload] ipcRenderer available:", !!ipcRenderer);
 console.log("[Preload] webUtils final:", !!webUtils);
 
+// OPT-034: IPC timeout wrapper to prevent hanging operations
+const DEFAULT_IPC_TIMEOUT = 30000; // 30 seconds for most operations
+const LONG_IPC_TIMEOUT = 120000; // 2 minutes for import/regeneration operations
+const VERY_LONG_IPC_TIMEOUT = 600000; // 10 minutes for batch operations
+
+/**
+ * Wrap an IPC invoke call with a timeout
+ * @param {Promise} promise - The IPC invoke promise
+ * @param {number} timeoutMs - Timeout in milliseconds
+ * @param {string} channel - The IPC channel name (for error messages)
+ * @returns {Promise} - Promise that rejects on timeout
+ */
+function withTimeout(promise, timeoutMs, channel) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`IPC timeout after ${timeoutMs}ms on channel: ${channel}`));
+      }, timeoutMs);
+    })
+  ]);
+}
+
+/**
+ * Create a wrapped IPC invoke function with timeout
+ * @param {string} channel - The IPC channel
+ * @param {number} timeout - Timeout in ms (default: DEFAULT_IPC_TIMEOUT)
+ * @returns {Function} - Wrapped invoke function
+ */
+function invoke(channel, timeout = DEFAULT_IPC_TIMEOUT) {
+  return (...args) => withTimeout(ipcRenderer.invoke(channel, ...args), timeout, channel);
+}
+
+// Long-running operation channels that need extended timeouts
+const longOperationChannels = [
+  "media:import",
+  "media:phaseImport",
+  "media:regenerateAllThumbnails",
+  "media:regenerateVideoThumbnails",
+  "media:regenerateDngPreviews",
+  "media:generateProxiesForLocation",
+  "refMaps:import",
+  "refMaps:importFromPath",
+  "refMaps:importWithOptions",
+  "refMaps:deduplicate",
+  "health:checkIntegrity",
+  "health:runMaintenance",
+  "database:backup",
+  "database:restore",
+  "location:backfillRegions",
+];
+
+const veryLongOperationChannels = [
+  "media:regenerateAllThumbnails",
+  "media:regenerateVideoThumbnails",
+  "media:regenerateDngPreviews",
+];
+
+/**
+ * Get appropriate timeout for a channel
+ * @param {string} channel - The IPC channel
+ * @returns {number} - Timeout in ms
+ */
+function getTimeout(channel) {
+  if (veryLongOperationChannels.includes(channel)) {
+    return VERY_LONG_IPC_TIMEOUT;
+  }
+  if (longOperationChannels.includes(channel)) {
+    return LONG_IPC_TIMEOUT;
+  }
+  return DEFAULT_IPC_TIMEOUT;
+}
+
+/**
+ * Create a wrapped IPC invoke function with auto-detected timeout
+ * @param {string} channel - The IPC channel
+ * @returns {Function} - Wrapped invoke function
+ */
+function invokeAuto(channel) {
+  return invoke(channel, getTimeout(channel));
+}
+
+// OPT-034: All IPC calls now use timeout wrappers via invokeAuto()
 const api = {
   versions: {
     node: () => process.versions.node,
@@ -37,88 +121,88 @@ const api = {
   platform: process.platform,
 
   locations: {
-    findAll: (filters) => ipcRenderer.invoke("location:findAll", filters),
-    findById: (id) => ipcRenderer.invoke("location:findById", id),
-    create: (input) => ipcRenderer.invoke("location:create", input),
-    update: (id, input) => ipcRenderer.invoke("location:update", id, input),
-    delete: (id) => ipcRenderer.invoke("location:delete", id),
-    count: (filters) => ipcRenderer.invoke("location:count", filters),
-    random: () => ipcRenderer.invoke("location:random"),
-    undocumented: () => ipcRenderer.invoke("location:undocumented"),
-    historical: () => ipcRenderer.invoke("location:historical"),
-    favorites: () => ipcRenderer.invoke("location:favorites"),
-    toggleFavorite: (id) => ipcRenderer.invoke("location:toggleFavorite", id),
-    findNearby: (lat, lng, radiusKm) => ipcRenderer.invoke("location:findNearby", lat, lng, radiusKm),
+    findAll: (filters) => invokeAuto("location:findAll")(filters),
+    findById: (id) => invokeAuto("location:findById")(id),
+    create: (input) => invokeAuto("location:create")(input),
+    update: (id, input) => invokeAuto("location:update")(id, input),
+    delete: (id) => invokeAuto("location:delete")(id),
+    count: (filters) => invokeAuto("location:count")(filters),
+    random: () => invokeAuto("location:random")(),
+    undocumented: () => invokeAuto("location:undocumented")(),
+    historical: () => invokeAuto("location:historical")(),
+    favorites: () => invokeAuto("location:favorites")(),
+    toggleFavorite: (id) => invokeAuto("location:toggleFavorite")(id),
+    findNearby: (lat, lng, radiusKm) => invokeAuto("location:findNearby")(lat, lng, radiusKm),
     // Kanye9: Check for duplicate locations by address
-    checkDuplicates: (address) => ipcRenderer.invoke("location:checkDuplicates", address),
+    checkDuplicates: (address) => invokeAuto("location:checkDuplicates")(address),
     // DECISION-018: Region data management
-    updateRegionData: (id, regionData) => ipcRenderer.invoke("location:updateRegionData", id, regionData),
-    backfillRegions: () => ipcRenderer.invoke("location:backfillRegions"),
+    updateRegionData: (id, regionData) => invokeAuto("location:updateRegionData")(id, regionData),
+    backfillRegions: () => invokeAuto("location:backfillRegions")(),
     // Autocomplete helpers for Type/Sub-Type
-    getDistinctTypes: () => ipcRenderer.invoke("location:getDistinctTypes"),
-    getDistinctSubTypes: () => ipcRenderer.invoke("location:getDistinctSubTypes"),
+    getDistinctTypes: () => invokeAuto("location:getDistinctTypes")(),
+    getDistinctSubTypes: () => invokeAuto("location:getDistinctSubTypes")(),
     // Migration 34: View tracking
-    trackView: (id) => ipcRenderer.invoke("location:trackView", id),
-    getViewStats: (id) => ipcRenderer.invoke("location:getViewStats", id),
-    getViewHistory: (id, limit) => ipcRenderer.invoke("location:getViewHistory", id, limit),
+    trackView: (id) => invokeAuto("location:trackView")(id),
+    getViewStats: (id) => invokeAuto("location:getViewStats")(id),
+    getViewHistory: (id, limit) => invokeAuto("location:getViewHistory")(id, limit),
     // Dashboard: Recently viewed locations with hero thumbnails
-    findRecentlyViewed: (limit) => ipcRenderer.invoke("location:findRecentlyViewed", limit),
+    findRecentlyViewed: (limit) => invokeAuto("location:findRecentlyViewed")(limit),
     // Dashboard: Project locations with hero thumbnails
-    findProjects: (limit) => ipcRenderer.invoke("location:findProjects", limit),
+    findProjects: (limit) => invokeAuto("location:findProjects")(limit),
   },
 
   stats: {
-    topStates: (limit) => ipcRenderer.invoke("stats:topStates", limit),
-    topTypes: (limit) => ipcRenderer.invoke("stats:topTypes", limit),
+    topStates: (limit) => invokeAuto("stats:topStates")(limit),
+    topTypes: (limit) => invokeAuto("stats:topTypes")(limit),
     // Dashboard: Top types/states with hero thumbnails
-    topTypesWithHero: (limit) => ipcRenderer.invoke("stats:topTypesWithHero", limit),
-    topStatesWithHero: (limit) => ipcRenderer.invoke("stats:topStatesWithHero", limit),
+    topTypesWithHero: (limit) => invokeAuto("stats:topTypesWithHero")(limit),
+    topStatesWithHero: (limit) => invokeAuto("stats:topStatesWithHero")(limit),
   },
 
   settings: {
-    get: (key) => ipcRenderer.invoke("settings:get", key),
-    getAll: () => ipcRenderer.invoke("settings:getAll"),
-    set: (key, value) => ipcRenderer.invoke("settings:set", key, value),
+    get: (key) => invokeAuto("settings:get")(key),
+    getAll: () => invokeAuto("settings:getAll")(),
+    set: (key, value) => invokeAuto("settings:set")(key, value),
   },
 
   shell: {
-    openExternal: (url) => ipcRenderer.invoke("shell:openExternal", url),
+    openExternal: (url) => invokeAuto("shell:openExternal")(url),
   },
 
   geocode: {
-    reverse: (lat, lng) => ipcRenderer.invoke("geocode:reverse", lat, lng),
-    forward: (address) => ipcRenderer.invoke("geocode:forward", address),
+    reverse: (lat, lng) => invokeAuto("geocode:reverse")(lat, lng),
+    forward: (address) => invokeAuto("geocode:forward")(address),
     // Kanye9: Cascade geocoding - tries full → city → zipcode → county → state
-    forwardCascade: (address) => ipcRenderer.invoke("geocode:forwardCascade", address),
-    clearCache: (daysOld) => ipcRenderer.invoke("geocode:clearCache", daysOld),
+    forwardCascade: (address) => invokeAuto("geocode:forwardCascade")(address),
+    clearCache: (daysOld) => invokeAuto("geocode:clearCache")(daysOld),
   },
 
   dialog: {
-    selectFolder: () => ipcRenderer.invoke("dialog:selectFolder"),
+    selectFolder: () => invokeAuto("dialog:selectFolder")(),
   },
 
   database: {
-    backup: () => ipcRenderer.invoke("database:backup"),
-    restore: () => ipcRenderer.invoke("database:restore"),
-    getLocation: () => ipcRenderer.invoke("database:getLocation"),
-    changeLocation: () => ipcRenderer.invoke("database:changeLocation"),
-    resetLocation: () => ipcRenderer.invoke("database:resetLocation"),
+    backup: () => invokeAuto("database:backup")(),
+    restore: () => invokeAuto("database:restore")(),
+    getLocation: () => invokeAuto("database:getLocation")(),
+    changeLocation: () => invokeAuto("database:changeLocation")(),
+    resetLocation: () => invokeAuto("database:resetLocation")(),
   },
 
   imports: {
-    create: (input) => ipcRenderer.invoke("imports:create", input),
-    findRecent: (limit) => ipcRenderer.invoke("imports:findRecent", limit),
-    findByLocation: (locid) => ipcRenderer.invoke("imports:findByLocation", locid),
-    findAll: () => ipcRenderer.invoke("imports:findAll"),
-    getTotalMediaCount: () => ipcRenderer.invoke("imports:getTotalMediaCount"),
+    create: (input) => invokeAuto("imports:create")(input),
+    findRecent: (limit) => invokeAuto("imports:findRecent")(limit),
+    findByLocation: (locid) => invokeAuto("imports:findByLocation")(locid),
+    findAll: () => invokeAuto("imports:findAll")(),
+    getTotalMediaCount: () => invokeAuto("imports:getTotalMediaCount")(),
   },
 
   media: {
     // File selection and import
-    selectFiles: () => ipcRenderer.invoke("media:selectFiles"),
-    expandPaths: (paths) => ipcRenderer.invoke("media:expandPaths", paths),
-    import: (input) => ipcRenderer.invoke("media:import", input),
-    phaseImport: (input) => ipcRenderer.invoke("media:phaseImport", input),
+    selectFiles: () => invokeAuto("media:selectFiles")(),
+    expandPaths: (paths) => invokeAuto("media:expandPaths")(paths),
+    import: (input) => invokeAuto("media:import")(input),
+    phaseImport: (input) => invokeAuto("media:phaseImport")(input),
     onPhaseImportProgress: (callback) => {
       const listener = (_event, progress) => callback(progress);
       ipcRenderer.on("media:phaseImport:progress", listener);
@@ -129,49 +213,49 @@ const api = {
       ipcRenderer.on("media:import:progress", listener);
       return () => ipcRenderer.removeListener("media:import:progress", listener);
     },
-    cancelImport: (importId) => ipcRenderer.invoke("media:import:cancel", importId),
-    findByLocation: (locid) => ipcRenderer.invoke("media:findByLocation", locid),
+    cancelImport: (importId) => invokeAuto("media:import:cancel")(importId),
+    findByLocation: (locid) => invokeAuto("media:findByLocation")(locid),
     // Media viewing and processing
-    openFile: (filePath) => ipcRenderer.invoke("media:openFile", filePath),
-    showInFolder: (filePath) => ipcRenderer.invoke("media:showInFolder", filePath),
-    getFullMetadata: (hash, mediaType) => ipcRenderer.invoke("media:getFullMetadata", hash, mediaType),
-    generateThumbnail: (sourcePath, hash) => ipcRenderer.invoke("media:generateThumbnail", sourcePath, hash),
-    extractPreview: (sourcePath, hash) => ipcRenderer.invoke("media:extractPreview", sourcePath, hash),
-    generatePoster: (sourcePath, hash) => ipcRenderer.invoke("media:generatePoster", sourcePath, hash),
-    getCached: (key) => ipcRenderer.invoke("media:getCached", key),
-    preload: (mediaList, currentIndex) => ipcRenderer.invoke("media:preload", mediaList, currentIndex),
-    readXmp: (mediaPath) => ipcRenderer.invoke("media:readXmp", mediaPath),
-    writeXmp: (mediaPath, data) => ipcRenderer.invoke("media:writeXmp", mediaPath, data),
-    regenerateAllThumbnails: (options) => ipcRenderer.invoke("media:regenerateAllThumbnails", options),
-    regenerateVideoThumbnails: (options) => ipcRenderer.invoke("media:regenerateVideoThumbnails", options),
+    openFile: (filePath) => invokeAuto("media:openFile")(filePath),
+    showInFolder: (filePath) => invokeAuto("media:showInFolder")(filePath),
+    getFullMetadata: (hash, mediaType) => invokeAuto("media:getFullMetadata")(hash, mediaType),
+    generateThumbnail: (sourcePath, hash) => invokeAuto("media:generateThumbnail")(sourcePath, hash),
+    extractPreview: (sourcePath, hash) => invokeAuto("media:extractPreview")(sourcePath, hash),
+    generatePoster: (sourcePath, hash) => invokeAuto("media:generatePoster")(sourcePath, hash),
+    getCached: (key) => invokeAuto("media:getCached")(key),
+    preload: (mediaList, currentIndex) => invokeAuto("media:preload")(mediaList, currentIndex),
+    readXmp: (mediaPath) => invokeAuto("media:readXmp")(mediaPath),
+    writeXmp: (mediaPath, data) => invokeAuto("media:writeXmp")(mediaPath, data),
+    regenerateAllThumbnails: (options) => invokeAuto("media:regenerateAllThumbnails")(options),
+    regenerateVideoThumbnails: (options) => invokeAuto("media:regenerateVideoThumbnails")(options),
     // Kanye11: Regenerate preview/thumbnails for a single file
-    regenerateSingleFile: (hash, filePath) => ipcRenderer.invoke("media:regenerateSingleFile", hash, filePath),
+    regenerateSingleFile: (hash, filePath) => invokeAuto("media:regenerateSingleFile")(hash, filePath),
     // Migration 30: Regenerate DNG previews using LibRaw for full quality
-    regenerateDngPreviews: () => ipcRenderer.invoke("media:regenerateDngPreviews"),
+    regenerateDngPreviews: () => invokeAuto("media:regenerateDngPreviews")(),
     // Hidden/Live Photo operations (Migration 23)
-    setHidden: (input) => ipcRenderer.invoke("media:setHidden", input),
-    detectLivePhotosAndSDR: (locid) => ipcRenderer.invoke("media:detectLivePhotosAndSDR", locid),
+    setHidden: (input) => invokeAuto("media:setHidden")(input),
+    detectLivePhotosAndSDR: (locid) => invokeAuto("media:detectLivePhotosAndSDR")(locid),
 
     // Location-specific media fixes
-    fixLocationImages: (locid) => ipcRenderer.invoke("media:fixLocationImages", locid),
-    fixLocationVideos: (locid) => ipcRenderer.invoke("media:fixLocationVideos", locid),
+    fixLocationImages: (locid) => invokeAuto("media:fixLocationImages")(locid),
+    fixLocationVideos: (locid) => invokeAuto("media:fixLocationVideos")(locid),
 
     // Video Proxy System (Migration 36)
     // Generate optimized H.264 proxy for smooth playback
     generateProxy: (vidsha, sourcePath, metadata) =>
-      ipcRenderer.invoke("media:generateProxy", vidsha, sourcePath, metadata),
+      invokeAuto("media:generateProxy")(vidsha, sourcePath, metadata),
     getProxyPath: (vidsha) =>
-      ipcRenderer.invoke("media:getProxyPath", vidsha),
+      invokeAuto("media:getProxyPath")(vidsha),
     getProxyCacheStats: () =>
-      ipcRenderer.invoke("media:getProxyCacheStats"),
+      invokeAuto("media:getProxyCacheStats")(),
     purgeOldProxies: (daysOld) =>
-      ipcRenderer.invoke("media:purgeOldProxies", daysOld),
+      invokeAuto("media:purgeOldProxies")(daysOld),
     clearAllProxies: () =>
-      ipcRenderer.invoke("media:clearAllProxies"),
+      invokeAuto("media:clearAllProxies")(),
     touchLocationProxies: (locid) =>
-      ipcRenderer.invoke("media:touchLocationProxies", locid),
+      invokeAuto("media:touchLocationProxies")(locid),
     generateProxiesForLocation: (locid) =>
-      ipcRenderer.invoke("media:generateProxiesForLocation", locid),
+      invokeAuto("media:generateProxiesForLocation")(locid),
     onProxyProgress: (callback) => {
       const listener = (_event, progress) => callback(progress);
       ipcRenderer.on("media:proxyProgress", listener);
@@ -180,89 +264,89 @@ const api = {
   },
 
   notes: {
-    create: (input) => ipcRenderer.invoke("notes:create", input),
-    findById: (noteId) => ipcRenderer.invoke("notes:findById", noteId),
-    findByLocation: (locid) => ipcRenderer.invoke("notes:findByLocation", locid),
-    findRecent: (limit) => ipcRenderer.invoke("notes:findRecent", limit),
-    update: (noteId, updates) => ipcRenderer.invoke("notes:update", noteId, updates),
-    delete: (noteId) => ipcRenderer.invoke("notes:delete", noteId),
-    countByLocation: (locid) => ipcRenderer.invoke("notes:countByLocation", locid),
+    create: (input) => invokeAuto("notes:create")(input),
+    findById: (noteId) => invokeAuto("notes:findById")(noteId),
+    findByLocation: (locid) => invokeAuto("notes:findByLocation")(locid),
+    findRecent: (limit) => invokeAuto("notes:findRecent")(limit),
+    update: (noteId, updates) => invokeAuto("notes:update")(noteId, updates),
+    delete: (noteId) => invokeAuto("notes:delete")(noteId),
+    countByLocation: (locid) => invokeAuto("notes:countByLocation")(locid),
   },
 
   // Migration 28: Sub-location API
   sublocations: {
-    create: (input) => ipcRenderer.invoke("sublocation:create", input),
-    findById: (subid) => ipcRenderer.invoke("sublocation:findById", subid),
-    findByLocation: (locid) => ipcRenderer.invoke("sublocation:findByLocation", locid),
-    findWithHeroImages: (locid) => ipcRenderer.invoke("sublocation:findWithHeroImages", locid),
-    update: (subid, updates) => ipcRenderer.invoke("sublocation:update", subid, updates),
-    delete: (subid) => ipcRenderer.invoke("sublocation:delete", subid),
-    setPrimary: (locid, subid) => ipcRenderer.invoke("sublocation:setPrimary", locid, subid),
-    checkName: (locid, subnam, excludeSubid) => ipcRenderer.invoke("sublocation:checkName", locid, subnam, excludeSubid),
-    count: (locid) => ipcRenderer.invoke("sublocation:count", locid),
+    create: (input) => invokeAuto("sublocation:create")(input),
+    findById: (subid) => invokeAuto("sublocation:findById")(subid),
+    findByLocation: (locid) => invokeAuto("sublocation:findByLocation")(locid),
+    findWithHeroImages: (locid) => invokeAuto("sublocation:findWithHeroImages")(locid),
+    update: (subid, updates) => invokeAuto("sublocation:update")(subid, updates),
+    delete: (subid) => invokeAuto("sublocation:delete")(subid),
+    setPrimary: (locid, subid) => invokeAuto("sublocation:setPrimary")(locid, subid),
+    checkName: (locid, subnam, excludeSubid) => invokeAuto("sublocation:checkName")(locid, subnam, excludeSubid),
+    count: (locid) => invokeAuto("sublocation:count")(locid),
     // Migration 31: Sub-location GPS (separate from host location)
-    updateGps: (subid, gps) => ipcRenderer.invoke("sublocation:updateGps", subid, gps),
-    clearGps: (subid) => ipcRenderer.invoke("sublocation:clearGps", subid),
-    verifyGps: (subid) => ipcRenderer.invoke("sublocation:verifyGps", subid),
-    findWithGps: (locid) => ipcRenderer.invoke("sublocation:findWithGps", locid),
+    updateGps: (subid, gps) => invokeAuto("sublocation:updateGps")(subid, gps),
+    clearGps: (subid) => invokeAuto("sublocation:clearGps")(subid),
+    verifyGps: (subid) => invokeAuto("sublocation:verifyGps")(subid),
+    findWithGps: (locid) => invokeAuto("sublocation:findWithGps")(locid),
   },
 
   projects: {
-    create: (input) => ipcRenderer.invoke("projects:create", input),
-    findById: (projectId) => ipcRenderer.invoke("projects:findById", projectId),
-    findByIdWithLocations: (projectId) => ipcRenderer.invoke("projects:findByIdWithLocations", projectId),
-    findAll: () => ipcRenderer.invoke("projects:findAll"),
-    findRecent: (limit) => ipcRenderer.invoke("projects:findRecent", limit),
-    findTopByLocationCount: (limit) => ipcRenderer.invoke("projects:findTopByLocationCount", limit),
-    findByLocation: (locid) => ipcRenderer.invoke("projects:findByLocation", locid),
-    update: (projectId, updates) => ipcRenderer.invoke("projects:update", projectId, updates),
-    delete: (projectId) => ipcRenderer.invoke("projects:delete", projectId),
-    addLocation: (projectId, locid) => ipcRenderer.invoke("projects:addLocation", projectId, locid),
-    removeLocation: (projectId, locid) => ipcRenderer.invoke("projects:removeLocation", projectId, locid),
-    isLocationInProject: (projectId, locid) => ipcRenderer.invoke("projects:isLocationInProject", projectId, locid),
+    create: (input) => invokeAuto("projects:create")(input),
+    findById: (projectId) => invokeAuto("projects:findById")(projectId),
+    findByIdWithLocations: (projectId) => invokeAuto("projects:findByIdWithLocations")(projectId),
+    findAll: () => invokeAuto("projects:findAll")(),
+    findRecent: (limit) => invokeAuto("projects:findRecent")(limit),
+    findTopByLocationCount: (limit) => invokeAuto("projects:findTopByLocationCount")(limit),
+    findByLocation: (locid) => invokeAuto("projects:findByLocation")(locid),
+    update: (projectId, updates) => invokeAuto("projects:update")(projectId, updates),
+    delete: (projectId) => invokeAuto("projects:delete")(projectId),
+    addLocation: (projectId, locid) => invokeAuto("projects:addLocation")(projectId, locid),
+    removeLocation: (projectId, locid) => invokeAuto("projects:removeLocation")(projectId, locid),
+    isLocationInProject: (projectId, locid) => invokeAuto("projects:isLocationInProject")(projectId, locid),
   },
 
   bookmarks: {
-    create: (input) => ipcRenderer.invoke("bookmarks:create", input),
-    findById: (bookmarkId) => ipcRenderer.invoke("bookmarks:findById", bookmarkId),
-    findByLocation: (locid) => ipcRenderer.invoke("bookmarks:findByLocation", locid),
-    findRecent: (limit) => ipcRenderer.invoke("bookmarks:findRecent", limit),
-    findAll: () => ipcRenderer.invoke("bookmarks:findAll"),
-    update: (bookmarkId, updates) => ipcRenderer.invoke("bookmarks:update", bookmarkId, updates),
-    delete: (bookmarkId) => ipcRenderer.invoke("bookmarks:delete", bookmarkId),
-    count: () => ipcRenderer.invoke("bookmarks:count"),
-    countByLocation: (locid) => ipcRenderer.invoke("bookmarks:countByLocation", locid),
+    create: (input) => invokeAuto("bookmarks:create")(input),
+    findById: (bookmarkId) => invokeAuto("bookmarks:findById")(bookmarkId),
+    findByLocation: (locid) => invokeAuto("bookmarks:findByLocation")(locid),
+    findRecent: (limit) => invokeAuto("bookmarks:findRecent")(limit),
+    findAll: () => invokeAuto("bookmarks:findAll")(),
+    update: (bookmarkId, updates) => invokeAuto("bookmarks:update")(bookmarkId, updates),
+    delete: (bookmarkId) => invokeAuto("bookmarks:delete")(bookmarkId),
+    count: () => invokeAuto("bookmarks:count")(),
+    countByLocation: (locid) => invokeAuto("bookmarks:countByLocation")(locid),
   },
 
   users: {
     // CRUD
-    create: (input) => ipcRenderer.invoke("users:create", input),
-    findAll: () => ipcRenderer.invoke("users:findAll"),
-    findById: (userId) => ipcRenderer.invoke("users:findById", userId),
-    findByUsername: (username) => ipcRenderer.invoke("users:findByUsername", username),
-    update: (userId, updates) => ipcRenderer.invoke("users:update", userId, updates),
-    delete: (userId) => ipcRenderer.invoke("users:delete", userId),
+    create: (input) => invokeAuto("users:create")(input),
+    findAll: () => invokeAuto("users:findAll")(),
+    findById: (userId) => invokeAuto("users:findById")(userId),
+    findByUsername: (username) => invokeAuto("users:findByUsername")(username),
+    update: (userId, updates) => invokeAuto("users:update")(userId, updates),
+    delete: (userId) => invokeAuto("users:delete")(userId),
     // Authentication (Migration 24)
-    verifyPin: (userId, pin) => ipcRenderer.invoke("users:verifyPin", userId, pin),
-    setPin: (userId, pin) => ipcRenderer.invoke("users:setPin", userId, pin),
-    clearPin: (userId) => ipcRenderer.invoke("users:clearPin", userId),
-    hasPin: (userId) => ipcRenderer.invoke("users:hasPin", userId),
-    anyUserHasPin: () => ipcRenderer.invoke("users:anyUserHasPin"),
-    updateLastLogin: (userId) => ipcRenderer.invoke("users:updateLastLogin", userId),
+    verifyPin: (userId, pin) => invokeAuto("users:verifyPin")(userId, pin),
+    setPin: (userId, pin) => invokeAuto("users:setPin")(userId, pin),
+    clearPin: (userId) => invokeAuto("users:clearPin")(userId),
+    hasPin: (userId) => invokeAuto("users:hasPin")(userId),
+    anyUserHasPin: () => invokeAuto("users:anyUserHasPin")(),
+    updateLastLogin: (userId) => invokeAuto("users:updateLastLogin")(userId),
   },
 
   health: {
-    getDashboard: () => ipcRenderer.invoke("health:getDashboard"),
-    getStatus: () => ipcRenderer.invoke("health:getStatus"),
-    runCheck: () => ipcRenderer.invoke("health:runCheck"),
-    createBackup: () => ipcRenderer.invoke("health:createBackup"),
-    getBackupStats: () => ipcRenderer.invoke("health:getBackupStats"),
-    getDiskSpace: () => ipcRenderer.invoke("health:getDiskSpace"),
-    checkIntegrity: () => ipcRenderer.invoke("health:checkIntegrity"),
-    runMaintenance: () => ipcRenderer.invoke("health:runMaintenance"),
-    getMaintenanceSchedule: () => ipcRenderer.invoke("health:getMaintenanceSchedule"),
-    getRecoveryState: () => ipcRenderer.invoke("health:getRecoveryState"),
-    attemptRecovery: () => ipcRenderer.invoke("health:attemptRecovery"),
+    getDashboard: () => invokeAuto("health:getDashboard")(),
+    getStatus: () => invokeAuto("health:getStatus")(),
+    runCheck: () => invokeAuto("health:runCheck")(),
+    createBackup: () => invokeAuto("health:createBackup")(),
+    getBackupStats: () => invokeAuto("health:getBackupStats")(),
+    getDiskSpace: () => invokeAuto("health:getDiskSpace")(),
+    checkIntegrity: () => invokeAuto("health:checkIntegrity")(),
+    runMaintenance: () => invokeAuto("health:runMaintenance")(),
+    getMaintenanceSchedule: () => invokeAuto("health:getMaintenanceSchedule")(),
+    getRecoveryState: () => invokeAuto("health:getRecoveryState")(),
+    attemptRecovery: () => invokeAuto("health:attemptRecovery")(),
   },
 
   backup: {
@@ -274,15 +358,15 @@ const api = {
   },
 
   browser: {
-    navigate: (url) => ipcRenderer.invoke("browser:navigate", url),
-    show: (bounds) => ipcRenderer.invoke("browser:show", bounds),
-    hide: () => ipcRenderer.invoke("browser:hide"),
-    getUrl: () => ipcRenderer.invoke("browser:getUrl"),
-    getTitle: () => ipcRenderer.invoke("browser:getTitle"),
-    goBack: () => ipcRenderer.invoke("browser:goBack"),
-    goForward: () => ipcRenderer.invoke("browser:goForward"),
-    reload: () => ipcRenderer.invoke("browser:reload"),
-    captureScreenshot: () => ipcRenderer.invoke("browser:captureScreenshot"),
+    navigate: (url) => invokeAuto("browser:navigate")(url),
+    show: (bounds) => invokeAuto("browser:show")(bounds),
+    hide: () => invokeAuto("browser:hide")(),
+    getUrl: () => invokeAuto("browser:getUrl")(),
+    getTitle: () => invokeAuto("browser:getTitle")(),
+    goBack: () => invokeAuto("browser:goBack")(),
+    goForward: () => invokeAuto("browser:goForward")(),
+    reload: () => invokeAuto("browser:reload")(),
+    captureScreenshot: () => invokeAuto("browser:captureScreenshot")(),
     onNavigated: (callback) => {
       const listener = (_event, url) => callback(url);
       ipcRenderer.on("browser:navigated", listener);
@@ -302,36 +386,36 @@ const api = {
 
   // Research Browser - external Ungoogled Chromium
   research: {
-    launch: () => ipcRenderer.invoke("research:launch"),
-    close: () => ipcRenderer.invoke("research:close"),
-    status: () => ipcRenderer.invoke("research:status"),
+    launch: () => invokeAuto("research:launch")(),
+    close: () => invokeAuto("research:close")(),
+    status: () => invokeAuto("research:status")(),
   },
 
   // Reference Maps - imported KML, GPX, GeoJSON, CSV files
   refMaps: {
-    selectFile: () => ipcRenderer.invoke("refMaps:selectFile"),
-    import: (importedBy) => ipcRenderer.invoke("refMaps:import", importedBy),
-    importFromPath: (filePath, importedBy) => ipcRenderer.invoke("refMaps:importFromPath", filePath, importedBy),
-    findAll: () => ipcRenderer.invoke("refMaps:findAll"),
-    findById: (mapId) => ipcRenderer.invoke("refMaps:findById", mapId),
-    getAllPoints: () => ipcRenderer.invoke("refMaps:getAllPoints"),
-    update: (mapId, updates) => ipcRenderer.invoke("refMaps:update", mapId, updates),
-    delete: (mapId) => ipcRenderer.invoke("refMaps:delete", mapId),
-    getStats: () => ipcRenderer.invoke("refMaps:getStats"),
-    getSupportedExtensions: () => ipcRenderer.invoke("refMaps:getSupportedExtensions"),
+    selectFile: () => invokeAuto("refMaps:selectFile")(),
+    import: (importedBy) => invokeAuto("refMaps:import")(importedBy),
+    importFromPath: (filePath, importedBy) => invokeAuto("refMaps:importFromPath")(filePath, importedBy),
+    findAll: () => invokeAuto("refMaps:findAll")(),
+    findById: (mapId) => invokeAuto("refMaps:findById")(mapId),
+    getAllPoints: () => invokeAuto("refMaps:getAllPoints")(),
+    update: (mapId, updates) => invokeAuto("refMaps:update")(mapId, updates),
+    delete: (mapId) => invokeAuto("refMaps:delete")(mapId),
+    getStats: () => invokeAuto("refMaps:getStats")(),
+    getSupportedExtensions: () => invokeAuto("refMaps:getSupportedExtensions")(),
     // Phase 2: Auto-matching for location creation
-    findMatches: (query, options) => ipcRenderer.invoke("refMaps:findMatches", query, options),
+    findMatches: (query, options) => invokeAuto("refMaps:findMatches")(query, options),
     // Phase 3: Deduplication on import
-    previewImport: (filePath) => ipcRenderer.invoke("refMaps:previewImport", filePath),
-    importWithOptions: (filePath, options) => ipcRenderer.invoke("refMaps:importWithOptions", filePath, options),
+    previewImport: (filePath) => invokeAuto("refMaps:previewImport")(filePath),
+    importWithOptions: (filePath, options) => invokeAuto("refMaps:importWithOptions")(filePath, options),
     // Phase 4: Purge catalogued points
-    findCataloguedPoints: () => ipcRenderer.invoke("refMaps:findCataloguedPoints"),
-    purgeCataloguedPoints: () => ipcRenderer.invoke("refMaps:purgeCataloguedPoints"),
+    findCataloguedPoints: () => invokeAuto("refMaps:findCataloguedPoints")(),
+    purgeCataloguedPoints: () => invokeAuto("refMaps:purgeCataloguedPoints")(),
     // Phase 5: Delete single point from map popup
-    deletePoint: (pointId) => ipcRenderer.invoke("refMaps:deletePoint", pointId),
+    deletePoint: (pointId) => invokeAuto("refMaps:deletePoint")(pointId),
     // Migration 39: GPS-based deduplication within ref_map_points
-    previewDedup: () => ipcRenderer.invoke("refMaps:previewDedup"),
-    deduplicate: () => ipcRenderer.invoke("refMaps:deduplicate"),
+    previewDedup: () => invokeAuto("refMaps:previewDedup")(),
+    deduplicate: () => invokeAuto("refMaps:deduplicate")(),
   },
 };
 
