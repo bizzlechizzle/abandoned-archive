@@ -13,7 +13,7 @@ Clean architecture with three rings (presentation, infrastructure, core domain) 
 
 | Area | Technologies |
 | --- | --- |
-| Desktop shell | Electron 28+, Electron Builder |
+| Desktop shell | Electron 35+, Electron Builder |
 | Renderer | Svelte 5, Vite 5, Tailwind CSS, Skeleton UI |
 | Language | TypeScript 5.3+, ECMAScript modules |
 | Data | SQLite via better-sqlite3, Kysely migrations |

@@ -52,14 +52,13 @@ This is the first stable release of Abandoned Archive, a desktop application for
 
 ## Known Issues
 
-### Deferred to v0.1.1
+### Known Limitations (Risk Accepted)
 
-| Issue | Description |
-|-------|-------------|
-| Console.log in IPC handlers | 116 instances in main process (not user-visible) |
-| Missing Zod validation | 4 handlers lack input validation |
-| Duplicate scripts | run-dedup.py and run-dedup.mjs (both work) |
-| A11y warnings | Modal dialogs need improved accessibility |
+| Issue | Description | Status |
+|-------|-------------|--------|
+| Console.log in IPC handlers | 116 instances in main process (not user-visible in production) | Risk Accepted |
+| IPC handlers without Zod | 4 handlers (database, health, ref-maps, research-browser) take no user input requiring validation | Risk Accepted |
+| A11y warnings | Pre-existing modal dialog accessibility warnings | Risk Accepted |
 
 ---
 

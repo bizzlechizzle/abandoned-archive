@@ -56,7 +56,7 @@ Preload exposes only typed APIs defined in `packages/core`. Renderer never calls
 
 ## Main Process
 
-- Electron 28+
+- Electron 35+
 - better-sqlite3 for storage
 - ExifTool/FFmpeg/sharp for media
 - Kysely for typed SQL

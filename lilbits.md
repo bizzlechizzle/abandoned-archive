@@ -103,28 +103,6 @@ Uses Python's built-in sqlite3 module to avoid native module issues with Electro
 
 ---
 
-### scripts/run-dedup.mjs
-
-- **Path**: `scripts/run-dedup.mjs`
-- **Lines**: 245
-- **Runtime**: node (ES modules)
-- **Purpose**: GPS-based deduplication for ref_map_points table (Node.js version)
-- **Usage**:
-  ```bash
-  node scripts/run-dedup.mjs
-  ```
-- **Inputs**: None (reads from database)
-- **Outputs**: stdout (progress, statistics)
-- **Side Effects**: Same as run-dedup.py
-- **Dependencies**: node, better-sqlite3
-- **Last Verified**: 2025-11-30
-
-**Note**: Requires better-sqlite3 native module built for your Node.js version (not Electron). Use the Python version if you encounter native module issues.
-
-**Note**: This is a duplicate implementation of run-dedup.py. Consider consolidating.
-
----
-
 ### scripts/run-dedup.sql
 
 - **Path**: `scripts/run-dedup.sql`
@@ -177,14 +155,6 @@ Detects platform (macOS/Linux/Windows) and locates config directory accordingly.
 | Script | Lines | Status | Action |
 |--------|-------|--------|--------|
 | `scripts/setup.sh` | 514 | ⚠️ Exceeds | Exempt - complex multi-phase installer with extensive error handling |
-
----
-
-## Duplicate Scripts
-
-| Script A | Script B | Status | Recommendation |
-|----------|----------|--------|----------------|
-| `run-dedup.py` | `run-dedup.mjs` | Duplicate | Keep Python version (no native module issues), deprecate .mjs |
 
 ---
 

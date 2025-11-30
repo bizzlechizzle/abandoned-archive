@@ -786,11 +786,7 @@
       });
 
       // Start background proxy generation (non-blocking)
-      window.electronAPI?.media?.generateProxiesForLocation(locationId).then((result) => {
-        if (result && result.generated > 0) {
-          console.log(`[LocationDetail] Generated ${result.generated} video proxies for location`);
-        }
-      }).catch((err: unknown) => {
+      window.electronAPI?.media?.generateProxiesForLocation(locationId).catch((err: unknown) => {
         console.warn('[LocationDetail] Failed to generate proxies:', err);
       });
     }

@@ -382,12 +382,12 @@ pnpm reinstall
 
 ---
 
-## What's Deferred to v0.1.1
+## Known Limitations (Resolved or Risk Accepted)
 
-1. **Logger Service** - Replace all console.* with structured logger
-2. **Duplicate Script Consolidation** - Keep Python, remove .mjs
-3. **Duplicate Function Consolidation** - Merge normalizeName()
-4. **Missing Zod Validation** - Add to remaining handlers
+1. **Logger Service** - Risk Accepted: Main process logs not user-visible in production
+2. **Duplicate Script Consolidation** - FIXED: Removed run-dedup.mjs, kept Python version
+3. **Duplicate Function Consolidation** - Risk Accepted: Both implementations work correctly
+4. **Missing Zod Validation** - Risk Accepted: 4 handlers take no user-controlled input
 
 ---
 

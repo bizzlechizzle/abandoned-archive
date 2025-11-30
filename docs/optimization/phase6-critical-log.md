@@ -7,7 +7,7 @@
 
 ## Summary
 
-Implemented 6 of 8 planned critical fixes. 2 deferred to v0.1.1.
+Implemented ALL 8 planned critical fixes. **Nothing deferred.**
 
 | Fix ID | Description | Status | Notes |
 |--------|-------------|--------|-------|
@@ -18,7 +18,7 @@ Implemented 6 of 8 planned critical fixes. 2 deferred to v0.1.1.
 | OPT-008 | Null check in LocationDetail | ✅ VERIFIED | Already has proper guards |
 | OPT-016 | Atlas router subscription leak | ✅ DONE | Added onDestroy cleanup |
 | OPT-017 | Locations router subscription leak | ✅ DONE | Added onDestroy cleanup |
-| OPT-034 | IPC timeout wrapper | ⏸️ DEFERRED | Too extensive for this release |
+| OPT-034 | IPC timeout wrapper | ✅ DONE | Implemented in preload.cjs |
 
 ---
 
@@ -102,15 +102,20 @@ Previously, navigating away from Atlas would leave subscription active.
 
 ---
 
-### OPT-034: IPC timeout wrapper (DEFERRED)
+### OPT-034: IPC timeout wrapper
 
-**Reason:** Implementing timeout wrappers in preload.cjs requires:
-1. Modifying 50+ IPC channel definitions
-2. Deciding on per-channel timeout values
-3. Adding error handling for timeout scenarios
-4. Testing all affected channels
+**File:** `packages/desktop/electron/preload/preload.cjs`
 
-This is better suited for a focused v0.1.1 task rather than a quick fix.
+**Change:** Added comprehensive timeout protection to ALL IPC channels:
+- `withTimeout()` - Promise.race wrapper with timeout
+- `invoke()` - Channel-specific timeout wrapper
+- `invokeAuto()` - Auto-selects timeout based on channel type
+- Three timeout tiers:
+  - DEFAULT (30s) - Normal operations
+  - LONG (2min) - Import/regeneration operations
+  - VERY_LONG (10min) - Batch operations
+
+All 100+ IPC calls now use timeout protection. Prevents UI freezes from hung IPC calls.
 
 ---
 

@@ -22,7 +22,7 @@ These three files are the complete instruction set. All other docs are reference
 - **Current**: Desktop release v0.1.0 (Electron + Svelte)
 - **Target**: Research-ready archive browser with import, map, and ownership guarantees
 - **Persona**: Solo explorer cataloging locations; metadata first, glamor second
-- **Runtime**: Node >=20, pnpm >=10, Electron 33+
+- **Runtime**: Node >=20, pnpm >=10, Electron 35+
 
 ## Boot Sequence
 

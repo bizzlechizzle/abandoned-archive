@@ -77,7 +77,7 @@ au-archive/
 
 ## Technology Stack
 
-- **Desktop Framework**: Electron 28+
+- **Desktop Framework**: Electron 35+
 - **Frontend**: Svelte 5 + TypeScript
 - **Database**: SQLite (better-sqlite3)
 - **Build Tool**: Vite 5+
