@@ -3,6 +3,7 @@
   import { type Location, LocationEntity } from '@au-archive/core';
   import AutocompleteInput from './AutocompleteInput.svelte';
   import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
+  import { getTypeForSubtype } from '../lib/type-hierarchy';
 
   interface Props {
     locations: Location[];
@@ -88,6 +89,16 @@
   // Classification
   let newType = $state('');
   let newSubType = $state('');
+
+  // Auto-fill type when user enters a known sub-type
+  $effect(() => {
+    if (newSubType && !newType) {
+      const matchedType = getTypeForSubtype(newSubType);
+      if (matchedType) {
+        newType = matchedType;
+      }
+    }
+  });
 
   // Documentation Status
   let newDocumentation = $state('');

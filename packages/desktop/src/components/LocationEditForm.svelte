@@ -3,6 +3,7 @@
   import type { Location, LocationInput } from '@au-archive/core';
   import AutocompleteInput from './AutocompleteInput.svelte';
   import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
+  import { getTypeForSubtype } from '../lib/type-hierarchy';
 
   interface Props {
     location: Location;
@@ -41,6 +42,16 @@
 
   let saving = $state(false);
   let error = $state<string | null>(null);
+
+  // Auto-fill type when user enters a known sub-type
+  $effect(() => {
+    if (formData.stype && !formData.type) {
+      const matchedType = getTypeForSubtype(formData.stype);
+      if (matchedType) {
+        formData.type = matchedType;
+      }
+    }
+  });
 
   onMount(async () => {
     try {
