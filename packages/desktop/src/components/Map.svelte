@@ -153,6 +153,8 @@
     center?: { lat: number; lng: number };
     // FEAT-P1: Verify Location callback - called with locid and new lat/lng
     onLocationVerify?: (locid: string, lat: number, lng: number) => void;
+    // Popup display mode: 'full' shows all info, 'minimal' shows name + View Details only
+    popupMode?: 'full' | 'minimal';
     // DECISION-010: Lock all map interaction (for mini map on location detail)
     readonly?: boolean;
     // DECISION-011: Limited interaction for mini map (1-2 zoom levels, slight pan)
@@ -184,6 +186,7 @@
     zoom,
     center,
     onLocationVerify,
+    popupMode = 'full',
     readonly = false,
     limitedInteraction = false,
     hideAttribution = false,
@@ -554,10 +557,11 @@
           ? 'Approximate (State)'
           : String(confidence).charAt(0).toUpperCase() + String(confidence).slice(1) + ' GPS';
 
-        // P3b: Mini location popup with "View Details" and "Verify" buttons
+        // P3b: Mini location popup with "View Details" and optional "Verify" button
         // FEAT-P1: Verify button allows user to confirm/adjust pin location
+        // popupMode: 'minimal' shows name + View Details only, 'full' shows all info
         const isVerified = location.gps?.verifiedOnMap;
-        const verifyButtonHtml = onLocationVerify && !isVerified
+        const verifyButtonHtml = popupMode === 'full' && onLocationVerify && !isVerified
           ? `<button
               data-verify-location-id="${location.locid}"
               class="verify-location-btn"
@@ -565,19 +569,24 @@
             >
               Verify Location
             </button>`
-          : isVerified
+          : popupMode === 'full' && isVerified
             ? `<div style="margin-top: 4px; padding: 6px 12px; background: #dcfce7; color: #166534; border-radius: 4px; font-size: 11px; text-align: center;">
                 Location Verified
               </div>`
             : '';
 
+        // Build popup content based on popupMode
+        const typeHtml = popupMode === 'full'
+          ? `<span style="color: #666; font-size: 12px;">${escapeHtml(location.type) || 'Unknown Type'}</span><br/>`
+          : '';
+        const addressHtml = popupMode === 'full'
+          ? `<span style="color: #888; font-size: 11px;">${location.address?.city ? `${escapeHtml(location.address.city)}, ` : ''}${escapeHtml(location.address?.state) || ''}</span><br/>`
+          : '';
+
         const popupContent = `
           <div class="location-popup" style="min-width: 180px;">
             <strong style="font-size: 14px;">${escapeHtml(location.locnam)}</strong><br/>
-            <span style="color: #666; font-size: 12px;">${escapeHtml(location.type) || 'Unknown Type'}</span><br/>
-            <span style="color: #888; font-size: 11px;">${location.address?.city ? `${escapeHtml(location.address.city)}, ` : ''}${escapeHtml(location.address?.state) || ''}</span>
-            <br/>
-            <button
+            ${typeHtml}${addressHtml}<button
               data-location-id="${location.locid}"
               class="view-details-btn"
               style="margin-top: 8px; padding: 6px 12px; background: #b9975c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;"

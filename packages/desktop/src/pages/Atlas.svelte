@@ -298,6 +298,7 @@
       onMapClick={handleMapClick}
       onMapRightClick={handleMapRightClick}
       showHeatMap={showHeatMap}
+      popupMode="minimal"
       zoom={urlZoom ?? undefined}
       center={urlCenter ?? undefined}
       defaultLayer={urlLayer ?? 'satellite-labels'}
