@@ -55,6 +55,10 @@ export interface ImportResult {
   };
   // OPT-012: Track non-fatal warnings during import
   warnings?: string[];
+  // FIX-PROGRESS: GPS data for post-import enrichment (Steps 8a-8b)
+  // Returned from transaction so enrichment can run outside critical path
+  _gpsForEnrichment?: { lat: number; lng: number } | null;
+  _locid?: string;
 }
 
 export interface ImportSessionResult {
@@ -283,6 +287,14 @@ export class FileImportService {
         // FIX 1.2 & 4.1: Report progress AFTER work completes with filename
         if (onProgress) {
           onProgress(i + 1, files.length, file.originalName);
+        }
+
+        // FIX-PROGRESS: Run Steps 8a-8b as fire-and-forget AFTER progress fires
+        // Per docs/workflows/import.md: "Background job for metadata extraction (doesn't block)"
+        if (result.success && !result.duplicate && result._gpsForEnrichment && result._locid) {
+          this.runPostImportEnrichment(result._locid, result._gpsForEnrichment, location).catch(err => {
+            console.warn('[FileImport] Post-import enrichment failed (non-blocking):', err);
+          });
         }
       } catch (error) {
         console.error('[FileImport] Error importing file', file.originalName, ':', error);
@@ -696,63 +708,11 @@ export class FileImportService {
     );
     console.log('[FileImport] Step 7 complete in', Date.now() - insertStart, 'ms');
 
-    // DECISION-015: Step 8a - Auto-populate location GPS from first media with GPS
-    // If location has no GPS but media has GPS, transfer it to location
-    // OPT-004: Track fire-and-forget results with await instead of fire-and-forget
-    if (gpsForGeocode && (!location.gps?.lat || !location.gps?.lng)) {
-      console.log('[FileImport] Step 8a: Auto-populating location GPS from media EXIF...');
-      try {
-        await this.db
-          .updateTable('locs')
-          .set({
-            gps_lat: gpsForGeocode.lat,
-            gps_lng: gpsForGeocode.lng,
-            gps_source: 'media_gps',
-          })
-          .where('locid', '=', file.locid)
-          .execute();
-        console.log('[FileImport] Location GPS auto-populated from media EXIF:', gpsForGeocode);
-        // DECISION-018: Recalculate region fields after GPS update
-        await this.recalculateRegionsForLocation(file.locid, gpsForGeocode);
-      } catch (dbError) {
-        const errMsg = dbError instanceof Error ? dbError.message : String(dbError);
-        console.warn('[FileImport] Failed to auto-populate location GPS:', errMsg);
-        warnings.push(`GPS auto-population failed: ${errMsg}`);
-      }
-    }
+    // FIX-PROGRESS: Steps 8a-8b (GPS enrichment, geocoding) moved to importFiles()
+    // These run AFTER progress fires so UI updates immediately on DB insert
+    // See docs/workflows/import.md: "Background job for metadata extraction (doesn't block)"
 
-    // Step 8b: Non-blocking geocoding (DUMP phase per spec: GPS → Address)
-    // OPT-004: Track geocoding results with await instead of fire-and-forget
-    // Only trigger if: geocodingService exists, location has no address, file has GPS
-    if (gpsForGeocode && this.geocodingService && !location.address_street && !location.address_city) {
-      console.log('[FileImport] Step 8b: Running reverse geocode...');
-      try {
-        const geocodeResult = await this.geocodingService.reverseGeocode(gpsForGeocode.lat, gpsForGeocode.lng);
-        if (geocodeResult && geocodeResult.address) {
-          await this.db
-            .updateTable('locs')
-            .set({
-              address_street: geocodeResult.address.street || null,
-              address_city: geocodeResult.address.city || null,
-              address_county: geocodeResult.address.county || null,
-              address_state: geocodeResult.address.stateCode || geocodeResult.address.state || null,
-              address_zipcode: geocodeResult.address.zipcode || null,
-              address_geocoded_at: new Date().toISOString(),
-            })
-            .where('locid', '=', file.locid)
-            .execute();
-          console.log('[FileImport] Location address updated from media GPS');
-          // DECISION-018: Recalculate region fields after address update (now has state/county for cultural region lookup)
-          await this.recalculateRegionsForLocation(file.locid, gpsForGeocode);
-        }
-      } catch (geocodeError) {
-        const errMsg = geocodeError instanceof Error ? geocodeError.message : String(geocodeError);
-        console.warn('[FileImport] Reverse geocoding failed:', errMsg);
-        warnings.push(`Reverse geocoding failed: ${errMsg}`);
-      }
-    }
-
-    // 9. Delete original if requested (after DB success)
+    // 9. Delete original if requested (after DB success, before progress reports)
     if (deleteOriginal) {
       console.log('[FileImport] Step 9: Deleting original file...');
       try {
@@ -774,7 +734,79 @@ export class FileImportService {
       gpsWarning,
       // OPT-012: Include warnings in result (only if non-empty)
       warnings: warnings.length > 0 ? warnings : undefined,
+      // FIX-PROGRESS: Return GPS data for post-import enrichment (Steps 8a-8b)
+      // Processed outside transaction after progress fires
+      _gpsForEnrichment: gpsForGeocode,
+      _locid: file.locid,
     };
+  }
+
+  /**
+   * FIX-PROGRESS: Run Steps 8a-8b as fire-and-forget post-import enrichment
+   * These are non-blocking enrichments that run after progress fires.
+   * Per docs/workflows/import.md: "Background job for metadata extraction (doesn't block)"
+   */
+  private async runPostImportEnrichment(
+    locid: string,
+    gps: { lat: number; lng: number },
+    location: any
+  ): Promise<void> {
+    // Step 8a: Auto-populate location GPS from first media with GPS
+    // If location has no GPS but media has GPS, transfer it to location
+    if (!location.gps?.lat || !location.gps?.lng) {
+      console.log('[FileImport] Step 8a (background): Auto-populating location GPS from media EXIF...');
+      try {
+        await this.db
+          .updateTable('locs')
+          .set({
+            gps_lat: gps.lat,
+            gps_lng: gps.lng,
+            gps_source: 'media_gps',
+          })
+          .where('locid', '=', locid)
+          .execute();
+        console.log('[FileImport] Location GPS auto-populated from media EXIF:', gps);
+        // DECISION-018: Recalculate region fields after GPS update
+        await this.recalculateRegionsForLocation(locid, gps);
+        // Update location cache so subsequent files don't re-run this
+        location.gps = { lat: gps.lat, lng: gps.lng };
+      } catch (dbError) {
+        const errMsg = dbError instanceof Error ? dbError.message : String(dbError);
+        console.warn('[FileImport] Failed to auto-populate location GPS:', errMsg);
+      }
+    }
+
+    // Step 8b: Non-blocking geocoding (DUMP phase per spec: GPS → Address)
+    // Only trigger if: geocodingService exists, location has no address
+    if (this.geocodingService && !location.address_street && !location.address_city) {
+      console.log('[FileImport] Step 8b (background): Running reverse geocode...');
+      try {
+        const geocodeResult = await this.geocodingService.reverseGeocode(gps.lat, gps.lng);
+        if (geocodeResult && geocodeResult.address) {
+          await this.db
+            .updateTable('locs')
+            .set({
+              address_street: geocodeResult.address.street || null,
+              address_city: geocodeResult.address.city || null,
+              address_county: geocodeResult.address.county || null,
+              address_state: geocodeResult.address.stateCode || geocodeResult.address.state || null,
+              address_zipcode: geocodeResult.address.zipcode || null,
+              address_geocoded_at: new Date().toISOString(),
+            })
+            .where('locid', '=', locid)
+            .execute();
+          console.log('[FileImport] Location address updated from media GPS');
+          // DECISION-018: Recalculate region fields after address update
+          await this.recalculateRegionsForLocation(locid, gps);
+          // Update location cache
+          location.address_street = geocodeResult.address.street;
+          location.address_city = geocodeResult.address.city;
+        }
+      } catch (geocodeError) {
+        const errMsg = geocodeError instanceof Error ? geocodeError.message : String(geocodeError);
+        console.warn('[FileImport] Reverse geocoding failed:', errMsg);
+      }
+    }
   }
 
   /**
