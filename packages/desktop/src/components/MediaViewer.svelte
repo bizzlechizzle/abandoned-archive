@@ -473,7 +473,7 @@
   {#if currentIndex > 0}
     <button
       onclick={goToPrevious}
-      class="absolute left-4 top-1/2 -translate-y-1/2 text-foreground hover:text-gray-600 transition p-2"
+      class="absolute top-1/2 -translate-y-1/2 text-foreground hover:text-gray-600 transition p-2 {showExif ? 'left-[25rem]' : 'left-4'}"
       aria-label="Previous image"
     >
       <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -599,7 +599,7 @@
 
   <!-- Metadata Panel (Two-tier: Summary + All Fields + Hero Editor) -->
   {#if showExif && currentMedia}
-    <div class="absolute right-0 top-16 bottom-0 w-96 bg-white/95 text-foreground overflow-y-auto shadow-lg border-l border-gray-200">
+    <div class="absolute left-0 top-1/2 -translate-y-1/2 w-96 max-h-[80vh] bg-white/95 text-foreground overflow-y-auto shadow-lg border-r border-gray-200 rounded-r-lg">
       <div class="p-4">
         <h3 class="text-lg font-semibold mb-4">Metadata</h3>
 
