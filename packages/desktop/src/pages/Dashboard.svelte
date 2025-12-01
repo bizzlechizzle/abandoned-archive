@@ -154,7 +154,7 @@
 <!-- Dashboard Hero -->
 {#if dashboardHero && dashboardHeroImage}
   <div class="w-full bg-[#fffbf7]">
-    <div class="relative w-full max-h-[30vh] mx-auto overflow-hidden" style="aspect-ratio: 2.35 / 1;">
+    <div class="relative w-full max-h-[40vh] mx-auto overflow-hidden" style="aspect-ratio: 2.35 / 1;">
       <img
         src={`media://${dashboardHeroImage.preview_path || dashboardHeroImage.thumb_path_lg || dashboardHeroImage.thumb_path}?v=${cacheVersion}`}
         alt="Dashboard Hero"
@@ -181,9 +181,19 @@
   </div>
 {/if}
 
-<div class="p-8">
-  <h1 class="text-3xl font-bold text-foreground mb-6">Dashboard</h1>
+<!-- Title overlaps hero gradient: centered, premium text fitting -->
+<div class="max-w-6xl mx-auto px-8 pb-4 relative z-20 -mt-10">
+  <div class="w-[88%] mx-auto text-center">
+    <h1 class="hero-title font-bold uppercase leading-tight text-center mb-0">
+      Dashboard
+    </h1>
+    <p class="host-tagline block w-[90%] mx-auto mt-0 uppercase text-center">
+      Project Overview
+    </p>
+  </div>
+</div>
 
+<div class="max-w-6xl mx-auto px-8 pt-6 pb-8">
   {#if loading}
     <div class="text-center py-12">
       <p class="text-gray-500">Loading...</p>
@@ -438,3 +448,26 @@
     </div>
   {/if}
 </div>
+
+<style>
+  /* Hero title: matches LocationDetail styling */
+  .hero-title {
+    color: #454545;
+    font-size: 72px; /* Fixed size for Dashboard since title is always "Dashboard" */
+    letter-spacing: 0.02em; /* Tight, premium spacing */
+    word-spacing: -0.02em; /* Cohesive word blocks */
+    font-weight: 800;
+    text-wrap: balance; /* Balances word distribution across lines */
+    /* Hand-painted sign style - hard offset shadow, accent gold */
+    text-shadow: 3px 3px 0 rgba(185, 151, 92, 0.5);
+  }
+
+  /* Tagline (cinematic - tiny text under title) */
+  .host-tagline {
+    color: var(--color-accent, #b9975c); /* Accent color */
+    font-size: 18px; /* Taller tagline */
+    letter-spacing: 0.08em;
+    font-weight: 700; /* Bold */
+    white-space: nowrap; /* Single line ALWAYS */
+  }
+</style>
