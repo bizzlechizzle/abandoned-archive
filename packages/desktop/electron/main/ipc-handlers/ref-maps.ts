@@ -10,6 +10,9 @@ import { SqliteRefMapsRepository } from '../../repositories/sqlite-ref-maps-repo
 import { parseMapFile, getSupportedExtensions, isSupportedMapFile } from '../../services/map-parser-service';
 import { RefMapMatcherService } from '../../services/ref-map-matcher-service';
 import { RefMapDedupService, type DuplicateMatch, type DedupeResult } from '../../services/ref-map-dedup-service';
+// Migration 42: Add geocoding and region services for GPS enrichment
+import { GeocodingService } from '../../services/geocoding-service';
+import { calculateRegionFields } from '../../services/region-service';
 import type { Kysely } from 'kysely';
 import type { Database } from '../database.types';
 
@@ -17,6 +20,8 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
   const repository = new SqliteRefMapsRepository(db);
   const matcher = new RefMapMatcherService(db);
   const dedupService = new RefMapDedupService(db);
+  // Migration 42: Geocoding service for enrichment reverse geocoding
+  const geocodingService = new GeocodingService(db);
 
   /**
    * Select a map file (dialog only, no import)
@@ -519,8 +524,9 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
       }
 
       // Migration 42: Apply enrichments to existing locations
+      // Now includes reverse geocoding and region calculation for full normalization
       if (options.enrichments && options.enrichments.length > 0) {
-        console.log(`[RefMaps] Processing ${options.enrichments.length} enrichments...`);
+        console.log(`[RefMaps] Processing ${options.enrichments.length} enrichments with full normalization...`);
         for (const enrichment of options.enrichments) {
           // Validate pointIndex is a number (not boolean or undefined)
           if (typeof enrichment.pointIndex !== 'number') {
@@ -533,22 +539,70 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
             continue;
           }
 
-          // Update the existing location with GPS from the point
+          // Step 1: Reverse geocode to get address from GPS coordinates
+          let addressData: {
+            street?: string | null;
+            city?: string | null;
+            county?: string | null;
+            state?: string | null;
+            zipcode?: string | null;
+          } = {};
+
+          try {
+            const geocodeResult = await geocodingService.reverseGeocode(point.lat, point.lng);
+            if (geocodeResult?.address) {
+              addressData = {
+                street: geocodeResult.address.street || null,
+                city: geocodeResult.address.city || null,
+                county: geocodeResult.address.county || null,
+                state: geocodeResult.address.state || null,
+                zipcode: geocodeResult.address.zipcode || null,
+              };
+              console.log(`[RefMaps] Reverse geocoded ${point.name}: ${geocodeResult.displayName}`);
+            }
+          } catch (geoError) {
+            console.warn(`[RefMaps] Reverse geocoding failed for ${point.name}, continuing with GPS only:`, geoError);
+          }
+
+          // Step 2: Calculate region fields from state/GPS
+          const regionFields = calculateRegionFields({
+            state: addressData.state || point.state || null,
+            county: addressData.county || null,
+            lat: point.lat,
+            lng: point.lng,
+          });
+
+          // Step 3: Update the location with GPS, address, and region data
+          const updateFields: Record<string, unknown> = {
+            // GPS fields
+            gps_lat: point.lat,
+            gps_lng: point.lng,
+            gps_source: 'ref_map_import',
+            gps_verified_on_map: 0,
+            gps_accuracy: null,
+            gps_captured_at: new Date().toISOString(),
+            // Address fields (only if we got geocode data)
+            ...(addressData.street && { address_street: addressData.street }),
+            ...(addressData.city && { address_city: addressData.city }),
+            ...(addressData.county && { address_county: addressData.county }),
+            ...(addressData.state && { address_state: addressData.state }),
+            ...(addressData.zipcode && { address_zipcode: addressData.zipcode }),
+            // Region fields (8 regions)
+            ...(regionFields.censusRegion && { census_region: regionFields.censusRegion }),
+            ...(regionFields.censusDivision && { census_division: regionFields.censusDivision }),
+            ...(regionFields.stateDirection && { state_direction: regionFields.stateDirection }),
+            ...(regionFields.culturalRegion && { cultural_region: regionFields.culturalRegion }),
+            ...(regionFields.countryCulturalRegion && { country_cultural_region: regionFields.countryCulturalRegion }),
+          };
+
           await db
             .updateTable('locs')
-            .set({
-              gps_lat: point.lat,
-              gps_lng: point.lng,
-              gps_source: 'ref_map_import',
-              gps_verified_on_map: 0,
-              gps_accuracy: null,
-              gps_captured_at: new Date().toISOString(),
-            })
+            .set(updateFields)
             .where('locid', '=', enrichment.existingLocId)
             .execute();
 
           enrichedCount++;
-          console.log(`[RefMaps] Applied enrichment: ${point.name} → location ${enrichment.existingLocId}`);
+          console.log(`[RefMaps] Applied enrichment with full normalization: ${point.name} → location ${enrichment.existingLocId}`);
         }
       }
 
