@@ -14,6 +14,8 @@ import { RefMapDedupService, type DuplicateMatch, type DedupeResult } from '../.
 import { GeocodingService } from '../../services/geocoding-service';
 import { calculateRegionFields } from '../../services/region-service';
 import { AddressNormalizer } from '../../services/address-normalizer';
+// Centralized enrichment service - THE canonical way to enrich locations from GPS
+import { LocationEnrichmentService } from '../../services/location-enrichment-service';
 import type { Kysely } from 'kysely';
 import type { Database } from '../database.types';
 
@@ -23,6 +25,8 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
   const dedupService = new RefMapDedupService(db);
   // Migration 42: Geocoding service for enrichment reverse geocoding
   const geocodingService = new GeocodingService(db);
+  // Centralized enrichment service - ensures GPS + address + region fields are always updated together
+  const enrichmentService = new LocationEnrichmentService(db, geocodingService);
 
   /**
    * Select a map file (dialog only, no import)
@@ -525,9 +529,9 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
       }
 
       // Migration 42: Apply enrichments to existing locations
-      // Now includes reverse geocoding and region calculation for full normalization
+      // Uses centralized enrichment service for GPS + address + region updates
       if (options.enrichments && options.enrichments.length > 0) {
-        console.log(`[RefMaps] Processing ${options.enrichments.length} enrichments with full normalization...`);
+        console.log(`[RefMaps] Processing ${options.enrichments.length} enrichments via centralized service...`);
         for (const enrichment of options.enrichments) {
           // Validate pointIndex is a number (not boolean or undefined)
           if (typeof enrichment.pointIndex !== 'number') {
@@ -540,80 +544,20 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
             continue;
           }
 
-          // Step 1: Reverse geocode to get address from GPS coordinates
-          let addressData: {
-            street?: string | null;
-            city?: string | null;
-            county?: string | null;
-            state?: string | null;
-            zipcode?: string | null;
-          } = {};
-
-          try {
-            const geocodeResult = await geocodingService.reverseGeocode(point.lat, point.lng);
-            if (geocodeResult?.address) {
-              // Geocoding service already normalizes: stateCode is 2-letter, county/zipcode are cleaned
-              // Use stateCode (not state) - state is full name for display, stateCode is the 2-letter code
-              addressData = {
-                street: geocodeResult.address.street || null,
-                city: geocodeResult.address.city || null,
-                county: geocodeResult.address.county || null,
-                state: geocodeResult.address.stateCode || null, // Use stateCode (2-letter), NOT state (full name)
-                zipcode: geocodeResult.address.zipcode || null,
-              };
-              console.log(`[RefMaps] Reverse geocoded ${point.name}: ${geocodeResult.displayName} → ${addressData.city}, ${addressData.state}`);
-            }
-          } catch (geoError) {
-            console.warn(`[RefMaps] Reverse geocoding failed for ${point.name}, continuing with GPS only:`, geoError);
-          }
-
-          // Step 2: Calculate region fields from state/GPS
-          // Use normalized state, falling back to point.state (also normalized)
-          const stateForRegion = addressData.state || AddressNormalizer.normalizeStateCode(point.state) || null;
-          const regionFields = calculateRegionFields({
-            state: stateForRegion,
-            county: addressData.county || null,
+          // Use centralized enrichment service - handles geocoding, region calc, and database update
+          const enrichResult = await enrichmentService.enrichFromGPS(enrichment.existingLocId, {
             lat: point.lat,
             lng: point.lng,
+            source: 'ref_map_import',
+            stateHint: point.state, // Fallback if geocode fails
           });
 
-          // Step 3: Update the location with GPS, address, and region data
-          // Validate state is exactly 2 chars before including (database CHECK constraint)
-          const validState = addressData.state && addressData.state.length === 2 ? addressData.state : null;
-          if (addressData.state && addressData.state.length !== 2) {
-            console.warn(`[RefMaps] Invalid state "${addressData.state}" for ${point.name}, skipping state field`);
+          if (enrichResult.success) {
+            enrichedCount++;
+            console.log(`[RefMaps] Enriched location ${enrichment.existingLocId}: GPS + address=${enrichResult.updated.address}, regions=${enrichResult.updated.regions} for "${point.name}"`);
+          } else {
+            console.warn(`[RefMaps] Enrichment failed for ${enrichment.existingLocId}: ${enrichResult.error}`);
           }
-
-          const updateFields: Record<string, unknown> = {
-            // GPS fields (always set)
-            gps_lat: point.lat,
-            gps_lng: point.lng,
-            gps_source: 'ref_map_import',
-            gps_verified_on_map: 0,
-            gps_accuracy: null,
-            gps_captured_at: new Date().toISOString(),
-            // Address fields (only if we got valid geocode data)
-            ...(addressData.street && { address_street: addressData.street }),
-            ...(addressData.city && { address_city: addressData.city }),
-            ...(addressData.county && { address_county: addressData.county }),
-            ...(validState && { address_state: validState }),
-            ...(addressData.zipcode && { address_zipcode: addressData.zipcode }),
-            // Region fields (calculated from state/GPS)
-            ...(regionFields.censusRegion && { census_region: regionFields.censusRegion }),
-            ...(regionFields.censusDivision && { census_division: regionFields.censusDivision }),
-            ...(regionFields.stateDirection && { state_direction: regionFields.stateDirection }),
-            ...(regionFields.culturalRegion && { cultural_region: regionFields.culturalRegion }),
-            ...(regionFields.countryCulturalRegion && { country_cultural_region: regionFields.countryCulturalRegion }),
-          };
-
-          await db
-            .updateTable('locs')
-            .set(updateFields)
-            .where('locid', '=', enrichment.existingLocId)
-            .execute();
-
-          enrichedCount++;
-          console.log(`[RefMaps] Enriched location ${enrichment.existingLocId}: GPS + ${validState ? `address (${validState})` : 'regions only'} for "${point.name}"`);
         }
       }
 
@@ -863,19 +807,18 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
         return { success: false, error: 'Reference point not found' };
       }
 
-      // Update the location with GPS from ref point
-      await db
-        .updateTable('locs')
-        .set({
-          gps_lat: refPoint.lat,
-          gps_lng: refPoint.lng,
-          gps_source: 'ref_map_import',
-          gps_verified_on_map: 0, // Not verified yet
-          gps_accuracy: null,
-          gps_captured_at: new Date().toISOString(),
-        })
-        .where('locid', '=', locationId)
-        .execute();
+      // Use centralized enrichment service for GPS + address + region updates
+      // This ensures all fields are populated consistently
+      const enrichResult = await enrichmentService.enrichFromGPS(locationId, {
+        lat: refPoint.lat,
+        lng: refPoint.lng,
+        source: 'ref_map_import',
+        stateHint: refPoint.state, // Fallback if geocode fails
+      });
+
+      if (!enrichResult.success) {
+        return { success: false, error: enrichResult.error || 'Enrichment failed' };
+      }
 
       // Link the ref point to the location (preserve provenance, don't delete)
       await db
@@ -887,12 +830,13 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
         .where('point_id', '=', refPointId)
         .execute();
 
-      console.log(`[RefMaps] Applied GPS enrichment: ${refPoint.name} → location ${locationId}`);
+      console.log(`[RefMaps] Applied GPS enrichment: ${refPoint.name} → location ${locationId} (address=${enrichResult.updated.address}, regions=${enrichResult.updated.regions})`);
 
       return {
         success: true,
         appliedGps: { lat: refPoint.lat, lng: refPoint.lng },
-        state: refPoint.state,
+        state: enrichResult.address?.state || refPoint.state,
+        enrichment: enrichResult, // Include full enrichment result for debugging
       };
     } catch (error) {
       console.error('Error applying GPS enrichment:', error);
@@ -906,6 +850,7 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
   /**
    * Migration 42: Batch apply GPS enrichment for multiple matches.
    * Only applies matches with 95%+ similarity (high confidence).
+   * Uses centralized enrichment service for GPS + address + region updates.
    */
   ipcMain.handle('refMaps:applyAllEnrichments', async (
     _event,
@@ -925,6 +870,9 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
       }
 
       let applied = 0;
+      let addressUpdated = 0;
+      let regionsUpdated = 0;
+
       for (const { locationId, refPointId } of highConfidence) {
         // Get the ref point
         const refPoint = await db
@@ -935,19 +883,18 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
 
         if (!refPoint) continue;
 
-        // Update the location
-        await db
-          .updateTable('locs')
-          .set({
-            gps_lat: refPoint.lat,
-            gps_lng: refPoint.lng,
-            gps_source: 'ref_map_import',
-            gps_verified_on_map: 0,
-            gps_accuracy: null,
-            gps_captured_at: new Date().toISOString(),
-          })
-          .where('locid', '=', locationId)
-          .execute();
+        // Use centralized enrichment service for GPS + address + region updates
+        const enrichResult = await enrichmentService.enrichFromGPS(locationId, {
+          lat: refPoint.lat,
+          lng: refPoint.lng,
+          source: 'ref_map_import',
+          stateHint: refPoint.state, // Fallback if geocode fails
+        });
+
+        if (!enrichResult.success) {
+          console.warn(`[RefMaps] Enrichment failed for ${locationId}: ${enrichResult.error}`);
+          continue;
+        }
 
         // Link the ref point
         await db
@@ -960,14 +907,18 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
           .execute();
 
         applied++;
+        if (enrichResult.updated.address) addressUpdated++;
+        if (enrichResult.updated.regions) regionsUpdated++;
       }
 
-      console.log(`[RefMaps] Batch applied ${applied} GPS enrichments`);
+      console.log(`[RefMaps] Batch applied ${applied} GPS enrichments (${addressUpdated} with address, ${regionsUpdated} with regions)`);
 
       return {
         success: true,
         applied,
         skipped: enrichments.length - applied,
+        addressUpdated,
+        regionsUpdated,
       };
     } catch (error) {
       console.error('Error batch applying GPS enrichments:', error);

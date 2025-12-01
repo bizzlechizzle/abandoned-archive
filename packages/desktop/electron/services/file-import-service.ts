@@ -13,6 +13,8 @@ import { GPXKMLParser, type MapFileData } from './gpx-kml-parser';
 import { MediaPathService } from './media-path-service';
 // DECISION-018: Import region calculation for auto-population
 import { calculateRegionFields } from './region-service';
+// Centralized enrichment service - THE canonical way to enrich locations from GPS
+import { LocationEnrichmentService } from './location-enrichment-service';
 import { LocationEntity } from '@au-archive/core';
 import { ThumbnailService } from './thumbnail-service';
 import { PreviewExtractorService } from './preview-extractor-service';
@@ -817,60 +819,68 @@ export class FileImportService {
     gps: { lat: number; lng: number },
     location: any
   ): Promise<void> {
-    // Step 8a: Auto-populate location GPS from first media with GPS
-    // If location has no GPS but media has GPS, transfer it to location
+    // Only enrich if location has no GPS - use centralized enrichment service
+    // This ensures GPS + address + region fields are all updated together
     if (!location.gps?.lat || !location.gps?.lng) {
-      console.log('[FileImport] Step 8a (background): Auto-populating location GPS from media EXIF...');
-      try {
-        await this.db
-          .updateTable('locs')
-          .set({
-            gps_lat: gps.lat,
-            gps_lng: gps.lng,
-            gps_source: 'media_gps',
-          })
-          .where('locid', '=', locid)
-          .execute();
-        console.log('[FileImport] Location GPS auto-populated from media EXIF:', gps);
-        // DECISION-018: Recalculate region fields after GPS update
-        await this.recalculateRegionsForLocation(locid, gps);
-        // Update location cache so subsequent files don't re-run this
-        location.gps = { lat: gps.lat, lng: gps.lng };
-      } catch (dbError) {
-        const errMsg = dbError instanceof Error ? dbError.message : String(dbError);
-        console.warn('[FileImport] Failed to auto-populate location GPS:', errMsg);
-      }
-    }
+      console.log('[FileImport] Auto-enriching location GPS from media EXIF via centralized service...');
 
-    // Step 8b: Non-blocking geocoding (DUMP phase per spec: GPS → Address)
-    // Only trigger if: geocodingService exists, location has no address
-    if (this.geocodingService && !location.address_street && !location.address_city) {
-      console.log('[FileImport] Step 8b (background): Running reverse geocode...');
-      try {
-        const geocodeResult = await this.geocodingService.reverseGeocode(gps.lat, gps.lng);
-        if (geocodeResult && geocodeResult.address) {
+      // Create enrichment service on-demand (geocodingService may be undefined)
+      if (!this.geocodingService) {
+        // No geocoding service - just update GPS and regions directly
+        try {
+          const regionFields = calculateRegionFields({
+            state: location.address_state,
+            county: location.address_county,
+            lat: gps.lat,
+            lng: gps.lng,
+          });
+
           await this.db
             .updateTable('locs')
             .set({
-              address_street: geocodeResult.address.street || null,
-              address_city: geocodeResult.address.city || null,
-              address_county: geocodeResult.address.county || null,
-              address_state: geocodeResult.address.stateCode || geocodeResult.address.state || null,
-              address_zipcode: geocodeResult.address.zipcode || null,
-              address_geocoded_at: new Date().toISOString(),
+              gps_lat: gps.lat,
+              gps_lng: gps.lng,
+              gps_source: 'media_gps',
+              census_region: regionFields.censusRegion,
+              census_division: regionFields.censusDivision,
+              state_direction: regionFields.stateDirection,
+              cultural_region: regionFields.culturalRegion ?? location.cultural_region,
+              country_cultural_region: regionFields.countryCulturalRegion ?? location.country_cultural_region,
             })
             .where('locid', '=', locid)
             .execute();
-          console.log('[FileImport] Location address updated from media GPS');
-          // DECISION-018: Recalculate region fields after address update
-          await this.recalculateRegionsForLocation(locid, gps);
-          // Update location cache
-          location.address_street = geocodeResult.address.street;
-          location.address_city = geocodeResult.address.city;
+
+          console.log('[FileImport] Location GPS + regions updated (no geocoding available)');
+          location.gps = { lat: gps.lat, lng: gps.lng };
+        } catch (dbError) {
+          console.warn('[FileImport] Failed to update GPS:', dbError);
         }
-      } catch (geocodeError) {
-        const errMsg = geocodeError instanceof Error ? geocodeError.message : String(geocodeError);
-        console.warn('[FileImport] Reverse geocoding failed:', errMsg);
+        return;
+      }
+
+      // Use centralized enrichment service for GPS + address + regions
+      const enrichmentService = new LocationEnrichmentService(this.db, this.geocodingService);
+
+      // Skip geocoding if location already has address
+      const hasAddress = location.address_street || location.address_city;
+
+      const enrichResult = await enrichmentService.enrichFromGPS(locid, {
+        lat: gps.lat,
+        lng: gps.lng,
+        source: 'media_gps',
+        skipGeocode: hasAddress,
+      });
+
+      if (enrichResult.success) {
+        // Update location cache so subsequent files don't re-run this
+        location.gps = { lat: gps.lat, lng: gps.lng };
+        if (enrichResult.address && !hasAddress) {
+          location.address_street = enrichResult.address.street;
+          location.address_city = enrichResult.address.city;
+        }
+        console.log(`[FileImport] Location enriched: GPS=true, address=${enrichResult.updated.address}, regions=${enrichResult.updated.regions}`);
+      } else {
+        console.warn('[FileImport] Enrichment failed:', enrichResult.error);
       }
     }
   }
@@ -1309,62 +1319,7 @@ export class FileImportService {
     return importId;
   }
 
-  /**
-   * DECISION-018: Recalculate region fields after GPS/address update
-   * Called after fire-and-forget GPS or address updates to ensure region fields are populated
-   */
-  private async recalculateRegionsForLocation(
-    locid: string,
-    gps: { lat: number; lng: number }
-  ): Promise<void> {
-    try {
-      // Get current location data for region calculation
-      const location = await this.db
-        .selectFrom('locs')
-        .select(['address_state', 'address_county', 'cultural_region', 'country_cultural_region'])
-        .where('locid', '=', locid)
-        .executeTakeFirst();
-
-      if (!location) {
-        console.warn('[FileImport] Cannot recalculate regions - location not found:', locid);
-        return;
-      }
-
-      // Calculate region fields using the shared region service
-      const regionFields = calculateRegionFields({
-        state: location.address_state,
-        county: location.address_county,
-        lat: gps.lat,
-        lng: gps.lng,
-        existingCulturalRegion: location.cultural_region,
-        existingCountryCulturalRegion: location.country_cultural_region,
-      });
-
-      // Update region fields in database
-      await this.db
-        .updateTable('locs')
-        .set({
-          census_region: regionFields.censusRegion,
-          census_division: regionFields.censusDivision,
-          state_direction: regionFields.stateDirection,
-          // Only update cultural regions if we got a value AND no existing value
-          cultural_region: regionFields.culturalRegion ?? location.cultural_region,
-          country_cultural_region: regionFields.countryCulturalRegion ?? location.country_cultural_region,
-        })
-        .where('locid', '=', locid)
-        .execute();
-
-      console.log('[FileImport] Region fields recalculated for location:', locid, {
-        censusRegion: regionFields.censusRegion,
-        stateDirection: regionFields.stateDirection,
-        culturalRegion: regionFields.culturalRegion,
-        countryCulturalRegion: regionFields.countryCulturalRegion,
-      });
-    } catch (error) {
-      console.warn('[FileImport] Failed to recalculate regions:', error);
-      // Non-fatal - don't fail the import
-    }
-  }
+  // NOTE: recalculateRegionsForLocation was removed - now handled by LocationEnrichmentService
 }
 
 // Import randomUUID for transaction helper
