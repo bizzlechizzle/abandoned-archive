@@ -256,11 +256,13 @@ In location detail/card components:
 
 ---
 
-## Plan Status: READY FOR APPROVAL
+## Plan Status: IMPLEMENTED
 
 Requirements covered:
 - [x] R1: Fix matching logic for state-only locations
 - [x] R2: Prompt user for state+name matches
 - [x] R3: Hide mini map when no GPS
 
-**Approve to proceed with implementation?**
+**Implementation completed: 2025-11-30**
+
+Commit: `3a10a09` - feat(refmap): implement state-based matching for locations without GPS
