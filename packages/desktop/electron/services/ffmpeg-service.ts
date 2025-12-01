@@ -1,7 +1,7 @@
-import ffmpeg from 'fluent-ffmpeg';
 import fs from 'fs/promises';
-import { execSync } from 'child_process';
-import path from 'path';
+import fsSync from 'fs';
+import { execSync, spawn } from 'child_process';
+import pathModule from 'path';
 
 // Common FFmpeg installation paths on macOS
 const FFMPEG_PATHS = [
@@ -10,24 +10,30 @@ const FFMPEG_PATHS = [
   '/usr/bin/ffmpeg',                // System install
 ];
 
+const FFPROBE_PATHS = [
+  '/opt/homebrew/bin/ffprobe',
+  '/usr/local/bin/ffprobe',
+  '/usr/bin/ffprobe',
+];
+
 /**
- * Find FFmpeg binary path
- * Checks PATH first, then common installation directories
+ * Find a binary path
+ * Checks PATH first via 'which', then common installation directories
  */
-function findFfmpegPath(): string | null {
-  // Try 'which ffmpeg' first (works if in PATH)
+function findBinaryPath(name: string, commonPaths: string[]): string | null {
+  // Try 'which' first (works if in PATH)
   try {
-    const result = execSync('which ffmpeg', { encoding: 'utf-8' }).trim();
+    const result = execSync(`which ${name}`, { encoding: 'utf-8' }).trim();
     if (result) return result;
   } catch {
     // Not in PATH, continue to check common paths
   }
 
   // Check common installation paths
-  for (const ffmpegPath of FFMPEG_PATHS) {
+  for (const binPath of commonPaths) {
     try {
-      require('fs').accessSync(ffmpegPath);
-      return ffmpegPath;
+      fsSync.accessSync(binPath);
+      return binPath;
     } catch {
       // Not at this path, continue
     }
@@ -36,21 +42,20 @@ function findFfmpegPath(): string | null {
   return null;
 }
 
-// Initialize FFmpeg path on module load
-const ffmpegPath = findFfmpegPath();
-if (ffmpegPath) {
-  console.log(`[FFmpegService] Using FFmpeg at: ${ffmpegPath}`);
-  ffmpeg.setFfmpegPath(ffmpegPath);
-  // Also set ffprobe path (typically in same directory)
-  const ffprobePath = path.join(path.dirname(ffmpegPath), 'ffprobe');
-  try {
-    require('fs').accessSync(ffprobePath);
-    ffmpeg.setFfprobePath(ffprobePath);
-  } catch {
-    // ffprobe not at expected location, let fluent-ffmpeg find it
-  }
+// Detect FFmpeg and FFprobe paths on module load
+const detectedFfmpegPath = findBinaryPath('ffmpeg', FFMPEG_PATHS);
+const detectedFfprobePath = findBinaryPath('ffprobe', FFPROBE_PATHS);
+
+if (detectedFfmpegPath) {
+  console.log(`[FFmpegService] Found FFmpeg at: ${detectedFfmpegPath}`);
 } else {
   console.error('[FFmpegService] WARNING: FFmpeg not found! Video processing will fail.');
+}
+
+if (detectedFfprobePath) {
+  console.log(`[FFmpegService] Found FFprobe at: ${detectedFfprobePath}`);
+} else {
+  console.error('[FFmpegService] WARNING: FFprobe not found! Metadata extraction will fail.');
 }
 
 export interface VideoMetadata {
@@ -65,41 +70,75 @@ export interface VideoMetadata {
 
 /**
  * Service for extracting metadata from videos using FFmpeg
+ * Uses direct spawn calls instead of fluent-ffmpeg to avoid ES module compatibility issues
  */
 export class FFmpegService {
   /**
-   * Extract metadata from a video file
+   * Extract metadata from a video file using ffprobe
    * @param filePath - Absolute path to the video file
    * @returns Promise resolving to extracted metadata
    */
   async extractMetadata(filePath: string): Promise<VideoMetadata> {
+    if (!detectedFfprobePath) {
+      throw new Error('FFprobe not found. Please install FFmpeg.');
+    }
+
     return new Promise((resolve, reject) => {
-      ffmpeg.ffprobe(filePath, (err, metadata) => {
-        if (err) {
-          console.error('Error extracting video metadata:', err);
-          reject(err);
+      const args = [
+        '-v', 'quiet',
+        '-print_format', 'json',
+        '-show_format',
+        '-show_streams',
+        filePath
+      ];
+
+      const proc = spawn(detectedFfprobePath, args);
+      let stdout = '';
+      let stderr = '';
+
+      proc.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      proc.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      proc.on('close', (code) => {
+        if (code !== 0) {
+          console.error('Error extracting video metadata:', stderr);
+          reject(new Error(`FFprobe exited with code ${code}: ${stderr}`));
           return;
         }
 
-        const videoStream = metadata.streams.find((s) => s.codec_type === 'video');
+        try {
+          const metadata = JSON.parse(stdout);
+          const videoStream = metadata.streams?.find((s: any) => s.codec_type === 'video');
 
-        // Extract creation time from format tags or stream tags
-        const creationTime =
-          metadata.format.tags?.creation_time ||
-          videoStream?.tags?.creation_time ||
-          null;
+          // Extract creation time from format tags or stream tags
+          const creationTime =
+            metadata.format?.tags?.creation_time ||
+            videoStream?.tags?.creation_time ||
+            null;
 
-        resolve({
-          duration: metadata.format.duration || null,
-          width: videoStream?.width || null,
-          height: videoStream?.height || null,
-          codec: videoStream?.codec_name || null,
-          fps: videoStream?.r_frame_rate
-            ? this.parseFrameRate(videoStream.r_frame_rate)
-            : null,
-          dateTaken: creationTime ? new Date(creationTime).toISOString() : null,
-          rawMetadata: JSON.stringify(metadata, null, 2),
-        });
+          resolve({
+            duration: metadata.format?.duration ? parseFloat(metadata.format.duration) : null,
+            width: videoStream?.width || null,
+            height: videoStream?.height || null,
+            codec: videoStream?.codec_name || null,
+            fps: videoStream?.r_frame_rate
+              ? this.parseFrameRate(videoStream.r_frame_rate)
+              : null,
+            dateTaken: creationTime ? new Date(creationTime).toISOString() : null,
+            rawMetadata: JSON.stringify(metadata, null, 2),
+          });
+        } catch (parseError) {
+          reject(new Error(`Failed to parse FFprobe output: ${parseError}`));
+        }
+      });
+
+      proc.on('error', (err) => {
+        reject(new Error(`Failed to spawn FFprobe: ${err.message}`));
       });
     });
   }
@@ -113,6 +152,7 @@ export class FFmpegService {
       if (parts.length === 2) {
         const numerator = parseInt(parts[0], 10);
         const denominator = parseInt(parts[1], 10);
+        if (denominator === 0) return null;
         return numerator / denominator;
       }
       return parseFloat(frameRate);
@@ -136,6 +176,10 @@ export class FFmpegService {
     timestampSeconds: number = 1,
     size: number = 256
   ): Promise<void> {
+    if (!detectedFfmpegPath) {
+      throw new Error('FFmpeg not found. Please install FFmpeg.');
+    }
+
     // Check if source file exists BEFORE calling FFmpeg
     try {
       await fs.access(sourcePath);
@@ -143,21 +187,53 @@ export class FFmpegService {
       throw new Error(`Source file not found: ${sourcePath}`);
     }
 
+    // Ensure output directory exists
+    const outputDir = pathModule.dirname(outputPath);
+    await fs.mkdir(outputDir, { recursive: true });
+
     return new Promise((resolve, reject) => {
-      ffmpeg(sourcePath)
-        .seekInput(timestampSeconds)
-        .frames(1)
-        .size(`${size}x${size}`)
-        .outputOptions(['-q:v', '2', '-update', '1']) // JPEG quality + single image mode (FFmpeg 7.x)
-        .output(outputPath)
-        .on('end', () => resolve())
-        .on('error', (err) => {
-          console.error('[FFmpegService] extractFrame failed:', err.message);
+      const args = [
+        '-ss', String(timestampSeconds),
+        '-i', sourcePath,
+        '-frames:v', '1',
+        '-vf', `scale=${size}:${size}`,
+        '-q:v', '2',
+        '-update', '1',
+        '-y',  // Overwrite output file
+        outputPath
+      ];
+
+      console.log(`[FFmpegService] Running: ${detectedFfmpegPath} ${args.join(' ')}`);
+
+      const proc = spawn(detectedFfmpegPath, args);
+      let stderr = '';
+
+      proc.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      proc.on('close', (code) => {
+        if (code !== 0) {
+          console.error('[FFmpegService] extractFrame failed:', stderr);
           console.error('[FFmpegService] Source:', sourcePath);
           console.error('[FFmpegService] Output:', outputPath);
-          reject(err);
-        })
-        .run();
+          reject(new Error(`FFmpeg exited with code ${code}`));
+          return;
+        }
+
+        // Verify output file was created
+        if (!fsSync.existsSync(outputPath)) {
+          reject(new Error(`FFmpeg completed but output file was not created: ${outputPath}`));
+          return;
+        }
+
+        resolve();
+      });
+
+      proc.on('error', (err) => {
+        console.error('[FFmpegService] Failed to spawn FFmpeg:', err.message);
+        reject(new Error(`Failed to spawn FFmpeg: ${err.message}`));
+      });
     });
   }
 }
