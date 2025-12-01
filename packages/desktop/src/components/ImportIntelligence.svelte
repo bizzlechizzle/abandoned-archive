@@ -60,6 +60,14 @@
     scanResult = null;
 
     try {
+      // Defensive check: ensure API is available before calling
+      if (!window.electronAPI?.importIntelligence?.scan) {
+        console.error('[ImportIntelligence] API not available - preload may be out of sync');
+        error = 'Import Intelligence not available. Please restart the app.';
+        scanning = false;
+        return;
+      }
+
       const result = await window.electronAPI.importIntelligence.scan(lat, lng, hints);
       scanResult = result;
     } catch (err) {

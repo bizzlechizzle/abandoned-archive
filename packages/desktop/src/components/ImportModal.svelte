@@ -325,13 +325,14 @@
 
   // Apply GPS from a matched reference point
   function applyMatchGps(match: RefMapMatch) {
-    // Update the prefilled data in the store to include GPS
+    // Update the prefilled data in the store to include GPS with proper source attribution
     importModal.update(current => ({
       ...current,
       prefilledData: {
         ...current.prefilledData,
         gps_lat: match.lat,
         gps_lng: match.lng,
+        gps_source: 'ref_map_point', // Track that GPS came from reference map, not user verification
       },
     }));
     // Clear matches after applying
@@ -421,13 +422,19 @@
       },
     };
 
-    // Include GPS if pre-filled (from map right-click)
-    if ($importModal.prefilledData?.gps_lat && $importModal.prefilledData?.gps_lng) {
+    // Include GPS if pre-filled (from map right-click or ref map match)
+    // Use explicit null check to handle coordinates at 0 (equator/prime meridian)
+    if ($importModal.prefilledData?.gps_lat !== null && $importModal.prefilledData?.gps_lat !== undefined &&
+        $importModal.prefilledData?.gps_lng !== null && $importModal.prefilledData?.gps_lng !== undefined) {
+      // Use tracked GPS source, defaulting to user_map_click for backward compatibility
+      const gpsSource = $importModal.prefilledData.gps_source || 'user_map_click';
       data.gps = {
         lat: $importModal.prefilledData.gps_lat,
         lng: $importModal.prefilledData.gps_lng,
-        source: 'user_map_click',
-        verifiedOnMap: true,
+        source: gpsSource,
+        // Only mark as verified on map if user actually confirmed via map click
+        // GPS from ref_map_point or other sources should NOT be marked as verified
+        verifiedOnMap: gpsSource === 'user_map_click',
       };
     }
 
@@ -612,6 +619,7 @@
         ...current.prefilledData,
         gps_lat: lat,
         gps_lng: lng,
+        gps_source: 'ref_map_point', // Track that GPS came from reference map
         name: pointName,
       },
     }));

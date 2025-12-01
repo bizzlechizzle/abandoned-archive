@@ -508,8 +508,10 @@ export class SQLiteLocationRepository implements LocationRepository {
       akanam: row.akanam ?? undefined,
       type: row.type ?? undefined,
       stype: row.stype ?? undefined,
+      // GPS: Use explicit null check to handle coordinates at 0 (equator/prime meridian)
       gps:
-        row.gps_lat && row.gps_lng
+        row.gps_lat !== null && row.gps_lat !== undefined &&
+        row.gps_lng !== null && row.gps_lng !== undefined
           ? {
               lat: row.gps_lat,
               lng: row.gps_lng,

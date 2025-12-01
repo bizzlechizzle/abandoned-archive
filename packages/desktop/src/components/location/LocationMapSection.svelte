@@ -132,7 +132,11 @@
   // GPS helpers - Migration 31: Use sub-location GPS when viewing sub-location
   const effectiveGpsLat = $derived(subLocation ? subLocation.gps_lat : location.gps?.lat);
   const effectiveGpsLng = $derived(subLocation ? subLocation.gps_lng : location.gps?.lng);
-  const hasGps = $derived(effectiveGpsLat && effectiveGpsLng);
+  // Use explicit null check to handle coordinates at 0 (equator/prime meridian)
+  const hasGps = $derived(
+    effectiveGpsLat !== null && effectiveGpsLat !== undefined &&
+    effectiveGpsLng !== null && effectiveGpsLng !== undefined
+  );
 
   // DECISION-016: Verification states for colored dots (must check actual verified flags, not just data existence)
   const isAddressVerified = $derived(location.address?.verified === true);

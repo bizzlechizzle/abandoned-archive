@@ -6,12 +6,17 @@
 
 import { writable } from 'svelte/store';
 
+// GPS source types for proper attribution
+type GpsSource = 'user_map_click' | 'ref_map_point' | 'photo_exif' | 'manual_entry';
+
 interface ImportModalState {
   isOpen: boolean;
   prefilledData?: {
     name?: string;
     gps_lat?: number;
     gps_lng?: number;
+    // Track GPS source for proper attribution (user_map_click vs ref_map_point etc)
+    gps_source?: GpsSource;
     state?: string;
     type?: string;
     // Migration 38: Track ref point ID for deletion after location creation

@@ -450,6 +450,16 @@ const api = {
     previewDedup: () => invokeAuto("refMaps:previewDedup")(),
     deduplicate: () => invokeAuto("refMaps:deduplicate")(),
   },
+
+  // Import Intelligence - Smart location matching during import
+  importIntelligence: {
+    // Full scan for matches near GPS point
+    scan: (lat, lng, hints) => invokeAuto("import-intelligence:scan")(lat, lng, hints),
+    // Quick check if GPS has nearby matches
+    hasNearby: (lat, lng) => invokeAuto("import-intelligence:hasNearby")(lat, lng),
+    // Add AKA name to existing location
+    addAkaName: (locid, newName) => invokeAuto("import-intelligence:addAkaName")(locid, newName),
+  },
 };
 
 contextBridge.exposeInMainWorld("electronAPI", api);
