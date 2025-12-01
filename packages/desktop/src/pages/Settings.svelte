@@ -2366,7 +2366,7 @@
           <div class="mb-4">
             <h3 class="text-sm font-medium text-foreground mb-2">Duplicate Matches</h3>
             <p class="text-xs text-gray-500 mb-3">
-              Points matching existing data (name similarity 85%+ within 500m)
+              Points matching existing data (name similarity 85%+ or within 150m)
             </p>
 
             <!-- Catalogued Matches -->
@@ -2382,7 +2382,7 @@
                       <span class="text-gray-500"> matches </span>
                       <span class="font-medium">{match.existingName}</span>
                       <span class="text-gray-400 ml-1">
-                        ({Math.round(match.nameSimilarity * 100)}%, {match.distanceMeters}m)
+                        ({match.nameSimilarity ?? 0}%{match.distanceMeters != null ? `, ${match.distanceMeters}m` : ''})
                       </span>
                     </div>
                   {/each}
@@ -2411,7 +2411,7 @@
                         <span class="text-gray-400"> in {match.mapName}</span>
                       {/if}
                       <span class="text-gray-400 ml-1">
-                        ({Math.round(match.nameSimilarity * 100)}%, {match.distanceMeters}m)
+                        ({match.nameSimilarity ?? 0}%{match.distanceMeters != null ? `, ${match.distanceMeters}m` : ''})
                       </span>
                     </div>
                   {/each}

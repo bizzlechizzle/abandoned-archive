@@ -19,10 +19,10 @@ import type { Kysely } from 'kysely';
 import type { Database } from '../main/database.types';
 import { jaroWinklerSimilarity, normalizeName } from './jaro-winkler-service';
 import { haversineDistance } from './geo-utils';
+import { DUPLICATE_CONFIG } from '../../src/lib/constants';
 
-// Constants for duplicate detection
-const GPS_RADIUS_METERS = 150; // Match against catalogued locations
-const NAME_SIMILARITY_THRESHOLD = 0.50; // 50% Jaro-Winkler
+// Use centralized constants for duplicate detection
+const { GPS_RADIUS_METERS, NAME_SIMILARITY_THRESHOLD } = DUPLICATE_CONFIG;
 
 /**
  * Types for import preview and deduplication
@@ -640,6 +640,7 @@ export class RefMapDedupService {
                 existingId: loc.locid,
                 existingName: loc.locnam,
                 nameSimilarity: Math.round(nameSim * 100),
+                distanceMeters: Math.round(distance),
               });
               isDuplicate = true;
               break;

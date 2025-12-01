@@ -387,7 +387,7 @@
             class="text-accent hover:underline"
             title="View all locations in {culturalRegion}"
           >{culturalRegion}</button>
-          {#if localCulturalRegionVerified}<span class="text-verified ml-1" title="Verified">✓</span>{/if}
+          {#if localCulturalRegionVerified}<span class="text-verified ml-1 text-xs" title="Verified">(verified)</span>{/if}
         {/if}
         {#if directionOnly}
           {#if location.address?.county || culturalRegion}<span class="text-gray-400"> - </span>{/if}
@@ -423,7 +423,7 @@
             class="text-accent hover:underline"
             title="View all locations in {countryCulturalRegion}"
           >{countryCulturalRegion}</button>
-          {#if countryCulturalRegionVerified}<span class="text-verified ml-1" title="Verified">✓</span>{/if}
+          {#if countryCulturalRegionVerified}<span class="text-verified ml-1 text-xs" title="Verified">(verified)</span>{/if}
         {/if}
         {#if censusRegion}
           {#if countryCulturalRegion}<span class="text-gray-400"> - </span>{/if}

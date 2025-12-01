@@ -4,19 +4,19 @@
  * Provides safety net to prevent duplicate locations in the archive.
  * Checks for matches by:
  * 1. GPS proximity (within 150m = same physical site)
- * 2. Name similarity (≥50% Jaro-Winkler = prompt user)
+ * 2. Name similarity (≥85% Jaro-Winkler = high confidence match)
  *
  * ADR Reference: ADR-pin-conversion-duplicate-prevention.md
  */
 
 import type { Kysely } from 'kysely';
-import type { Database } from '../main/database';
+import type { Database } from '../main/database.types';
 import { haversineDistance, getBoundingBox } from './geo-utils';
 import { jaroWinklerSimilarity } from './jaro-winkler-service';
+import { DUPLICATE_CONFIG } from '../../src/lib/constants';
 
-// Configuration constants
-const GPS_RADIUS_METERS = 150; // Same site threshold
-const NAME_SIMILARITY_THRESHOLD = 0.50; // 50% - prompt user to decide
+// Use centralized constants for duplicate detection
+const { GPS_RADIUS_METERS, NAME_SIMILARITY_THRESHOLD } = DUPLICATE_CONFIG;
 
 /**
  * Input for duplicate check

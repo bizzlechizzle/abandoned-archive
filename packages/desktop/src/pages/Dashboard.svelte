@@ -184,9 +184,6 @@
             {#each $storeRecentImports.slice(0, 3) as job}
               <div class="flex items-center justify-between text-sm py-2 border-b border-gray-100 last:border-0">
                 <div class="flex items-center gap-2">
-                  <span class={job.status === 'completed' ? 'text-green-500' : 'text-red-500'}>
-                    {job.status === 'completed' ? '✓' : '!'}
-                  </span>
                   <button onclick={() => router.navigate(`/location/${job.locid}`)} class="text-accent hover:underline">
                     {job.locationName}
                   </button>

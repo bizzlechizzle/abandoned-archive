@@ -10,7 +10,7 @@
 
 import { randomUUID } from 'crypto';
 import type { Kysely } from 'kysely';
-import type { Database } from '../main/database';
+import type { Database } from '../main/database.types';
 
 export interface ExclusionPair {
   nameA: string;

@@ -14,12 +14,6 @@
     info: 'bg-blue-600',
   };
 
-  const typeIcons: Record<Toast['type'], string> = {
-    success: '✓',
-    error: '✕',
-    warning: '⚠',
-    info: 'ℹ',
-  };
 </script>
 
 <div class="fixed bottom-4 right-4 z-50 space-y-2 max-w-sm">
@@ -30,7 +24,6 @@
       out:fade={{ duration: 150 }}
       role="alert"
     >
-      <span class="text-lg font-bold">{typeIcons[toast.type]}</span>
       <span class="flex-1">{toast.message}</span>
       <button
         onclick={() => toasts.dismiss(toast.id)}

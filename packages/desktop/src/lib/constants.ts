@@ -136,6 +136,6 @@ export const SUCCESS_MESSAGES = {
 // ADR: ADR-pin-conversion-duplicate-prevention.md
 export const DUPLICATE_CONFIG = {
   GPS_RADIUS_METERS: 150,           // Same site threshold - locations within this distance are considered duplicates
-  NAME_SIMILARITY_THRESHOLD: 0.50,  // 50% Jaro-Winkler - prompt user to decide
+  NAME_SIMILARITY_THRESHOLD: 0.85,  // 85% Jaro-Winkler - high confidence matches only
   NEARBY_RADIUS_METERS: 400,        // ~0.25 miles - show "nearby" hint during creation
 } as const;

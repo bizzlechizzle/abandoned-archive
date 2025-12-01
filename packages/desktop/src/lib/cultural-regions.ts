@@ -1,7 +1,7 @@
 /**
  * Cultural Regions by State
  * Per DECISION-011: Predefined cultural regions for Location Box UI
- * These are user-selectable, subjective regions that do NOT count toward Location ✓
+ * These are user-selectable, subjective regions that do NOT count toward Location completeness.
  */
 
 export const CULTURAL_REGIONS: Record<string, string[]> = {
