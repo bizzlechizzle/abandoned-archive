@@ -17,7 +17,7 @@
 
 import type { Kysely } from 'kysely';
 import type { Database } from '../main/database.types';
-import { jaroWinklerSimilarity, normalizeName } from './jaro-winkler-service';
+import { normalizedSimilarity, normalizeName, isSmartMatch, getAdjustedThreshold } from './jaro-winkler-service';
 import { haversineDistance } from './geo-utils';
 import { DUPLICATE_CONFIG } from '../../src/lib/constants';
 import { getStateCodeFromName, isValidStateCode } from './us-state-codes';
@@ -545,7 +545,7 @@ export class RefMapDedupService {
           if (distance <= GPS_RADIUS_METERS) {
             // GPS match - high confidence
             const nameSim = point.name && loc.locnam
-              ? jaroWinklerSimilarity(normalizeName(point.name), normalizeName(loc.locnam))
+              ? normalizedSimilarity(point.name, loc.locnam)
               : 0;
 
             matches.push({
@@ -560,16 +560,16 @@ export class RefMapDedupService {
             break; // Found match, move to next point
           }
 
-          // Check name similarity with distance limit
+          // Check name similarity with distance limit (uses smart matching with word-overlap boost)
           if (point.name) {
-            const normalizedPointName = normalizeName(point.name);
             const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
 
             let foundMatch = false;
             for (const locName of namesToCheck) {
-              const nameSim = jaroWinklerSimilarity(normalizedPointName, normalizeName(locName));
+              const nameSim = normalizedSimilarity(point.name, locName);
               const isExactMatch = nameSim >= 0.99;
-              const isSimilarMatch = nameSim >= NAME_SIMILARITY_THRESHOLD && distance <= NAME_MATCH_RADIUS_METERS;
+              // Use smart matching - applies word-overlap boost for cases like "Chevy" vs "Chevrolet"
+              const isSimilarMatch = isSmartMatch(point.name, locName, NAME_SIMILARITY_THRESHOLD) && distance <= NAME_MATCH_RADIUS_METERS;
 
               if (isExactMatch || isSimilarMatch) {
                 matches.push({
@@ -592,14 +592,13 @@ export class RefMapDedupService {
           const sameState = locStateNorm === pointStateNorm;
 
           if (sameState && point.name) {
-            const normalizedPointName = normalizeName(point.name);
             const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
 
             let foundMatch = false;
             for (const locName of namesToCheck) {
-              const nameSim = jaroWinklerSimilarity(normalizedPointName, normalizeName(locName));
-
-              if (nameSim >= NAME_SIMILARITY_THRESHOLD) {
+              // Use smart matching with word-overlap boost
+              if (isSmartMatch(point.name, locName, NAME_SIMILARITY_THRESHOLD)) {
+                const nameSim = normalizedSimilarity(point.name, locName);
                 // State + name match
                 matches.push({
                   pointId: point.point_id,
@@ -618,12 +617,11 @@ export class RefMapDedupService {
           }
         } else if (point.name) {
           // LOCATION HAS NO GPS AND NO STATE - exact name match only
-          const normalizedPointName = normalizeName(point.name);
           const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
 
           let foundMatch = false;
           for (const locName of namesToCheck) {
-            const nameSim = jaroWinklerSimilarity(normalizedPointName, normalizeName(locName));
+            const nameSim = normalizedSimilarity(point.name, locName);
 
             if (nameSim >= 0.99) { // 99%+ = exact match only
               matches.push({
@@ -705,7 +703,7 @@ export class RefMapDedupService {
           if (distance <= GPS_RADIUS_METERS) {
             // GPS match - high confidence, auto-skip
             const nameSim = point.name && loc.locnam
-              ? jaroWinklerSimilarity(normalizeName(point.name), normalizeName(loc.locnam))
+              ? normalizedSimilarity(point.name, loc.locnam)
               : 0;
             result.cataloguedMatches.push({
               type: 'catalogued',
@@ -723,15 +721,15 @@ export class RefMapDedupService {
             break;
           }
 
-          // Check name similarity with distance limit
+          // Check name similarity with distance limit (uses smart matching with word-overlap boost)
           if (point.name) {
-            const normalizedPointName = normalizeName(point.name);
             const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
 
             for (const locName of namesToCheck) {
-              const nameSim = jaroWinklerSimilarity(normalizedPointName, normalizeName(locName));
+              const nameSim = normalizedSimilarity(point.name, locName);
               const isExactMatch = nameSim >= 0.99;
-              const isSimilarMatch = nameSim >= NAME_SIMILARITY_THRESHOLD && distance <= NAME_MATCH_RADIUS_METERS;
+              // Use smart matching - applies word-overlap boost for cases like "Chevy" vs "Chevrolet"
+              const isSimilarMatch = isSmartMatch(point.name, locName, NAME_SIMILARITY_THRESHOLD) && distance <= NAME_MATCH_RADIUS_METERS;
 
               if (isExactMatch || isSimilarMatch) {
                 result.cataloguedMatches.push({
@@ -760,13 +758,12 @@ export class RefMapDedupService {
           const sameState = locStateNorm === pointStateNorm;
 
           if (sameState && point.name) {
-            const normalizedPointName = normalizeName(point.name);
             const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
 
             for (const locName of namesToCheck) {
-              const nameSim = jaroWinklerSimilarity(normalizedPointName, normalizeName(locName));
-
-              if (nameSim >= NAME_SIMILARITY_THRESHOLD) {
+              // Use smart matching with word-overlap boost
+              if (isSmartMatch(point.name, locName, NAME_SIMILARITY_THRESHOLD)) {
+                const nameSim = normalizedSimilarity(point.name, locName);
                 // State + name match - needs user confirmation
                 // This is an ENRICHMENT OPPORTUNITY - existing location has no GPS
                 result.cataloguedMatches.push({
@@ -792,13 +789,12 @@ export class RefMapDedupService {
           // Skip if this location already has a better match
           if (matchedEnrichmentLocIds.has(loc.locid)) continue;
 
-          const normalizedPointName = normalizeName(point.name);
           const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
 
           for (const locName of namesToCheck) {
-            const nameSim = jaroWinklerSimilarity(normalizedPointName, normalizeName(locName));
-
-            if (nameSim >= NAME_SIMILARITY_THRESHOLD) { // 72%+ name match = enrichment opportunity
+            // Use smart matching with word-overlap boost
+            if (isSmartMatch(point.name, locName, NAME_SIMILARITY_THRESHOLD)) {
+              const nameSim = normalizedSimilarity(point.name, locName);
               // This is an ENRICHMENT OPPORTUNITY - existing location has no GPS
               result.cataloguedMatches.push({
                 type: 'catalogued',

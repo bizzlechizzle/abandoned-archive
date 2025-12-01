@@ -22,6 +22,7 @@
   import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
   import { ACCESS_OPTIONS } from '../constants/location-enums';
   import { getTypeForSubtype } from '../lib/type-hierarchy';
+  import { DUPLICATE_CONFIG } from '../lib/constants';
 
   // Form state
   let name = $state('');
@@ -264,7 +265,7 @@
       try {
         matchesLoading = true;
         const matches = await window.electronAPI.refMaps.findMatches(name.trim(), {
-          threshold: 0.92,
+          threshold: DUPLICATE_CONFIG.NAME_SIMILARITY_THRESHOLD,
           limit: 3,
           state: selectedState || null,
         });

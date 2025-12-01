@@ -2,14 +2,15 @@
  * Reference Map Matcher Service
  *
  * Matches user-entered location names against imported reference map points
- * using Jaro-Winkler similarity algorithm.
+ * using Jaro-Winkler similarity algorithm with smart matching.
  *
  * Used during location creation to suggest GPS coordinates from reference data.
  */
 
 import { Kysely } from 'kysely';
 import type { Database } from '../main/database.types';
-import { jaroWinklerSimilarity } from './jaro-winkler-service';
+import { normalizedSimilarity, isSmartMatch } from './jaro-winkler-service';
+import { DUPLICATE_CONFIG } from '../../src/lib/constants';
 
 /**
  * A matched reference map point with similarity score
@@ -31,7 +32,7 @@ export interface RefMapMatch {
  * Options for finding matches
  */
 export interface MatchOptions {
-  /** Minimum similarity score (default 0.92) */
+  /** Minimum similarity score (default from DUPLICATE_CONFIG) */
   threshold?: number;
   /** Maximum number of results (default 3) */
   limit?: number;
@@ -42,7 +43,7 @@ export interface MatchOptions {
 }
 
 const DEFAULT_OPTIONS: Required<MatchOptions> = {
-  threshold: 0.92,
+  threshold: DUPLICATE_CONFIG.NAME_SIMILARITY_THRESHOLD,
   limit: 3,
   state: null,
   minQueryLength: 3,
@@ -108,15 +109,17 @@ export class RefMapMatcherService {
         return [];
       }
 
-      // Calculate similarity scores and filter by threshold
+      // Calculate similarity scores using smart matching with word-overlap boost
       const matches: RefMapMatch[] = [];
 
       for (const point of points) {
         if (!point.name) continue;
 
-        const score = jaroWinklerSimilarity(normalizedQuery, point.name);
+        // Use normalizedSimilarity for scoring (applies alias expansion)
+        const score = normalizedSimilarity(normalizedQuery, point.name);
 
-        if (score >= opts.threshold) {
+        // Use isSmartMatch for threshold check (applies word-overlap boost)
+        if (isSmartMatch(normalizedQuery, point.name, opts.threshold)) {
           matches.push({
             pointId: point.point_id,
             mapId: point.map_id,
