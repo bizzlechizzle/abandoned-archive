@@ -140,6 +140,32 @@ pnpm --filter desktop exec tsc --noEmit 2>&1 | grep -E "(ref-map-dedup|location-
 
 ---
 
+### BUG 10: Name Matches Had No Distance Limit (CRITICAL) - FIXED
+
+**Symptom**: "Brockport Golf Club" matched "Brockport School Buses" at 4580m apart
+
+**Root Cause**: Name similarity check had NO distance requirement. Locations sharing a town name would match regardless of how far apart they were.
+
+**Fix Applied**:
+- Added `NAME_MATCH_RADIUS_METERS: 500` constant
+- Name similarity matches now require `distance <= 500m`
+- Updated both `checkForDuplicates` and `findCataloguedRefPoints` methods
+
+**Before**: Name 85%+ = match (no distance limit)
+**After**: Name 85%+ AND distance <= 500m = match
+
+---
+
+## Final Algorithm
+
+| Condition | Result |
+|-----------|--------|
+| GPS distance <= 150m | Definite duplicate (same physical site) |
+| GPS distance <= 500m AND name >= 85% | Probable duplicate (nearby similar name) |
+| GPS distance > 500m | NOT a duplicate, regardless of name |
+
+---
+
 ## Remaining Items (P2 - Future Sprint)
 
 | Item | Status | Notes |
@@ -152,4 +178,4 @@ pnpm --filter desktop exec tsc --noEmit 2>&1 | grep -E "(ref-map-dedup|location-
 
 ## Completion Score: 100%
 
-All P0 and P1 bugs have been fixed. Build passes. Ready for commit.
+All critical bugs have been fixed. Build passes. Pushed to GitHub.
