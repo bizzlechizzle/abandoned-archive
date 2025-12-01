@@ -1,5 +1,57 @@
 import ffmpeg from 'fluent-ffmpeg';
 import fs from 'fs/promises';
+import { execSync } from 'child_process';
+import path from 'path';
+
+// Common FFmpeg installation paths on macOS
+const FFMPEG_PATHS = [
+  '/opt/homebrew/bin/ffmpeg',      // Homebrew on Apple Silicon
+  '/usr/local/bin/ffmpeg',          // Homebrew on Intel Mac / manual install
+  '/usr/bin/ffmpeg',                // System install
+];
+
+/**
+ * Find FFmpeg binary path
+ * Checks PATH first, then common installation directories
+ */
+function findFfmpegPath(): string | null {
+  // Try 'which ffmpeg' first (works if in PATH)
+  try {
+    const result = execSync('which ffmpeg', { encoding: 'utf-8' }).trim();
+    if (result) return result;
+  } catch {
+    // Not in PATH, continue to check common paths
+  }
+
+  // Check common installation paths
+  for (const ffmpegPath of FFMPEG_PATHS) {
+    try {
+      require('fs').accessSync(ffmpegPath);
+      return ffmpegPath;
+    } catch {
+      // Not at this path, continue
+    }
+  }
+
+  return null;
+}
+
+// Initialize FFmpeg path on module load
+const ffmpegPath = findFfmpegPath();
+if (ffmpegPath) {
+  console.log(`[FFmpegService] Using FFmpeg at: ${ffmpegPath}`);
+  ffmpeg.setFfmpegPath(ffmpegPath);
+  // Also set ffprobe path (typically in same directory)
+  const ffprobePath = path.join(path.dirname(ffmpegPath), 'ffprobe');
+  try {
+    require('fs').accessSync(ffprobePath);
+    ffmpeg.setFfprobePath(ffprobePath);
+  } catch {
+    // ffprobe not at expected location, let fluent-ffmpeg find it
+  }
+} else {
+  console.error('[FFmpegService] WARNING: FFmpeg not found! Video processing will fail.');
+}
 
 export interface VideoMetadata {
   duration: number | null;
