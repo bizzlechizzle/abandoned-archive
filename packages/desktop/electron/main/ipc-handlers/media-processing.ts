@@ -5,6 +5,7 @@
 import { ipcMain, shell } from 'electron';
 import { z } from 'zod';
 import path from 'path';
+import fs from 'fs/promises';
 import type { Kysely } from 'kysely';
 import type { Database } from '../database';
 import { SQLiteMediaRepository } from '../../repositories/sqlite-media-repository';
@@ -813,6 +814,32 @@ export function registerMediaProcessingHandlers(
     }
   });
 
+  // Helper: Search for video file by hash in archive (fallback when stored path fails)
+  async function findVideoByHash(archivePath: string, hash: string, ext: string): Promise<string | null> {
+    const locationsDir = path.join(archivePath, 'locations');
+    const filename = `${hash}${ext}`;
+
+    async function searchDir(dir: string): Promise<string | null> {
+      try {
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            const found = await searchDir(fullPath);
+            if (found) return found;
+          } else if (entry.name === filename) {
+            return fullPath;
+          }
+        }
+      } catch {
+        // Directory not accessible, skip
+      }
+      return null;
+    }
+
+    return searchDir(locationsDir);
+  }
+
   // Location-specific video fix: poster frames + thumbnails for one location
   ipcMain.handle('media:fixLocationVideos', async (_event, locid: unknown) => {
     try {
@@ -826,13 +853,36 @@ export function registerMediaProcessingHandlers(
       const videos = await mediaRepo.getVideosByLocation(validLocid);
       let fixed = 0;
       let errors = 0;
+      let pathsRepaired = 0;
 
       console.log(`[media:fixLocationVideos] Processing ${videos.length} videos for location ${validLocid}...`);
 
       for (const vid of videos) {
         try {
+          let sourcePath = vid.vidloc;
+
+          // Check if source file exists at stored path
+          try {
+            await fs.access(sourcePath);
+          } catch {
+            // File not at stored path - search by hash
+            console.log(`[media:fixLocationVideos] File not found at stored path, searching by hash: ${vid.vidsha.slice(0, 12)}...`);
+            const foundPath = await findVideoByHash(archivePath, vid.vidsha, path.extname(vid.vidloc));
+            if (foundPath) {
+              sourcePath = foundPath;
+              // Update database with correct path
+              await db.updateTable('vids').set({ vidloc: foundPath }).where('vidsha', '=', vid.vidsha).execute();
+              console.log(`[media:fixLocationVideos] Path repaired: ${foundPath}`);
+              pathsRepaired++;
+            } else {
+              console.error(`[media:fixLocationVideos] Video file not found on disk: ${vid.vidsha}`);
+              errors++;
+              continue;
+            }
+          }
+
           // Generate poster frame
-          const posterPath = await posterService.generatePoster(vid.vidloc, vid.vidsha);
+          const posterPath = await posterService.generatePoster(sourcePath, vid.vidsha);
 
           if (!posterPath) {
             console.warn(`[media:fixLocationVideos] No poster generated for ${vid.vidsha}`);
@@ -863,8 +913,8 @@ export function registerMediaProcessingHandlers(
         }
       }
 
-      console.log(`[media:fixLocationVideos] Complete: ${fixed} fixed, ${errors} errors`);
-      return { fixed, errors, total: videos.length };
+      console.log(`[media:fixLocationVideos] Complete: ${fixed} fixed, ${pathsRepaired} paths repaired, ${errors} errors`);
+      return { fixed, errors, pathsRepaired, total: videos.length };
     } catch (error) {
       console.error('Error fixing location videos:', error);
       if (error instanceof z.ZodError) {

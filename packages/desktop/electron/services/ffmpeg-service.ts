@@ -1,4 +1,5 @@
 import ffmpeg from 'fluent-ffmpeg';
+import fs from 'fs/promises';
 
 export interface VideoMetadata {
   duration: number | null;
@@ -83,6 +84,13 @@ export class FFmpegService {
     timestampSeconds: number = 1,
     size: number = 256
   ): Promise<void> {
+    // Check if source file exists BEFORE calling FFmpeg
+    try {
+      await fs.access(sourcePath);
+    } catch {
+      throw new Error(`Source file not found: ${sourcePath}`);
+    }
+
     return new Promise((resolve, reject) => {
       ffmpeg(sourcePath)
         .seekInput(timestampSeconds)
@@ -91,7 +99,12 @@ export class FFmpegService {
         .outputOptions(['-q:v', '2', '-update', '1']) // JPEG quality + single image mode (FFmpeg 7.x)
         .output(outputPath)
         .on('end', () => resolve())
-        .on('error', (err) => reject(err))
+        .on('error', (err) => {
+          console.error('[FFmpegService] extractFrame failed:', err.message);
+          console.error('[FFmpegService] Source:', sourcePath);
+          console.error('[FFmpegService] Output:', outputPath);
+          reject(err);
+        })
         .run();
     });
   }
