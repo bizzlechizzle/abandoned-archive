@@ -14,7 +14,7 @@ import { FFmpegService } from './ffmpeg-service';
  */
 export class PosterFrameService {
   private readonly DEFAULT_TIMESTAMP = 1; // seconds
-  private readonly OUTPUT_SIZE = 256; // Match thumbnail size
+  private readonly OUTPUT_SIZE = 1920; // Large enough to generate all thumbnail sizes (400, 800, 1920)
 
   constructor(
     private readonly mediaPathService: MediaPathService,

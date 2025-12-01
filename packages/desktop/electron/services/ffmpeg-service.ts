@@ -167,14 +167,14 @@ export class FFmpegService {
    * @param sourcePath - Absolute path to video file
    * @param outputPath - Absolute path for output JPEG
    * @param timestampSeconds - Time offset in seconds (default: 1)
-   * @param size - Output size in pixels (square crop, default: 256)
+   * @param maxSize - Maximum dimension in pixels, preserves aspect ratio (default: 1920)
    * @returns Promise that resolves when frame is extracted
    */
   async extractFrame(
     sourcePath: string,
     outputPath: string,
     timestampSeconds: number = 1,
-    size: number = 256
+    maxSize: number = 1920
   ): Promise<void> {
     if (!detectedFfmpegPath) {
       throw new Error('FFmpeg not found. Please install FFmpeg.');
@@ -192,11 +192,13 @@ export class FFmpegService {
     await fs.mkdir(outputDir, { recursive: true });
 
     return new Promise((resolve, reject) => {
+      // Scale to fit within maxSize while preserving aspect ratio
+      // -1 means "calculate automatically to preserve aspect ratio"
       const args = [
         '-ss', String(timestampSeconds),
         '-i', sourcePath,
         '-frames:v', '1',
-        '-vf', `scale=${size}:${size}`,
+        '-vf', `scale='min(${maxSize},iw)':'-1'`,
         '-q:v', '2',
         '-update', '1',
         '-y',  // Overwrite output file
