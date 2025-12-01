@@ -552,16 +552,16 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
           try {
             const geocodeResult = await geocodingService.reverseGeocode(point.lat, point.lng);
             if (geocodeResult?.address) {
-              // Normalize state to 2-letter code (constraint requires length = 2)
-              const normalizedState = AddressNormalizer.normalizeStateCode(geocodeResult.address.state);
+              // Geocoding service already normalizes: stateCode is 2-letter, county/zipcode are cleaned
+              // Use stateCode (not state) - state is full name for display, stateCode is the 2-letter code
               addressData = {
                 street: geocodeResult.address.street || null,
                 city: geocodeResult.address.city || null,
-                county: AddressNormalizer.normalizeCounty(geocodeResult.address.county) || null,
-                state: normalizedState,
-                zipcode: AddressNormalizer.normalizeZipcode(geocodeResult.address.zipcode) || null,
+                county: geocodeResult.address.county || null,
+                state: geocodeResult.address.stateCode || null, // Use stateCode (2-letter), NOT state (full name)
+                zipcode: geocodeResult.address.zipcode || null,
               };
-              console.log(`[RefMaps] Reverse geocoded ${point.name}: ${geocodeResult.displayName} (state: ${normalizedState})`);
+              console.log(`[RefMaps] Reverse geocoded ${point.name}: ${geocodeResult.displayName} → ${addressData.city}, ${addressData.state}`);
             }
           } catch (geoError) {
             console.warn(`[RefMaps] Reverse geocoding failed for ${point.name}, continuing with GPS only:`, geoError);
@@ -578,21 +578,27 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
           });
 
           // Step 3: Update the location with GPS, address, and region data
+          // Validate state is exactly 2 chars before including (database CHECK constraint)
+          const validState = addressData.state && addressData.state.length === 2 ? addressData.state : null;
+          if (addressData.state && addressData.state.length !== 2) {
+            console.warn(`[RefMaps] Invalid state "${addressData.state}" for ${point.name}, skipping state field`);
+          }
+
           const updateFields: Record<string, unknown> = {
-            // GPS fields
+            // GPS fields (always set)
             gps_lat: point.lat,
             gps_lng: point.lng,
             gps_source: 'ref_map_import',
             gps_verified_on_map: 0,
             gps_accuracy: null,
             gps_captured_at: new Date().toISOString(),
-            // Address fields (only if we got geocode data)
+            // Address fields (only if we got valid geocode data)
             ...(addressData.street && { address_street: addressData.street }),
             ...(addressData.city && { address_city: addressData.city }),
             ...(addressData.county && { address_county: addressData.county }),
-            ...(addressData.state && { address_state: addressData.state }),
+            ...(validState && { address_state: validState }),
             ...(addressData.zipcode && { address_zipcode: addressData.zipcode }),
-            // Region fields (8 regions)
+            // Region fields (calculated from state/GPS)
             ...(regionFields.censusRegion && { census_region: regionFields.censusRegion }),
             ...(regionFields.censusDivision && { census_division: regionFields.censusDivision }),
             ...(regionFields.stateDirection && { state_direction: regionFields.stateDirection }),
@@ -607,7 +613,7 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
             .execute();
 
           enrichedCount++;
-          console.log(`[RefMaps] Applied enrichment with full normalization: ${point.name} → location ${enrichment.existingLocId}`);
+          console.log(`[RefMaps] Enriched location ${enrichment.existingLocId}: GPS + ${validState ? `address (${validState})` : 'regions only'} for "${point.name}"`);
         }
       }
 
