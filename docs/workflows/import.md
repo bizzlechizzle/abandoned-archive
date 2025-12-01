@@ -13,6 +13,8 @@ Watcher scans drop zone, hashes every file, copies into archive folder, and link
 5. **Metadata extraction runs** — ExifTool/FFmpeg/sharp extract metadata in background
 6. **Repository upserts** — Media record keyed by SHA, linked to location/sub-location (if provided)
 7. **Import queue updates** — Status: pending → processing → complete/error
+8. **Post-import processing** — Live Photo detection, SDR duplicate hiding
+9. **Auto-hero selection** — If location has no hero image and images were imported, first image becomes hero
 
 ## Folder Organization
 
@@ -55,3 +57,14 @@ Every import captures:
 - Timestamps (import_date)
 - Source paths (original_name)
 - SHA256 hash (organized_name)
+
+## Auto-Hero Selection
+
+After a successful import, the system automatically sets a hero image for dashboard thumbnails:
+
+- **Condition**: Location has no `hero_imgsha` AND at least one image was successfully imported
+- **Selection**: First successfully imported image (not duplicate, not skipped)
+- **Behavior**: Only runs once per location; manual hero selection always takes precedence
+- **Non-blocking**: Failure to set auto-hero does not fail the import
+
+This ensures new locations immediately appear with thumbnails on the Dashboard without requiring manual hero selection.

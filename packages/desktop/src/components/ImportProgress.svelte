@@ -57,7 +57,7 @@
     <!-- Cancel button -->
     <button
       onclick={() => importStore.cancelImport()}
-      class="text-xs text-red-600 hover:text-red-800 hover:underline shrink-0 ml-2"
+      class="text-xs text-accent hover:text-red-600 hover:underline shrink-0 ml-2"
     >
       Cancel
     </button>

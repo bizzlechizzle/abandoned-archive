@@ -365,6 +365,29 @@ export class FileImportService {
     console.log('[FileImport] Step 10: Detecting Live Photos and SDR duplicates...');
     await this.detectAndHideLivePhotosAndSDR(locid);
 
+    // Step 11: Auto-set hero image if location has no hero and we imported images
+    // This ensures dashboard thumbnails appear immediately after first import
+    if (imported > 0) {
+      try {
+        const locationForHero = await this.locationRepo.findById(locid);
+        if (locationForHero && !locationForHero.hero_imgsha) {
+          // Find the first successfully imported image (not duplicate, not skipped)
+          const firstImage = results.find(r => r.type === 'image' && r.success && !r.duplicate && !r.skipped);
+          if (firstImage && firstImage.hash) {
+            await this.db
+              .updateTable('locs')
+              .set({ hero_imgsha: firstImage.hash })
+              .where('locid', '=', locid)
+              .execute();
+            console.log('[FileImport] Step 11: Auto-set hero image:', firstImage.hash.slice(0, 12) + '...');
+          }
+        }
+      } catch (heroError) {
+        // Non-fatal - don't fail import if auto-hero fails
+        console.warn('[FileImport] Step 11: Auto-hero failed (non-fatal):', heroError);
+      }
+    }
+
     return {
       total: files.length,
       imported,

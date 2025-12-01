@@ -33,7 +33,7 @@
       </span>
       <button
         onclick={() => importStore.cancelImport()}
-        class="text-xs text-red-600 hover:text-red-800 hover:underline"
+        class="text-xs text-accent hover:text-red-600 hover:underline"
       >
         Cancel
       </button>
