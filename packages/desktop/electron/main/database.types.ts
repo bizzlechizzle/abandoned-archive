@@ -20,6 +20,7 @@ export interface Database {
   ref_maps: RefMapsTable;
   ref_map_points: RefMapPointsTable;
   location_exclusions: LocationExclusionsTable;
+  sidecar_imports: SidecarImportsTable;
 }
 
 // Locations table
@@ -515,4 +516,23 @@ export interface LocationExclusionsTable {
   name_b: string;
   decided_at: string;
   decided_by: string | null;
+}
+
+// Migration 41: Sidecar Imports - Metadata-only imports from XML sidecars
+// When a media file has a matching .xml sidecar, we can import just the metadata
+// without bringing the actual media file into the archive
+export interface SidecarImportsTable {
+  sidecar_id: string;
+  original_filename: string;    // e.g., "IMG_1234.jpg"
+  original_path: string;        // Full path to original media file
+  xml_filename: string;         // e.g., "IMG_1234.xml"
+  xml_path: string;             // Full path to XML sidecar file
+  xml_content: string | null;   // Raw XML content
+  parsed_metadata: string | null; // Parsed JSON metadata
+  media_type: string | null;    // 'image', 'video', etc.
+  import_date: string;          // ISO timestamp
+  imported_by: string | null;   // Username for display
+  imported_by_id: string | null; // User ID reference
+  locid: string | null;         // Location reference
+  subid: string | null;         // Sub-location reference
 }

@@ -42,8 +42,10 @@ export interface ImportFileInput {
 export interface ImportResult {
   success: boolean;
   hash: string;
-  type: 'image' | 'video' | 'map' | 'document';  // No 'unknown' - defaults to document
+  type: 'image' | 'video' | 'map' | 'document' | 'skipped' | 'sidecar';  // 'sidecar' for metadata-only imports
   duplicate: boolean;
+  skipped?: boolean;  // True if file was skipped (e.g., .aae, .psd)
+  sidecarOnly?: boolean;  // True if only XML metadata was imported, not the media file
   archivePath?: string;
   error?: string;
   gpsWarning?: {
@@ -65,6 +67,8 @@ export interface ImportSessionResult {
   total: number;
   imported: number;
   duplicates: number;
+  skipped: number;     // Files with excluded extensions (.aae, .psd, etc.)
+  sidecarOnly: number; // Files where only XML metadata was imported (no media copied)
   errors: number;
   results: ImportResult[];
   importId: string;
@@ -74,6 +78,14 @@ export interface ImportSessionResult {
  * Service for importing media files into the archive
  */
 export class FileImportService {
+  // Extensions to skip entirely during import (not copied, not logged)
+  // .aae = Apple photo adjustments (sidecar metadata, not actual media)
+  // .psd/.psb = Photoshop project files (large, not archival media)
+  private readonly SKIP_EXTENSIONS = [
+    '.aae',                            // Apple photo adjustment sidecar
+    '.psd', '.psb',                    // Photoshop project files
+  ];
+
   // Comprehensive format support based on ExifTool capabilities
   private readonly IMAGE_EXTENSIONS = [
     // Standard formats
@@ -82,7 +94,7 @@ export class FileImportService {
     '.jxl',                            // JPEG XL
     '.heic', '.heif', '.hif',          // Apple HEIF/HEVC
     '.avif',                           // AV1 Image
-    '.psd', '.psb',                    // Photoshop
+    // Removed: .psd, .psb - now in SKIP_EXTENSIONS
     '.ai', '.eps', '.epsf',            // Adobe Illustrator/PostScript
     '.svg', '.svgz',                   // Vector
     '.ico', '.cur',                    // Icons
@@ -251,6 +263,8 @@ export class FileImportService {
     let imported = 0;
     let duplicates = 0;
     let errors = 0;
+    let skipped = 0;  // Files with excluded extensions (.aae, .psd, etc.)
+    let sidecarOnly = 0;  // Files where only XML metadata was imported (no media copied)
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -272,7 +286,13 @@ export class FileImportService {
         results.push(result);
 
         if (result.success) {
-          if (result.duplicate) {
+          if (result.skipped) {
+            skipped++;
+            console.log('[FileImport] File', i + 1, 'SKIPPED (excluded extension)');
+          } else if (result.sidecarOnly) {
+            sidecarOnly++;
+            console.log('[FileImport] File', i + 1, 'SIDECAR ONLY (XML metadata imported, no media)');
+          } else if (result.duplicate) {
             duplicates++;
             console.log('[FileImport] File', i + 1, 'was duplicate');
           } else {
@@ -317,7 +337,7 @@ export class FileImportService {
       // FIX 2.1: Yield to event loop between files to prevent UI freeze
       await new Promise(resolve => setImmediate(resolve));
     }
-    console.log('[FileImport] Batch processing complete:', imported, 'imported,', duplicates, 'duplicates,', errors, 'errors');
+    console.log('[FileImport] Batch processing complete:', imported, 'imported,', duplicates, 'duplicates,', skipped, 'skipped,', sidecarOnly, 'sidecar-only,', errors, 'errors');
 
     // Create import record in separate transaction (after all files processed)
     // NOTE: locid already pre-fetched at line 204, use auth_imp from first file
@@ -336,7 +356,7 @@ export class FileImportService {
         vid_count: vidCount,
         map_count: mapCount,
         doc_count: docCount,
-        notes: `Imported ${imported} files, ${duplicates} duplicates, ${errors} errors`,
+        notes: `Imported ${imported} files, ${duplicates} duplicates, ${skipped} skipped, ${sidecarOnly} sidecar-only, ${errors} errors`,
       });
     });
 
@@ -349,6 +369,8 @@ export class FileImportService {
       total: files.length,
       imported,
       duplicates,
+      skipped,
+      sidecarOnly,
       errors,
       results,
       importId,
@@ -473,6 +495,27 @@ export class FileImportService {
     console.log('[FileImport] Step 1: Validating file path...');
     const sanitizedName = PathValidator.sanitizeFilename(file.originalName);
     console.log('[FileImport] Step 1 complete, sanitized name:', sanitizedName);
+
+    // 1b. Check for skipped extensions (e.g., .aae, .psd)
+    const fileExt = path.extname(sanitizedName).toLowerCase();
+    if (this.shouldSkipFile(fileExt)) {
+      console.log('[FileImport] SKIPPING file with excluded extension:', fileExt, '-', file.originalName);
+      return {
+        success: true,
+        hash: '',
+        type: 'skipped',
+        duplicate: false,
+        skipped: true,
+      };
+    }
+
+    // 1c. Check for XML sidecar - if found, import metadata only (no media file)
+    const xmlSidecar = await this.findXmlSidecar(file.filePath);
+    if (xmlSidecar) {
+      console.log('[FileImport] XML sidecar detected for:', file.originalName, '- importing metadata only');
+      const mediaType = this.getFileType(fileExt);
+      return await this.importSidecarOnly(trx, file, xmlSidecar, mediaType);
+    }
 
     // 2. Calculate SHA256 hash (only once)
     console.log('[FileImport] Step 2: Calculating SHA256 hash...');
@@ -807,6 +850,102 @@ export class FileImportService {
         console.warn('[FileImport] Reverse geocoding failed:', errMsg);
       }
     }
+  }
+
+  /**
+   * Check if file should be skipped entirely during import
+   * Skipped files: .aae (Apple photo adjustments), .psd/.psb (Photoshop projects)
+   */
+  private shouldSkipFile(ext: string): boolean {
+    return this.SKIP_EXTENSIONS.includes(ext);
+  }
+
+  /**
+   * Check if a media file has a matching XML sidecar
+   * Looks for: filename.xml or filename.jpg.xml patterns
+   */
+  private async findXmlSidecar(filePath: string): Promise<string | null> {
+    const dir = path.dirname(filePath);
+    const filename = path.basename(filePath);
+    const filenameNoExt = path.basename(filePath, path.extname(filePath));
+
+    // Try different XML sidecar naming conventions
+    const possiblePaths = [
+      path.join(dir, `${filenameNoExt}.xml`),     // IMG_1234.xml for IMG_1234.jpg
+      path.join(dir, `${filename}.xml`),           // IMG_1234.jpg.xml
+    ];
+
+    for (const xmlPath of possiblePaths) {
+      try {
+        await fs.access(xmlPath);
+        console.log('[FileImport] Found XML sidecar:', xmlPath);
+        return xmlPath;
+      } catch {
+        // File doesn't exist, try next
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Import a sidecar record (metadata only, no media file copied)
+   * Stores the XML content and parsed metadata in sidecar_imports table
+   */
+  private async importSidecarOnly(
+    trx: any,
+    file: ImportFileInput,
+    xmlPath: string,
+    mediaType: string
+  ): Promise<ImportResult> {
+    const sidecarId = randomUUID();
+    const timestamp = new Date().toISOString();
+
+    // Read XML content
+    let xmlContent: string | null = null;
+    let parsedMetadata: string | null = null;
+
+    try {
+      xmlContent = await fs.readFile(xmlPath, 'utf-8');
+      // Basic XML to JSON conversion (user can parse specific format later)
+      parsedMetadata = JSON.stringify({
+        _note: 'Raw XML imported. Parse according to your specific XML format.',
+        _xmlLength: xmlContent.length,
+        _importedAt: timestamp,
+      });
+    } catch (err) {
+      console.warn('[FileImport] Failed to read XML sidecar:', err);
+    }
+
+    // Insert into sidecar_imports table
+    await trx
+      .insertInto('sidecar_imports')
+      .values({
+        sidecar_id: sidecarId,
+        original_filename: file.originalName,
+        original_path: file.filePath,
+        xml_filename: path.basename(xmlPath),
+        xml_path: xmlPath,
+        xml_content: xmlContent,
+        parsed_metadata: parsedMetadata,
+        media_type: mediaType,
+        import_date: timestamp,
+        imported_by: file.imported_by || file.auth_imp || null,
+        imported_by_id: file.imported_by_id || null,
+        locid: file.locid,
+        subid: file.subid || null,
+      })
+      .execute();
+
+    console.log('[FileImport] Sidecar import complete:', file.originalName, '-> XML metadata stored');
+
+    return {
+      success: true,
+      hash: sidecarId,  // Use sidecar ID as "hash" for tracking
+      type: 'sidecar',
+      duplicate: false,
+      sidecarOnly: true,
+    };
   }
 
   /**

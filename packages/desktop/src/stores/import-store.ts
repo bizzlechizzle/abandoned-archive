@@ -55,6 +55,25 @@ function createImportStore() {
     },
 
     /**
+     * Set the importId for the active job (called immediately when import starts)
+     * FIX: This ensures cancel works before any progress events arrive
+     */
+    setImportId(importId: string) {
+      update(state => {
+        if (state.activeJob) {
+          return {
+            ...state,
+            activeJob: {
+              ...state.activeJob,
+              importId,
+            },
+          };
+        }
+        return state;
+      });
+    },
+
+    /**
      * Update progress of active job
      * FIX 4.1: Now includes filename being processed
      * FIX 4.3: Now includes importId for cancellation
@@ -79,8 +98,9 @@ function createImportStore() {
 
     /**
      * FIX 4.3: Cancel active import
+     * Returns true if cancel was successful, false if no importId available
      */
-    async cancelImport() {
+    async cancelImport(): Promise<boolean> {
       let importId: string | undefined;
       update(state => {
         importId = state.activeJob?.importId;
@@ -96,13 +116,21 @@ function createImportStore() {
         return state;
       });
 
-      if (importId && window.electronAPI?.media?.cancelImport) {
+      if (!importId) {
+        console.warn('[importStore] Cannot cancel: no importId available yet');
+        return false;
+      }
+
+      if (window.electronAPI?.media?.cancelImport) {
         try {
           await window.electronAPI.media.cancelImport(importId);
+          return true;
         } catch (e) {
           console.error('Failed to cancel import:', e);
+          return false;
         }
       }
+      return false;
     },
 
     /**

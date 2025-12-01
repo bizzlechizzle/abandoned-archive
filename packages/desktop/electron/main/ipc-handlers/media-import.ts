@@ -201,11 +201,16 @@ async function detectLivePhotosForLocation(
   return { livePhotosHidden, sdrHidden };
 }
 
-// Supported file extensions
+// Extensions to skip entirely during import (not copied, not logged)
+// .aae = Apple photo adjustments (sidecar metadata, not actual media)
+// .psd/.psb = Photoshop project files (large, not archival media)
+const SKIP_EXTENSIONS = new Set(['aae', 'psd', 'psb']);
+
+// Supported file extensions (note: psd/psb removed - now in SKIP_EXTENSIONS)
 const SUPPORTED_EXTENSIONS = new Set([
   'jpg', 'jpeg', 'jpe', 'jfif', 'png', 'gif', 'bmp', 'tiff', 'tif', 'webp',
   'jp2', 'jpx', 'j2k', 'j2c', 'jxl', 'heic', 'heif', 'hif', 'avif',
-  'psd', 'psb', 'nef', 'nrw', 'cr2', 'cr3', 'crw', 'arw', 'dng',
+  'nef', 'nrw', 'cr2', 'cr3', 'crw', 'arw', 'dng',
   'orf', 'raf', 'rw2', 'raw', 'pef', 'srw', 'x3f', '3fr', 'iiq', 'gpr',
   'mp4', 'm4v', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'flv', 'mpg', 'mpeg',
   'ts', 'mts', 'm2ts', 'vob', '3gp', 'ogv', 'rm', 'dv', 'mxf',
@@ -249,6 +254,7 @@ export function registerMediaImportHandlers(
   ipcMain.handle('media:expandPaths', async (_event, paths: unknown) => {
     const validatedPaths = z.array(z.string()).parse(paths);
     const expandedPaths: string[] = [];
+    let skippedCount = 0;  // Track skipped files for logging
 
     async function processPath(filePath: string): Promise<void> {
       try {
@@ -258,6 +264,14 @@ export function registerMediaImportHandlers(
         if (stat.isFile()) {
           if (SYSTEM_FILES.has(fileName)) return;
           const ext = path.extname(filePath).toLowerCase().slice(1);
+
+          // Skip excluded extensions (.aae, .psd, .psb)
+          if (SKIP_EXTENSIONS.has(ext)) {
+            skippedCount++;
+            console.log(`[media:expandPaths] Skipping excluded extension: ${fileName}`);
+            return;
+          }
+
           if (ext || SUPPORTED_EXTENSIONS.has(ext)) {
             expandedPaths.push(filePath);
           }
@@ -274,6 +288,11 @@ export function registerMediaImportHandlers(
     }
 
     for (const p of validatedPaths) await processPath(p);
+
+    if (skippedCount > 0) {
+      console.log(`[media:expandPaths] Total files skipped (excluded extensions): ${skippedCount}`);
+    }
+
     return expandedPaths;
   });
 
@@ -320,6 +339,13 @@ export function registerMediaImportHandlers(
       const importId = `import-${Date.now()}`;
       const abortController = new AbortController();
       activeImports.set(importId, abortController);
+
+      // FIX: Send importId immediately so cancel works before any file processing
+      try {
+        if (_event.sender && !_event.sender.isDestroyed()) {
+          _event.sender.send('media:import:started', { importId });
+        }
+      } catch (e) { console.warn('[media:import] Failed to send started event:', e); }
 
       let result;
       try {
@@ -381,7 +407,8 @@ export function registerMediaImportHandlers(
         } catch (e) { console.warn('[media:import] Failed to update BagIt manifest (non-fatal):', e); }
       }
 
-      return result;
+      // FIX: Return importId immediately so cancel can work before progress events arrive
+      return { ...result, importId };
     } catch (error) {
       console.error('Error importing media:', error);
       if (error instanceof z.ZodError) {

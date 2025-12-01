@@ -1349,6 +1349,44 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 40 completed: BagIt archive columns added');
     }
+
+    // Migration 41: Create sidecar_imports table for metadata-only imports
+    // Stores metadata from XML sidecar files when media file is not imported
+    // Use case: Import XML metadata for reference without bringing large media files
+    const sidecarImportsExists = sqlite.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='sidecar_imports'"
+    ).get();
+
+    if (!sidecarImportsExists) {
+      console.log('Running migration 41: Creating sidecar_imports table');
+
+      sqlite.exec(`
+        -- Metadata-only imports from XML sidecar files
+        -- When a media file has a matching .xml sidecar, we can import just the metadata
+        CREATE TABLE sidecar_imports (
+          sidecar_id TEXT PRIMARY KEY,
+          original_filename TEXT NOT NULL,
+          original_path TEXT NOT NULL,
+          xml_filename TEXT NOT NULL,
+          xml_path TEXT NOT NULL,
+          xml_content TEXT,
+          parsed_metadata TEXT,
+          media_type TEXT,
+          import_date TEXT NOT NULL,
+          imported_by TEXT,
+          imported_by_id TEXT REFERENCES users(user_id),
+          locid TEXT REFERENCES locs(locid) ON DELETE CASCADE,
+          subid TEXT REFERENCES slocs(subid) ON DELETE SET NULL
+        );
+
+        -- Indexes for efficient queries
+        CREATE INDEX idx_sidecar_imports_locid ON sidecar_imports(locid);
+        CREATE INDEX idx_sidecar_imports_date ON sidecar_imports(import_date DESC);
+        CREATE INDEX idx_sidecar_imports_original ON sidecar_imports(original_filename);
+      `);
+
+      console.log('Migration 41 completed: sidecar_imports table created');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

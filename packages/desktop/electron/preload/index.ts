@@ -404,6 +404,12 @@ const api = {
       ipcRenderer.on('media:import:progress', listener);
       return () => ipcRenderer.removeListener('media:import:progress', listener);
     },
+    // FIX: Receive importId immediately when import starts (before any file processing)
+    onImportStarted: (callback: (data: { importId: string }) => void) => {
+      const listener = (_event: any, data: { importId: string }) => callback(data);
+      ipcRenderer.on('media:import:started', listener);
+      return () => ipcRenderer.removeListener('media:import:started', listener);
+    },
     // FIX 4.3: Cancel import
     cancelImport: (importId: string): Promise<{ success: boolean; message: string }> =>
       ipcRenderer.invoke('media:import:cancel', importId),

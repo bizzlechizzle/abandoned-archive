@@ -18,7 +18,7 @@
   // FIX 5.4: Import toast store for backup notifications
   import { toasts } from './stores/toast-store';
   import Layout from './components/Layout.svelte';
-  import ImportProgress from './components/ImportProgress.svelte';
+  // ImportProgress moved to Navigation sidebar (SidebarImportProgress.svelte)
   // FIX 4.6: Toast notification system
   import ToastContainer from './components/ToastContainer.svelte';
   // P1: Global import modal
@@ -49,6 +49,8 @@
 
   // Import progress listener
   let unsubscribeProgress: (() => void) | null = null;
+  // FIX: Import started listener (receives importId immediately for cancel to work)
+  let unsubscribeStarted: (() => void) | null = null;
   // FIX 5.4: Backup status listener
   let unsubscribeBackup: (() => void) | null = null;
 
@@ -162,6 +164,13 @@
     router.init();
     checkFirstRun();
 
+    // FIX: Subscribe to import started event (receives importId immediately for cancel to work)
+    if (window.electronAPI?.media?.onImportStarted) {
+      unsubscribeStarted = window.electronAPI.media.onImportStarted((data) => {
+        importStore.setImportId(data.importId);
+      });
+    }
+
     // Subscribe to import progress events from main process
     // FIX 4.1 & 4.3: Pass filename and importId to updateProgress
     if (window.electronAPI?.media?.onImportProgress) {
@@ -191,6 +200,9 @@
   });
 
   onDestroy(() => {
+    if (unsubscribeStarted) {
+      unsubscribeStarted();
+    }
     if (unsubscribeProgress) {
       unsubscribeProgress();
     }
@@ -251,8 +263,7 @@
       {/if}
     {/snippet}
   </Layout>
-  <!-- Global floating import progress indicator -->
-  <ImportProgress />
+  <!-- Import progress moved to sidebar (SidebarImportProgress in Navigation.svelte) -->
   <!-- FIX 4.6: Global toast notifications -->
   <ToastContainer />
   <!-- P1: Global import modal -->

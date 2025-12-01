@@ -2,6 +2,7 @@
   import { router } from '../stores/router';
   import { openImportModal } from '../stores/import-modal-store';
   import logo from '../assets/abandoned-upstate-logo.png';
+  import SidebarImportProgress from './SidebarImportProgress.svelte';
 
   let currentRoute = $state('/dashboard');
 
@@ -66,6 +67,9 @@
       {/each}
     </ul>
   </div>
+
+  <!-- Import Progress: Shows above Search/Settings when importing -->
+  <SidebarImportProgress />
 
   <!-- Bottom Icon Bar: Search and Settings -->
   <div class="p-4 border-t border-gray-200">
