@@ -648,51 +648,143 @@
     contributionSource = '';
   }
 
+  // OPT-034b: Chunked import configuration for memory-bounded processing
+  const IMPORT_CHUNK_SIZE = 50;    // Files per IPC call (prevents timeout and OOM)
+  const IMPORT_CHUNK_DELAY = 100;  // ms between chunks (GC breathing room)
+
   async function importFilePaths(filePaths: string[], author: string, contributed: number = 0, source: string = '') {
     if (!location || $isImporting) return;
-    const filesForImport = filePaths.map(fp => ({ filePath: fp, originalName: fp.split(/[\\/]/).pop()! }));
+
+    // OPT-034b: Chunk files for memory-bounded processing
+    const chunks: string[][] = [];
+    for (let i = 0; i < filePaths.length; i += IMPORT_CHUNK_SIZE) {
+      chunks.push(filePaths.slice(i, i + IMPORT_CHUNK_SIZE));
+    }
 
     // Import job label varies based on whether viewing sub-location
     const jobLabel = currentSubLocation
       ? `${location.locnam} / ${currentSubLocation.subnam}`
       : location.locnam;
     importStore.startJob(location.locid, jobLabel, filePaths.length);
-    importProgress = `Import started (${filePaths.length} files)`;
+    importProgress = `Import started (${filePaths.length} files${chunks.length > 1 ? ` in ${chunks.length} chunks` : ''})`;
 
-    window.electronAPI.media.import({
-      files: filesForImport,
-      locid: location.locid,
-      subid: subId || null, // Link to sub-location when viewing one
-      auth_imp: author,
-      deleteOriginals: false,
-      is_contributed: contributed,
-      contribution_source: source || null,
-    })
-      .then((result) => {
-        if (result.results) {
-          const newFailed = result.results.map((r: any, i: number) => ({ filePath: filesForImport[i]?.filePath || '', originalName: filesForImport[i]?.originalName || '', error: r.error || 'Unknown', success: r.success })).filter((f: any) => !f.success && f.filePath);
-          if (newFailed.length > 0) failedFiles = newFailed;
-          const newGpsWarnings = result.results.filter((r: any) => r.gpsWarning).map((r: any, i: number) => ({ filename: filesForImport[i]?.originalName || 'Unknown', message: r.gpsWarning.message, distance: r.gpsWarning.distance, severity: r.gpsWarning.severity, mediaGPS: r.gpsWarning.mediaGPS }));
-          if (newGpsWarnings.length > 0) { gpsWarnings = [...gpsWarnings, ...newGpsWarnings]; toasts.warning(`${newGpsWarnings.length} file(s) have GPS mismatch`); }
-        }
-        if (result.imported === 0 && result.errors > 0) {
-          const errorMsg = `Import failed: ${result.errors} files could not be imported`;
-          importStore.completeJob(undefined, errorMsg); importProgress = errorMsg; toasts.error(errorMsg);
-        } else {
-          importStore.completeJob({ imported: result.imported, duplicates: result.duplicates, errors: result.errors });
-          if (result.errors > 0) { importProgress = `Imported ${result.imported} files (${result.errors} failed)`; toasts.warning(`Imported ${result.imported} files. ${result.errors} failed.`); }
-          else if (result.imported > 0) { importProgress = `Imported ${result.imported} files successfully`; toasts.success(`Successfully imported ${result.imported} files`); failedFiles = []; }
-          else if (result.duplicates > 0) { importProgress = `${result.duplicates} files were already in archive`; toasts.info(`${result.duplicates} files were already in archive`); }
-        }
-        loadLocation().then(() => {
-          // Scroll to media gallery after successful import
-          const mediaSection = document.getElementById('media-gallery');
-          if (mediaSection) {
-            mediaSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Aggregate results across all chunks
+    let totalImported = 0;
+    let totalDuplicates = 0;
+    let totalErrors = 0;
+    let processedFiles = 0;
+    let allFailedFiles: typeof failedFiles = [];
+    let allGpsWarnings: typeof gpsWarnings = [];
+
+    try {
+      // Process chunks sequentially to bound memory usage
+      for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+        const chunk = chunks[chunkIdx];
+
+        const filesForImport = chunk.map(fp => ({
+          filePath: fp,
+          originalName: fp.split(/[\\/]/).pop()!,
+        }));
+
+        try {
+          const result = await window.electronAPI.media.import({
+            files: filesForImport,
+            locid: location.locid,
+            subid: subId || null,
+            auth_imp: author,
+            deleteOriginals: false,
+            is_contributed: contributed,
+            contribution_source: source || null,
+          });
+
+          // Aggregate chunk results
+          totalImported += result.imported;
+          totalDuplicates += result.duplicates;
+          totalErrors += result.errors;
+          processedFiles += chunk.length;
+
+          // Update store progress with aggregate
+          importStore.updateProgress(processedFiles, filePaths.length);
+
+          // Collect warnings and failures from this chunk
+          if (result.results) {
+            const chunkFailed = result.results
+              .map((r: any, i: number) => ({
+                filePath: filesForImport[i]?.filePath || '',
+                originalName: filesForImport[i]?.originalName || '',
+                error: r.error || 'Unknown',
+                success: r.success,
+              }))
+              .filter((f: any) => !f.success && f.filePath);
+            allFailedFiles = [...allFailedFiles, ...chunkFailed];
+
+            const chunkGpsWarnings = result.results
+              .filter((r: any) => r.gpsWarning)
+              .map((r: any, i: number) => ({
+                filename: filesForImport[i]?.originalName || 'Unknown',
+                message: r.gpsWarning.message,
+                distance: r.gpsWarning.distance,
+                severity: r.gpsWarning.severity,
+                mediaGPS: r.gpsWarning.mediaGPS,
+              }));
+            allGpsWarnings = [...allGpsWarnings, ...chunkGpsWarnings];
           }
-        });
-      })
-      .catch((err) => { const msg = err instanceof Error ? err.message : 'Unknown error'; importStore.completeJob(undefined, msg); importProgress = `Import error: ${msg}`; toasts.error(`Import error: ${msg}`); });
+
+        } catch (chunkError) {
+          console.error(`[Import] Chunk ${chunkIdx + 1} failed:`, chunkError);
+          // Count all files in failed chunk as errors, continue with next chunk
+          totalErrors += chunk.length;
+          processedFiles += chunk.length;
+          importStore.updateProgress(processedFiles, filePaths.length);
+        }
+
+        // Brief pause between chunks for GC and UI responsiveness
+        if (chunkIdx < chunks.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, IMPORT_CHUNK_DELAY));
+        }
+      }
+
+      // Apply collected warnings and failures
+      if (allFailedFiles.length > 0) failedFiles = allFailedFiles;
+      if (allGpsWarnings.length > 0) {
+        gpsWarnings = [...gpsWarnings, ...allGpsWarnings];
+        toasts.warning(`${allGpsWarnings.length} file(s) have GPS mismatch`);
+      }
+
+      // Final status based on aggregated results
+      if (totalImported === 0 && totalErrors > 0) {
+        const errorMsg = `Import failed: ${totalErrors} files could not be imported`;
+        importStore.completeJob(undefined, errorMsg);
+        importProgress = errorMsg;
+        toasts.error(errorMsg);
+      } else {
+        importStore.completeJob({ imported: totalImported, duplicates: totalDuplicates, errors: totalErrors });
+        if (totalErrors > 0) {
+          importProgress = `Imported ${totalImported} files (${totalErrors} failed)`;
+          toasts.warning(`Imported ${totalImported} files. ${totalErrors} failed.`);
+        } else if (totalImported > 0) {
+          importProgress = `Imported ${totalImported} files successfully`;
+          toasts.success(`Successfully imported ${totalImported} files`);
+          failedFiles = [];
+        } else if (totalDuplicates > 0) {
+          importProgress = `${totalDuplicates} files were already in archive`;
+          toasts.info(`${totalDuplicates} files were already in archive`);
+        }
+      }
+
+      await loadLocation();
+      const mediaSection = document.getElementById('media-gallery');
+      if (mediaSection) {
+        mediaSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      importStore.completeJob(undefined, msg);
+      importProgress = `Import error: ${msg}`;
+      toasts.error(`Import error: ${msg}`);
+    }
+
     setTimeout(() => importProgress = '', 8000);
   }
 

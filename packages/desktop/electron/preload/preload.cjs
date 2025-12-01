@@ -34,6 +34,13 @@ const DEFAULT_IPC_TIMEOUT = 30000; // 30 seconds for most operations
 const LONG_IPC_TIMEOUT = 120000; // 2 minutes for import/regeneration operations
 const VERY_LONG_IPC_TIMEOUT = 600000; // 10 minutes for batch operations
 
+// OPT-034b: Dynamic import timeout constants for chunked imports
+// Scales timeout based on file count to prevent timeout on large imports
+const IMPORT_BASE_TIMEOUT = 60000;    // 1 minute base overhead (setup, post-processing)
+const IMPORT_PER_FILE_TIMEOUT = 5000; // 5 seconds per file (hash + metadata + copy)
+const IMPORT_MIN_TIMEOUT = 120000;    // 2 minute floor (maintains current behavior for small imports)
+const IMPORT_MAX_TIMEOUT = 300000;    // 5 minute ceiling per chunk (prevents runaway)
+
 /**
  * Wrap an IPC invoke call with a timeout
  * @param {Promise} promise - The IPC invoke promise
@@ -111,6 +118,18 @@ function getTimeout(channel) {
  */
 function invokeAuto(channel) {
   return invoke(channel, getTimeout(channel));
+}
+
+/**
+ * Calculate dynamic timeout for import operations based on file count
+ * OPT-034b: Scales timeout with file count to prevent large import timeouts
+ * Formula: BASE + (fileCount * PER_FILE), clamped to [MIN, MAX]
+ * @param {number} fileCount - Number of files being imported
+ * @returns {number} - Timeout in ms
+ */
+function calculateImportTimeout(fileCount) {
+  const calculated = IMPORT_BASE_TIMEOUT + (fileCount * IMPORT_PER_FILE_TIMEOUT);
+  return Math.max(IMPORT_MIN_TIMEOUT, Math.min(calculated, IMPORT_MAX_TIMEOUT));
 }
 
 // OPT-034: All IPC calls now use timeout wrappers via invokeAuto()
@@ -211,8 +230,18 @@ const api = {
     // File selection and import
     selectFiles: () => invokeAuto("media:selectFiles")(),
     expandPaths: (paths) => invokeAuto("media:expandPaths")(paths),
-    import: (input) => invokeAuto("media:import")(input),
-    phaseImport: (input) => invokeAuto("media:phaseImport")(input),
+    // OPT-034b: Dynamic timeout based on file count for chunked imports
+    import: (input) => {
+      const fileCount = input?.files?.length || 1;
+      const timeout = calculateImportTimeout(fileCount);
+      return invoke("media:import", timeout)(input);
+    },
+    // OPT-034b: Dynamic timeout based on file count for chunked imports
+    phaseImport: (input) => {
+      const fileCount = input?.files?.length || 1;
+      const timeout = calculateImportTimeout(fileCount);
+      return invoke("media:phaseImport", timeout)(input);
+    },
     onPhaseImportProgress: (callback) => {
       const listener = (_event, progress) => callback(progress);
       ipcRenderer.on("media:phaseImport:progress", listener);

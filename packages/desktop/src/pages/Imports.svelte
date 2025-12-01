@@ -260,6 +260,10 @@
     }
   }
 
+  // OPT-034b: Chunked import configuration for memory-bounded processing
+  const IMPORT_CHUNK_SIZE = 50;    // Files per IPC call (prevents timeout and OOM)
+  const IMPORT_CHUNK_DELAY = 100;  // ms between chunks (GC breathing room)
+
   async function importFilePaths(filePaths: string[], author: string, contributed: number = 0, source: string = '') {
     if (!selectedLocation) {
       importProgress = 'Please select a location first';
@@ -269,41 +273,92 @@
 
     try {
       isImporting = true;
-      importProgress = `Preparing to import ${filePaths.length} file(s)...`;
 
-      const filesForImport = filePaths.map((filePath) => {
-        const parts = filePath.split(/[\\/]/);
-        const fileName = parts[parts.length - 1];
-        return {
-          filePath,
-          originalName: fileName,
-        };
-      });
+      // OPT-034b: Chunk files for memory-bounded processing
+      const chunks: string[][] = [];
+      for (let i = 0; i < filePaths.length; i += IMPORT_CHUNK_SIZE) {
+        chunks.push(filePaths.slice(i, i + IMPORT_CHUNK_SIZE));
+      }
 
-      importProgress = 'Importing files...';
-      const result = (await window.electronAPI.media.import({
-        files: filesForImport,
-        locid: selectedLocation,
-        auth_imp: author,
-        deleteOriginals,
-        is_contributed: contributed,
-        contribution_source: source || null,
-      })) as ImportSessionResult;
+      // Aggregate results across all chunks
+      let totalImported = 0;
+      let totalDuplicates = 0;
+      let totalErrors = 0;
+      let processedFiles = 0;
 
-      importResult = result;
-      importProgress = `Import complete! ${result.imported} imported, ${result.duplicates} duplicates, ${result.errors} errors`;
+      // Process chunks sequentially to bound memory usage
+      for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+        const chunk = chunks[chunkIdx];
 
-      // Refresh recent imports
+        // Update progress with chunk info for large imports
+        if (chunks.length > 1) {
+          importProgress = `Chunk ${chunkIdx + 1}/${chunks.length}: importing ${chunk.length} files...`;
+        } else {
+          importProgress = `Importing ${chunk.length} files...`;
+        }
+
+        const filesForImport = chunk.map((filePath) => {
+          const parts = filePath.split(/[\\/]/);
+          return { filePath, originalName: parts[parts.length - 1] };
+        });
+
+        try {
+          const result = (await window.electronAPI.media.import({
+            files: filesForImport,
+            locid: selectedLocation,
+            auth_imp: author,
+            deleteOriginals,
+            is_contributed: contributed,
+            contribution_source: source || null,
+          })) as ImportSessionResult;
+
+          // Aggregate chunk results
+          totalImported += result.imported;
+          totalDuplicates += result.duplicates;
+          totalErrors += result.errors;
+          processedFiles += chunk.length;
+
+          // Update progress bar with aggregate values
+          progressCurrent = processedFiles;
+          progressTotal = filePaths.length;
+
+        } catch (chunkError) {
+          console.error(`[Import] Chunk ${chunkIdx + 1} failed:`, chunkError);
+          // Count all files in failed chunk as errors, continue with next chunk
+          totalErrors += chunk.length;
+          processedFiles += chunk.length;
+        }
+
+        // Brief pause between chunks for GC and UI responsiveness
+        if (chunkIdx < chunks.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, IMPORT_CHUNK_DELAY));
+        }
+      }
+
+      // Build final aggregated result
+      importResult = {
+        total: filePaths.length,
+        imported: totalImported,
+        duplicates: totalDuplicates,
+        errors: totalErrors,
+        results: [], // Don't accumulate detailed results in memory for large imports
+        importId: `chunked-${Date.now()}`,
+      };
+
+      importProgress = `Import complete! ${totalImported} imported, ${totalDuplicates} duplicates, ${totalErrors} errors`;
+
+      // Refresh recent imports list
       const imports = (await window.electronAPI.imports.findRecent(10)) as ImportRecord[];
       recentImports = imports;
 
-      // Clear result after 5 seconds
+      // Clear result display after delay
       setTimeout(() => {
         importResult = null;
         importProgress = '';
         progressCurrent = 0;
         progressTotal = 0;
       }, 5000);
+
     } catch (error) {
       console.error('Error importing files:', error);
       importProgress = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
