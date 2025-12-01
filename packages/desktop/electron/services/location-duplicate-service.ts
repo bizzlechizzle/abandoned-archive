@@ -49,6 +49,9 @@ export interface DuplicateMatch {
   nameSimilarity?: number;
   matchedField?: 'locnam' | 'akanam' | 'historicalName';
   mediaCount: number;
+  /** GPS coordinates of the matched location (for map view) */
+  lat?: number | null;
+  lng?: number | null;
 }
 
 /**
@@ -205,6 +208,8 @@ export class LocationDuplicateService {
           matchType: 'gps',
           distanceMeters: Math.round(distance),
           mediaCount,
+          lat: loc.gps_lat,
+          lng: loc.gps_lng,
         };
       }
     }
@@ -228,6 +233,8 @@ export class LocationDuplicateService {
         'akanam',
         'historical_name',
         'state',
+        'gps_lat',
+        'gps_lng',
       ])
       .execute();
 
@@ -265,6 +272,8 @@ export class LocationDuplicateService {
             nameSimilarity: Math.round(similarity * 100),
             matchedField: field,
             mediaCount,
+            lat: loc.gps_lat,
+            lng: loc.gps_lng,
           };
         }
       }

@@ -25,6 +25,9 @@
     nameSimilarity?: number;
     matchedField?: 'locnam' | 'akanam' | 'historicalName';
     mediaCount: number;
+    /** GPS coordinates of the matched location (for map view) */
+    lat?: number | null;
+    lng?: number | null;
   }
 
   interface Props {
@@ -38,7 +41,12 @@
     onDifferentPlace: (matchName: string) => void;
     // Optional: Show loading state when processing
     processing?: boolean;
+    // GPS of the proposed new location (for map comparison)
+    proposedLat?: number | null;
+    proposedLng?: number | null;
   }
+
+  import Map from './Map.svelte';
 
   let {
     proposedName,
@@ -46,7 +54,64 @@
     onSamePlace,
     onDifferentPlace,
     processing = false,
+    proposedLat = null,
+    proposedLng = null,
   }: Props = $props();
+
+  // Map view toggle state
+  let showMapView = $state(false);
+
+  // Check if we have GPS coordinates to show on map
+  // Need at least one set of coordinates to show map
+  $effect(() => {
+    const hasProposedGps = proposedLat != null && proposedLng != null;
+    const hasMatchGps = match.lat != null && match.lng != null;
+    // If no GPS available at all, hide map view
+    if (!hasProposedGps && !hasMatchGps) {
+      showMapView = false;
+    }
+  });
+
+  // Compute if map view is available (at least one location has GPS)
+  const canShowMap = $derived(
+    (proposedLat != null && proposedLng != null) ||
+    (match.lat != null && match.lng != null)
+  );
+
+  // Build map locations array for Map component
+  const mapLocations = $derived.by(() => {
+    const locations: Array<{
+      locid: string;
+      locnam: string;
+      gps_lat: number;
+      gps_lng: number;
+      gps_confidence: string;
+    }> = [];
+
+    // Add matched location if it has GPS
+    if (match.lat != null && match.lng != null) {
+      locations.push({
+        locid: match.locationId,
+        locnam: match.locnam,
+        gps_lat: match.lat,
+        gps_lng: match.lng,
+        gps_confidence: 'verified',
+      });
+    }
+
+    // Add proposed location if it has GPS
+    if (proposedLat != null && proposedLng != null) {
+      locations.push({
+        locid: 'proposed-new',
+        locnam: proposedName || 'New Location',
+        gps_lat: proposedLat,
+        gps_lng: proposedLng,
+        gps_confidence: 'medium',
+      });
+    }
+
+    return locations;
+  });
 
   // Format distance for display
   function formatDistance(meters: number | undefined): string {
@@ -97,10 +162,24 @@
       </div>
 
       <div class="flex-1 min-w-0">
-        <!-- Header -->
-        <h4 class="text-sm font-semibold text-amber-800">
-          Possible duplicate found
-        </h4>
+        <!-- Header with map view toggle -->
+        <div class="flex items-center justify-between gap-2">
+          <h4 class="text-sm font-semibold text-amber-800">
+            Possible duplicate found
+          </h4>
+          {#if canShowMap}
+            <button
+              type="button"
+              onclick={() => showMapView = !showMapView}
+              class="text-xs text-amber-700 hover:text-amber-900 font-medium flex items-center gap-1 transition-colors"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+              </svg>
+              {showMapView ? 'hide map' : 'map view'}
+            </button>
+          {/if}
+        </div>
 
         <!-- What user is creating -->
         <p class="text-sm text-amber-700 mt-1">
@@ -148,6 +227,38 @@
             <span>{match.mediaCount} {match.mediaCount === 1 ? 'file' : 'files'}</span>
           </div>
         </div>
+
+        <!-- Map view (collapsible) -->
+        {#if showMapView && mapLocations.length > 0}
+          <div class="mt-3 rounded-lg overflow-hidden border border-amber-100 shadow-sm">
+            <div class="h-48">
+              <Map
+                locations={mapLocations}
+                limitedInteraction={true}
+                hideAttribution={true}
+                defaultLayer="satellite-labels"
+                showLayerControl={false}
+                popupMode="minimal"
+                fitBounds={mapLocations.length > 1}
+              />
+            </div>
+            <!-- Map legend -->
+            <div class="bg-white px-3 py-2 border-t border-amber-100 text-xs text-gray-600 flex items-center gap-4">
+              {#if match.lat != null && match.lng != null}
+                <span class="flex items-center gap-1">
+                  <span class="w-2 h-2 rounded-full bg-accent"></span>
+                  Existing: {match.locnam}
+                </span>
+              {/if}
+              {#if proposedLat != null && proposedLng != null}
+                <span class="flex items-center gap-1">
+                  <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                  New: {proposedName || 'New Location'}
+                </span>
+              {/if}
+            </div>
+          </div>
+        {/if}
 
         <!-- Action buttons -->
         <div class="flex flex-wrap gap-2 mt-4">

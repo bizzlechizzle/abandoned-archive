@@ -731,6 +731,8 @@
             onSamePlace={handleDuplicateSamePlace}
             onDifferentPlace={handleDuplicateDifferentPlace}
             processing={duplicateProcessing}
+            proposedLat={$importModal.prefilledData?.gps_lat}
+            proposedLng={$importModal.prefilledData?.gps_lng}
           />
         {/if}
 
