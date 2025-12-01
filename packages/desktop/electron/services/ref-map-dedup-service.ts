@@ -52,10 +52,12 @@ export interface DuplicateMatch {
     name: string | null;
     lat: number;
     lng: number;
+    state?: string | null; // State from the ref point (for auto-fill)
   };
   existingId: string;
   existingName: string;
   existingState?: string; // State of the existing location
+  existingHasGps?: boolean; // Whether the existing location has GPS coordinates
   nameSimilarity?: number;
   distanceMeters?: number;
   mapName?: string;
@@ -705,10 +707,11 @@ export class RefMapDedupService {
             result.cataloguedMatches.push({
               type: 'catalogued',
               matchType: 'gps',
-              newPoint: { name: point.name, lat: point.lat, lng: point.lng },
+              newPoint: { name: point.name, lat: point.lat, lng: point.lng, state: point.state },
               existingId: loc.locid,
               existingName: loc.locnam,
               existingState: locStateNorm || undefined,
+              existingHasGps: true, // GPS match means existing has GPS
               nameSimilarity: Math.round(nameSim * 100),
               distanceMeters: Math.round(distance),
               needsConfirmation: false,
@@ -731,10 +734,11 @@ export class RefMapDedupService {
                 result.cataloguedMatches.push({
                   type: 'catalogued',
                   matchType: 'name_gps',
-                  newPoint: { name: point.name, lat: point.lat, lng: point.lng },
+                  newPoint: { name: point.name, lat: point.lat, lng: point.lng, state: point.state },
                   existingId: loc.locid,
                   existingName: loc.locnam,
                   existingState: locStateNorm || undefined,
+                  existingHasGps: true, // Name+GPS match means existing has GPS
                   nameSimilarity: Math.round(nameSim * 100),
                   distanceMeters: Math.round(distance),
                   needsConfirmation: false,
@@ -758,13 +762,15 @@ export class RefMapDedupService {
 
               if (nameSim >= NAME_SIMILARITY_THRESHOLD) {
                 // State + name match - needs user confirmation
+                // This is an ENRICHMENT OPPORTUNITY - existing location has no GPS
                 result.cataloguedMatches.push({
                   type: 'catalogued',
                   matchType: 'name_state',
-                  newPoint: { name: point.name, lat: point.lat, lng: point.lng },
+                  newPoint: { name: point.name, lat: point.lat, lng: point.lng, state: point.state },
                   existingId: loc.locid,
                   existingName: loc.locnam,
                   existingState: locStateNorm,
+                  existingHasGps: false, // State-based match = existing has NO GPS
                   nameSimilarity: Math.round(nameSim * 100),
                   needsConfirmation: true, // User must confirm
                 });
@@ -783,12 +789,14 @@ export class RefMapDedupService {
             const nameSim = jaroWinklerSimilarity(normalizedPointName, normalizeName(locName));
 
             if (nameSim >= 0.99) { // 99%+ = exact match only
+              // This is an ENRICHMENT OPPORTUNITY - existing location has no GPS
               result.cataloguedMatches.push({
                 type: 'catalogued',
                 matchType: 'exact_name',
-                newPoint: { name: point.name, lat: point.lat, lng: point.lng },
+                newPoint: { name: point.name, lat: point.lat, lng: point.lng, state: point.state },
                 existingId: loc.locid,
                 existingName: loc.locnam,
+                existingHasGps: false, // Exact name match = existing has NO GPS
                 nameSimilarity: Math.round(nameSim * 100),
                 needsConfirmation: true, // User must confirm
               });

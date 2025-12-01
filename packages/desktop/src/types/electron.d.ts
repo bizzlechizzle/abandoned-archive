@@ -602,6 +602,55 @@ export interface ElectronAPI {
       deleted?: number;
       error?: string;
     }>;
+    // Migration 39: GPS-based deduplication within ref_map_points
+    previewDedup: () => Promise<{
+      success: boolean;
+      error?: string;
+      stats?: {
+        totalPoints: number;
+        uniqueLocations: number;
+        duplicateGroups: number;
+        pointsRemoved: number;
+        pointsWithAka: number;
+      };
+      groups?: Array<{
+        lat: number;
+        lng: number;
+        bestName: string | null;
+        akaNames: string | null;
+        pointCount: number;
+        allNames: string[];
+      }>;
+    }>;
+    deduplicate: () => Promise<{
+      success: boolean;
+      error?: string;
+      stats?: {
+        totalPoints: number;
+        uniqueLocations: number;
+        duplicateGroups: number;
+        pointsRemoved: number;
+        pointsWithAka: number;
+      };
+    }>;
+    // Migration 42: GPS enrichment - apply ref point GPS to existing location
+    applyEnrichment: (input: { locationId: string; refPointId: string }) => Promise<{
+      success: boolean;
+      error?: string;
+      appliedGps?: { lat: number; lng: number };
+      state?: string | null;
+    }>;
+    applyAllEnrichments: (enrichments: Array<{
+      locationId: string;
+      refPointId: string;
+      nameSimilarity: number;
+    }>) => Promise<{
+      success: boolean;
+      applied: number;
+      skipped?: number;
+      error?: string;
+      message?: string;
+    }>;
   };
 
   // Import Intelligence - Smart location matching during import
@@ -690,20 +739,48 @@ export interface ImportPreviewResult {
   fileType?: string;
   totalPoints?: number;
   newPoints?: number;
+  // Migration 42: Enrichment opportunities (existing location has no GPS, ref point has GPS)
+  enrichmentCount?: number;
+  enrichmentOpportunities?: EnrichmentMatchPreview[];
+  // Already catalogued (existing location has GPS)
   cataloguedCount?: number;
-  referenceCount?: number;
   cataloguedMatches?: DuplicateMatchPreview[];
+  referenceCount?: number;
   referenceMatches?: DuplicateMatchPreview[];
+}
+
+// Migration 42: Enrichment opportunity - can apply GPS to existing location
+export interface EnrichmentMatchPreview {
+  type: 'catalogued';
+  matchType: 'name_state' | 'exact_name';
+  newPointName: string;
+  newPointLat: number;
+  newPointLng: number;
+  newPointState?: string | null;
+  existingName: string;
+  existingId: string;
+  existingState?: string;
+  existingHasGps: false;
+  nameSimilarity?: number;
+  needsConfirmation: boolean;
+  pointIndex?: number; // Index in parsed points array, used for import
 }
 
 export interface DuplicateMatchPreview {
   type: 'catalogued' | 'reference';
+  matchType?: 'gps' | 'name_gps' | 'name_state' | 'exact_name';
   newPointName: string;
+  newPointLat?: number;
+  newPointLng?: number;
+  newPointState?: string | null;
   existingName: string;
   existingId: string;
-  nameSimilarity: number;
-  distanceMeters: number;
+  existingState?: string;
+  existingHasGps?: boolean;
+  nameSimilarity?: number;
+  distanceMeters?: number;
   mapName?: string;
+  needsConfirmation?: boolean;
 }
 
 // Phase 4: Catalogued point match for purging

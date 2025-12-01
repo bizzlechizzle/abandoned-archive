@@ -449,6 +449,9 @@ const api = {
     // Migration 39: GPS-based deduplication within ref_map_points
     previewDedup: () => invokeAuto("refMaps:previewDedup")(),
     deduplicate: () => invokeAuto("refMaps:deduplicate")(),
+    // Migration 42: GPS enrichment - apply ref point GPS to existing location
+    applyEnrichment: (input) => invokeAuto("refMaps:applyEnrichment")(input),
+    applyAllEnrichments: (enrichments) => invokeAuto("refMaps:applyAllEnrichments")(enrichments),
   },
 
   // Import Intelligence - Smart location matching during import

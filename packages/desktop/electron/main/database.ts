@@ -1387,6 +1387,29 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 41 completed: sidecar_imports table created');
     }
+
+    // Migration 42: Add linked_locid to ref_map_points for GPS enrichment tracking
+    // When a ref point's GPS is applied to an existing location, we link them
+    // instead of deleting the ref point - preserving provenance and metadata
+    const refPointCols = sqlite.prepare('PRAGMA table_info(ref_map_points)').all() as Array<{ name: string }>;
+    const hasLinkedLocid = refPointCols.some(col => col.name === 'linked_locid');
+
+    if (!hasLinkedLocid) {
+      console.log('Running migration 42: Adding linked_locid to ref_map_points');
+
+      sqlite.exec(`
+        -- Track which location received GPS from this ref point
+        ALTER TABLE ref_map_points ADD COLUMN linked_locid TEXT REFERENCES locs(locid) ON DELETE SET NULL;
+
+        -- When the link was created
+        ALTER TABLE ref_map_points ADD COLUMN linked_at TEXT;
+
+        -- Index for filtering out linked points from Atlas layer
+        CREATE INDEX IF NOT EXISTS idx_ref_map_points_linked ON ref_map_points(linked_locid);
+      `);
+
+      console.log('Migration 42 completed: ref_map_points linking columns added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

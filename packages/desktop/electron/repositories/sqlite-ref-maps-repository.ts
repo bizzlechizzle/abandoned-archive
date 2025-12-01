@@ -29,6 +29,9 @@ export interface RefMapPoint {
   rawMetadata: Record<string, unknown> | null;
   // Migration 39: AKA names from merged duplicate pins
   akaNames: string | null;
+  // Migration 42: Link to location when GPS enrichment applied
+  linkedLocid: string | null;
+  linkedAt: string | null;
 }
 
 export interface RefMapWithPoints extends RefMap {
@@ -65,6 +68,9 @@ function rowToRefMapPoint(row: RefMapPointsTable): RefMapPoint {
     category: row.category,
     rawMetadata: row.raw_metadata ? JSON.parse(row.raw_metadata) : null,
     akaNames: row.aka_names,
+    // Migration 42: Link to location when GPS enrichment applied
+    linkedLocid: row.linked_locid,
+    linkedAt: row.linked_at,
   };
 }
 

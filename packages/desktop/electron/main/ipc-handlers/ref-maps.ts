@@ -249,18 +249,23 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
 
   /**
    * Get all points from all maps (for Atlas layer)
-   * Filters out points that are already catalogued in the locs table
+   * Filters out:
+   * - Points already catalogued in the locs table (GPS proximity match)
+   * - Points already linked to a location (Migration 42: enrichment applied)
    */
   ipcMain.handle('refMaps:getAllPoints', async () => {
     try {
       const points = await repository.getAllPoints();
 
-      // Find points that are already catalogued
+      // Find points that are already catalogued (GPS match)
       const cataloguedMatches = await dedupService.findCataloguedRefPoints();
       const cataloguedPointIds = new Set(cataloguedMatches.map(m => m.pointId));
 
-      // Filter out catalogued points
-      const uncataloguedPoints = points.filter(p => !cataloguedPointIds.has(p.pointId));
+      // Filter out catalogued points AND linked points (enrichment already applied)
+      const uncataloguedPoints = points.filter(p =>
+        !cataloguedPointIds.has(p.pointId) &&
+        !p.linkedLocid // Migration 42: exclude points linked via enrichment
+      );
 
       return uncataloguedPoints.map(p => ({
         pointId: p.pointId,
@@ -385,15 +390,35 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
       // Run deduplication check
       const dedupResult = await dedupService.checkForDuplicates(parseResult.points);
 
-      // Format matches for display (limit to first 10 of each type)
+      // Split catalogued matches into enrichment opportunities vs already catalogued
+      // Enrichment = existing location has NO GPS, ref point has GPS
+      const enrichmentOpportunities = dedupResult.cataloguedMatches.filter(m => m.existingHasGps === false);
+      const alreadyCatalogued = dedupResult.cataloguedMatches.filter(m => m.existingHasGps !== false);
+
+      // Build a map of coordinates to point index for enrichments
+      const coordToIndex = new Map<string, number>();
+      parseResult.points.forEach((p, i) => {
+        coordToIndex.set(`${p.lat},${p.lng}`, i);
+      });
+
+      // Format matches for display
       const formatMatch = (m: DuplicateMatch) => ({
         type: m.type,
+        matchType: m.matchType,
         newPointName: m.newPoint.name || 'Unnamed',
+        newPointLat: m.newPoint.lat,
+        newPointLng: m.newPoint.lng,
+        newPointState: m.newPoint.state,
         existingName: m.existingName,
         existingId: m.existingId,
+        existingState: m.existingState,
+        existingHasGps: m.existingHasGps,
         nameSimilarity: m.nameSimilarity,
         distanceMeters: m.distanceMeters,
         mapName: m.mapName,
+        needsConfirmation: m.needsConfirmation,
+        // Migration 42: Point index for enrichment
+        pointIndex: coordToIndex.get(`${m.newPoint.lat},${m.newPoint.lng}`),
       });
 
       return {
@@ -403,9 +428,13 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
         fileType: parseResult.fileType,
         totalPoints: dedupResult.totalParsed,
         newPoints: dedupResult.newPoints.length,
-        cataloguedCount: dedupResult.cataloguedMatches.length,
+        // New: separate enrichment opportunities from already catalogued
+        enrichmentCount: enrichmentOpportunities.length,
+        enrichmentOpportunities: enrichmentOpportunities.slice(0, 20).map(formatMatch),
+        // Existing: already catalogued (have GPS)
+        cataloguedCount: alreadyCatalogued.length,
+        cataloguedMatches: alreadyCatalogued.slice(0, 10).map(formatMatch),
         referenceCount: dedupResult.referenceMatches.length,
-        cataloguedMatches: dedupResult.cataloguedMatches.slice(0, 10).map(formatMatch),
         referenceMatches: dedupResult.referenceMatches.slice(0, 10).map(formatMatch),
       };
     } catch (error) {
@@ -420,11 +449,20 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
   /**
    * Import with deduplication options (after preview)
    * Migration 39: When skipDuplicates is true, merges names into AKA field
+   * Migration 42: Handles enrichments - apply GPS to existing locations
    */
   ipcMain.handle('refMaps:importWithOptions', async (
     _event,
     filePath: string,
-    options: { skipDuplicates: boolean; importedBy?: string }
+    options: {
+      skipDuplicates: boolean;
+      importedBy?: string;
+      // Migration 42: Enrichments to apply during import
+      enrichments?: Array<{
+        existingLocId: string;
+        pointIndex: number; // Index in parsed points array
+      }>;
+    }
   ) => {
     try {
       // Verify file exists
@@ -441,6 +479,7 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
 
       let pointsToImport = parseResult.points;
       let mergedCount = 0;
+      let enrichedCount = 0;
 
       // If skipping duplicates, filter them and merge names into existing points
       if (options.skipDuplicates) {
@@ -467,15 +506,49 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
         pointsToImport = dedupResult.newPoints;
       }
 
+      // Migration 42: Apply enrichments to existing locations
+      if (options.enrichments && options.enrichments.length > 0) {
+        for (const enrichment of options.enrichments) {
+          const point = parseResult.points[enrichment.pointIndex];
+          if (!point) continue;
+
+          // Update the existing location with GPS from the point
+          await db
+            .updateTable('locs')
+            .set({
+              gps_lat: point.lat,
+              gps_lng: point.lng,
+              gps_source: 'ref_map_import',
+              gps_verified_on_map: 0,
+              gps_accuracy: null,
+              gps_captured_at: new Date().toISOString(),
+            })
+            .where('locid', '=', enrichment.existingLocId)
+            .execute();
+
+          enrichedCount++;
+          console.log(`[RefMaps] Applied enrichment: ${point.name} → location ${enrichment.existingLocId}`);
+        }
+      }
+
       if (pointsToImport.length === 0) {
+        // Build message based on what happened
+        let message = 'All points were duplicates - nothing imported';
+        if (enrichedCount > 0 && mergedCount > 0) {
+          message = `${enrichedCount} locations enriched with GPS, ${mergedCount} names merged`;
+        } else if (enrichedCount > 0) {
+          message = `${enrichedCount} location${enrichedCount > 1 ? 's' : ''} enriched with GPS`;
+        } else if (mergedCount > 0) {
+          message = `All points were duplicates - ${mergedCount} names merged into existing points`;
+        }
+
         return {
           success: true,
           skippedAll: true,
-          message: mergedCount > 0
-            ? `All points were duplicates - ${mergedCount} names merged into existing points`
-            : 'All points were duplicates - nothing imported',
+          message,
           pointCount: 0,
           mergedCount,
+          enrichedCount,
         };
       }
 
@@ -503,6 +576,7 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
         pointCount: pointsToImport.length,
         skippedCount: parseResult.points.length - pointsToImport.length,
         mergedCount,
+        enrichedCount,
       };
     } catch (error) {
       console.error('Error importing reference map with options:', error);
@@ -671,6 +745,149 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
       console.error('Error running deduplication:', error);
       return {
         success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  /**
+   * Migration 42: Apply GPS enrichment from a ref point to an existing location.
+   * Updates the location's GPS fields and links the ref point (not deleted).
+   * Used when a ref point matches a location that has no GPS.
+   */
+  ipcMain.handle('refMaps:applyEnrichment', async (
+    _event,
+    input: { locationId: string; refPointId: string }
+  ) => {
+    try {
+      const { locationId, refPointId } = input;
+
+      if (!locationId || !refPointId) {
+        return { success: false, error: 'Location ID and ref point ID are required' };
+      }
+
+      // Get the ref point
+      const refPoint = await db
+        .selectFrom('ref_map_points')
+        .select(['point_id', 'lat', 'lng', 'state', 'name'])
+        .where('point_id', '=', refPointId)
+        .executeTakeFirst();
+
+      if (!refPoint) {
+        return { success: false, error: 'Reference point not found' };
+      }
+
+      // Update the location with GPS from ref point
+      await db
+        .updateTable('locs')
+        .set({
+          gps_lat: refPoint.lat,
+          gps_lng: refPoint.lng,
+          gps_source: 'ref_map_import',
+          gps_verified_on_map: 0, // Not verified yet
+          gps_accuracy: null,
+          gps_captured_at: new Date().toISOString(),
+        })
+        .where('locid', '=', locationId)
+        .execute();
+
+      // Link the ref point to the location (preserve provenance, don't delete)
+      await db
+        .updateTable('ref_map_points')
+        .set({
+          linked_locid: locationId,
+          linked_at: new Date().toISOString(),
+        })
+        .where('point_id', '=', refPointId)
+        .execute();
+
+      console.log(`[RefMaps] Applied GPS enrichment: ${refPoint.name} → location ${locationId}`);
+
+      return {
+        success: true,
+        appliedGps: { lat: refPoint.lat, lng: refPoint.lng },
+        state: refPoint.state,
+      };
+    } catch (error) {
+      console.error('Error applying GPS enrichment:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  /**
+   * Migration 42: Batch apply GPS enrichment for multiple matches.
+   * Only applies matches with 95%+ similarity (high confidence).
+   */
+  ipcMain.handle('refMaps:applyAllEnrichments', async (
+    _event,
+    enrichments: Array<{ locationId: string; refPointId: string; nameSimilarity: number }>
+  ) => {
+    try {
+      const BATCH_THRESHOLD = 95; // Only apply 95%+ matches
+      const highConfidence = enrichments.filter(e => (e.nameSimilarity ?? 0) >= BATCH_THRESHOLD);
+
+      if (highConfidence.length === 0) {
+        return {
+          success: true,
+          applied: 0,
+          skipped: enrichments.length,
+          message: `No matches meet the ${BATCH_THRESHOLD}% threshold for batch apply`,
+        };
+      }
+
+      let applied = 0;
+      for (const { locationId, refPointId } of highConfidence) {
+        // Get the ref point
+        const refPoint = await db
+          .selectFrom('ref_map_points')
+          .select(['point_id', 'lat', 'lng', 'state', 'name'])
+          .where('point_id', '=', refPointId)
+          .executeTakeFirst();
+
+        if (!refPoint) continue;
+
+        // Update the location
+        await db
+          .updateTable('locs')
+          .set({
+            gps_lat: refPoint.lat,
+            gps_lng: refPoint.lng,
+            gps_source: 'ref_map_import',
+            gps_verified_on_map: 0,
+            gps_accuracy: null,
+            gps_captured_at: new Date().toISOString(),
+          })
+          .where('locid', '=', locationId)
+          .execute();
+
+        // Link the ref point
+        await db
+          .updateTable('ref_map_points')
+          .set({
+            linked_locid: locationId,
+            linked_at: new Date().toISOString(),
+          })
+          .where('point_id', '=', refPointId)
+          .execute();
+
+        applied++;
+      }
+
+      console.log(`[RefMaps] Batch applied ${applied} GPS enrichments`);
+
+      return {
+        success: true,
+        applied,
+        skipped: enrichments.length - applied,
+      };
+    } catch (error) {
+      console.error('Error batch applying GPS enrichments:', error);
+      return {
+        success: false,
+        applied: 0,
         error: error instanceof Error ? error.message : 'Unknown error',
       };
     }

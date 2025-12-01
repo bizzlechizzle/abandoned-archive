@@ -140,12 +140,20 @@
 
   interface DuplicateMatchPreview {
     type: 'catalogued' | 'reference';
+    matchType?: 'gps' | 'name_gps' | 'name_state' | 'exact_name';
     newPointName: string;
+    newPointLat?: number;
+    newPointLng?: number;
+    newPointState?: string | null;
     existingName: string;
     existingId: string;
+    existingState?: string;
+    existingHasGps?: boolean;
     nameSimilarity: number;
     distanceMeters: number;
     mapName?: string;
+    needsConfirmation?: boolean;
+    pointIndex?: number; // Migration 42: index in parsed points array
   }
 
   interface ImportPreview {
@@ -154,9 +162,13 @@
     fileType: string;
     totalPoints: number;
     newPoints: number;
+    // Migration 42: Enrichment opportunities (existing location lacks GPS)
+    enrichmentCount: number;
+    enrichmentOpportunities: DuplicateMatchPreview[];
+    // Already catalogued (existing location has GPS)
     cataloguedCount: number;
-    referenceCount: number;
     cataloguedMatches: DuplicateMatchPreview[];
+    referenceCount: number;
     referenceMatches: DuplicateMatchPreview[];
   }
 
@@ -170,6 +182,9 @@
   let importPreview = $state<ImportPreview | null>(null);
   let previewLoading = $state(false);
   let skipDuplicates = $state(true);
+  // Migration 42: Track which enrichments to apply (locationId -> pointIndex)
+  let selectedEnrichments = $state<Map<string, number>>(new Map());
+  let applyingEnrichment = $state<string | null>(null); // Track which one is being applied
 
   // Phase 4: Purge catalogued points state
   let cataloguedCount = $state(0);
@@ -940,12 +955,18 @@
         fileType: preview.fileType || '',
         totalPoints: preview.totalPoints || 0,
         newPoints: preview.newPoints || 0,
+        // Migration 42: Enrichment opportunities
+        enrichmentCount: preview.enrichmentCount || 0,
+        enrichmentOpportunities: preview.enrichmentOpportunities || [],
+        // Already catalogued (have GPS)
         cataloguedCount: preview.cataloguedCount || 0,
-        referenceCount: preview.referenceCount || 0,
         cataloguedMatches: preview.cataloguedMatches || [],
+        referenceCount: preview.referenceCount || 0,
         referenceMatches: preview.referenceMatches || [],
       };
       skipDuplicates = true;
+      // Migration 42: Reset enrichment selections
+      selectedEnrichments = new Map();
       showImportPreview = true;
       previewLoading = false;
       refMapMessage = '';
@@ -961,6 +982,7 @@
 
   /**
    * Confirm import with deduplication options
+   * Migration 42: Also passes selected enrichments to apply GPS to existing locations
    */
   async function confirmImport() {
     if (!window.electronAPI?.refMaps || !importPreview) return;
@@ -969,13 +991,21 @@
       importingRefMap = true;
       refMapMessage = 'Importing...';
 
+      // Migration 42: Convert selected enrichments map to array format
+      const enrichments = Array.from(selectedEnrichments.entries()).map(([existingLocId, pointIndex]) => ({
+        existingLocId,
+        pointIndex,
+      }));
+
       const result = await window.electronAPI.refMaps.importWithOptions(importPreview.filePath, {
         skipDuplicates,
         importedBy: currentUserId || undefined,
+        enrichments: enrichments.length > 0 ? enrichments : undefined,
       });
 
       showImportPreview = false;
       importPreview = null;
+      selectedEnrichments = new Map();
 
       if (result.skippedAll) {
         refMapMessage = result.message || 'All points were duplicates';
@@ -983,7 +1013,8 @@
         refMapMessage = result.error || 'Import failed';
       } else {
         const skippedMsg = result.skippedCount ? ` (${result.skippedCount} duplicates skipped)` : '';
-        refMapMessage = `Imported "${result.map?.mapName}" with ${result.pointCount} points${skippedMsg}`;
+        const enrichedMsg = result.enrichedCount ? ` (${result.enrichedCount} locations enriched with GPS)` : '';
+        refMapMessage = `Imported "${result.map?.mapName}" with ${result.pointCount} points${skippedMsg}${enrichedMsg}`;
         await loadRefMaps();
       }
 
@@ -995,6 +1026,43 @@
     } finally {
       importingRefMap = false;
     }
+  }
+
+  /**
+   * Migration 42: Toggle enrichment selection for a match
+   */
+  function toggleEnrichment(match: DuplicateMatchPreview) {
+    if (match.pointIndex === undefined) return;
+
+    const newMap = new Map(selectedEnrichments);
+    if (newMap.has(match.existingId)) {
+      newMap.delete(match.existingId);
+    } else {
+      newMap.set(match.existingId, match.pointIndex);
+    }
+    selectedEnrichments = newMap;
+  }
+
+  /**
+   * Migration 42: Select all high-confidence enrichments (95%+ similarity)
+   */
+  function selectAllHighConfidenceEnrichments() {
+    if (!importPreview) return;
+
+    const newMap = new Map(selectedEnrichments);
+    for (const match of importPreview.enrichmentOpportunities) {
+      if (match.pointIndex !== undefined && (match.nameSimilarity ?? 0) >= 95) {
+        newMap.set(match.existingId, match.pointIndex);
+      }
+    }
+    selectedEnrichments = newMap;
+  }
+
+  /**
+   * Migration 42: Deselect all enrichments
+   */
+  function deselectAllEnrichments() {
+    selectedEnrichments = new Map();
   }
 
   /**
@@ -2348,6 +2416,12 @@
               <span class="text-gray-500">New points:</span>
               <span class="font-medium ml-2 text-green-600">{importPreview.newPoints}</span>
             </div>
+            {#if importPreview.enrichmentCount > 0}
+              <div>
+                <span class="text-gray-500">GPS opportunities:</span>
+                <span class="font-medium ml-2 text-amber-600">{importPreview.enrichmentCount}</span>
+              </div>
+            {/if}
             {#if autoSkipCount > 0}
               <div>
                 <span class="text-gray-500">Already catalogued:</span>
@@ -2368,6 +2442,94 @@
             {/if}
           </div>
         </div>
+
+        <!-- Migration 42: GPS Enrichment Opportunities -->
+        {#if importPreview.enrichmentCount > 0}
+          {@const highConfidenceCount = importPreview.enrichmentOpportunities.filter(m => (m.nameSimilarity ?? 0) >= 95).length}
+          <div class="mb-4 border border-amber-200 rounded-lg bg-amber-50 p-3">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-sm font-medium text-amber-800 flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                GPS Enrichment Opportunities ({importPreview.enrichmentCount})
+              </h3>
+              {#if highConfidenceCount > 0}
+                <div class="flex gap-2">
+                  <button
+                    onclick={selectAllHighConfidenceEnrichments}
+                    class="text-xs px-2 py-1 bg-amber-200 text-amber-800 rounded hover:bg-amber-300 transition"
+                  >
+                    Select All 95%+ ({highConfidenceCount})
+                  </button>
+                  {#if selectedEnrichments.size > 0}
+                    <button
+                      onclick={deselectAllEnrichments}
+                      class="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition"
+                    >
+                      Deselect All
+                    </button>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+            <p class="text-xs text-amber-700 mb-3">
+              These existing locations lack GPS coordinates. Select matches to apply GPS from the imported points.
+            </p>
+            <div class="space-y-2 max-h-48 overflow-y-auto">
+              {#each importPreview.enrichmentOpportunities as match}
+                {@const isSelected = selectedEnrichments.has(match.existingId)}
+                {@const similarity = match.nameSimilarity ?? 0}
+                <button
+                  onclick={() => toggleEnrichment(match)}
+                  class="w-full text-left text-xs rounded px-3 py-2 transition flex items-center gap-2 {isSelected ? 'bg-amber-200 border-amber-400' : 'bg-white border-amber-100'} border"
+                >
+                  <!-- Checkbox indicator -->
+                  <div class="flex-shrink-0 w-4 h-4 rounded border {isSelected ? 'bg-amber-500 border-amber-500' : 'border-gray-300'} flex items-center justify-center">
+                    {#if isSelected}
+                      <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                      </svg>
+                    {/if}
+                  </div>
+                  <!-- Match info -->
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-1.5 mb-0.5">
+                      <span class="font-medium text-foreground truncate">{match.newPointName}</span>
+                      <span class="text-gray-400">→</span>
+                      <span class="font-medium text-foreground truncate">{match.existingName}</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-gray-500">
+                      {#if match.existingState}
+                        <span>{match.existingState}</span>
+                      {/if}
+                      {#if match.newPointLat && match.newPointLng}
+                        <span class="text-[10px]">({match.newPointLat.toFixed(4)}, {match.newPointLng.toFixed(4)})</span>
+                      {/if}
+                    </div>
+                  </div>
+                  <!-- Similarity badge -->
+                  <div class="flex-shrink-0">
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium {similarity >= 95 ? 'bg-green-100 text-green-700' : similarity >= 85 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}">
+                      {similarity}%
+                    </span>
+                  </div>
+                </button>
+              {/each}
+              {#if importPreview.enrichmentCount > importPreview.enrichmentOpportunities.length}
+                <div class="text-xs text-gray-500 italic px-3">
+                  ...and {importPreview.enrichmentCount - importPreview.enrichmentOpportunities.length} more
+                </div>
+              {/if}
+            </div>
+            {#if selectedEnrichments.size > 0}
+              <div class="mt-3 pt-2 border-t border-amber-200 text-xs text-amber-800">
+                <strong>{selectedEnrichments.size}</strong> location{selectedEnrichments.size === 1 ? '' : 's'} will receive GPS coordinates when you import.
+              </div>
+            {/if}
+          </div>
+        {/if}
 
         <!-- Duplicate Details -->
         {#if importPreview.cataloguedCount > 0 || importPreview.referenceCount > 0}
@@ -2529,9 +2691,17 @@
           {#if importingRefMap}
             Importing...
           {:else if skipDuplicates && (importPreview.cataloguedCount + importPreview.referenceCount > 0)}
-            Import {importPreview.newPoints} Points
+            {#if selectedEnrichments.size > 0}
+              Import {importPreview.newPoints} + Enrich {selectedEnrichments.size}
+            {:else}
+              Import {importPreview.newPoints} Points
+            {/if}
           {:else}
-            Import All {importPreview.totalPoints} Points
+            {#if selectedEnrichments.size > 0}
+              Import All + Enrich {selectedEnrichments.size}
+            {:else}
+              Import All {importPreview.totalPoints} Points
+            {/if}
           {/if}
         </button>
       </div>

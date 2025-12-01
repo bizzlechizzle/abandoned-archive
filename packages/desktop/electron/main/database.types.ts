@@ -505,6 +505,9 @@ export interface RefMapPointsTable {
   raw_metadata: string | null;  // JSON blob
   // Migration 39: AKA names from merged duplicate pins
   aka_names: string | null;     // Pipe-separated alternate names
+  // Migration 42: Link to location when GPS is applied (enrichment)
+  linked_locid: string | null;  // Location that received GPS from this ref point
+  linked_at: string | null;     // ISO timestamp when link was created
 }
 
 // Migration 38: Location Exclusions - "Different place" decisions
