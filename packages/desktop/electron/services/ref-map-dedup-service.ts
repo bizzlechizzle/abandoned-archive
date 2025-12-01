@@ -20,15 +20,34 @@ import type { Database } from '../main/database.types';
 import { jaroWinklerSimilarity, normalizeName } from './jaro-winkler-service';
 import { haversineDistance } from './geo-utils';
 import { DUPLICATE_CONFIG } from '../../src/lib/constants';
+import { getStateCodeFromName, isValidStateCode } from './us-state-codes';
 
 // Use centralized constants for duplicate detection
 const { GPS_RADIUS_METERS, NAME_MATCH_RADIUS_METERS, NAME_SIMILARITY_THRESHOLD } = DUPLICATE_CONFIG;
 
 /**
+ * Normalize a state value to a 2-letter code for comparison.
+ * Handles "NY", "New York", "new york", etc.
+ */
+function normalizeState(state: string | null | undefined): string | null {
+  if (!state) return null;
+  const trimmed = state.trim().toUpperCase();
+  // If it's already a valid 2-letter code, return it
+  if (trimmed.length === 2 && isValidStateCode(trimmed)) {
+    return trimmed;
+  }
+  // Try to get code from full name
+  return getStateCodeFromName(state) || trimmed;
+}
+
+/**
  * Types for import preview and deduplication
  */
+export type MatchConfidence = 'gps' | 'name_gps' | 'name_state' | 'exact_name';
+
 export interface DuplicateMatch {
   type: 'catalogued' | 'reference';
+  matchType?: MatchConfidence; // How the match was determined
   newPoint: {
     name: string | null;
     lat: number;
@@ -36,9 +55,11 @@ export interface DuplicateMatch {
   };
   existingId: string;
   existingName: string;
+  existingState?: string; // State of the existing location
   nameSimilarity?: number;
   distanceMeters?: number;
   mapName?: string;
+  needsConfirmation?: boolean; // True for state-based matches that need user review
 }
 
 export interface DedupeResult {
@@ -483,10 +504,10 @@ export class RefMapDedupService {
   /**
    * Find ref_map_points that match existing locations in the locs table.
    * These are points that have already been "catalogued" as real locations.
-   * Returns matches based on GPS proximity and/or name similarity.
+   * Returns matches based on GPS proximity, name similarity, or state+name.
    */
   async findCataloguedRefPoints(): Promise<CataloguedMatch[]> {
-    // Get all ref points
+    // Get all ref points with their state
     const refPoints = await this.db
       .selectFrom('ref_map_points')
       .innerJoin('ref_maps', 'ref_maps.map_id', 'ref_map_points.map_id')
@@ -495,57 +516,114 @@ export class RefMapDedupService {
         'ref_map_points.name',
         'ref_map_points.lat',
         'ref_map_points.lng',
+        'ref_map_points.state',
         'ref_maps.map_name',
       ])
       .execute();
 
-    // Get all catalogued locations
+    // Get ALL catalogued locations (including those without GPS)
     const locations = await this.db
       .selectFrom('locs')
-      .select(['locid', 'locnam', 'gps_lat', 'gps_lng', 'akanam'])
-      .where('gps_lat', 'is not', null)
-      .where('gps_lng', 'is not', null)
+      .select(['locid', 'locnam', 'gps_lat', 'gps_lng', 'akanam', 'state'])
       .execute();
 
     const matches: CataloguedMatch[] = [];
 
     for (const point of refPoints) {
+      const pointStateNorm = normalizeState(point.state);
+
       for (const loc of locations) {
-        if (loc.gps_lat === null || loc.gps_lng === null) continue;
+        const locHasGps = loc.gps_lat != null && loc.gps_lng != null;
+        const locStateNorm = normalizeState(loc.state);
 
-        // Check GPS proximity
-        const distance = haversineDistance(
-          point.lat, point.lng,
-          loc.gps_lat, loc.gps_lng
-        );
+        if (locHasGps) {
+          // LOCATION HAS GPS - use distance-based matching
+          const distance = haversineDistance(point.lat, point.lng, loc.gps_lat!, loc.gps_lng!);
 
-        if (distance <= GPS_RADIUS_METERS) {
-          // GPS match
-          const nameSim = point.name && loc.locnam
-            ? jaroWinklerSimilarity(normalizeName(point.name), normalizeName(loc.locnam))
-            : 0;
+          if (distance <= GPS_RADIUS_METERS) {
+            // GPS match - high confidence
+            const nameSim = point.name && loc.locnam
+              ? jaroWinklerSimilarity(normalizeName(point.name), normalizeName(loc.locnam))
+              : 0;
 
-          matches.push({
-            pointId: point.point_id,
-            pointName: point.name,
-            mapName: point.map_name,
-            matchedLocid: loc.locid,
-            matchedLocName: loc.locnam,
-            nameSimilarity: Math.round(nameSim * 100),
-            distanceMeters: Math.round(distance),
-          });
-          break; // Found match, move to next point
-        }
+            matches.push({
+              pointId: point.point_id,
+              pointName: point.name,
+              mapName: point.map_name,
+              matchedLocid: loc.locid,
+              matchedLocName: loc.locnam,
+              nameSimilarity: Math.round(nameSim * 100),
+              distanceMeters: Math.round(distance),
+            });
+            break; // Found match, move to next point
+          }
 
-        // Check name similarity - ONLY if within NAME_MATCH_RADIUS_METERS (500m)
-        // Prevents false matches where locations share a town name but are far apart
-        if (point.name && distance <= NAME_MATCH_RADIUS_METERS) {
+          // Check name similarity with distance limit
+          if (point.name) {
+            const normalizedPointName = normalizeName(point.name);
+            const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
+
+            let foundMatch = false;
+            for (const locName of namesToCheck) {
+              const nameSim = jaroWinklerSimilarity(normalizedPointName, normalizeName(locName));
+              const isExactMatch = nameSim >= 0.99;
+              const isSimilarMatch = nameSim >= NAME_SIMILARITY_THRESHOLD && distance <= NAME_MATCH_RADIUS_METERS;
+
+              if (isExactMatch || isSimilarMatch) {
+                matches.push({
+                  pointId: point.point_id,
+                  pointName: point.name,
+                  mapName: point.map_name,
+                  matchedLocid: loc.locid,
+                  matchedLocName: loc.locnam,
+                  nameSimilarity: Math.round(nameSim * 100),
+                  distanceMeters: Math.round(distance),
+                });
+                foundMatch = true;
+                break;
+              }
+            }
+            if (foundMatch) break;
+          }
+        } else if (locStateNorm && pointStateNorm) {
+          // LOCATION HAS NO GPS BUT HAS STATE - use state-based matching
+          const sameState = locStateNorm === pointStateNorm;
+
+          if (sameState && point.name) {
+            const normalizedPointName = normalizeName(point.name);
+            const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
+
+            let foundMatch = false;
+            for (const locName of namesToCheck) {
+              const nameSim = jaroWinklerSimilarity(normalizedPointName, normalizeName(locName));
+
+              if (nameSim >= NAME_SIMILARITY_THRESHOLD) {
+                // State + name match
+                matches.push({
+                  pointId: point.point_id,
+                  pointName: point.name,
+                  mapName: point.map_name,
+                  matchedLocid: loc.locid,
+                  matchedLocName: loc.locnam,
+                  nameSimilarity: Math.round(nameSim * 100),
+                  distanceMeters: 0, // No GPS, no distance
+                });
+                foundMatch = true;
+                break;
+              }
+            }
+            if (foundMatch) break;
+          }
+        } else if (point.name) {
+          // LOCATION HAS NO GPS AND NO STATE - exact name match only
           const normalizedPointName = normalizeName(point.name);
           const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
 
+          let foundMatch = false;
           for (const locName of namesToCheck) {
             const nameSim = jaroWinklerSimilarity(normalizedPointName, normalizeName(locName));
-            if (nameSim >= NAME_SIMILARITY_THRESHOLD) {
+
+            if (nameSim >= 0.99) { // 99%+ = exact match only
               matches.push({
                 pointId: point.point_id,
                 pointName: point.name,
@@ -553,11 +631,13 @@ export class RefMapDedupService {
                 matchedLocid: loc.locid,
                 matchedLocName: loc.locnam,
                 nameSimilarity: Math.round(nameSim * 100),
-                distanceMeters: Math.round(distance),
+                distanceMeters: 0, // No GPS, no distance
               });
+              foundMatch = true;
               break;
             }
           }
+          if (foundMatch) break;
         }
       }
     }
@@ -598,56 +678,119 @@ export class RefMapDedupService {
       ])
       .execute();
 
-    // Get catalogued locations
+    // Get ALL catalogued locations (including those without GPS)
     const locations = await this.db
       .selectFrom('locs')
-      .select(['locid', 'locnam', 'gps_lat', 'gps_lng', 'akanam'])
-      .where('gps_lat', 'is not', null)
-      .where('gps_lng', 'is not', null)
+      .select(['locid', 'locnam', 'gps_lat', 'gps_lng', 'akanam', 'state'])
       .execute();
 
     for (const point of points) {
       let isDuplicate = false;
+      const pointStateNorm = normalizeState(point.state);
 
       // Check against catalogued locations (locs table)
       for (const loc of locations) {
-        if (loc.gps_lat === null || loc.gps_lng === null) continue;
+        const locHasGps = loc.gps_lat != null && loc.gps_lng != null;
+        const locStateNorm = normalizeState(loc.state);
 
-        const distance = haversineDistance(point.lat, point.lng, loc.gps_lat, loc.gps_lng);
+        if (locHasGps) {
+          // LOCATION HAS GPS - use distance-based matching
+          const distance = haversineDistance(point.lat, point.lng, loc.gps_lat!, loc.gps_lng!);
 
-        if (distance <= GPS_RADIUS_METERS) {
-          // GPS match - also calculate name similarity for display
-          const nameSim = point.name && loc.locnam
-            ? jaroWinklerSimilarity(normalizeName(point.name), normalizeName(loc.locnam))
-            : 0;
-          result.cataloguedMatches.push({
-            type: 'catalogued',
-            newPoint: { name: point.name, lat: point.lat, lng: point.lng },
-            existingId: loc.locid,
-            existingName: loc.locnam,
-            nameSimilarity: Math.round(nameSim * 100),
-            distanceMeters: Math.round(distance),
-          });
-          isDuplicate = true;
-          break;
-        }
+          if (distance <= GPS_RADIUS_METERS) {
+            // GPS match - high confidence, auto-skip
+            const nameSim = point.name && loc.locnam
+              ? jaroWinklerSimilarity(normalizeName(point.name), normalizeName(loc.locnam))
+              : 0;
+            result.cataloguedMatches.push({
+              type: 'catalogued',
+              matchType: 'gps',
+              newPoint: { name: point.name, lat: point.lat, lng: point.lng },
+              existingId: loc.locid,
+              existingName: loc.locnam,
+              existingState: locStateNorm || undefined,
+              nameSimilarity: Math.round(nameSim * 100),
+              distanceMeters: Math.round(distance),
+              needsConfirmation: false,
+            });
+            isDuplicate = true;
+            break;
+          }
 
-        // Check name similarity - ONLY if within NAME_MATCH_RADIUS_METERS (500m)
-        // Prevents false matches where locations share a town name but are far apart
-        if (point.name && distance <= NAME_MATCH_RADIUS_METERS) {
+          // Check name similarity with distance limit
+          if (point.name) {
+            const normalizedPointName = normalizeName(point.name);
+            const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
+
+            for (const locName of namesToCheck) {
+              const nameSim = jaroWinklerSimilarity(normalizedPointName, normalizeName(locName));
+              const isExactMatch = nameSim >= 0.99;
+              const isSimilarMatch = nameSim >= NAME_SIMILARITY_THRESHOLD && distance <= NAME_MATCH_RADIUS_METERS;
+
+              if (isExactMatch || isSimilarMatch) {
+                result.cataloguedMatches.push({
+                  type: 'catalogued',
+                  matchType: 'name_gps',
+                  newPoint: { name: point.name, lat: point.lat, lng: point.lng },
+                  existingId: loc.locid,
+                  existingName: loc.locnam,
+                  existingState: locStateNorm || undefined,
+                  nameSimilarity: Math.round(nameSim * 100),
+                  distanceMeters: Math.round(distance),
+                  needsConfirmation: false,
+                });
+                isDuplicate = true;
+                break;
+              }
+            }
+            if (isDuplicate) break;
+          }
+        } else if (locStateNorm && pointStateNorm) {
+          // LOCATION HAS NO GPS BUT HAS STATE - use state-based matching
+          const sameState = locStateNorm === pointStateNorm;
+
+          if (sameState && point.name) {
+            const normalizedPointName = normalizeName(point.name);
+            const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
+
+            for (const locName of namesToCheck) {
+              const nameSim = jaroWinklerSimilarity(normalizedPointName, normalizeName(locName));
+
+              if (nameSim >= NAME_SIMILARITY_THRESHOLD) {
+                // State + name match - needs user confirmation
+                result.cataloguedMatches.push({
+                  type: 'catalogued',
+                  matchType: 'name_state',
+                  newPoint: { name: point.name, lat: point.lat, lng: point.lng },
+                  existingId: loc.locid,
+                  existingName: loc.locnam,
+                  existingState: locStateNorm,
+                  nameSimilarity: Math.round(nameSim * 100),
+                  needsConfirmation: true, // User must confirm
+                });
+                isDuplicate = true;
+                break;
+              }
+            }
+            if (isDuplicate) break;
+          }
+        } else if (point.name) {
+          // LOCATION HAS NO GPS AND NO STATE - exact name match only
           const normalizedPointName = normalizeName(point.name);
           const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
 
           for (const locName of namesToCheck) {
             const nameSim = jaroWinklerSimilarity(normalizedPointName, normalizeName(locName));
-            if (nameSim >= NAME_SIMILARITY_THRESHOLD) {
+
+            if (nameSim >= 0.99) { // 99%+ = exact match only
               result.cataloguedMatches.push({
                 type: 'catalogued',
+                matchType: 'exact_name',
                 newPoint: { name: point.name, lat: point.lat, lng: point.lng },
                 existingId: loc.locid,
                 existingName: loc.locnam,
                 nameSimilarity: Math.round(nameSim * 100),
-                distanceMeters: Math.round(distance),
+                needsConfirmation: true, // User must confirm
               });
               isDuplicate = true;
               break;

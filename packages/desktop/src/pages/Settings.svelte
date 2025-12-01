@@ -2325,6 +2325,8 @@
 
 <!-- Import Preview Modal -->
 {#if showImportPreview && importPreview}
+  {@const needsReviewCount = importPreview.cataloguedMatches.filter(m => m.needsConfirmation).length}
+  {@const autoSkipCount = importPreview.cataloguedMatches.filter(m => !m.needsConfirmation).length}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
     <div class="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[80vh] flex flex-col">
       <!-- Header -->
@@ -2346,10 +2348,16 @@
               <span class="text-gray-500">New points:</span>
               <span class="font-medium ml-2 text-green-600">{importPreview.newPoints}</span>
             </div>
-            {#if importPreview.cataloguedCount > 0}
+            {#if autoSkipCount > 0}
               <div>
                 <span class="text-gray-500">Already catalogued:</span>
-                <span class="font-medium ml-2 text-amber-600">{importPreview.cataloguedCount}</span>
+                <span class="font-medium ml-2 text-green-600">{autoSkipCount}</span>
+              </div>
+            {/if}
+            {#if needsReviewCount > 0}
+              <div>
+                <span class="text-gray-500">Needs review:</span>
+                <span class="font-medium ml-2 text-purple-600">{needsReviewCount}</span>
               </div>
             {/if}
             {#if importPreview.referenceCount > 0}
@@ -2363,32 +2371,86 @@
 
         <!-- Duplicate Details -->
         {#if importPreview.cataloguedCount > 0 || importPreview.referenceCount > 0}
+          {@const autoSkipMatches = importPreview.cataloguedMatches.filter(m => !m.needsConfirmation)}
+          {@const needsReviewMatches = importPreview.cataloguedMatches.filter(m => m.needsConfirmation)}
           <div class="mb-4">
             <h3 class="text-sm font-medium text-foreground mb-2">Duplicate Matches</h3>
             <p class="text-xs text-gray-500 mb-3">
-              Points matching existing data (GPS within 150m, or name 85%+ within 500m)
+              Points matching existing data (GPS within 150m, similar name within 500m, or same state + similar name)
             </p>
 
-            <!-- Catalogued Matches -->
-            {#if importPreview.cataloguedMatches.length > 0}
+            <!-- Needs Review - State-Based Matches -->
+            {#if needsReviewMatches.length > 0}
               <div class="mb-3">
-                <div class="text-xs font-medium text-amber-600 mb-1">
-                  Already in Locations ({importPreview.cataloguedCount})
+                <div class="text-xs font-medium text-purple-600 mb-1 flex items-center gap-1">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Needs Review ({needsReviewMatches.length})
                 </div>
-                <div class="space-y-1 max-h-32 overflow-y-auto">
-                  {#each importPreview.cataloguedMatches as match}
-                    <div class="text-xs bg-amber-50 border border-amber-100 rounded px-2 py-1">
-                      <span class="font-medium">{match.newPointName}</span>
-                      <span class="text-gray-500"> matches </span>
-                      <span class="font-medium">{match.existingName}</span>
-                      <span class="text-gray-400 ml-1">
-                        ({match.nameSimilarity ?? 0}%{match.distanceMeters != null ? `, ${match.distanceMeters}m` : ''})
-                      </span>
+                <p class="text-xs text-gray-400 mb-2">Same state + similar name - please confirm these matches</p>
+                <div class="space-y-2 max-h-40 overflow-y-auto">
+                  {#each needsReviewMatches.slice(0, 10) as match}
+                    <div class="text-xs bg-purple-50 border border-purple-200 rounded px-2 py-2">
+                      <div class="flex items-center justify-between mb-1">
+                        <div class="flex items-center gap-1">
+                          {#if match.matchType === 'name_state'}
+                            <span class="bg-purple-100 text-purple-700 text-[10px] px-1.5 py-0.5 rounded">State Match</span>
+                          {:else if match.matchType === 'exact_name'}
+                            <span class="bg-amber-100 text-amber-700 text-[10px] px-1.5 py-0.5 rounded">Name Only</span>
+                          {/if}
+                          {#if match.existingState}
+                            <span class="text-gray-500">{match.existingState}</span>
+                          {/if}
+                        </div>
+                        <span class="text-gray-400">{match.nameSimilarity ?? 0}% match</span>
+                      </div>
+                      <div class="flex items-center gap-1">
+                        <span class="font-medium text-foreground">{match.newPointName}</span>
+                        <span class="text-gray-400">→</span>
+                        <span class="font-medium text-foreground">{match.existingName}</span>
+                      </div>
                     </div>
                   {/each}
-                  {#if importPreview.cataloguedCount > 10}
+                  {#if needsReviewMatches.length > 10}
                     <div class="text-xs text-gray-500 italic">
-                      ...and {importPreview.cataloguedCount - 10} more
+                      ...and {needsReviewMatches.length - 10} more
+                    </div>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+
+            <!-- Catalogued Matches (Auto-skip - GPS based) -->
+            {#if autoSkipMatches.length > 0}
+              <div class="mb-3">
+                <div class="text-xs font-medium text-green-600 mb-1 flex items-center gap-1">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Already Catalogued ({autoSkipMatches.length})
+                </div>
+                <div class="space-y-1 max-h-32 overflow-y-auto">
+                  {#each autoSkipMatches.slice(0, 10) as match}
+                    <div class="text-xs bg-green-50 border border-green-100 rounded px-2 py-1">
+                      <div class="flex items-center gap-1">
+                        {#if match.matchType === 'gps'}
+                          <span class="bg-green-100 text-green-700 text-[10px] px-1 py-0.5 rounded">GPS</span>
+                        {:else if match.matchType === 'name_gps'}
+                          <span class="bg-blue-100 text-blue-700 text-[10px] px-1 py-0.5 rounded">Name+GPS</span>
+                        {/if}
+                        <span class="font-medium">{match.newPointName}</span>
+                        <span class="text-gray-400">→</span>
+                        <span class="font-medium">{match.existingName}</span>
+                        <span class="text-gray-400 ml-auto">
+                          {match.nameSimilarity ?? 0}%{match.distanceMeters != null ? `, ${match.distanceMeters}m` : ''}
+                        </span>
+                      </div>
+                    </div>
+                  {/each}
+                  {#if autoSkipMatches.length > 10}
+                    <div class="text-xs text-gray-500 italic">
+                      ...and {autoSkipMatches.length - 10} more
                     </div>
                   {/if}
                 </div>
@@ -2398,11 +2460,14 @@
             <!-- Reference Matches -->
             {#if importPreview.referenceMatches.length > 0}
               <div>
-                <div class="text-xs font-medium text-blue-600 mb-1">
+                <div class="text-xs font-medium text-blue-600 mb-1 flex items-center gap-1">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                  </svg>
                   Already in Reference Maps ({importPreview.referenceCount})
                 </div>
                 <div class="space-y-1 max-h-32 overflow-y-auto">
-                  {#each importPreview.referenceMatches as match}
+                  {#each importPreview.referenceMatches.slice(0, 10) as match}
                     <div class="text-xs bg-blue-50 border border-blue-100 rounded px-2 py-1">
                       <span class="font-medium">{match.newPointName}</span>
                       <span class="text-gray-500"> matches </span>
