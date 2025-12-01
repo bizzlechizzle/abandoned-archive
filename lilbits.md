@@ -126,27 +126,32 @@ Useful for previewing what the dedup scripts will merge before running them.
 ### resetdb.py
 
 - **Path**: `resetdb.py` (root directory)
-- **Lines**: 233
+- **Lines**: 319 ⚠️ (exceeds 300 LOC guideline)
 - **Runtime**: python3
-- **Purpose**: Reset database and archive files for development/testing
+- **Purpose**: Reset database, config, logs, caches, and archive files for fresh import testing
 - **Usage**:
   ```bash
-  python3 resetdb.py              # Interactive (prompts for confirmation)
-  python3 resetdb.py -f           # Force reset without confirmation
-  python3 resetdb.py --db-only    # Only remove database, keep config
-  python3 resetdb.py -a /path/to/archive  # Also clean archive support dirs
+  python3 resetdb.py                        # Interactive (prompts for confirmation)
+  python3 resetdb.py -f                     # Force reset without confirmation
+  python3 resetdb.py --db-only              # Only remove database, keep config
+  python3 resetdb.py -a /path/to/archive    # Also clean archive support dirs
+  python3 resetdb.py -a /archive --nuclear  # Clear EVERYTHING including browser profile
   ```
-- **Inputs**: CLI flags (-f, --db-only, -a)
-- **Outputs**: stdout (files removed)
+- **Inputs**: CLI flags (-f, --db-only, -a, --nuclear)
+- **Outputs**: stdout (files removed, grouped by category)
 - **Side Effects**:
   - Removes SQLite database file (both production and dev locations)
+  - Removes WAL/SHM journal files
   - Removes bootstrap config file
   - Removes backup directory
-  - Optionally removes archive support directories (.thumbnails, .previews, .posters)
+  - Removes application logs directory
+  - Removes maintenance history file
+  - With `-a`: Removes archive support directories (.thumbnails, .previews, .posters, .cache/video-proxies, _database)
+  - With `--nuclear`: Also removes research browser profile (logins, cookies, history)
 - **Dependencies**: python3
-- **Last Verified**: 2025-11-30
+- **Last Verified**: 2025-12-01
 
-Detects platform (macOS/Linux/Windows) and locates config directory accordingly.
+Detects platform (macOS/Linux/Windows) and locates config directory accordingly. Provides grouped output showing exactly what will be removed before confirmation.
 
 ---
 
@@ -155,6 +160,7 @@ Detects platform (macOS/Linux/Windows) and locates config directory accordingly.
 | Script | Lines | Status | Action |
 |--------|-------|--------|--------|
 | `scripts/setup.sh` | 514 | ⚠️ Exceeds | Exempt - complex multi-phase installer with extensive error handling |
+| `resetdb.py` | 319 | ⚠️ Exceeds | Exempt - comprehensive reset utility with multiple modes and platform detection |
 
 ---
 
