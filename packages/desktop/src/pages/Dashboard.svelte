@@ -369,7 +369,7 @@
               >
                 <div class="w-32 h-20 bg-gray-200 rounded-lg flex-shrink-0 overflow-hidden">
                   {#if location.heroThumbPath}
-                    <img src={`media://${location.heroThumbPath}?v=${cacheVersion}`} alt="" class="w-full h-full object-cover" />
+                    <img src={`media://${location.heroThumbPath}?v=${cacheVersion}`} alt="" class="w-full h-full object-cover" loading="lazy" width="128" height="80" />
                   {/if}
                 </div>
                 <div class="min-w-0">
@@ -406,7 +406,7 @@
               >
                 <div class="w-16 h-16 bg-gray-200 rounded-lg flex-shrink-0 overflow-hidden">
                   {#if location.heroThumbPath}
-                    <img src={`media://${location.heroThumbPath}?v=${cacheVersion}`} alt="" class="w-full h-full object-cover" />
+                    <img src={`media://${location.heroThumbPath}?v=${cacheVersion}`} alt="" class="w-full h-full object-cover" loading="lazy" width="64" height="64" />
                   {/if}
                 </div>
                 <div class="min-w-0">
@@ -441,7 +441,7 @@
               >
                 <div class="w-16 h-16 bg-gray-200 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center text-gray-400 text-lg font-medium">
                   {#if importRecord.heroThumbPath}
-                    <img src={`media://${importRecord.heroThumbPath}?v=${cacheVersion}`} alt="" class="w-full h-full object-cover" />
+                    <img src={`media://${importRecord.heroThumbPath}?v=${cacheVersion}`} alt="" class="w-full h-full object-cover" loading="lazy" width="64" height="64" />
                   {:else}
                     {importRecord.img_count + importRecord.vid_count + importRecord.doc_count}
                   {/if}

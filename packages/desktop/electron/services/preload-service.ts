@@ -1,4 +1,5 @@
 import { MediaCacheService } from './media-cache-service';
+import fs from 'fs/promises';
 
 /**
  * PreloadService - Preload adjacent images when viewing in lightbox
@@ -8,6 +9,7 @@ import { MediaCacheService } from './media-cache-service';
  * 2. Cancellable - Stop preloading when user navigates away
  * 3. Non-blocking - Never block the UI thread
  * 4. Separate from cache - This service predicts, cache stores
+ * 5. OPT-038: Skip large files (>100MB) to prevent memory issues
  */
 
 interface MediaItem {
@@ -24,6 +26,10 @@ export class PreloadService {
   // Preload 3 images ahead, 1 behind
   private readonly PRELOAD_AHEAD = 3;
   private readonly PRELOAD_BEHIND = 1;
+
+  // OPT-038: Skip files larger than 100MB for preloading
+  // Large files should be streamed, not preloaded into memory
+  private readonly MAX_PRELOAD_SIZE_BYTES = 100 * 1024 * 1024; // 100MB
 
   constructor(private readonly cache: MediaCacheService) {}
 
@@ -74,7 +80,7 @@ export class PreloadService {
       }
     }
 
-    // Preload each item (skip videos - they're streamed, not cached)
+    // Preload each item (skip videos and large files - they should be streamed)
     for (const idx of indicesToPreload) {
       if (signal.aborted) {
         return;
@@ -85,6 +91,20 @@ export class PreloadService {
       if (item.type === 'video') {
         continue;
       }
+
+      // OPT-038: Skip files larger than MAX_PRELOAD_SIZE_BYTES
+      // This prevents ERR_FS_FILE_TOO_LARGE crashes on 2GB+ files
+      try {
+        const stat = await fs.stat(item.path);
+        if (stat.size > this.MAX_PRELOAD_SIZE_BYTES) {
+          console.log(`[Preload] Skipping large file (${Math.round(stat.size / 1024 / 1024)}MB): ${item.path}`);
+          continue;
+        }
+      } catch {
+        // File doesn't exist or can't be stat'd - skip it
+        continue;
+      }
+
       if (!this.cache.has(item.hash)) {
         await this.cache.loadFile(item.hash, item.path);
       }

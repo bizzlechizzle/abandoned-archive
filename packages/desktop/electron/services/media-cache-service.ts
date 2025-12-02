@@ -135,7 +135,15 @@ export class MediaCacheService {
   }
 
   /**
+   * OPT-038: Maximum file size for memory caching (500MB)
+   * Node.js fs.readFile() crashes on files > 2GB, and large files
+   * shouldn't be cached in memory anyway - they should be streamed.
+   */
+  private readonly MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024; // 500MB
+
+  /**
    * Load a file into cache
+   * OPT-038: Checks file size before loading to prevent ERR_FS_FILE_TOO_LARGE
    */
   async loadFile(key: string, filePath: string): Promise<Buffer | null> {
     try {
@@ -143,6 +151,13 @@ export class MediaCacheService {
       const cached = this.get(key);
       if (cached) {
         return cached;
+      }
+
+      // OPT-038: Check file size before loading to prevent Node.js crash on 2GB+ files
+      const stat = await fs.stat(filePath);
+      if (stat.size > this.MAX_FILE_SIZE_BYTES) {
+        console.log(`[MediaCache] Skipping large file (${Math.round(stat.size / 1024 / 1024)}MB > 500MB): ${filePath}`);
+        return null;
       }
 
       // Load from disk

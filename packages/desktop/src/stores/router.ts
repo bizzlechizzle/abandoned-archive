@@ -9,6 +9,9 @@ export interface Route {
 function createRouter() {
   const { subscribe, set } = writable<Route>({ path: '/dashboard' });
 
+  // OPT-038: Store handler reference for cleanup
+  let hashChangeHandler: (() => void) | null = null;
+
   function navigate(path: string, params?: Record<string, string>, query?: Record<string, string>) {
     let hash = path;
     if (query && Object.keys(query).length > 0) {
@@ -72,16 +75,30 @@ function createRouter() {
     const hash = window.location.hash.slice(1);
     set(parseRoute(hash));
 
-    window.addEventListener('hashchange', () => {
+    // OPT-038: Store handler reference so it can be removed on destroy
+    hashChangeHandler = () => {
       const newHash = window.location.hash.slice(1);
       set(parseRoute(newHash));
-    });
+    };
+    window.addEventListener('hashchange', hashChangeHandler);
+  }
+
+  /**
+   * OPT-038: Cleanup function to remove hashchange listener
+   * Call this if the app is unmounted (e.g., in embedded contexts)
+   */
+  function destroy() {
+    if (hashChangeHandler) {
+      window.removeEventListener('hashchange', hashChangeHandler);
+      hashChangeHandler = null;
+    }
   }
 
   return {
     subscribe,
     navigate,
-    init
+    init,
+    destroy
   };
 }
 

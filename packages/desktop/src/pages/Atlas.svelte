@@ -307,12 +307,30 @@
   }
 
   onMount(() => {
-    loadLocations();
-    loadRefMapPoints(); // Load imported reference map points
+    // OPT-038: Don't call loadLocations() here - viewport-based loading handles it
+    // The Map component emits onBoundsChange when initialized, triggering loadLocationsInBounds
+    // This prevents double-loading (previously loaded ALL then reloaded in viewport)
+
+    // Load ref map points (small dataset, OK to load all)
+    loadRefMapPoints();
+
+    // Safety fallback: if no bounds received within 3s, load all locations
+    // This handles edge case where Map fails to emit initial bounds
+    const fallbackTimer = setTimeout(() => {
+      if (locations.length === 0 && !currentBounds) {
+        console.warn('[Atlas] No bounds received from Map, falling back to full load');
+        loadLocations();
+      }
+    }, 3000);
+
     // Close context menu on click outside
     const handleClickOutside = () => closeContextMenu();
     document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
+
+    return () => {
+      clearTimeout(fallbackTimer);
+      document.removeEventListener('click', handleClickOutside);
+    };
   });
 </script>
 

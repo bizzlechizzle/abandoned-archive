@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { router } from '../stores/router';
+  import { createVirtualizer } from '@tanstack/svelte-virtual';
   import type { Location } from '@au-archive/core';
 
   // OPT-036: Locations now loaded with database-side filtering
@@ -52,6 +53,21 @@
 
   // OPT-036: Debounce timer for search input
   let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // OPT-038: Virtual scrolling for large location lists
+  let scrollContainerRef = $state<HTMLDivElement | null>(null);
+  const ROW_HEIGHT = 60; // Fixed row height for virtualization
+
+  // Create virtualizer - recreates when filteredLocations changes
+  let virtualizer = $derived.by(() => {
+    const items = filteredLocations();
+    return createVirtualizer({
+      count: items.length,
+      getScrollElement: () => scrollContainerRef,
+      estimateSize: () => ROW_HEIGHT,
+      overscan: 5, // Render 5 extra rows above/below viewport for smooth scrolling
+    });
+  });
 
   // Subscribe to router for query params
   let routeQuery = $state<Record<string, string>>({});
@@ -453,37 +469,50 @@
       <p class="text-gray-500">Loading locations...</p>
     </div>
   {:else if filteredLocations().length > 0}
+    <!-- OPT-038: Virtual scrolling for performance with 4K+ locations -->
     <div class="bg-white rounded-lg shadow overflow-hidden">
-      <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-          <tr>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Name
-            </th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Type
-            </th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Location
-            </th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              GPS
-            </th>
-          </tr>
-        </thead>
-        <tbody class="bg-white divide-y divide-gray-200">
-          {#each filteredLocations() as location}
-            <tr class="hover:bg-gray-50 cursor-pointer" onclick={() => router.navigate(`/location/${location.locid}`)}>
-              <td class="px-6 py-4 whitespace-nowrap">
-                <div class="text-sm font-medium text-gray-900">{location.locnam}</div>
+      <!-- Fixed header -->
+      <div class="grid grid-cols-[1fr_150px_200px_80px] bg-gray-50 border-b border-gray-200">
+        <div class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+          Name
+        </div>
+        <div class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+          Type
+        </div>
+        <div class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+          Location
+        </div>
+        <div class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+          GPS
+        </div>
+      </div>
+
+      <!-- Virtual scrolling container -->
+      <div
+        bind:this={scrollContainerRef}
+        class="overflow-auto"
+        style="height: calc(100vh - 420px); min-height: 300px;"
+      >
+        <div
+          style="height: {virtualizer.getTotalSize()}px; width: 100%; position: relative;"
+        >
+          {#each virtualizer.getVirtualItems() as virtualRow (virtualRow.index)}
+            {@const location = filteredLocations()[virtualRow.index]}
+            <div
+              class="grid grid-cols-[1fr_150px_200px_80px] absolute top-0 left-0 w-full hover:bg-gray-50 cursor-pointer border-b border-gray-100"
+              style="height: {virtualRow.size}px; transform: translateY({virtualRow.start}px);"
+              onclick={() => router.navigate(`/location/${location.locid}`)}
+            >
+              <div class="px-6 py-4 flex flex-col justify-center overflow-hidden">
+                <div class="text-sm font-medium text-gray-900 truncate">{location.locnam}</div>
                 {#if location.akanam}
-                  <div class="text-xs text-gray-500">{location.akanam}</div>
+                  <div class="text-xs text-gray-500 truncate">{location.akanam}</div>
                 {/if}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+              </div>
+              <div class="px-6 py-4 flex items-center text-sm text-gray-500 truncate">
                 {location.type || '-'}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+              </div>
+              <div class="px-6 py-4 flex items-center text-sm text-gray-500 truncate">
                 {#if location.address?.city && location.address?.state}
                   {location.address.city}, {location.address.state}
                 {:else if location.address?.state}
@@ -491,8 +520,8 @@
                 {:else}
                   -
                 {/if}
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap">
+              </div>
+              <div class="px-6 py-4 flex items-center">
                 {#if location.gps}
                   <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
                     Yes
@@ -502,11 +531,11 @@
                     No
                   </span>
                 {/if}
-              </td>
-            </tr>
+              </div>
+            </div>
           {/each}
-        </tbody>
-      </table>
+        </div>
+      </div>
     </div>
     <div class="mt-4 text-sm text-gray-600">
       Showing {filteredLocations().length} of {locations.length} locations
