@@ -82,6 +82,22 @@ export function registerHealthHandlers() {
     }
   });
 
+  /**
+   * Check for locations with GPS but missing region fields.
+   * Returns a list of locations that need region data backfilled.
+   * Use this to find "silent enrichment failures" where GPS was applied
+   * but geocoding/region calculation failed.
+   */
+  ipcMain.handle('health:checkLocationDataIntegrity', async () => {
+    try {
+      const integrityChecker = getIntegrityChecker();
+      return await integrityChecker.checkLocationDataIntegrity();
+    } catch (error) {
+      console.error('Error checking location data integrity:', error);
+      throw error;
+    }
+  });
+
   ipcMain.handle('health:runMaintenance', async () => {
     try {
       const maintenanceScheduler = getMaintenanceScheduler();

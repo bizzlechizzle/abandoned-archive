@@ -18,6 +18,7 @@ import {
   getCensusRegion,
   getCensusDivision,
   getStateDirection,
+  getStateFromGPS,
   getCulturalRegionFromCounty,
   getCulturalRegionsForState,
   getDefaultCountryRegion,
@@ -86,8 +87,18 @@ export interface RegionInput {
 export function calculateRegionFields(input: RegionInput): RegionFields {
   const { state, addressState, county, lat, lng, existingCulturalRegion, existingCountryCulturalRegion } = input;
 
-  // Use state or fall back to addressState
-  const effectiveState = state || addressState || null;
+  // Use state or fall back to addressState, then try GPS→State as last resort
+  let effectiveState = state || addressState || null;
+
+  // GPS→State fallback: If no state from address, try to derive from GPS coordinates
+  // This catches cases where geocoding failed but we have valid GPS
+  if (!effectiveState && lat && lng) {
+    const derivedState = getStateFromGPS(lat, lng);
+    if (derivedState) {
+      console.log(`[RegionService] Derived state ${derivedState} from GPS (${lat}, ${lng})`);
+      effectiveState = derivedState;
+    }
+  }
 
   // Census Region from state (always recalculate)
   const censusRegion = getCensusRegion(effectiveState);

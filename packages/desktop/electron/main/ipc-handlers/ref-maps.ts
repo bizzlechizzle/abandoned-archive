@@ -555,6 +555,11 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
           if (enrichResult.success) {
             enrichedCount++;
             console.log(`[RefMaps] Enriched location ${enrichment.existingLocId}: GPS + address=${enrichResult.updated.address}, regions=${enrichResult.updated.regions} for "${point.name}"`);
+            // Verification: Warn if GPS applied but regions failed
+            if (!enrichResult.updated.regions) {
+              console.warn(`[RefMaps] ⚠️ GPS applied but regions NOT updated for ${enrichment.existingLocId} ("${point.name}"). ` +
+                `stateHint=${point.state}, check if geocoding failed and state couldn't be derived.`);
+            }
           } else {
             console.warn(`[RefMaps] Enrichment failed for ${enrichment.existingLocId}: ${enrichResult.error}`);
           }
@@ -832,6 +837,12 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
 
       console.log(`[RefMaps] Applied GPS enrichment: ${refPoint.name} → location ${locationId} (address=${enrichResult.updated.address}, regions=${enrichResult.updated.regions})`);
 
+      // Verification: Warn if GPS applied but regions failed
+      if (!enrichResult.updated.regions) {
+        console.warn(`[RefMaps] ⚠️ GPS applied but regions NOT updated for ${locationId} ("${refPoint.name}"). ` +
+          `stateHint=${refPoint.state}, check if geocoding failed and state couldn't be derived.`);
+      }
+
       return {
         success: true,
         appliedGps: { lat: refPoint.lat, lng: refPoint.lng },
@@ -908,10 +919,22 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
 
         applied++;
         if (enrichResult.updated.address) addressUpdated++;
-        if (enrichResult.updated.regions) regionsUpdated++;
+        if (enrichResult.updated.regions) {
+          regionsUpdated++;
+        } else {
+          // Verification: Warn if GPS applied but regions failed
+          console.warn(`[RefMaps] ⚠️ GPS applied but regions NOT updated for ${locationId} ("${refPoint.name}"). ` +
+            `stateHint=${refPoint.state}`);
+        }
       }
 
       console.log(`[RefMaps] Batch applied ${applied} GPS enrichments (${addressUpdated} with address, ${regionsUpdated} with regions)`);
+
+      // Verification summary: Warn if any enrichments failed to populate regions
+      const regionGaps = applied - regionsUpdated;
+      if (regionGaps > 0) {
+        console.warn(`[RefMaps] ⚠️ ${regionGaps} locations received GPS but NO REGIONS. Check logs for details.`);
+      }
 
       return {
         success: true,

@@ -205,7 +205,19 @@ export class LocationEnrichmentService {
           culturalRegion: regionFields.culturalRegion,
           countryCulturalRegion: regionFields.countryCulturalRegion,
         };
-        console.log(`[LocationEnrichment] Regions: ${regionData.censusRegion}, ${regionData.stateDirection}`);
+
+        // HEALTH CHECK: Warn if GPS is being applied but no regions could be calculated
+        // This catches the silent failure case where geocoding fails AND no valid stateHint
+        const hasAnyRegion = regionData.censusRegion || regionData.stateDirection || regionData.culturalRegion;
+        if (!hasAnyRegion) {
+          console.warn(
+            `[LocationEnrichment] ⚠️ HEALTH CHECK FAIL: GPS applied but NO REGIONS for ${locid}. ` +
+            `stateForRegion=${stateForRegion}, stateHint=${stateHint}, geocodedState=${addressData?.state}. ` +
+            `This location will have GPS but empty region fields!`
+          );
+        } else {
+          console.log(`[LocationEnrichment] Regions: ${regionData.censusRegion}, ${regionData.stateDirection}`);
+        }
       } catch (regionError) {
         // Non-fatal: log and continue with GPS + address only
         console.warn(`[LocationEnrichment] Region calculation failed:`, regionError);
@@ -239,14 +251,28 @@ export class LocationEnrichmentService {
       addressUpdated = true;
     }
 
-    // Region fields (only if we calculated them)
+    // Region fields (only if we calculated them AND they have actual values)
     if (regionData) {
-      if (regionData.censusRegion) updateFields.census_region = regionData.censusRegion;
-      if (regionData.censusDivision) updateFields.census_division = regionData.censusDivision;
-      if (regionData.stateDirection) updateFields.state_direction = regionData.stateDirection;
-      if (regionData.culturalRegion) updateFields.cultural_region = regionData.culturalRegion;
-      if (regionData.countryCulturalRegion) updateFields.country_cultural_region = regionData.countryCulturalRegion;
-      regionsUpdated = true;
+      if (regionData.censusRegion) {
+        updateFields.census_region = regionData.censusRegion;
+        regionsUpdated = true;
+      }
+      if (regionData.censusDivision) {
+        updateFields.census_division = regionData.censusDivision;
+        regionsUpdated = true;
+      }
+      if (regionData.stateDirection) {
+        updateFields.state_direction = regionData.stateDirection;
+        regionsUpdated = true;
+      }
+      if (regionData.culturalRegion) {
+        updateFields.cultural_region = regionData.culturalRegion;
+        regionsUpdated = true;
+      }
+      if (regionData.countryCulturalRegion) {
+        updateFields.country_cultural_region = regionData.countryCulturalRegion;
+        regionsUpdated = true;
+      }
     }
 
     // Step 4: Update location

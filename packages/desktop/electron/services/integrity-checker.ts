@@ -261,6 +261,88 @@ export class IntegrityChecker {
     return result;
   }
 
+  /**
+   * Check for locations with GPS but missing region fields.
+   * This catches the "silent enrichment failure" where GPS was applied
+   * but geocoding/region calculation failed.
+   */
+  async checkLocationDataIntegrity(): Promise<{
+    locationsWithGpsNoRegions: Array<{
+      locid: string;
+      locnam: string;
+      address_state: string | null;
+      gps_lat: number;
+      gps_lng: number;
+    }>;
+    count: number;
+  }> {
+    logger.info('IntegrityChecker', 'Checking location data integrity (GPS vs regions)');
+
+    try {
+      const dbPath = getDatabasePath();
+      const db = new Database(dbPath, { readonly: true });
+
+      try {
+        // Find locations with GPS but missing region fields
+        const results = db.prepare(`
+          SELECT locid, locnam, address_state, gps_lat, gps_lng,
+                 census_region, state_direction, cultural_region
+          FROM locs
+          WHERE gps_lat IS NOT NULL
+            AND gps_lng IS NOT NULL
+            AND (census_region IS NULL OR state_direction IS NULL)
+          ORDER BY locnam
+          LIMIT 100
+        `).all() as Array<{
+          locid: string;
+          locnam: string;
+          address_state: string | null;
+          gps_lat: number;
+          gps_lng: number;
+          census_region: string | null;
+          state_direction: string | null;
+          cultural_region: string | null;
+        }>;
+
+        // Get total count
+        const countResult = db.prepare(`
+          SELECT COUNT(*) as count
+          FROM locs
+          WHERE gps_lat IS NOT NULL
+            AND gps_lng IS NOT NULL
+            AND (census_region IS NULL OR state_direction IS NULL)
+        `).get() as { count: number };
+
+        if (results.length > 0) {
+          logger.warn('IntegrityChecker', `Found ${countResult.count} locations with GPS but missing regions`, {
+            sampleLocations: results.slice(0, 5).map(r => r.locnam),
+          });
+        } else {
+          logger.info('IntegrityChecker', 'All locations with GPS have region fields populated');
+        }
+
+        return {
+          locationsWithGpsNoRegions: results.map(r => ({
+            locid: r.locid,
+            locnam: r.locnam,
+            address_state: r.address_state,
+            gps_lat: r.gps_lat,
+            gps_lng: r.gps_lng,
+          })),
+          count: countResult.count,
+        };
+      } finally {
+        db.close();
+      }
+    } catch (error) {
+      logger.error('IntegrityChecker', 'Location data integrity check failed', error as Error);
+      return {
+        locationsWithGpsNoRegions: [],
+        count: 0,
+      };
+    }
+  }
+
   getLastCheckResult(): IntegrityResult | null {
     return this.lastResult;
   }

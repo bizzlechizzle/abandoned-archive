@@ -3961,6 +3961,59 @@ export function getStateDirection(
 }
 
 /**
+ * Derive state from GPS coordinates using nearest state center.
+ * This is a fallback for when geocoding fails and no state is available.
+ * Uses haversine-like distance calculation for accuracy.
+ *
+ * @param lat - Latitude in decimal degrees
+ * @param lng - Longitude in decimal degrees
+ * @returns 2-letter state code of nearest state, or null if coordinates invalid
+ */
+export function getStateFromGPS(
+  lat: number | null | undefined,
+  lng: number | null | undefined
+): string | null {
+  if (lat == null || lng == null) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+
+  // Only match if in US bounds (roughly)
+  // Continental US: lat 24-50, lng -125 to -66
+  // Hawaii: lat 18-23, lng -161 to -154
+  // Alaska: lat 51-72, lng -180 to -129
+  // Puerto Rico: lat 17-19, lng -68 to -65
+  // Guam: lat 13-14, lng 144-145
+  const isInContiguousUS = lat >= 24 && lat <= 50 && lng >= -125 && lng <= -66;
+  const isInHawaii = lat >= 18 && lat <= 23 && lng >= -161 && lng <= -154;
+  const isInAlaska = lat >= 51 && lat <= 72 && lng >= -180 && lng <= -129;
+  const isInPR = lat >= 17 && lat <= 19 && lng >= -68 && lng <= -65;
+  const isInGuam = lat >= 13 && lat <= 14 && lng >= 144 && lng <= 146;
+
+  if (!isInContiguousUS && !isInHawaii && !isInAlaska && !isInPR && !isInGuam) {
+    return null; // Not in US bounds
+  }
+
+  let nearestState: string | null = null;
+  let nearestDistance = Infinity;
+
+  for (const [stateCode, center] of Object.entries(STATE_CENTERS)) {
+    // Simple distance approximation (works well for same-scale comparisons)
+    // Uses squared distance to avoid sqrt overhead
+    const latDiff = lat - center.lat;
+    const lngDiff = lng - center.lng;
+    // Adjust longitude difference by latitude to account for convergence
+    const lngAdjusted = lngDiff * Math.cos(lat * Math.PI / 180);
+    const distanceSquared = latDiff * latDiff + lngAdjusted * lngAdjusted;
+
+    if (distanceSquared < nearestDistance) {
+      nearestDistance = distanceSquared;
+      nearestState = stateCode;
+    }
+  }
+
+  return nearestState;
+}
+
+/**
  * Get cultural region from county lookup
  */
 export function getCulturalRegionFromCounty(
