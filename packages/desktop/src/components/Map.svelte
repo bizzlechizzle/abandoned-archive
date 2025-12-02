@@ -170,19 +170,35 @@
     return 'low';
   }
 
+  // OPT-043: Single icon instance for all location pins (major perf improvement)
+  // All pins use accent color #b9975c, so we create ONE icon and reuse it
+  // This eliminates ~11 icon object creations per render for 11 locations
+  let singlePinIcon: any = null;
+
   /**
-   * Create a colored circle marker icon using accent color
-   * Per v010steps.md P3a: All pins use brand accent color #b9975c
+   * OPT-043: Get or create the single pin icon instance
+   * Reuses the same icon for all location markers (since they all use accent color)
    */
-  function createConfidenceIcon(L: any, confidence: keyof typeof THEME.GPS_CONFIDENCE_COLORS): any {
-    // P3a: Use accent color for all pins instead of confidence-based colors
+  function getPinIcon(L: any): any {
+    if (singlePinIcon) return singlePinIcon;
     const accentColor = '#b9975c';
-    return L.divIcon({
+    singlePinIcon = L.divIcon({
       html: `<div class="confidence-marker" style="background-color: ${accentColor};"></div>`,
       className: 'confidence-icon',
       iconSize: [16, 16],
       iconAnchor: [8, 8],
     });
+    return singlePinIcon;
+  }
+
+  /**
+   * Create a colored circle marker icon using accent color
+   * Per v010steps.md P3a: All pins use brand accent color #b9975c
+   * @deprecated Use getPinIcon() for better performance
+   */
+  function createConfidenceIcon(L: any, confidence: keyof typeof THEME.GPS_CONFIDENCE_COLORS): any {
+    // OPT-043: Return cached single icon instance instead of creating new one
+    return getPinIcon(L);
   }
 
   /**
@@ -209,9 +225,82 @@
     category: string | null;
   }
 
+  /**
+   * OPT-043: Lean location type for Atlas performance
+   * Matches the backend MapLocation interface
+   */
+  interface MapLocation {
+    locid: string;
+    locnam: string;
+    type?: string;
+    gps_lat: number;
+    gps_lng: number;
+    gps_accuracy?: number;
+    gps_source?: string;
+    gps_verified_on_map: boolean;
+    address_state?: string;
+    address_city?: string;
+    favorite: boolean;
+  }
+
+  /**
+   * OPT-043: Type guard to check if a location is a MapLocation (lean type)
+   */
+  function isMapLocation(loc: Location | MapLocation): loc is MapLocation {
+    return 'gps_lat' in loc && 'gps_lng' in loc;
+  }
+
+  /**
+   * OPT-043: Extract coordinates from either Location or MapLocation
+   * Handles both full Location objects and lean MapLocation objects
+   */
+  function getCoordinatesFromAny(loc: Location | MapLocation): { lat: number; lng: number; isApproximate: boolean } | null {
+    if (isMapLocation(loc)) {
+      // Lean MapLocation - direct access
+      if (loc.gps_lat != null && loc.gps_lng != null) {
+        return { lat: loc.gps_lat, lng: loc.gps_lng, isApproximate: false };
+      }
+      return null;
+    }
+    // Full Location object - use existing function
+    return getLocationCoordinates(loc);
+  }
+
+  /**
+   * OPT-043: Extract verified status from either Location or MapLocation
+   */
+  function getVerifiedStatus(loc: Location | MapLocation): boolean {
+    if (isMapLocation(loc)) {
+      return loc.gps_verified_on_map;
+    }
+    return loc.gps?.verifiedOnMap ?? false;
+  }
+
+  /**
+   * OPT-043: Extract city from either Location or MapLocation
+   */
+  function getCity(loc: Location | MapLocation): string | undefined {
+    if (isMapLocation(loc)) {
+      return loc.address_city;
+    }
+    return loc.address?.city;
+  }
+
+  /**
+   * OPT-043: Extract state from either Location or MapLocation
+   */
+  function getState(loc: Location | MapLocation): string | undefined {
+    if (isMapLocation(loc)) {
+      return loc.address_state;
+    }
+    return loc.address?.state;
+  }
+
   interface Props {
-    locations?: Location[];
-    onLocationClick?: (location: Location) => void;
+    // OPT-043: Support both full Location[] and lean MapLocation[] for Atlas
+    locations?: (Location | MapLocation)[];
+    // OPT-043: Accept both Location and MapLocation types
+    onLocationClick?: (location: Location | MapLocation) => void;
     onMapClick?: (lat: number, lng: number) => void;
     // BUG-2 FIX: Pass screen coordinates for context menu positioning
     onMapRightClick?: (lat: number, lng: number, screenX: number, screenY: number) => void;
@@ -658,15 +747,16 @@
       scheduleClusterInit();
 
       // Auto-fit map to show all location pins
+      // OPT-043: Use getCoordinatesFromAny to support both Location and MapLocation
       if (fitBounds && locations.length > 0) {
         const validLocs = locations.filter(loc => {
-          const coords = getLocationCoordinates(loc);
+          const coords = getCoordinatesFromAny(loc);
           return coords && !coords.isApproximate;
         });
         if (validLocs.length > 0) {
           const bounds = L.latLngBounds(
             validLocs.map(loc => {
-              const coords = getLocationCoordinates(loc)!;
+              const coords = getCoordinatesFromAny(loc)!;
               return [coords.lat, coords.lng] as [number, number];
             })
           );
@@ -702,7 +792,8 @@
       minPoints: MAP_CONFIG.CLUSTER_MIN_POINTS,
     });
 
-    // OPT-042: Process locations in chunks to avoid blocking
+    // OPT-042/043: Process locations in chunks to avoid blocking
+    // Now supports both Location and MapLocation types
     const points: any[] = [];
     const CHUNK_SIZE = 100; // Process 100 locations at a time
 
@@ -710,7 +801,8 @@
       const chunk = locations.slice(i, i + CHUNK_SIZE);
 
       chunk.forEach(loc => {
-        const coords = getLocationCoordinates(loc);
+        // OPT-043: Use universal coordinate extractor for both types
+        const coords = getCoordinatesFromAny(loc);
         if (coords) {
           points.push({
             type: 'Feature' as const,
@@ -784,17 +876,18 @@
 
           markersLayer!.addLayer(marker);
         } else {
-          const location = feature.properties.location;
+          // OPT-043: Support both Location and MapLocation types
+          const location = feature.properties.location as Location | MapLocation;
           const isApproximate = feature.properties.isApproximate || false;
-          const confidence = getGpsConfidence(location, isApproximate);
-          const icon = createConfidenceIcon(L, confidence);
+          // OPT-043: Use single cached icon for all pins
+          const icon = getPinIcon(L);
           const marker = L.marker([lat, lng], { icon });
 
-          const confidenceLabel = isApproximate
-            ? 'Approximate (State)'
-            : String(confidence).charAt(0).toUpperCase() + String(confidence).slice(1) + ' GPS';
+          // OPT-043: Use helper functions to extract data from either type
+          const isVerified = getVerifiedStatus(location);
+          const city = getCity(location);
+          const state = getState(location);
 
-          const isVerified = location.gps?.verifiedOnMap;
           const verifyButtonHtml = popupMode === 'full' && onLocationVerify && !isVerified
             ? `<button data-verify-location-id="${location.locid}" class="verify-location-btn" style="margin-top: 4px; padding: 6px 12px; background: #286736; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">Verify Location</button>`
             : popupMode === 'full' && isVerified
@@ -805,7 +898,7 @@
             ? `<span style="color: #666; font-size: 12px;">${escapeHtml(location.type) || 'Unknown Type'}</span><br/>`
             : '';
           const addressHtml = popupMode === 'full'
-            ? `<span style="color: #888; font-size: 11px;">${location.address?.city ? `${escapeHtml(location.address.city)}, ` : ''}${escapeHtml(location.address?.state) || ''}</span><br/>`
+            ? `<span style="color: #888; font-size: 11px;">${city ? `${escapeHtml(city)}, ` : ''}${escapeHtml(state) || ''}</span><br/>`
             : '';
 
           const popupContent = `
@@ -842,8 +935,9 @@
     }
 
     // Handle single location zoom
+    // OPT-043: Use universal coordinate extractor
     if (locations.length === 1 && !initialViewSet) {
-      const coords = getLocationCoordinates(locations[0]);
+      const coords = getCoordinatesFromAny(locations[0]);
       if (coords) {
         const zoomLevel = zoom ?? (coords.isApproximate ? 10 : 17);
         initialViewSet = true;
@@ -951,21 +1045,19 @@
 
         markersLayer.addLayer(marker);
       } else {
-        const location = feature.properties.location;
+        // OPT-043: Support both Location and MapLocation types
+        const location = feature.properties.location as Location | MapLocation;
         const isApproximate = feature.properties.isApproximate || false;
-        const confidence = getGpsConfidence(location, isApproximate);
-        const icon = createConfidenceIcon(L, confidence);
+        // OPT-043: Use single cached icon for all pins
+        const icon = getPinIcon(L);
         const marker = L.marker([lat, lng], { icon });
 
-        // Build confidence label - show "Approximate (State)" for state centroid fallback
-        const confidenceLabel = isApproximate
-          ? 'Approximate (State)'
-          : String(confidence).charAt(0).toUpperCase() + String(confidence).slice(1) + ' GPS';
+        // OPT-043: Use helper functions to extract data from either type
+        const isVerified = getVerifiedStatus(location);
+        const city = getCity(location);
+        const state = getState(location);
 
         // P3b: Mini location popup with "View Details" and optional "Verify" button
-        // FEAT-P1: Verify button allows user to confirm/adjust pin location
-        // popupMode: 'minimal' shows name + View Details only, 'full' shows all info
-        const isVerified = location.gps?.verifiedOnMap;
         const verifyButtonHtml = popupMode === 'full' && onLocationVerify && !isVerified
           ? `<button
               data-verify-location-id="${location.locid}"
@@ -985,7 +1077,7 @@
           ? `<span style="color: #666; font-size: 12px;">${escapeHtml(location.type) || 'Unknown Type'}</span><br/>`
           : '';
         const addressHtml = popupMode === 'full'
-          ? `<span style="color: #888; font-size: 11px;">${location.address?.city ? `${escapeHtml(location.address.city)}, ` : ''}${escapeHtml(location.address?.state) || ''}</span><br/>`
+          ? `<span style="color: #888; font-size: 11px;">${city ? `${escapeHtml(city)}, ` : ''}${escapeHtml(state) || ''}</span><br/>`
           : '';
 
         const popupContent = `
@@ -1028,12 +1120,10 @@
     });
 
     // Kanye6/Kanye8/Kanye9: For single location view, zoom based on GPS confidence
-    // Kanye8 FIX: Removed DEFAULT_ZOOM check - always zoom for single location
-    // This ensures re-zoom after forward geocoding updates GPS coordinates
-    // Kanye9: Use passed zoom prop if available for tier-based zoom levels
-    // Kanye11 FIX: Only set view once to prevent infinite loop (setView triggers moveend → updateClusters → setView)
+    // Kanye11 FIX: Only set view once to prevent infinite loop
+    // OPT-043: Use universal coordinate extractor
     if (locations.length === 1 && !initialViewSet) {
-      const coords = getLocationCoordinates(locations[0]);
+      const coords = getCoordinatesFromAny(locations[0]);
       if (coords) {
         // Use prop zoom if provided, otherwise fall back to calculated zoom
         // Street level zoom (17) for exact GPS, city level (10) for approximate
