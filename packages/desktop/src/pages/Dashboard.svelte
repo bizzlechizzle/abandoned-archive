@@ -54,6 +54,14 @@
   let totalDocuments = $state(0);
   let totalBookmarks = $state(0);
 
+  // Format large numbers with "k" suffix (e.g., 3024 → "3k", 3150 → "3.2k")
+  function formatCount(n: number): string {
+    if (n < 1000) return n.toString();
+    const k = n / 1000;
+    const rounded = Math.round(k * 10) / 10;
+    return rounded % 1 === 0 ? `${Math.floor(rounded)}k` : `${rounded}k`;
+  }
+
   // Sections
   let projects = $state<LocationWithHero[]>([]);
   let recentLocations = $state<LocationWithHero[]>([]);
@@ -356,23 +364,23 @@
     <!-- Stats Row -->
     <div class="flex justify-center gap-8 mb-8">
       <div class="text-center">
-        <div class="text-2xl font-bold text-accent">{totalLocations}</div>
+        <div class="text-2xl font-bold text-accent">{formatCount(totalLocations)}</div>
         <div class="text-xs text-gray-500">locations</div>
       </div>
       <div class="text-center">
-        <div class="text-2xl font-bold text-accent">{totalImages}</div>
+        <div class="text-2xl font-bold text-accent">{formatCount(totalImages)}</div>
         <div class="text-xs text-gray-500">images</div>
       </div>
       <div class="text-center">
-        <div class="text-2xl font-bold text-accent">{totalVideos}</div>
+        <div class="text-2xl font-bold text-accent">{formatCount(totalVideos)}</div>
         <div class="text-xs text-gray-500">videos</div>
       </div>
       <div class="text-center">
-        <div class="text-2xl font-bold text-accent">{totalDocuments}</div>
+        <div class="text-2xl font-bold text-accent">{formatCount(totalDocuments)}</div>
         <div class="text-xs text-gray-500">documents</div>
       </div>
       <div class="text-center">
-        <div class="text-2xl font-bold text-accent">{totalBookmarks}</div>
+        <div class="text-2xl font-bold text-accent">{formatCount(totalBookmarks)}</div>
         <div class="text-xs text-gray-500">bookmarks</div>
       </div>
     </div>
