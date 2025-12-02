@@ -11,6 +11,11 @@
   // OPT-041: Track map initialization state for skeleton loader
   let mapReady = $state(false);
 
+  // OPT-045: Atlas load performance tracking
+  const ATLAS_LOAD_BUDGET_MS = 3000; // 3 second budget for Atlas load
+  let atlasLoadStartTime: number | null = null;
+  let atlasLoadComplete = $state(false);
+
   // Reference map point interface
   interface RefMapPoint {
     pointId: string;
@@ -120,12 +125,21 @@
    * - Direct row mapping (no mapRowToLocation transformation)
    */
   async function loadLocationsInBounds(bounds: ViewportBounds) {
+    const startTime = performance.now();
     try {
       loading = true;
       // OPT-043: Use the ultra-fast lean query
       if (!window.electronAPI?.locations?.findInBoundsForMap) {
-        // Fallback to old behavior if API not available
-        console.warn('findInBoundsForMap API not available, falling back to findInBounds');
+        // OPT-044: In dev mode, throw error instead of silent fallback
+        // This ensures regressions where fast API is missing get caught immediately
+        if (import.meta.env.MODE === 'development') {
+          throw new Error(
+            '[Atlas] findInBoundsForMap API not available! ' +
+            'This is a regression - check preload.cjs exposes locations.findInBoundsForMap'
+          );
+        }
+        // Production fallback to slow path (should never happen if properly configured)
+        console.warn('[Atlas] findInBoundsForMap API not available, falling back to findInBounds');
         if (window.electronAPI?.locations?.findInBounds) {
           const boundsLocations = await window.electronAPI.locations.findInBounds(bounds);
           // Convert Location to MapLocation for compatibility
@@ -148,6 +162,12 @@
       // Primary path: Use the ultra-fast lean query
       const mapLocations = await window.electronAPI.locations.findInBoundsForMap(bounds);
       locations = mapLocations;
+
+      // OPT-044: Performance monitoring in dev mode
+      if (import.meta.env.MODE === 'development') {
+        const elapsed = performance.now() - startTime;
+        console.log(`[Atlas] loadLocationsInBounds: ${mapLocations.length} locations in ${elapsed.toFixed(0)}ms`);
+      }
     } catch (error) {
       console.error('Error loading locations in bounds:', error);
     } finally {
@@ -368,6 +388,12 @@
   }
 
   onMount(() => {
+    // OPT-045: Start Atlas load timer for health check
+    atlasLoadStartTime = performance.now();
+    if (import.meta.env.MODE === 'development') {
+      console.log('[Atlas][HEALTH] Navigation started');
+    }
+
     // OPT-038: Viewport-based loading - Map emits onBoundsChange when ready
     // DO NOT load all locations here - that causes beach ball freezing
     // The Map component will emit bounds after leaflet initializes
@@ -382,6 +408,32 @@
     return () => {
       document.removeEventListener('click', handleClickOutside);
     };
+  });
+
+  // OPT-045: Health check - log warning if Atlas load exceeds budget
+  $effect(() => {
+    // Trigger when mapReady becomes true and we have locations loaded
+    if (mapReady && locations.length > 0 && !atlasLoadComplete && atlasLoadStartTime) {
+      atlasLoadComplete = true;
+      const loadTime = performance.now() - atlasLoadStartTime;
+
+      if (import.meta.env.MODE === 'development') {
+        console.log(`[Atlas][HEALTH] Load complete: ${loadTime.toFixed(0)}ms for ${locations.length} locations`);
+
+        if (loadTime > ATLAS_LOAD_BUDGET_MS) {
+          console.warn(
+            `%c[Atlas][HEALTH] LOAD TOO SLOW: ${loadTime.toFixed(0)}ms for ${locations.length} locations. ` +
+            `This exceeds the ${ATLAS_LOAD_BUDGET_MS}ms performance budget!`,
+            'color: red; font-weight: bold; font-size: 14px;'
+          );
+        } else {
+          console.log(
+            `%c[Atlas][HEALTH] Load within budget ✓`,
+            'color: green; font-weight: bold;'
+          );
+        }
+      }
+    }
   });
 </script>
 

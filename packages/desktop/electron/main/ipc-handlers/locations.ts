@@ -241,8 +241,11 @@ export function registerLocationHandlers(db: Kysely<Database>) {
    * - SELECT 11 columns instead of 60+ (90% less data)
    * - No JSON.parse for gps_leaflet_data, sublocs, regions
    * - Direct row mapping (no mapRowToLocation transformation)
+   *
+   * OPT-044: Added performance monitoring and slow query detection
    */
   ipcMain.handle('location:findInBoundsForMap', async (_event, bounds: unknown) => {
+    const startTime = performance.now();
     try {
       const BoundsSchema = z.object({
         north: z.number().min(-90).max(90),
@@ -251,9 +254,26 @@ export function registerLocationHandlers(db: Kysely<Database>) {
         west: z.number().min(-180).max(180),
       });
       const validatedBounds = BoundsSchema.parse(bounds);
-      return await locationRepo.findInBoundsForMap(validatedBounds);
+      const result = await locationRepo.findInBoundsForMap(validatedBounds);
+
+      // OPT-044: Performance monitoring - log timing in dev, warn if slow
+      const elapsed = performance.now() - startTime;
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[Atlas] findInBoundsForMap: ${result.length} locations in ${elapsed.toFixed(1)}ms`);
+      }
+
+      // Slow query detection: >500ms for <1000 results indicates index problem
+      if (elapsed > 500 && result.length < 1000) {
+        console.warn(
+          `[Atlas] SLOW MAP QUERY DETECTED: ${elapsed.toFixed(0)}ms for ${result.length} locations. ` +
+          `Check idx_locs_map_bounds index exists. This should complete in <50ms.`
+        );
+      }
+
+      return result;
     } catch (error) {
-      console.error('Error finding map locations in bounds:', error);
+      const elapsed = performance.now() - startTime;
+      console.error(`[Atlas] findInBoundsForMap FAILED after ${elapsed.toFixed(0)}ms:`, error);
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }

@@ -20,6 +20,22 @@ import { SQLiteBookmarksRepository } from '../repositories/sqlite-bookmarks-repo
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
 import { SQLiteSubLocationRepository } from '../repositories/sqlite-sublocation-repository';
 
+/**
+ * OPT-045: GPU mitigation flags for macOS Leaflet/map rendering
+ * Addresses Chromium Skia overlay mailbox errors that cause beachball freezes
+ * These errors appear as:
+ *   [ERROR:shared_image_manager.cc] ProduceOverlay: non-existent mailbox
+ *   [ERROR:skia_output_device_buffer_queue.cc] Invalid mailbox
+ *
+ * Disabling problematic GPU features improves Atlas map rendering stability
+ */
+if (process.platform === 'darwin') {
+  // Disable CanvasOopRasterization which can cause overlay issues with Leaflet
+  app.commandLine.appendSwitch('disable-features', 'CanvasOopRasterization');
+  // Use software rendering for 2D canvas (Leaflet relies on canvas)
+  app.commandLine.appendSwitch('disable-accelerated-2d-canvas');
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 

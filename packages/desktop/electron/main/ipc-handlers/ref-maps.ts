@@ -287,25 +287,20 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
 
   /**
    * Get all points from all maps (for Atlas layer)
-   * Filters out:
-   * - Points already catalogued in the locs table (GPS proximity match)
-   * - Points already linked to a location (Migration 42: enrichment applied)
+   * OPT-046: Removed O(N×M) findCataloguedRefPoints call that was blocking
+   * main process for ~9 seconds. Now only filters out linked points (fast).
+   * Catalogued filtering moved to Settings page where it's expected to be slow.
    */
   ipcMain.handle('refMaps:getAllPoints', async () => {
     try {
       const points = await repository.getAllPoints();
 
-      // Find points that are already catalogued (GPS match)
-      const cataloguedMatches = await dedupService.findCataloguedRefPoints();
-      const cataloguedPointIds = new Set(cataloguedMatches.map(m => m.pointId));
+      // OPT-046: Only filter out linked points (database query, fast)
+      // Previously called findCataloguedRefPoints() which did O(N×M) haversine
+      // calculations blocking the main thread for 9+ seconds
+      const unlinkedPoints = points.filter(p => !p.linkedLocid);
 
-      // Filter out catalogued points AND linked points (enrichment already applied)
-      const uncataloguedPoints = points.filter(p =>
-        !cataloguedPointIds.has(p.pointId) &&
-        !p.linkedLocid // Migration 42: exclude points linked via enrichment
-      );
-
-      return uncataloguedPoints.map(p => ({
+      return unlinkedPoints.map(p => ({
         pointId: p.pointId,
         mapId: p.mapId,
         name: p.name,

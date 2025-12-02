@@ -418,6 +418,14 @@
   let clusterReady = $state(false);
   // OPT-041: Deferred init flag to prevent double initialization
   let initScheduled = false;
+  // OPT-045: Track if we're using simple markers (skip clustering for small datasets)
+  let usingSimpleMarkers = $state(false);
+
+  /**
+   * OPT-045: Threshold for skipping clustering - for small datasets, clustering
+   * overhead causes more harm than good. Simple markers are instant.
+   */
+  const SIMPLE_MARKER_THRESHOLD = 100;
   // Event handler for "Create Location" button on reference point popups
   let createFromRefClickHandler: ((e: MouseEvent) => void) | null = null;
   // Event handler for "Link" button on reference point popups
@@ -428,9 +436,13 @@
   /**
    * Kanye9: Generate hash from location IDs and GPS coordinates
    * This ensures the $effect triggers when GPS is updated via forward geocoding
+   * OPT-044: Handle both Location (gps.lat) and MapLocation (gps_lat) types
    */
-  function getLocationsHash(locs: Location[]): string {
-    return locs.map(l => `${l.locid}:${l.gps?.lat || 0}:${l.gps?.lng || 0}`).join(',');
+  function getLocationsHash(locs: (Location | MapLocation)[]): string {
+    return locs.map((l) => {
+      const coords = getCoordinatesFromAny(l);
+      return `${l.locid}:${coords?.lat ?? 0}:${coords?.lng ?? 0}`;
+    }).join(',');
   }
 
   /**
@@ -986,13 +998,121 @@
   }
 
   /**
+   * OPT-045: Render simple markers without clustering for small datasets
+   * This is MUCH faster than Supercluster for ≤100 locations
+   * Runs synchronously but is trivial work for small N
+   */
+  function renderSimpleMarkers(L: any): void {
+    if (!map || !markersLayer) return;
+
+    markersLayer.clearLayers();
+    locationLookup.clear();
+
+    const icon = getPinIcon(L);
+
+    locations.forEach((loc) => {
+      const coords = getCoordinatesFromAny(loc);
+      if (!coords) return;
+
+      const marker = L.marker([coords.lat, coords.lng], { icon });
+
+      // Build popup
+      const isVerified = getVerifiedStatus(loc);
+      const city = getCity(loc);
+      const state = getState(loc);
+
+      const verifyButtonHtml = popupMode === 'full' && onLocationVerify && !isVerified
+        ? `<button data-verify-location-id="${loc.locid}" class="verify-location-btn" style="margin-top: 4px; padding: 6px 12px; background: #286736; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">Verify Location</button>`
+        : popupMode === 'full' && isVerified
+          ? `<div style="margin-top: 4px; padding: 6px 12px; background: #39934D; color: #FFFBF7; border-radius: 4px; font-size: 11px; text-align: center;">Location Verified</div>`
+          : '';
+
+      const typeHtml = popupMode === 'full'
+        ? `<span style="color: #666; font-size: 12px;">${escapeHtml(loc.type) || 'Unknown Type'}</span><br/>`
+        : '';
+      const addressHtml = popupMode === 'full'
+        ? `<span style="color: #888; font-size: 11px;">${city ? `${escapeHtml(city)}, ` : ''}${escapeHtml(state) || ''}</span><br/>`
+        : '';
+
+      const popupContent = `
+        <div class="location-popup" style="min-width: 180px;">
+          <strong style="font-size: 14px;">${escapeHtml(loc.locnam)}</strong><br/>
+          ${typeHtml}${addressHtml}<button data-location-id="${loc.locid}" class="view-details-btn" style="margin-top: 8px; padding: 6px 12px; background: #b9975c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">View Details</button>
+          ${verifyButtonHtml}
+        </div>
+      `;
+
+      marker.bindPopup(popupContent);
+
+      if (onLocationVerify && !isVerified && !readonly) {
+        marker.options.draggable = true;
+        marker.on('dragend', () => {
+          const newPos = marker.getLatLng();
+          onLocationVerify(loc.locid, newPos.lat, newPos.lng);
+        });
+      }
+
+      marker.on('click', () => {
+        marker.openPopup();
+      });
+
+      locationLookup.set(loc.locid, loc);
+      markersLayer!.addLayer(marker);
+    });
+
+    // Handle single location auto-zoom
+    if (locations.length === 1 && !initialViewSet) {
+      const coords = getCoordinatesFromAny(locations[0]);
+      if (coords) {
+        const zoomLevel = zoom ?? (coords.isApproximate ? 10 : 17);
+        initialViewSet = true;
+        map.setView([coords.lat, coords.lng], zoomLevel);
+
+        if (limitedInteraction) {
+          const bounds = L.latLngBounds(
+            [coords.lat - 0.005, coords.lng - 0.007],
+            [coords.lat + 0.005, coords.lng + 0.007]
+          );
+          map.setMaxBounds(bounds);
+        }
+      }
+    }
+  }
+
+  /**
+   * OPT-045: Determine whether to use simple markers or clustering
+   * Returns true if we should skip clustering (small dataset)
+   */
+  function shouldUseSimpleMarkers(): boolean {
+    return locations.length <= SIMPLE_MARKER_THRESHOLD;
+  }
+
+  /**
    * OPT-042: Schedule cluster initialization with proper async handling
+   * OPT-045: Skip clustering entirely for small datasets - use simple markers
    * Uses setTimeout(0) to defer heavy work off the initial render
    */
   function scheduleClusterInit() {
     if (initScheduled) return;
     initScheduled = true;
     clusterReady = false;
+
+    // OPT-045: For small datasets, skip clustering entirely - just render simple markers
+    if (shouldUseSimpleMarkers()) {
+      usingSimpleMarkers = true;
+      // Use requestAnimationFrame to ensure map is painted first
+      requestAnimationFrame(() => {
+        if (leafletModule) {
+          renderSimpleMarkers(leafletModule.default);
+        }
+        initScheduled = false;
+        clusterReady = true;
+      });
+      return;
+    }
+
+    // Large dataset - use full clustering pipeline
+    usingSimpleMarkers = false;
 
     // Use setTimeout(0) to defer to next event loop tick
     // This ensures the map renders first before we start heavy processing
@@ -1006,6 +1126,11 @@
   }
 
   function updateClusters(L: any) {
+    // OPT-045: If using simple markers mode, re-render directly
+    if (usingSimpleMarkers) {
+      renderSimpleMarkers(L);
+      return;
+    }
     if (!map || !markersLayer || !cluster) return;
 
     markersLayer.clearLayers();
@@ -1184,6 +1309,19 @@
     // Kanye9 FIX: Track GPS hash, not just length
     // This triggers re-zoom when forward geocoding updates location GPS
     const currentHash = getLocationsHash(locations);
+
+    // OPT-044: Early-exit guard to prevent re-render storms
+    // If hash is empty or unchanged, skip all cluster work
+    if (!currentHash || currentHash === lastLocationsHash) {
+      // Still need to check campus changes when locations unchanged
+      const currentCampusHash = getCampusHash(campusSubLocations);
+      if (currentCampusHash !== lastCampusHash && map && markersLayer && leafletModule) {
+        lastCampusHash = currentCampusHash;
+        updateClustersAsync(leafletModule.default);
+      }
+      return;
+    }
+
     const currentCampusHash = getCampusHash(campusSubLocations);
     const locationsChanged = currentHash !== lastLocationsHash;
     const campusChanged = currentCampusHash !== lastCampusHash;

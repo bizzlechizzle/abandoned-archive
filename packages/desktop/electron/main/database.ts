@@ -1653,6 +1653,40 @@ function runMigrations(sqlite: Database.Database): void {
 }
 
 /**
+ * OPT-044: Ensure critical performance indices exist
+ * Runs every startup to handle DBs created before indices were added
+ * This is a safety net - indices should also be in SCHEMA_SQL and migrations
+ */
+function ensureCriticalIndices(sqlite: Database.Database): void {
+  const criticalIndices = [
+    {
+      name: 'idx_locs_map_bounds',
+      sql: `CREATE INDEX IF NOT EXISTS idx_locs_map_bounds ON locs(
+        gps_lat, gps_lng, locid, locnam, type, gps_verified_on_map, address_state, address_city, favorite
+      ) WHERE gps_lat IS NOT NULL AND gps_lng IS NOT NULL`,
+      description: 'Covering index for Atlas findInBoundsForMap queries'
+    },
+    {
+      name: 'idx_locs_gps',
+      sql: `CREATE INDEX IF NOT EXISTS idx_locs_gps ON locs(gps_lat, gps_lng) WHERE gps_lat IS NOT NULL`,
+      description: 'Basic GPS index for spatial queries'
+    }
+  ];
+
+  for (const { name, sql, description } of criticalIndices) {
+    const exists = sqlite.prepare(
+      `SELECT 1 FROM sqlite_master WHERE type='index' AND name=?`
+    ).get(name);
+
+    if (!exists) {
+      console.log(`[Database] Creating missing critical index: ${name} (${description})`);
+      sqlite.exec(sql);
+      console.log(`[Database] ${name} created successfully`);
+    }
+  }
+}
+
+/**
  * Get or create the database instance
  * Initializes the database on first run
  * FIX: Checks for TABLE existence, not just FILE existence
@@ -1689,6 +1723,9 @@ export function getDatabase(): Kysely<DatabaseSchema> {
 
   // Always run migrations to ensure all tables exist
   runMigrations(sqlite);
+
+  // OPT-044: Ensure critical performance indices exist (safety net for older DBs)
+  ensureCriticalIndices(sqlite);
 
   const dialect = new SqliteDialect({
     database: sqlite,
