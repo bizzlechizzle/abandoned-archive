@@ -7,6 +7,9 @@
   import LinkLocationModal from '../components/LinkLocationModal.svelte';
   import type { Location } from '@au-archive/core';
 
+  // OPT-041: Track map initialization state for skeleton loader
+  let mapReady = $state(false);
+
   // Reference map point interface
   interface RefMapPoint {
     pointId: string;
@@ -149,10 +152,16 @@
    * OPT-037: Handle viewport bounds change from Map component
    * Debounced to avoid excessive queries during pan/zoom
    * OPT-038: First load happens immediately (no debounce)
+   * OPT-041: Marks map as ready for skeleton loader
    */
   let isFirstBoundsLoad = true;
   function handleBoundsChange(bounds: ViewportBounds) {
     currentBounds = bounds;
+
+    // OPT-041: Map is ready once we receive bounds (Leaflet initialized)
+    if (!mapReady) {
+      mapReady = true;
+    }
 
     // Clear existing debounce timer
     if (boundsDebounceTimer) {
@@ -397,6 +406,36 @@
   {/if}
 
   <div class="flex-1 relative">
+    <!-- OPT-041: Premium skeleton loader for perceived performance -->
+    {#if !mapReady}
+      <div class="absolute inset-0 bg-gray-100 z-20 flex flex-col">
+        <!-- Skeleton map area with shimmer animation -->
+        <div class="flex-1 relative overflow-hidden">
+          <div class="absolute inset-0 bg-gradient-to-br from-gray-200 via-gray-100 to-gray-200">
+            <!-- Simulated map grid pattern -->
+            <div class="absolute inset-0 opacity-10">
+              {#each Array(8) as _, i}
+                <div class="absolute border-b border-gray-400" style="top: {12.5 * i}%; width: 100%;"></div>
+                <div class="absolute border-r border-gray-400" style="left: {12.5 * i}%; height: 100%;"></div>
+              {/each}
+            </div>
+            <!-- Shimmer overlay -->
+            <div class="absolute inset-0 skeleton-shimmer"></div>
+          </div>
+          <!-- Center marker placeholder -->
+          <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+            <div class="w-12 h-12 rounded-full bg-accent/30 animate-pulse flex items-center justify-center">
+              <div class="w-4 h-4 rounded-full bg-accent"></div>
+            </div>
+          </div>
+          <!-- Loading text -->
+          <div class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-white/90 px-4 py-2 rounded-lg shadow-sm">
+            <p class="text-gray-600 text-sm font-medium">Initializing Atlas...</p>
+          </div>
+        </div>
+      </div>
+    {/if}
+
     <!-- ALWAYS show the map - it's an atlas, not a placeholder -->
     <Map
       locations={filteredLocations()}
@@ -414,7 +453,7 @@
       fitBounds={true}
       onBoundsChange={handleBoundsChange}
     />
-    {#if loading}
+    {#if loading && mapReady}
       <div class="absolute top-2 left-1/2 -translate-x-1/2 bg-white px-4 py-2 rounded shadow-lg z-10">
         <p class="text-gray-500 text-sm">Loading locations...</p>
       </div>
@@ -469,3 +508,36 @@
     onLink={handleConfirmLink}
   />
 {/if}
+
+<style>
+  /* OPT-041: Premium skeleton shimmer animation for Atlas loading */
+  .skeleton-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .skeleton-shimmer::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.4) 50%,
+      transparent 100%
+    );
+    animation: shimmer 2s infinite;
+  }
+
+  @keyframes shimmer {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+</style>

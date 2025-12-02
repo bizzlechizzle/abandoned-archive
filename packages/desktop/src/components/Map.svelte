@@ -1,9 +1,26 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import type { Map as LeafletMap, TileLayer, LayerGroup } from 'leaflet';
+  import type { Map as LeafletMap, TileLayer, LayerGroup, DivIcon } from 'leaflet';
   import type { Location } from '@au-archive/core';
   import Supercluster from 'supercluster';
   import { MAP_CONFIG, TILE_LAYERS, THEME, GPS_CONFIG } from '@/lib/constants';
+
+  // OPT-041: Icon cache for marker reuse - prevents recreating divIcon for every marker
+  // Best practice: Reuse icon instances instead of creating new ones per marker
+  let iconCache: Map<string, DivIcon> = new Map();
+
+  /**
+   * OPT-041: Get or create cached icon
+   * Icons are cached by key (e.g., 'confidence-verified', 'cluster-15')
+   */
+  function getCachedIcon(L: any, key: string, createFn: () => any): any {
+    if (iconCache.has(key)) {
+      return iconCache.get(key)!;
+    }
+    const icon = createFn();
+    iconCache.set(key, icon);
+    return icon;
+  }
 
   // Kanye3: US State CAPITALS for fallback positioning
   // Using capitals instead of centroids - more useful reference point
@@ -269,6 +286,10 @@
   let locationLookup = new Map<string, Location>();
   // BUG-V1 FIX: Store cleanup function for event delegation
   let viewDetailsClickHandler: ((e: MouseEvent) => void) | null = null;
+  // OPT-041: Track if cluster initialization is complete (for non-blocking init)
+  let clusterReady = $state(false);
+  // OPT-041: Deferred init flag to prevent double initialization
+  let initScheduled = false;
   // Event handler for "Create Location" button on reference point popups
   let createFromRefClickHandler: ((e: MouseEvent) => void) | null = null;
   // Event handler for "Link" button on reference point popups
@@ -591,8 +612,9 @@
         }
       });
 
-      initCluster();
-      updateClusters(L);
+      // OPT-041: Use non-blocking cluster initialization on mount
+      // This prevents the "dial-up" freeze by deferring heavy computation
+      scheduleClusterInit();
 
       // Auto-fit map to show all location pins
       if (fitBounds && locations.length > 0) {
@@ -627,6 +649,11 @@
     }
   });
 
+  /**
+   * OPT-041: Non-blocking cluster initialization using requestIdleCallback
+   * Best practice: Defer heavy computation to idle periods to keep UI responsive
+   * Falls back to setTimeout for browsers without requestIdleCallback support
+   */
   function initCluster() {
     cluster = new Supercluster({
       radius: MAP_CONFIG.CLUSTER_RADIUS,
@@ -651,6 +678,27 @@
       .filter((p): p is NonNullable<typeof p> => p !== null);
 
     cluster.load(points);
+    clusterReady = true;
+  }
+
+  /**
+   * OPT-041: Schedule cluster initialization for idle time
+   * Uses requestIdleCallback to avoid blocking main thread
+   */
+  function scheduleClusterInit() {
+    if (initScheduled) return;
+    initScheduled = true;
+    clusterReady = false;
+
+    // Use requestIdleCallback if available, otherwise fall back to setTimeout
+    const schedule = (window as any).requestIdleCallback || ((cb: () => void) => setTimeout(cb, 1));
+    schedule(() => {
+      initCluster();
+      initScheduled = false;
+      if (map) {
+        import('leaflet').then((L) => updateClusters(L.default));
+      }
+    });
   }
 
   function updateClusters(L: any) {
@@ -674,13 +722,14 @@
 
       if (feature.properties.cluster) {
         const count = feature.properties.point_count;
-        const marker = L.marker([lat, lng], {
-          icon: L.divIcon({
-            html: `<div class="cluster-marker">${count}</div>`,
-            className: 'cluster-icon',
-            iconSize: [40, 40],
-          }),
-        });
+        // OPT-041: Use cached cluster icon - clusters with same count share icons
+        const clusterKey = `cluster-${count}`;
+        const icon = getCachedIcon(L, clusterKey, () => L.divIcon({
+          html: `<div class="cluster-marker">${count}</div>`,
+          className: 'cluster-icon',
+          iconSize: [40, 40],
+        }));
+        const marker = L.marker([lat, lng], { icon });
 
         marker.on('click', () => {
           const expansionZoom = Math.min(
@@ -847,7 +896,10 @@
         if (!hasExplicitView) {
           initialViewSet = false;
         }
-        initCluster();
+        // OPT-041: Use non-blocking cluster initialization
+        // scheduleClusterInit handles the async init + update
+        scheduleClusterInit();
+        return; // scheduleClusterInit will call updateClusters after init
       }
       if (campusChanged) {
         lastCampusHash = currentCampusHash;
@@ -897,16 +949,16 @@
           layerRef.addTo(mapRef);
         }
 
+        // OPT-041: Cache the reference map icon - all ref points share the same icon
+        const refIcon = getCachedIcon(L.default, 'ref-map-icon', () => L.default.divIcon({
+          html: `<div class="ref-map-marker"></div>`,
+          className: 'ref-map-icon',
+          iconSize: [12, 12],
+          iconAnchor: [6, 6],
+        }));
+
         // Create markers for each reference point
         points.forEach((point) => {
-          // Use a distinct color for reference map points (teal)
-          const refIcon = L.default.divIcon({
-            html: `<div class="ref-map-marker"></div>`,
-            className: 'ref-map-icon',
-            iconSize: [12, 12],
-            iconAnchor: [6, 6],
-          });
-
           const marker = L.default.marker([point.lat, point.lng], { icon: refIcon });
 
           // Build popup content
@@ -992,6 +1044,8 @@
       deleteRefClickHandler = null;
     }
     locationLookup.clear();
+    // OPT-041: Clear icon cache on component destroy to prevent memory leaks
+    iconCache.clear();
     if (map) {
       map.remove();
       map = null;
