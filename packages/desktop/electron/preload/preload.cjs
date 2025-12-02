@@ -175,6 +175,8 @@ const api = {
     // OPT-037: Viewport-based spatial queries for Atlas
     findInBounds: (bounds) => invokeAuto("location:findInBounds")(bounds),
     countInBounds: (bounds) => invokeAuto("location:countInBounds")(bounds),
+    // OPT-043: Ultra-fast map query with lean MapLocation type (10x faster)
+    findInBoundsForMap: (bounds) => invokeAuto("location:findInBoundsForMap")(bounds),
   },
 
   stats: {

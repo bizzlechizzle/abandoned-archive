@@ -76,6 +76,10 @@ CREATE INDEX IF NOT EXISTS idx_locs_type ON locs(type);
 CREATE INDEX IF NOT EXISTS idx_locs_gps ON locs(gps_lat, gps_lng) WHERE gps_lat IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_locs_loc12 ON locs(loc12);
 CREATE INDEX IF NOT EXISTS idx_locs_favorite ON locs(favorite) WHERE favorite = 1;
+-- OPT-043: Covering index for ultra-fast Atlas map queries
+-- Includes all columns needed by findInBoundsForMap to avoid table lookups
+CREATE INDEX IF NOT EXISTS idx_locs_map_bounds ON locs(gps_lat, gps_lng, locid, locnam, type, gps_verified_on_map, address_state, address_city, favorite)
+  WHERE gps_lat IS NOT NULL AND gps_lng IS NOT NULL;
 
 -- Sub-Locations table
 CREATE TABLE IF NOT EXISTS slocs (

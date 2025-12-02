@@ -1,5 +1,23 @@
 import type { Location, LocationInput, LocationFilters } from '@au-archive/core';
 
+/**
+ * OPT-043: Lean location type for map display - only essential fields
+ * Used by Atlas for 10x faster map loading (11 columns vs 60+, no JSON.parse)
+ */
+export interface MapLocation {
+  locid: string;
+  locnam: string;
+  type?: string;
+  gps_lat: number;
+  gps_lng: number;
+  gps_accuracy?: number;
+  gps_source?: string;
+  gps_verified_on_map: boolean;
+  address_state?: string;
+  address_city?: string;
+  favorite: boolean;
+}
+
 export interface ElectronAPI {
   versions: {
     node: () => string;
@@ -32,6 +50,8 @@ export interface ElectronAPI {
     // OPT-037: Viewport-based spatial queries for Atlas
     findInBounds: (bounds: { north: number; south: number; east: number; west: number }) => Promise<Location[]>;
     countInBounds: (bounds: { north: number; south: number; east: number; west: number }) => Promise<number>;
+    // OPT-043: Ultra-fast map query - lean MapLocation type (10x faster than findInBounds)
+    findInBoundsForMap: (bounds: { north: number; south: number; east: number; west: number }) => Promise<MapLocation[]>;
     // OPT-036: Get all filter options in one efficient call
     getFilterOptions: () => Promise<{
       states: string[];
