@@ -1305,6 +1305,14 @@
     return subs.map(s => `${s.subid}:${s.gps_lat}:${s.gps_lng}`).join(',');
   }
 
+  // OPT-057: Track ref map points hash for change detection
+  // This ensures Svelte 5's fine-grained reactivity properly detects array changes
+  let lastRefMapPointsHash = $state('');
+  function getRefMapPointsHash(points: RefMapPoint[]): string {
+    // Use pointId as the unique identifier - when a point is linked, it's removed from the array
+    return points.map(p => p.pointId).join(',');
+  }
+
   $effect(() => {
     // Kanye9 FIX: Track GPS hash, not just length
     // This triggers re-zoom when forward geocoding updates location GPS
@@ -1372,6 +1380,7 @@
   });
 
   // Toggle reference map layer based on showRefMapLayer prop
+  // OPT-057: Uses hash-based change detection to ensure Svelte 5 reactivity works correctly
   $effect(() => {
     // Track dependencies synchronously before async code
     const shouldShow = showRefMapLayer;
@@ -1379,7 +1388,16 @@
     const mapRef = map;
     const layerRef = refMapLayer;
 
-    if (!mapRef || !layerRef || !leafletModule) return;
+    // OPT-057: Hash-based change detection - ensures effect runs when points array changes
+    // This is critical for link/unlink operations where the array reference changes
+    const currentHash = getRefMapPointsHash(points);
+    if (currentHash !== lastRefMapPointsHash) {
+      lastRefMapPointsHash = currentHash;
+    }
+
+    if (!mapRef || !layerRef || !leafletModule) {
+      return;
+    }
 
     // OPT-042: Use cached Leaflet module
     const L = leafletModule;

@@ -369,20 +369,23 @@
 
     try {
       const result = await window.electronAPI.refMaps.linkToLocation(linkingPoint.pointId, locationId);
+
       if (result.success) {
-        toasts.success(`Linked "${linkingPoint.name}" to location`);
         // OPT-049: Refresh reference points using viewport bounds if available
         // Linked points are filtered out by the query
+        // OPT-057: Hash-based change detection in Map.svelte ensures the marker disappears
         if (currentBounds) {
           await loadRefPointsInBounds(currentBounds);
         } else {
           await loadRefMapPoints();
         }
+
+        toasts.success(`Linked "${linkingPoint.name}" to location`);
       } else {
         toasts.error(result.error || 'Failed to link');
       }
     } catch (err) {
-      console.error('Error linking reference point:', err);
+      console.error('[Atlas] Link error:', err);
       toasts.error('Failed to link reference point');
     } finally {
       showLinkModal = false;
