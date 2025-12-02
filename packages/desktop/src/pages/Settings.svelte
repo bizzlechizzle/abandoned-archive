@@ -55,14 +55,28 @@
   let databaseExpanded = $state(false);
   let healthExpanded = $state(false);
 
-  // Storage bar state
+  // Storage bar state - OPT-047: Enhanced with database-backed tracking
   let storageStats = $state<{
     totalBytes: number;
     availableBytes: number;
     archiveBytes: number;
     drivePath: string;
+    // OPT-047: New fields for detailed breakdown
+    mediaBytes?: number;
+    thumbnailBytes?: number;
+    previewBytes?: number;
+    proxyBytes?: number;
+    unmeasuredCount?: number;
+    lastVerifiedAt?: string | null;
   } | null>(null);
   let loadingStorage = $state(false);
+  let verifyingStorage = $state(false);
+  let verifyProgress = $state<{ processed: number; currentFile: string } | null>(null);
+  let verifyResult = $state<{
+    newMeasurements: number;
+    sizeMismatches: number;
+    missingFiles: number;
+  } | null>(null);
 
   // Database health state
   let dbHealthy = $state(true);
@@ -1663,6 +1677,58 @@
     }
   }
 
+  // OPT-047: Verify storage integrity - backfills missing file sizes, checks for corruption
+  async function verifyStorageIntegrity() {
+    if (!window.electronAPI?.storage?.verifyIntegrity || verifyingStorage) return;
+
+    try {
+      verifyingStorage = true;
+      verifyProgress = { processed: 0, currentFile: 'Starting...' };
+      verifyResult = null;
+
+      // Set up progress listener
+      const unsubscribe = window.electronAPI.storage.onVerifyProgress((progress: { processed: number; currentFile: string }) => {
+        verifyProgress = progress;
+      });
+
+      const result = await window.electronAPI.storage.verifyIntegrity();
+
+      unsubscribe();
+      verifyProgress = null;
+
+      verifyResult = {
+        newMeasurements: result.newMeasurements,
+        sizeMismatches: result.sizeMismatches?.length || 0,
+        missingFiles: result.missingFiles?.length || 0,
+      };
+
+      // Reload storage stats to show updated values
+      await loadStorageStats();
+
+      // Clear result after 10 seconds
+      setTimeout(() => { verifyResult = null; }, 10000);
+    } catch (error) {
+      console.error('Failed to verify storage integrity:', error);
+      verifyProgress = null;
+    } finally {
+      verifyingStorage = false;
+    }
+  }
+
+  // Helper to format time ago
+  function formatTimeAgo(isoDate: string | null | undefined): string {
+    if (!isoDate) return 'Never';
+    const date = new Date(isoDate);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+    return `${Math.floor(diffDays / 30)} months ago`;
+  }
+
   // BagIt Integrity functions
   async function loadBagSummary() {
     if (!window.electronAPI?.bagit?.summary) return;
@@ -2380,23 +2446,95 @@
             {/if}
           </div>
 
-          <!-- Storage Section (at bottom) -->
+          <!-- Storage Section (at bottom) - OPT-047: Enhanced with detailed breakdown -->
           <div class="py-3 mt-2">
             <span class="text-sm font-medium text-gray-700 mb-2 block">Storage</span>
             {#if storageStats}
               {@const archivePercent = (storageStats.archiveBytes / storageStats.totalBytes) * 100}
               {@const otherUsedBytes = storageStats.totalBytes - storageStats.availableBytes - storageStats.archiveBytes}
               {@const otherUsedPercent = Math.max(0, (otherUsedBytes / storageStats.totalBytes) * 100)}
-              <!-- Stats above bar -->
+
+              <!-- Detailed breakdown -->
               <div class="text-xs text-gray-600 mb-2 space-y-0.5">
-                <div>Total Storage: {formatBytes(storageStats.totalBytes)}</div>
-                <div>Available Storage: {formatBytes(storageStats.availableBytes)}</div>
-                <div>Archive Used: {formatBytes(storageStats.archiveBytes)}</div>
+                <div class="flex justify-between">
+                  <span>Media files:</span>
+                  <span class="font-medium">{formatBytes(storageStats.mediaBytes || 0)}</span>
+                </div>
+                {#if (storageStats.thumbnailBytes || 0) > 0 || (storageStats.previewBytes || 0) > 0 || (storageStats.proxyBytes || 0) > 0}
+                  <div class="flex justify-between text-gray-400">
+                    <span>Thumbnails:</span>
+                    <span>{formatBytes(storageStats.thumbnailBytes || 0)}</span>
+                  </div>
+                  <div class="flex justify-between text-gray-400">
+                    <span>Previews:</span>
+                    <span>{formatBytes(storageStats.previewBytes || 0)}</span>
+                  </div>
+                  <div class="flex justify-between text-gray-400">
+                    <span>Video proxies:</span>
+                    <span>{formatBytes(storageStats.proxyBytes || 0)}</span>
+                  </div>
+                {/if}
+                <div class="flex justify-between border-t border-gray-200 pt-1 mt-1">
+                  <span class="font-medium">Total archive:</span>
+                  <span class="font-medium">{formatBytes(storageStats.archiveBytes)}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span>Disk available:</span>
+                  <span>{formatBytes(storageStats.availableBytes)}</span>
+                </div>
               </div>
+
               <!-- Storage bar -->
               <div class="h-4 bg-gray-200 rounded-full overflow-hidden flex">
                 <div class="bg-accent" style="width: {archivePercent}%"></div>
                 <div class="bg-gray-400" style="width: {otherUsedPercent}%"></div>
+              </div>
+
+              <!-- Unmeasured warning and verify button -->
+              {#if (storageStats.unmeasuredCount || 0) > 0}
+                <p class="text-xs text-amber-600 mt-2">
+                  {storageStats.unmeasuredCount} files not yet measured
+                </p>
+              {/if}
+
+              <!-- Verify progress -->
+              {#if verifyingStorage && verifyProgress}
+                <div class="mt-2">
+                  <p class="text-xs text-gray-500">Verifying: {verifyProgress.currentFile}</p>
+                  <p class="text-xs text-gray-400">{verifyProgress.processed} files processed</p>
+                </div>
+              {/if}
+
+              <!-- Verify result -->
+              {#if verifyResult}
+                <div class="mt-2 p-2 bg-green-50 rounded text-xs">
+                  {#if verifyResult.newMeasurements > 0}
+                    <p class="text-green-700">Measured {verifyResult.newMeasurements} files</p>
+                  {/if}
+                  {#if verifyResult.sizeMismatches > 0}
+                    <p class="text-amber-600">Found {verifyResult.sizeMismatches} size mismatches</p>
+                  {/if}
+                  {#if verifyResult.missingFiles > 0}
+                    <p class="text-red-600">Found {verifyResult.missingFiles} missing files</p>
+                  {/if}
+                  {#if verifyResult.newMeasurements === 0 && verifyResult.sizeMismatches === 0 && verifyResult.missingFiles === 0}
+                    <p class="text-green-700">All files verified</p>
+                  {/if}
+                </div>
+              {/if}
+
+              <!-- Verify button and last verified -->
+              <div class="flex items-center justify-between mt-2">
+                <button
+                  onclick={verifyStorageIntegrity}
+                  disabled={verifyingStorage}
+                  class="text-xs text-accent hover:underline disabled:opacity-50 disabled:no-underline"
+                >
+                  {verifyingStorage ? 'Verifying...' : (storageStats.unmeasuredCount || 0) > 0 ? 'Measure All Files' : 'Verify Integrity'}
+                </button>
+                <span class="text-xs text-gray-400">
+                  Last verified: {formatTimeAgo(storageStats.lastVerifiedAt)}
+                </span>
               </div>
             {:else if loadingStorage}
               <div class="h-4 bg-gray-200 rounded-full animate-pulse"></div>

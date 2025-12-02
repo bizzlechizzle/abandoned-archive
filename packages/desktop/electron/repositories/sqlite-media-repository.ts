@@ -35,6 +35,8 @@ export interface MediaImage {
   imported_by_id: string | null;
   imported_by: string | null;
   media_source: string | null;
+  // OPT-047: File size for archive size tracking
+  file_size_bytes: number | null;
   // NOTE: darktable columns exist in DB but are deprecated/unused
 }
 
@@ -75,6 +77,8 @@ export interface MediaVideo {
   imported_by_id: string | null;
   imported_by: string | null;
   media_source: string | null;
+  // OPT-047: File size for archive size tracking
+  file_size_bytes: number | null;
 }
 
 export interface MediaDocument {
@@ -98,6 +102,8 @@ export interface MediaDocument {
   imported_by_id: string | null;
   imported_by: string | null;
   media_source: string | null;
+  // OPT-047: File size for archive size tracking
+  file_size_bytes: number | null;
 }
 
 /**

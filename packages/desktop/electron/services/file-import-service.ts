@@ -756,8 +756,8 @@ export class FileImportService {
     // Pass pre-fetched location to avoid another DB call inside transaction
     console.log('[FileImport] Step 6: Organizing file to archive...');
     const organizeStart = Date.now();
-    const archivePath = await this.organizeFileWithLocation(file, hash, ext, type, location);
-    console.log('[FileImport] Step 6 complete in', Date.now() - organizeStart, 'ms, path:', archivePath);
+    const { path: archivePath, fileSizeBytes } = await this.organizeFileWithLocation(file, hash, ext, type, location);
+    console.log('[FileImport] Step 6 complete in', Date.now() - organizeStart, 'ms, path:', archivePath, 'size:', fileSizeBytes);
 
     // 7. Insert record in database using transaction
     console.log('[FileImport] Step 7: Inserting database record...');
@@ -774,7 +774,9 @@ export class FileImportService {
       thumbPathSm,
       thumbPathLg,
       previewPath,
-      rawPreviewPath  // For RAW files
+      rawPreviewPath,  // For RAW files
+      // OPT-047: File size for archive size tracking
+      fileSizeBytes
     );
     console.log('[FileImport] Step 7 complete in', Date.now() - insertStart, 'ms');
 
@@ -1108,8 +1110,13 @@ export class FileImportService {
       throw new Error(`Integrity check failed: file corrupted during copy`);
     }
 
-    console.log('[organizeFile] COMPLETE for:', file.originalName);
-    return targetPath;
+    // OPT-047: Capture file size for archive size tracking
+    // Per data-ownership.md: "Every media file's provenance... is auditable at any time"
+    const fileStats = await fs.stat(targetPath);
+    const fileSizeBytes = fileStats.size;
+
+    console.log('[organizeFile] COMPLETE for:', file.originalName, 'size:', fileSizeBytes, 'bytes');
+    return { path: targetPath, fileSizeBytes };
   }
 
   /**
@@ -1128,6 +1135,7 @@ export class FileImportService {
   /**
    * Insert media record in database within transaction
    * Kanye3: Multi-tier thumbnails (400px, 800px, 1920px)
+   * OPT-047: file_size_bytes for archive size tracking
    */
   private async insertMediaRecordInTransaction(
     trx: any,
@@ -1140,7 +1148,8 @@ export class FileImportService {
     thumbPathSm: string | null = null,
     thumbPathLg: string | null = null,
     previewPath: string | null = null,
-    rawPreviewPath: string | null = null
+    rawPreviewPath: string | null = null,
+    fileSizeBytes: number | null = null
   ): Promise<void> {
     const timestamp = new Date().toISOString();
 
@@ -1181,6 +1190,8 @@ export class FileImportService {
           // Migration 26: Contributor tracking
           is_contributed: file.is_contributed ?? 0,
           contribution_source: file.contribution_source || null,
+          // OPT-047: File size for archive size tracking
+          file_size_bytes: fileSizeBytes,
         })
         .execute();
     } else if (type === 'video') {
@@ -1221,6 +1232,8 @@ export class FileImportService {
           // Migration 26: Contributor tracking
           is_contributed: file.is_contributed ?? 0,
           contribution_source: file.contribution_source || null,
+          // OPT-047: File size for archive size tracking
+          file_size_bytes: fileSizeBytes,
         })
         .execute();
     } else if (type === 'map') {
@@ -1256,6 +1269,8 @@ export class FileImportService {
           imported_by_id: file.imported_by_id || null,
           imported_by: file.imported_by || null,
           media_source: file.media_source || null,
+          // OPT-047: File size for archive size tracking
+          file_size_bytes: fileSizeBytes,
         })
         .execute();
     } else if (type === 'document') {
@@ -1280,6 +1295,8 @@ export class FileImportService {
           imported_by_id: file.imported_by_id || null,
           imported_by: file.imported_by || null,
           media_source: file.media_source || null,
+          // OPT-047: File size for archive size tracking
+          file_size_bytes: fileSizeBytes,
         })
         .execute();
     }

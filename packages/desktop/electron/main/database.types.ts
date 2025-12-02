@@ -252,6 +252,9 @@ export interface ImgsTable {
   // Migration 30: Preview quality tracking for RAW files
   preview_quality: string | null;  // 'full' | 'embedded' | 'low'
 
+  // Migration 44 (OPT-047): File size tracking for archive size queries
+  file_size_bytes: number | null;
+
   // NOTE: darktable columns exist in DB but are deprecated/unused
   // darktable_path, darktable_processed, darktable_processed_at - REMOVED from app
 }
@@ -310,6 +313,9 @@ export interface VidsTable {
   // Contributor Tracking (Migration 26)
   is_contributed: number;          // 0 = author shot it, 1 = contributor
   contribution_source: string | null; // e.g., "John Smith via text", "FB group"
+
+  // Migration 44 (OPT-047): File size tracking for archive size queries
+  file_size_bytes: number | null;
 }
 
 // Documents table
@@ -345,6 +351,9 @@ export interface DocsTable {
   // Contributor Tracking (Migration 27)
   is_contributed: number;          // 0 = author shot it, 1 = contributor
   contribution_source: string | null; // e.g., "John Smith via text", "FB group"
+
+  // Migration 44 (OPT-047): File size tracking for archive size queries
+  file_size_bytes: number | null;
 }
 
 // Maps table
@@ -380,6 +389,9 @@ export interface MapsTable {
   imported_by_id: string | null;   // User ID who imported this media
   imported_by: string | null;      // Username for display
   media_source: string | null;     // e.g., "Personal camera", "Facebook archive", "Web archive"
+
+  // Migration 44 (OPT-047): File size tracking for archive size queries
+  file_size_bytes: number | null;
 }
 
 // Settings table

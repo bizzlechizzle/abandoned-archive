@@ -1646,6 +1646,28 @@ function runMigrations(sqlite: Database.Database): void {
         sqlite.exec('PRAGMA foreign_keys = ON');
       }
     }
+
+    // Migration 44: Add file_size_bytes column to media tables (OPT-047)
+    // Stores file size at import time for instant archive size queries
+    // Per data-ownership.md: "Every media file's provenance... is auditable at any time"
+    const imgsHasFileSize = sqlite.prepare('PRAGMA table_info(imgs)').all() as Array<{ name: string }>;
+    if (!imgsHasFileSize.some(col => col.name === 'file_size_bytes')) {
+      console.log('Running migration 44: Adding file_size_bytes to media tables');
+
+      // Add column to imgs table
+      sqlite.exec('ALTER TABLE imgs ADD COLUMN file_size_bytes INTEGER');
+
+      // Add column to vids table
+      sqlite.exec('ALTER TABLE vids ADD COLUMN file_size_bytes INTEGER');
+
+      // Add column to docs table
+      sqlite.exec('ALTER TABLE docs ADD COLUMN file_size_bytes INTEGER');
+
+      // Add column to maps table
+      sqlite.exec('ALTER TABLE maps ADD COLUMN file_size_bytes INTEGER');
+
+      console.log('Migration 44 completed: file_size_bytes added to imgs, vids, docs, maps');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

@@ -440,9 +440,16 @@ const api = {
     status: () => invokeAuto("research:status")(),
   },
 
-  // Reference Maps - imported KML, GPX, GeoJSON, CSV files
+  // Storage monitoring - OPT-047: database-backed archive size tracking
   storage: {
     getStats: () => invokeAuto("storage:getStats")(),
+    verifyIntegrity: () => invokeAuto("storage:verifyIntegrity")(),
+    // Listen for verify progress events
+    onVerifyProgress: (callback) => {
+      const listener = (_event, progress) => callback(progress);
+      ipcRenderer.on("storage:verify:progress", listener);
+      return () => ipcRenderer.removeListener("storage:verify:progress", listener);
+    },
   },
 
   // BagIt Self-Documenting Archive (RFC 8493)
