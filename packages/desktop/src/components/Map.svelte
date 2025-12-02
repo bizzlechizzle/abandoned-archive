@@ -5,6 +5,19 @@
   import Supercluster from 'supercluster';
   import { MAP_CONFIG, TILE_LAYERS, THEME, GPS_CONFIG } from '@/lib/constants';
 
+  // OPT-042: Store Leaflet module reference to avoid repeated dynamic imports
+  // Dynamic imports have async overhead even when cached
+  let leafletModule: typeof import('leaflet') | null = null;
+
+  /**
+   * OPT-042: Get Leaflet module - uses cached reference or imports once
+   */
+  async function getLeaflet(): Promise<typeof import('leaflet')> {
+    if (leafletModule) return leafletModule;
+    leafletModule = await import('leaflet');
+    return leafletModule;
+  }
+
   // OPT-041: Icon cache for marker reuse - prevents recreating divIcon for every marker
   // Best practice: Reuse icon instances instead of creating new ones per marker
   let iconCache: Map<string, DivIcon> = new Map();
@@ -20,6 +33,32 @@
     const icon = createFn();
     iconCache.set(key, icon);
     return icon;
+  }
+
+  /**
+   * OPT-042: Yield to main thread to prevent blocking
+   * Uses microtask scheduling for minimum latency
+   */
+  function yieldToMain(): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, 0));
+  }
+
+  /**
+   * OPT-042: Process items in chunks with yielding
+   * Prevents main thread blocking during heavy operations
+   */
+  async function processInChunks<T>(
+    items: T[],
+    processor: (item: T) => void,
+    chunkSize: number = 50
+  ): Promise<void> {
+    for (let i = 0; i < items.length; i += chunkSize) {
+      const chunk = items.slice(i, i + chunkSize);
+      chunk.forEach(processor);
+      if (i + chunkSize < items.length) {
+        await yieldToMain();
+      }
+    }
   }
 
   // Kanye3: US State CAPITALS for fallback positioning
@@ -391,7 +430,9 @@
   }
 
   onMount(async () => {
-    const L = await import('leaflet');
+    // OPT-042: Use cached Leaflet module to avoid repeated import overhead
+    const leaflet = await getLeaflet();
+    const L = leaflet;
     await import('leaflet/dist/leaflet.css');
 
     if (!map && mapContainer) {
@@ -650,55 +691,67 @@
   });
 
   /**
-   * OPT-041: Non-blocking cluster initialization using requestIdleCallback
-   * Best practice: Defer heavy computation to idle periods to keep UI responsive
-   * Falls back to setTimeout for browsers without requestIdleCallback support
+   * OPT-042: Non-blocking cluster initialization with chunked processing
+   * Processes locations in chunks, yielding to main thread between chunks
+   * This prevents the "spinning wheel of death" on large datasets
    */
-  function initCluster() {
+  async function initClusterAsync(): Promise<void> {
     cluster = new Supercluster({
       radius: MAP_CONFIG.CLUSTER_RADIUS,
       maxZoom: MAP_CONFIG.CLUSTER_MAX_ZOOM,
       minPoints: MAP_CONFIG.CLUSTER_MIN_POINTS,
     });
 
-    // Include all locations that have coordinates (GPS or state centroid fallback)
-    const points = locations
-      .map(loc => {
-        const coords = getLocationCoordinates(loc);
-        if (!coords) return null;
-        return {
-          type: 'Feature' as const,
-          properties: { location: loc, isApproximate: coords.isApproximate },
-          geometry: {
-            type: 'Point' as const,
-            coordinates: [coords.lng, coords.lat],
-          },
-        };
-      })
-      .filter((p): p is NonNullable<typeof p> => p !== null);
+    // OPT-042: Process locations in chunks to avoid blocking
+    const points: any[] = [];
+    const CHUNK_SIZE = 100; // Process 100 locations at a time
 
+    for (let i = 0; i < locations.length; i += CHUNK_SIZE) {
+      const chunk = locations.slice(i, i + CHUNK_SIZE);
+
+      chunk.forEach(loc => {
+        const coords = getLocationCoordinates(loc);
+        if (coords) {
+          points.push({
+            type: 'Feature' as const,
+            properties: { location: loc, isApproximate: coords.isApproximate },
+            geometry: {
+              type: 'Point' as const,
+              coordinates: [coords.lng, coords.lat],
+            },
+          });
+        }
+      });
+
+      // Yield to main thread between chunks to keep UI responsive
+      if (i + CHUNK_SIZE < locations.length) {
+        await yieldToMain();
+      }
+    }
+
+    // Load all points into Supercluster (this is still synchronous but with pre-processed data)
     cluster.load(points);
     clusterReady = true;
   }
 
   /**
-   * OPT-041: Schedule cluster initialization for idle time
-   * Uses requestIdleCallback to avoid blocking main thread
+   * OPT-042: Schedule cluster initialization with proper async handling
+   * Uses setTimeout(0) to defer heavy work off the initial render
    */
   function scheduleClusterInit() {
     if (initScheduled) return;
     initScheduled = true;
     clusterReady = false;
 
-    // Use requestIdleCallback if available, otherwise fall back to setTimeout
-    const schedule = (window as any).requestIdleCallback || ((cb: () => void) => setTimeout(cb, 1));
-    schedule(() => {
-      initCluster();
+    // Use setTimeout(0) to defer to next event loop tick
+    // This ensures the map renders first before we start heavy processing
+    setTimeout(async () => {
+      await initClusterAsync();
       initScheduled = false;
-      if (map) {
-        import('leaflet').then((L) => updateClusters(L.default));
+      if (map && leafletModule) {
+        await updateClustersAsync(leafletModule.default);
       }
-    });
+    }, 0);
   }
 
   function updateClusters(L: any) {
@@ -874,6 +927,162 @@
     }
   }
 
+  /**
+   * OPT-042: Async version of updateClusters with chunked marker processing
+   * Yields to main thread between marker chunks to prevent blocking
+   */
+  async function updateClustersAsync(L: any): Promise<void> {
+    if (!map || !markersLayer || !cluster) return;
+
+    markersLayer.clearLayers();
+
+    const bounds = map.getBounds();
+    const bbox: [number, number, number, number] = [
+      bounds.getWest(),
+      bounds.getSouth(),
+      bounds.getEast(),
+      bounds.getNorth(),
+    ];
+    const currentZoom = map.getZoom();
+
+    const clusters = cluster.getClusters(bbox, Math.floor(currentZoom));
+
+    // OPT-042: Process markers in chunks with yielding
+    const MARKER_CHUNK_SIZE = 30; // Add 30 markers at a time
+
+    for (let i = 0; i < clusters.length; i += MARKER_CHUNK_SIZE) {
+      const chunk = clusters.slice(i, i + MARKER_CHUNK_SIZE);
+
+      chunk.forEach((feature: any) => {
+        const [lng, lat] = feature.geometry.coordinates;
+
+        if (feature.properties.cluster) {
+          const count = feature.properties.point_count;
+          const clusterKey = `cluster-${count}`;
+          const icon = getCachedIcon(L, clusterKey, () => L.divIcon({
+            html: `<div class="cluster-marker">${count}</div>`,
+            className: 'cluster-icon',
+            iconSize: [40, 40],
+          }));
+          const marker = L.marker([lat, lng], { icon });
+
+          marker.on('click', () => {
+            const expansionZoom = Math.min(
+              cluster!.getClusterExpansionZoom(feature.properties.cluster_id),
+              MAP_CONFIG.CLUSTER_EXPANSION_MAX_ZOOM
+            );
+            map!.setView([lat, lng], expansionZoom);
+          });
+
+          markersLayer!.addLayer(marker);
+        } else {
+          const location = feature.properties.location;
+          const isApproximate = feature.properties.isApproximate || false;
+          const confidence = getGpsConfidence(location, isApproximate);
+          const icon = createConfidenceIcon(L, confidence);
+          const marker = L.marker([lat, lng], { icon });
+
+          const confidenceLabel = isApproximate
+            ? 'Approximate (State)'
+            : String(confidence).charAt(0).toUpperCase() + String(confidence).slice(1) + ' GPS';
+
+          const isVerified = location.gps?.verifiedOnMap;
+          const verifyButtonHtml = popupMode === 'full' && onLocationVerify && !isVerified
+            ? `<button data-verify-location-id="${location.locid}" class="verify-location-btn" style="margin-top: 4px; padding: 6px 12px; background: #286736; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">Verify Location</button>`
+            : popupMode === 'full' && isVerified
+              ? `<div style="margin-top: 4px; padding: 6px 12px; background: #39934D; color: #FFFBF7; border-radius: 4px; font-size: 11px; text-align: center;">Location Verified</div>`
+              : '';
+
+          const typeHtml = popupMode === 'full'
+            ? `<span style="color: #666; font-size: 12px;">${escapeHtml(location.type) || 'Unknown Type'}</span><br/>`
+            : '';
+          const addressHtml = popupMode === 'full'
+            ? `<span style="color: #888; font-size: 11px;">${location.address?.city ? `${escapeHtml(location.address.city)}, ` : ''}${escapeHtml(location.address?.state) || ''}</span><br/>`
+            : '';
+
+          const popupContent = `
+            <div class="location-popup" style="min-width: 180px;">
+              <strong style="font-size: 14px;">${escapeHtml(location.locnam)}</strong><br/>
+              ${typeHtml}${addressHtml}<button data-location-id="${location.locid}" class="view-details-btn" style="margin-top: 8px; padding: 6px 12px; background: #b9975c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">View Details</button>
+              ${verifyButtonHtml}
+            </div>
+          `;
+
+          marker.bindPopup(popupContent);
+
+          if (onLocationVerify && !isVerified && !readonly) {
+            marker.options.draggable = true;
+            marker.on('dragend', () => {
+              const newPos = marker.getLatLng();
+              onLocationVerify(location.locid, newPos.lat, newPos.lng);
+            });
+          }
+
+          marker.on('click', () => {
+            marker.openPopup();
+          });
+
+          locationLookup.set(location.locid, location);
+          markersLayer!.addLayer(marker);
+        }
+      });
+
+      // Yield between chunks to keep UI responsive
+      if (i + MARKER_CHUNK_SIZE < clusters.length) {
+        await yieldToMain();
+      }
+    }
+
+    // Handle single location zoom
+    if (locations.length === 1 && !initialViewSet) {
+      const coords = getLocationCoordinates(locations[0]);
+      if (coords) {
+        const zoomLevel = zoom ?? (coords.isApproximate ? 10 : 17);
+        initialViewSet = true;
+        map.setView([coords.lat, coords.lng], zoomLevel);
+
+        if (limitedInteraction) {
+          const bounds = L.latLngBounds(
+            [coords.lat - 0.005, coords.lng - 0.007],
+            [coords.lat + 0.005, coords.lng + 0.007]
+          );
+          map.setMaxBounds(bounds);
+        }
+      }
+    }
+
+    // Campus markers (synchronous - usually few)
+    if (campusMarkersLayer && campusSubLocations.length > 0) {
+      campusMarkersLayer.clearLayers();
+      const accentColor = '#b9975c';
+
+      campusSubLocations.forEach((subloc) => {
+        const icon = L.divIcon({
+          html: `<div class="confidence-marker" style="background-color: ${accentColor};"></div>`,
+          className: 'confidence-icon',
+          iconSize: [16, 16],
+          iconAnchor: [8, 8],
+        });
+
+        const marker = L.marker([subloc.gps_lat, subloc.gps_lng], { icon });
+
+        marker.on('click', () => {
+          if (onCampusSubLocationClick) {
+            onCampusSubLocationClick(subloc.subid);
+          }
+        });
+
+        marker.bindTooltip(subloc.subnam, {
+          permanent: false,
+          direction: 'top',
+          offset: [0, -8],
+        });
+
+        campusMarkersLayer!.addLayer(marker);
+      });
+    }
+  }
+
   // Track campus sub-locations hash for change detection
   let lastCampusHash = $state('');
   function getCampusHash(subs: CampusSubLocation[]): string {
@@ -896,37 +1105,41 @@
         if (!hasExplicitView) {
           initialViewSet = false;
         }
-        // OPT-041: Use non-blocking cluster initialization
+        // OPT-042: Use non-blocking cluster initialization
         // scheduleClusterInit handles the async init + update
         scheduleClusterInit();
-        return; // scheduleClusterInit will call updateClusters after init
+        return; // scheduleClusterInit will call updateClustersAsync after init
       }
       if (campusChanged) {
         lastCampusHash = currentCampusHash;
+        // OPT-042: Use cached Leaflet module instead of dynamic import
+        if (leafletModule) {
+          updateClustersAsync(leafletModule.default);
+        }
       }
-      import('leaflet').then((L) => updateClusters(L.default));
     }
   });
 
   // FIX 6.8: Toggle heat map layer based on showHeatMap prop
   $effect(() => {
-    if (!map) return;
+    if (!map || !leafletModule) return;
 
-    import('leaflet').then((L) => {
-      // Remove existing heat layer if any
+    // OPT-042: Use cached Leaflet module
+    const L = leafletModule;
+
+    // Remove existing heat layer if any
+    if (heatLayer) {
+      map.removeLayer(heatLayer);
+      heatLayer = null;
+    }
+
+    // Add heat layer if enabled
+    if (showHeatMap && locations.length > 0) {
+      heatLayer = createHeatLayer(L.default, locations);
       if (heatLayer) {
-        map!.removeLayer(heatLayer);
-        heatLayer = null;
+        heatLayer.addTo(map);
       }
-
-      // Add heat layer if enabled
-      if (showHeatMap && locations.length > 0) {
-        heatLayer = createHeatLayer(L.default, locations);
-        if (heatLayer) {
-          heatLayer.addTo(map);
-        }
-      }
-    });
+    }
   });
 
   // Toggle reference map layer based on showRefMapLayer prop
@@ -937,89 +1150,68 @@
     const mapRef = map;
     const layerRef = refMapLayer;
 
-    if (!mapRef || !layerRef) return;
+    if (!mapRef || !layerRef || !leafletModule) return;
 
-    import('leaflet').then((L) => {
-      // Clear existing reference markers
-      layerRef.clearLayers();
+    // OPT-042: Use cached Leaflet module
+    const L = leafletModule;
 
-      if (shouldShow && points.length > 0) {
-        // Add layer to map if not already added
-        if (!mapRef.hasLayer(layerRef)) {
-          layerRef.addTo(mapRef);
-        }
+    // Clear existing reference markers
+    layerRef.clearLayers();
 
-        // OPT-041: Cache the reference map icon - all ref points share the same icon
-        const refIcon = getCachedIcon(L.default, 'ref-map-icon', () => L.default.divIcon({
-          html: `<div class="ref-map-marker"></div>`,
-          className: 'ref-map-icon',
-          iconSize: [12, 12],
-          iconAnchor: [6, 6],
-        }));
-
-        // Create markers for each reference point
-        points.forEach((point) => {
-          const marker = L.default.marker([point.lat, point.lng], { icon: refIcon });
-
-          // Build popup content
-          const name = point.name || 'Unnamed Point';
-          const desc = point.description ? `<br/><span style="color: #666; font-size: 11px;">${escapeHtml(point.description.substring(0, 100))}${point.description.length > 100 ? '...' : ''}</span>` : '';
-          const category = point.category ? `<br/><span style="color: #888; font-size: 10px;">${escapeHtml(point.category)}</span>` : '';
-
-          marker.bindPopup(`
-            <div class="ref-map-popup" style="min-width: 200px;">
-              <strong style="font-size: 13px;">${escapeHtml(name)}</strong>
-              ${desc}
-              ${category}
-              <div style="display: flex; gap: 6px; margin-top: 8px;">
-                <button
-                  class="create-from-ref-btn"
-                  data-point-id="${point.pointId}"
-                  data-name="${escapeHtml(name)}"
-                  data-lat="${point.lat}"
-                  data-lng="${point.lng}"
-                  data-state="${point.state || ''}"
-                  title="Create new location"
-                >
-                  + Create
-                </button>
-                <button
-                  class="link-ref-btn"
-                  data-point-id="${point.pointId}"
-                  data-name="${escapeHtml(name)}"
-                  data-lat="${point.lat}"
-                  data-lng="${point.lng}"
-                  title="Link to existing location"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-                  </svg>
-                </button>
-                <button
-                  class="delete-ref-btn"
-                  data-point-id="${point.pointId}"
-                  data-name="${escapeHtml(name)}"
-                  title="Delete this reference point"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="3 6 5 6 21 6"></polyline>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                  </svg>
-                </button>
-              </div>
-            </div>
-          `);
-
-          layerRef.addLayer(marker);
-        });
-      } else {
-        // Remove layer from map if currently added
-        if (mapRef.hasLayer(layerRef)) {
-          mapRef.removeLayer(layerRef);
-        }
+    if (shouldShow && points.length > 0) {
+      // Add layer to map if not already added
+      if (!mapRef.hasLayer(layerRef)) {
+        layerRef.addTo(mapRef);
       }
-    });
+
+      // OPT-041: Cache the reference map icon - all ref points share the same icon
+      const refIcon = getCachedIcon(L.default, 'ref-map-icon', () => L.default.divIcon({
+        html: `<div class="ref-map-marker"></div>`,
+        className: 'ref-map-icon',
+        iconSize: [12, 12],
+        iconAnchor: [6, 6],
+      }));
+
+      // Create markers for each reference point
+      points.forEach((point) => {
+        const marker = L.default.marker([point.lat, point.lng], { icon: refIcon });
+
+        // Build popup content
+        const name = point.name || 'Unnamed Point';
+        const desc = point.description ? `<br/><span style="color: #666; font-size: 11px;">${escapeHtml(point.description.substring(0, 100))}${point.description.length > 100 ? '...' : ''}</span>` : '';
+        const category = point.category ? `<br/><span style="color: #888; font-size: 10px;">${escapeHtml(point.category)}</span>` : '';
+
+        marker.bindPopup(`
+          <div class="ref-map-popup" style="min-width: 200px;">
+            <strong style="font-size: 13px;">${escapeHtml(name)}</strong>
+            ${desc}
+            ${category}
+            <div style="display: flex; gap: 6px; margin-top: 8px;">
+              <button class="create-from-ref-btn" data-point-id="${point.pointId}" data-name="${escapeHtml(name)}" data-lat="${point.lat}" data-lng="${point.lng}" data-state="${point.state || ''}" title="Create new location">+ Create</button>
+              <button class="link-ref-btn" data-point-id="${point.pointId}" data-name="${escapeHtml(name)}" data-lat="${point.lat}" data-lng="${point.lng}" title="Link to existing location">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                </svg>
+              </button>
+              <button class="delete-ref-btn" data-point-id="${point.pointId}" data-name="${escapeHtml(name)}" title="Delete this reference point">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+        `);
+
+        layerRef.addLayer(marker);
+      });
+    } else {
+      // Remove layer from map if currently added
+      if (mapRef.hasLayer(layerRef)) {
+        mapRef.removeLayer(layerRef);
+      }
+    }
   });
 
   onDestroy(() => {
