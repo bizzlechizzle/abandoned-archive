@@ -22,6 +22,15 @@
 
   const displayedVideos = $derived(showAllVideos ? videos : videos.slice(0, VIDEO_LIMIT));
 
+  // OPT-036: Pre-compute index map for O(1) lookups instead of O(n) findIndex
+  const videoIndexMap = $derived(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < videos.length; i++) {
+      map.set(videos[i].vidsha, i);
+    }
+    return map;
+  });
+
   // Cache-bust param to force reload after thumbnail regeneration
   const cacheVersion = $derived($thumbnailCache);
 </script>
@@ -50,7 +59,7 @@
         <!-- 4x2 Grid -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
           {#each displayedVideos as video, displayIndex}
-            {@const actualIndex = videos.findIndex(v => v.vidsha === video.vidsha)}
+            {@const actualIndex = videoIndexMap().get(video.vidsha) ?? displayIndex}
             <button
               onclick={() => onOpenLightbox(actualIndex)}
               class="video-card aspect-[1.618/1] bg-gray-100 rounded-lg overflow-hidden relative group"

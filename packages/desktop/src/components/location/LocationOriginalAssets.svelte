@@ -51,17 +51,34 @@
   const visibleCount = $derived(visibleImages.length + visibleVideos.length + visibleDocuments.length);
   const totalCount = $derived(images.length + videos.length + documents.length);
 
+  // OPT-036: Pre-compute index maps for O(1) lookups instead of O(n) findIndex
+  const imageIndexMap = $derived(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < images.length; i++) {
+      map.set(images[i].imgsha, i);
+    }
+    return map;
+  });
+
+  const videoIndexMap = $derived(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < videos.length; i++) {
+      map.set(videos[i].vidsha, i);
+    }
+    return map;
+  });
+
   // Map visible index to original index for lightbox callback
   function getOriginalImageIndex(visibleIndex: number): number {
     if (showHidden) return visibleIndex;
     const visibleItem = visibleImages[visibleIndex];
-    return images.findIndex(i => i.imgsha === visibleItem.imgsha);
+    return imageIndexMap().get(visibleItem.imgsha) ?? visibleIndex;
   }
 
   function getOriginalVideoIndex(visibleIndex: number): number {
     if (showHidden) return visibleIndex;
     const visibleItem = visibleVideos[visibleIndex];
-    return videos.findIndex(v => v.vidsha === visibleItem.vidsha);
+    return videoIndexMap().get(visibleItem.vidsha) ?? visibleIndex;
   }
 </script>
 

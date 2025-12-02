@@ -220,10 +220,80 @@ export class SQLiteLocationRepository implements LocationRepository {
       query = query.where('access', '=', filters.access);
     }
 
+    // OPT-036: Census region filters (database-side for performance)
+    const filtersAny = filters as any;
+    if (filtersAny?.censusRegion) {
+      query = query.where('census_region', '=', filtersAny.censusRegion);
+    }
+    if (filtersAny?.censusDivision) {
+      query = query.where('census_division', '=', filtersAny.censusDivision);
+    }
+    if (filtersAny?.culturalRegion) {
+      query = query.where('cultural_region', '=', filtersAny.culturalRegion);
+    }
+    if (filtersAny?.city) {
+      query = query.where('address_city', '=', filtersAny.city);
+    }
+
     query = query.orderBy('locadd', 'desc');
+
+    // OPT-036: Pagination support
+    if (filtersAny?.limit) {
+      query = query.limit(filtersAny.limit);
+    }
+    if (filtersAny?.offset) {
+      query = query.offset(filtersAny.offset);
+    }
 
     const rows = await query.execute();
     return rows.map((row) => this.mapRowToLocation(row));
+  }
+
+  /**
+   * OPT-036: Get filter options using efficient SELECT DISTINCT queries
+   * Returns all unique values for filter dropdowns in a single call
+   */
+  async getFilterOptions(): Promise<{
+    states: string[];
+    types: string[];
+    stypes: string[];
+    cities: string[];
+    counties: string[];
+    censusRegions: string[];
+    censusDivisions: string[];
+    culturalRegions: string[];
+  }> {
+    // Run all SELECT DISTINCT queries in parallel for maximum performance
+    const [
+      statesResult,
+      typesResult,
+      stypesResult,
+      citiesResult,
+      countiesResult,
+      censusRegionsResult,
+      censusDivisionsResult,
+      culturalRegionsResult,
+    ] = await Promise.all([
+      this.db.selectFrom('locs').select('address_state').distinct().where('address_state', 'is not', null).orderBy('address_state').execute(),
+      this.db.selectFrom('locs').select('type').distinct().where('type', 'is not', null).orderBy('type').execute(),
+      this.db.selectFrom('locs').select('stype').distinct().where('stype', 'is not', null).orderBy('stype').execute(),
+      this.db.selectFrom('locs').select('address_city').distinct().where('address_city', 'is not', null).orderBy('address_city').execute(),
+      this.db.selectFrom('locs').select('address_county').distinct().where('address_county', 'is not', null).orderBy('address_county').execute(),
+      this.db.selectFrom('locs').select('census_region').distinct().where('census_region', 'is not', null).orderBy('census_region').execute(),
+      this.db.selectFrom('locs').select('census_division').distinct().where('census_division', 'is not', null).orderBy('census_division').execute(),
+      this.db.selectFrom('locs').select('cultural_region').distinct().where('cultural_region', 'is not', null).orderBy('cultural_region').execute(),
+    ]);
+
+    return {
+      states: statesResult.map(r => r.address_state!).filter(Boolean),
+      types: typesResult.map(r => r.type!).filter(Boolean),
+      stypes: stypesResult.map(r => r.stype!).filter(Boolean),
+      cities: citiesResult.map(r => r.address_city!).filter(Boolean),
+      counties: countiesResult.map(r => r.address_county!).filter(Boolean),
+      censusRegions: censusRegionsResult.map(r => r.census_region!).filter(Boolean),
+      censusDivisions: censusDivisionsResult.map(r => r.census_division!).filter(Boolean),
+      culturalRegions: culturalRegionsResult.map(r => r.cultural_region!).filter(Boolean),
+    };
   }
 
   async update(id: string, input: Partial<LocationInput>): Promise<Location> {

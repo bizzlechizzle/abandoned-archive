@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { router } from '../stores/router';
   import type { Location, LocationFilters } from '@au-archive/core';
 
@@ -18,17 +19,19 @@
   let allStates = $state<string[]>([]);
   let allTypes = $state<string[]>([]);
 
+  // OPT-036: Load filter options using efficient SELECT DISTINCT query
   async function loadFilterOptions() {
-    if (!window.electronAPI?.locations) {
+    if (!window.electronAPI?.locations?.getFilterOptions) {
       console.error('Electron API not available - preload script may have failed to load');
       return;
     }
-    const locations = await window.electronAPI.locations.findAll();
-    const states = new Set(locations.map(l => l.address?.state).filter(Boolean) as string[]);
-    const types = new Set(locations.map(l => l.type).filter(Boolean) as string[]);
-
-    allStates = Array.from(states).sort();
-    allTypes = Array.from(types).sort();
+    try {
+      const options = await window.electronAPI.locations.getFilterOptions();
+      allStates = options.states;
+      allTypes = options.types;
+    } catch (error) {
+      console.error('Error loading filter options:', error);
+    }
   }
 
   async function handleSearch() {
@@ -75,7 +78,8 @@
     searchResults = [];
   }
 
-  $effect(() => {
+  // OPT-036: Use onMount instead of $effect to load filter options only once
+  onMount(() => {
     loadFilterOptions();
   });
 </script>

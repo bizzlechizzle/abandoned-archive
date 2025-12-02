@@ -447,6 +447,20 @@ export function registerLocationHandlers(db: Kysely<Database>) {
     }
   });
 
+  /**
+   * OPT-036: Get all filter options in a single efficient call
+   * Uses SELECT DISTINCT queries for each filter dimension
+   * Much faster than loading all locations and computing client-side
+   */
+  ipcMain.handle('location:getFilterOptions', async () => {
+    try {
+      return await locationRepo.getFilterOptions();
+    } catch (error) {
+      console.error('Error getting filter options:', error);
+      throw error;
+    }
+  });
+
   // Get distinct sub-types for autocomplete
   ipcMain.handle('location:getDistinctSubTypes', async () => {
     try {

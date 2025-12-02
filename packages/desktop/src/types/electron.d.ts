@@ -9,7 +9,15 @@ export interface ElectronAPI {
   platform: string;
 
   locations: {
-    findAll: (filters?: LocationFilters) => Promise<Location[]>;
+    findAll: (filters?: LocationFilters & {
+      // OPT-036: Extended filters for database-side filtering
+      censusRegion?: string;
+      censusDivision?: string;
+      culturalRegion?: string;
+      city?: string;
+      limit?: number;
+      offset?: number;
+    }) => Promise<Location[]>;
     findById: (id: string) => Promise<Location | null>;
     create: (input: LocationInput) => Promise<Location>;
     update: (id: string, input: Partial<LocationInput>) => Promise<Location>;
@@ -21,6 +29,17 @@ export interface ElectronAPI {
     favorites: () => Promise<Location[]>;
     toggleFavorite: (id: string) => Promise<boolean>;
     findNearby: (lat: number, lng: number, radiusKm: number) => Promise<Array<Location & { distance: number }>>;
+    // OPT-036: Get all filter options in one efficient call
+    getFilterOptions: () => Promise<{
+      states: string[];
+      types: string[];
+      stypes: string[];
+      cities: string[];
+      counties: string[];
+      censusRegions: string[];
+      censusDivisions: string[];
+      culturalRegions: string[];
+    }>;
     // Kanye9: Check for duplicate locations by address
     checkDuplicates: (address: {
       street?: string | null;

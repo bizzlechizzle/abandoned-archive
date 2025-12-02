@@ -162,6 +162,8 @@ const api = {
     // Autocomplete helpers for Type/Sub-Type
     getDistinctTypes: () => invokeAuto("location:getDistinctTypes")(),
     getDistinctSubTypes: () => invokeAuto("location:getDistinctSubTypes")(),
+    // OPT-036: Get all filter options in one efficient call
+    getFilterOptions: () => invokeAuto("location:getFilterOptions")(),
     // Migration 34: View tracking
     trackView: (id) => invokeAuto("location:trackView")(id),
     getViewStats: (id) => invokeAuto("location:getViewStats")(id),

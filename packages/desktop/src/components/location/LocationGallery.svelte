@@ -22,6 +22,15 @@
 
   const displayedImages = $derived(showAllImages ? images : images.slice(0, IMAGE_LIMIT));
 
+  // OPT-036: Pre-compute index map for O(1) lookups instead of O(n) findIndex
+  const imageIndexMap = $derived(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < images.length; i++) {
+      map.set(images[i].imgsha, i);
+    }
+    return map;
+  });
+
   // Cache-bust param to force reload after thumbnail regeneration
   const cacheVersion = $derived($thumbnailCache);
 </script>
@@ -50,7 +59,7 @@
         <!-- 4x2 Grid -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
           {#each displayedImages as image, displayIndex}
-            {@const actualIndex = images.findIndex(img => img.imgsha === image.imgsha)}
+            {@const actualIndex = imageIndexMap().get(image.imgsha) ?? displayIndex}
             {@const isHero = heroImgsha === image.imgsha}
             <button
               onclick={() => onOpenLightbox(actualIndex)}

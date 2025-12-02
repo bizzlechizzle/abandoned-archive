@@ -3,7 +3,9 @@
   import { router } from '../stores/router';
   import type { Location } from '@au-archive/core';
 
+  // OPT-036: Locations now loaded with database-side filtering
   let locations = $state<Location[]>([]);
+  let totalCount = $state(0);
   let searchQuery = $state('');
   let filterState = $state('');
   let filterType = $state('');
@@ -26,6 +28,30 @@
   let specialFilter = $state(''); // 'undocumented', 'historical', 'favorites', or ''
   let loading = $state(true);
   let activeFilterCount = $state(0);
+
+  // OPT-036: Filter options loaded via efficient SELECT DISTINCT (not from full location array)
+  let filterOptions = $state<{
+    states: string[];
+    types: string[];
+    stypes: string[];
+    cities: string[];
+    counties: string[];
+    censusRegions: string[];
+    censusDivisions: string[];
+    culturalRegions: string[];
+  }>({
+    states: [],
+    types: [],
+    stypes: [],
+    cities: [],
+    counties: [],
+    censusRegions: [],
+    censusDivisions: [],
+    culturalRegions: [],
+  });
+
+  // OPT-036: Debounce timer for search input
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Subscribe to router for query params
   let routeQuery = $state<Record<string, string>>({});
@@ -72,6 +98,7 @@
   // OPT-017: Clean up router subscription on component destroy
   onDestroy(() => {
     unsubscribe();
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
   });
 
   // Load locations for a specific author from location_authors table
@@ -93,72 +120,82 @@
     }
   }
 
-  let filteredLocations = $derived(() => {
-    return locations.filter((loc) => {
-      const matchesSearch = !searchQuery ||
-        loc.locnam.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        loc.akanam?.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesState = !filterState || loc.address?.state === filterState;
-      const matchesType = !filterType || loc.type === filterType;
-      const matchesStype = !filterStype || loc.stype === filterStype;
-      const matchesCondition = !filterCondition || loc.condition === filterCondition;
-      const matchesStatus = !filterStatus || loc.status === filterStatus;
-      const matchesCity = !filterCity || loc.address?.city === filterCity;
-      const matchesCounty = !filterCounty || loc.address?.county === filterCounty;
-      const matchesDocumentation = !filterDocumentation || loc.documentation === filterDocumentation;
-      const matchesAccess = !filterAccess || loc.access === filterAccess;
-      const matchesAuthor = !filterAuthor || loc.auth_imp === filterAuthor;
-      const matchesAuthorId = !filterAuthorId || authorLocIds.has(loc.locid);
-      // DECISION-012: Census region filters
-      const locAny = loc as any;
-      const matchesCensusRegion = !filterCensusRegion || locAny.censusRegion === filterCensusRegion;
-      const matchesCensusDivision = !filterCensusDivision || locAny.censusDivision === filterCensusDivision;
-      const matchesCulturalRegion = !filterCulturalRegion || locAny.culturalRegion === filterCulturalRegion;
-      const matchesStateDirection = !filterStateDirection || locAny.stateDirection === filterStateDirection;
+  // OPT-036: Database-side filtering - build filter object and query
+  async function loadLocationsWithFilters() {
+    if (!window.electronAPI?.locations) return;
 
-      // Apply special filters
-      let matchesSpecial = true;
-      if (specialFilter === 'undocumented') {
-        matchesSpecial = !loc.documentation || loc.documentation === 'No Visit / Keyboard Scout';
-      } else if (specialFilter === 'historical') {
-        matchesSpecial = loc.historic === true;
-      } else if (specialFilter === 'favorites') {
-        matchesSpecial = loc.favorite === true;
+    loading = true;
+    try {
+      // Build filter object for database query
+      const filters: Record<string, any> = {};
+
+      if (filterState) filters.state = filterState;
+      if (filterType) filters.type = filterType;
+      if (filterStype) filters.stype = filterStype;
+      if (filterCounty) filters.county = filterCounty;
+      if (filterAccess) filters.access = filterAccess;
+      if (searchQuery) filters.search = searchQuery;
+
+      // OPT-036: Extended filters now handled by database
+      if (filterCensusRegion) filters.censusRegion = filterCensusRegion;
+      if (filterCensusDivision) filters.censusDivision = filterCensusDivision;
+      if (filterCulturalRegion) filters.culturalRegion = filterCulturalRegion;
+      if (filterCity) filters.city = filterCity;
+
+      // Special filters
+      if (specialFilter === 'undocumented') filters.documented = false;
+      if (specialFilter === 'historical') filters.historic = true;
+      if (specialFilter === 'favorites') filters.favorite = true;
+
+      const results = await window.electronAPI.locations.findAll(filters);
+
+      // Client-side filters that can't easily be done in SQL
+      let filtered = results;
+
+      // Author filter (matches auth_imp field)
+      if (filterAuthor) {
+        filtered = filtered.filter(loc => loc.auth_imp === filterAuthor);
       }
 
-      return matchesSearch && matchesState && matchesType && matchesStype &&
-        matchesCondition && matchesStatus && matchesCity && matchesCounty &&
-        matchesDocumentation && matchesAccess && matchesAuthor && matchesAuthorId &&
-        matchesCensusRegion && matchesCensusDivision && matchesCulturalRegion &&
-        matchesStateDirection && matchesSpecial;
-    });
-  });
+      // Author ID filter (from location_authors join)
+      if (filterAuthorId && authorLocIds.size > 0) {
+        filtered = filtered.filter(loc => authorLocIds.has(loc.locid));
+      }
 
-  let uniqueStates = $derived(() => {
-    const states = new Set(locations.map(l => l.address?.state).filter(Boolean));
-    return Array.from(states).sort();
-  });
+      locations = filtered;
+      totalCount = filtered.length;
+    } catch (error) {
+      console.error('Error loading locations:', error);
+    } finally {
+      loading = false;
+    }
+  }
 
-  let uniqueTypes = $derived(() => {
-    const types = new Set(locations.map(l => l.type).filter(Boolean));
-    return Array.from(types).sort();
-  });
+  // OPT-036: Debounced search to avoid query on every keystroke
+  function handleSearchInput(e: Event) {
+    const value = (e.target as HTMLInputElement).value;
+    searchQuery = value;
 
-  // DECISION-012: Unique values for Census region dropdowns
-  let uniqueCensusRegions = $derived(() => {
-    const regions = new Set(locations.map(l => (l as any).censusRegion).filter(Boolean));
-    return Array.from(regions).sort();
-  });
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+      loadLocationsWithFilters();
+    }, 300); // 300ms debounce
+  }
 
-  let uniqueCensusDivisions = $derived(() => {
-    const divisions = new Set(locations.map(l => (l as any).censusDivision).filter(Boolean));
-    return Array.from(divisions).sort();
-  });
+  // OPT-036: Immediate filter change (for dropdowns)
+  function handleFilterChange() {
+    loadLocationsWithFilters();
+  }
 
-  let uniqueCulturalRegions = $derived(() => {
-    const regions = new Set(locations.map(l => (l as any).culturalRegion).filter(Boolean));
-    return Array.from(regions).sort();
-  });
+  // OPT-036: Use derived to just return locations (already filtered by database)
+  let filteredLocations = $derived(() => locations);
+
+  // OPT-036: Use memoized filter options instead of computing from locations
+  let uniqueStates = $derived(() => filterOptions.states);
+  let uniqueTypes = $derived(() => filterOptions.types);
+  let uniqueCensusRegions = $derived(() => filterOptions.censusRegions);
+  let uniqueCensusDivisions = $derived(() => filterOptions.censusDivisions);
+  let uniqueCulturalRegions = $derived(() => filterOptions.culturalRegions);
 
   function clearAllFilters() {
     specialFilter = '';
@@ -180,7 +217,10 @@
     filterCensusDivision = '';
     filterCulturalRegion = '';
     filterStateDirection = '';
+    searchQuery = '';
     router.navigate('/locations');
+    // OPT-036: Reload with cleared filters
+    loadLocationsWithFilters();
   }
 
   function clearFilter(filterName: string) {
@@ -223,6 +263,8 @@
     if (filterCulturalRegion) newQuery.culturalRegion = filterCulturalRegion;
     if (filterStateDirection) newQuery.stateDirection = filterStateDirection;
     router.navigate('/locations', undefined, Object.keys(newQuery).length > 0 ? newQuery : undefined);
+    // OPT-036: Reload with updated filters
+    loadLocationsWithFilters();
   }
 
   // Get active filters for display
@@ -248,23 +290,25 @@
     return filters;
   });
 
-  async function loadLocations() {
+  // OPT-036: Load filter options once on mount (efficient SELECT DISTINCT queries)
+  async function loadFilterOptions() {
     try {
-      loading = true;
-      if (!window.electronAPI?.locations) {
-        console.error('Electron API not available - preload script may have failed to load');
+      if (!window.electronAPI?.locations?.getFilterOptions) {
+        console.error('getFilterOptions not available');
         return;
       }
-      locations = await window.electronAPI.locations.findAll();
+      filterOptions = await window.electronAPI.locations.getFilterOptions();
     } catch (error) {
-      console.error('Error loading locations:', error);
-    } finally {
-      loading = false;
+      console.error('Error loading filter options:', error);
     }
   }
 
   onMount(() => {
-    loadLocations();
+    // OPT-036: Load filter options and initial locations in parallel
+    Promise.all([
+      loadFilterOptions(),
+      loadLocationsWithFilters(),
+    ]);
     return () => unsubscribe();
   });
 </script>
@@ -315,7 +359,8 @@
         <input
           id="search"
           type="text"
-          bind:value={searchQuery}
+          value={searchQuery}
+          oninput={handleSearchInput}
           placeholder="Search by name..."
           class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
         />
@@ -326,6 +371,7 @@
         <select
           id="state"
           bind:value={filterState}
+          onchange={handleFilterChange}
           class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
         >
           <option value="">All States</option>
@@ -340,6 +386,7 @@
         <select
           id="type"
           bind:value={filterType}
+          onchange={handleFilterChange}
           class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
         >
           <option value="">All Types</option>
@@ -358,6 +405,7 @@
           <select
             id="censusRegion"
             bind:value={filterCensusRegion}
+            onchange={handleFilterChange}
             class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
           >
             <option value="">All Regions</option>
@@ -372,6 +420,7 @@
           <select
             id="censusDivision"
             bind:value={filterCensusDivision}
+            onchange={handleFilterChange}
             class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
           >
             <option value="">All Divisions</option>
@@ -386,6 +435,7 @@
           <select
             id="culturalRegion"
             bind:value={filterCulturalRegion}
+            onchange={handleFilterChange}
             class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
           >
             <option value="">All Cultural Regions</option>
