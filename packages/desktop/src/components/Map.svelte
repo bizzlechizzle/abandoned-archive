@@ -735,6 +735,163 @@
   }
 
   /**
+   * OPT-042: Async version of updateClusters with chunked marker processing
+   * Yields to main thread between marker chunks to prevent blocking
+   * IMPORTANT: Must be defined before scheduleClusterInit which calls it
+   */
+  async function updateClustersAsync(L: any): Promise<void> {
+    if (!map || !markersLayer || !cluster) return;
+
+    markersLayer.clearLayers();
+
+    const bounds = map.getBounds();
+    const bbox: [number, number, number, number] = [
+      bounds.getWest(),
+      bounds.getSouth(),
+      bounds.getEast(),
+      bounds.getNorth(),
+    ];
+    const currentZoom = map.getZoom();
+
+    const clusters = cluster.getClusters(bbox, Math.floor(currentZoom));
+
+    // OPT-042: Process markers in chunks with yielding
+    const MARKER_CHUNK_SIZE = 30; // Add 30 markers at a time
+
+    for (let i = 0; i < clusters.length; i += MARKER_CHUNK_SIZE) {
+      const chunk = clusters.slice(i, i + MARKER_CHUNK_SIZE);
+
+      chunk.forEach((feature: any) => {
+        const [lng, lat] = feature.geometry.coordinates;
+
+        if (feature.properties.cluster) {
+          const count = feature.properties.point_count;
+          const clusterKey = `cluster-${count}`;
+          const icon = getCachedIcon(L, clusterKey, () => L.divIcon({
+            html: `<div class="cluster-marker">${count}</div>`,
+            className: 'cluster-icon',
+            iconSize: [40, 40],
+          }));
+          const marker = L.marker([lat, lng], { icon });
+
+          marker.on('click', () => {
+            const expansionZoom = Math.min(
+              cluster!.getClusterExpansionZoom(feature.properties.cluster_id),
+              MAP_CONFIG.CLUSTER_EXPANSION_MAX_ZOOM
+            );
+            map!.setView([lat, lng], expansionZoom);
+          });
+
+          markersLayer!.addLayer(marker);
+        } else {
+          const location = feature.properties.location;
+          const isApproximate = feature.properties.isApproximate || false;
+          const confidence = getGpsConfidence(location, isApproximate);
+          const icon = createConfidenceIcon(L, confidence);
+          const marker = L.marker([lat, lng], { icon });
+
+          const confidenceLabel = isApproximate
+            ? 'Approximate (State)'
+            : String(confidence).charAt(0).toUpperCase() + String(confidence).slice(1) + ' GPS';
+
+          const isVerified = location.gps?.verifiedOnMap;
+          const verifyButtonHtml = popupMode === 'full' && onLocationVerify && !isVerified
+            ? `<button data-verify-location-id="${location.locid}" class="verify-location-btn" style="margin-top: 4px; padding: 6px 12px; background: #286736; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">Verify Location</button>`
+            : popupMode === 'full' && isVerified
+              ? `<div style="margin-top: 4px; padding: 6px 12px; background: #39934D; color: #FFFBF7; border-radius: 4px; font-size: 11px; text-align: center;">Location Verified</div>`
+              : '';
+
+          const typeHtml = popupMode === 'full'
+            ? `<span style="color: #666; font-size: 12px;">${escapeHtml(location.type) || 'Unknown Type'}</span><br/>`
+            : '';
+          const addressHtml = popupMode === 'full'
+            ? `<span style="color: #888; font-size: 11px;">${location.address?.city ? `${escapeHtml(location.address.city)}, ` : ''}${escapeHtml(location.address?.state) || ''}</span><br/>`
+            : '';
+
+          const popupContent = `
+            <div class="location-popup" style="min-width: 180px;">
+              <strong style="font-size: 14px;">${escapeHtml(location.locnam)}</strong><br/>
+              ${typeHtml}${addressHtml}<button data-location-id="${location.locid}" class="view-details-btn" style="margin-top: 8px; padding: 6px 12px; background: #b9975c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">View Details</button>
+              ${verifyButtonHtml}
+            </div>
+          `;
+
+          marker.bindPopup(popupContent);
+
+          if (onLocationVerify && !isVerified && !readonly) {
+            marker.options.draggable = true;
+            marker.on('dragend', () => {
+              const newPos = marker.getLatLng();
+              onLocationVerify(location.locid, newPos.lat, newPos.lng);
+            });
+          }
+
+          marker.on('click', () => {
+            marker.openPopup();
+          });
+
+          locationLookup.set(location.locid, location);
+          markersLayer!.addLayer(marker);
+        }
+      });
+
+      // Yield between chunks to keep UI responsive
+      if (i + MARKER_CHUNK_SIZE < clusters.length) {
+        await yieldToMain();
+      }
+    }
+
+    // Handle single location zoom
+    if (locations.length === 1 && !initialViewSet) {
+      const coords = getLocationCoordinates(locations[0]);
+      if (coords) {
+        const zoomLevel = zoom ?? (coords.isApproximate ? 10 : 17);
+        initialViewSet = true;
+        map.setView([coords.lat, coords.lng], zoomLevel);
+
+        if (limitedInteraction) {
+          const bounds = L.latLngBounds(
+            [coords.lat - 0.005, coords.lng - 0.007],
+            [coords.lat + 0.005, coords.lng + 0.007]
+          );
+          map.setMaxBounds(bounds);
+        }
+      }
+    }
+
+    // Campus markers (synchronous - usually few)
+    if (campusMarkersLayer && campusSubLocations.length > 0) {
+      campusMarkersLayer.clearLayers();
+      const accentColor = '#b9975c';
+
+      campusSubLocations.forEach((subloc) => {
+        const icon = L.divIcon({
+          html: `<div class="confidence-marker" style="background-color: ${accentColor};"></div>`,
+          className: 'confidence-icon',
+          iconSize: [16, 16],
+          iconAnchor: [8, 8],
+        });
+
+        const marker = L.marker([subloc.gps_lat, subloc.gps_lng], { icon });
+
+        marker.on('click', () => {
+          if (onCampusSubLocationClick) {
+            onCampusSubLocationClick(subloc.subid);
+          }
+        });
+
+        marker.bindTooltip(subloc.subnam, {
+          permanent: false,
+          direction: 'top',
+          offset: [0, -8],
+        });
+
+        campusMarkersLayer!.addLayer(marker);
+      });
+    }
+  }
+
+  /**
    * OPT-042: Schedule cluster initialization with proper async handling
    * Uses setTimeout(0) to defer heavy work off the initial render
    */
@@ -896,162 +1053,6 @@
     }
 
     // Campus map: Add sub-location markers
-    if (campusMarkersLayer && campusSubLocations.length > 0) {
-      campusMarkersLayer.clearLayers();
-      const accentColor = '#b9975c';
-
-      campusSubLocations.forEach((subloc) => {
-        const icon = L.divIcon({
-          html: `<div class="confidence-marker" style="background-color: ${accentColor};"></div>`,
-          className: 'confidence-icon',
-          iconSize: [16, 16],
-          iconAnchor: [8, 8],
-        });
-
-        const marker = L.marker([subloc.gps_lat, subloc.gps_lng], { icon });
-
-        marker.on('click', () => {
-          if (onCampusSubLocationClick) {
-            onCampusSubLocationClick(subloc.subid);
-          }
-        });
-
-        marker.bindTooltip(subloc.subnam, {
-          permanent: false,
-          direction: 'top',
-          offset: [0, -8],
-        });
-
-        campusMarkersLayer!.addLayer(marker);
-      });
-    }
-  }
-
-  /**
-   * OPT-042: Async version of updateClusters with chunked marker processing
-   * Yields to main thread between marker chunks to prevent blocking
-   */
-  async function updateClustersAsync(L: any): Promise<void> {
-    if (!map || !markersLayer || !cluster) return;
-
-    markersLayer.clearLayers();
-
-    const bounds = map.getBounds();
-    const bbox: [number, number, number, number] = [
-      bounds.getWest(),
-      bounds.getSouth(),
-      bounds.getEast(),
-      bounds.getNorth(),
-    ];
-    const currentZoom = map.getZoom();
-
-    const clusters = cluster.getClusters(bbox, Math.floor(currentZoom));
-
-    // OPT-042: Process markers in chunks with yielding
-    const MARKER_CHUNK_SIZE = 30; // Add 30 markers at a time
-
-    for (let i = 0; i < clusters.length; i += MARKER_CHUNK_SIZE) {
-      const chunk = clusters.slice(i, i + MARKER_CHUNK_SIZE);
-
-      chunk.forEach((feature: any) => {
-        const [lng, lat] = feature.geometry.coordinates;
-
-        if (feature.properties.cluster) {
-          const count = feature.properties.point_count;
-          const clusterKey = `cluster-${count}`;
-          const icon = getCachedIcon(L, clusterKey, () => L.divIcon({
-            html: `<div class="cluster-marker">${count}</div>`,
-            className: 'cluster-icon',
-            iconSize: [40, 40],
-          }));
-          const marker = L.marker([lat, lng], { icon });
-
-          marker.on('click', () => {
-            const expansionZoom = Math.min(
-              cluster!.getClusterExpansionZoom(feature.properties.cluster_id),
-              MAP_CONFIG.CLUSTER_EXPANSION_MAX_ZOOM
-            );
-            map!.setView([lat, lng], expansionZoom);
-          });
-
-          markersLayer!.addLayer(marker);
-        } else {
-          const location = feature.properties.location;
-          const isApproximate = feature.properties.isApproximate || false;
-          const confidence = getGpsConfidence(location, isApproximate);
-          const icon = createConfidenceIcon(L, confidence);
-          const marker = L.marker([lat, lng], { icon });
-
-          const confidenceLabel = isApproximate
-            ? 'Approximate (State)'
-            : String(confidence).charAt(0).toUpperCase() + String(confidence).slice(1) + ' GPS';
-
-          const isVerified = location.gps?.verifiedOnMap;
-          const verifyButtonHtml = popupMode === 'full' && onLocationVerify && !isVerified
-            ? `<button data-verify-location-id="${location.locid}" class="verify-location-btn" style="margin-top: 4px; padding: 6px 12px; background: #286736; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">Verify Location</button>`
-            : popupMode === 'full' && isVerified
-              ? `<div style="margin-top: 4px; padding: 6px 12px; background: #39934D; color: #FFFBF7; border-radius: 4px; font-size: 11px; text-align: center;">Location Verified</div>`
-              : '';
-
-          const typeHtml = popupMode === 'full'
-            ? `<span style="color: #666; font-size: 12px;">${escapeHtml(location.type) || 'Unknown Type'}</span><br/>`
-            : '';
-          const addressHtml = popupMode === 'full'
-            ? `<span style="color: #888; font-size: 11px;">${location.address?.city ? `${escapeHtml(location.address.city)}, ` : ''}${escapeHtml(location.address?.state) || ''}</span><br/>`
-            : '';
-
-          const popupContent = `
-            <div class="location-popup" style="min-width: 180px;">
-              <strong style="font-size: 14px;">${escapeHtml(location.locnam)}</strong><br/>
-              ${typeHtml}${addressHtml}<button data-location-id="${location.locid}" class="view-details-btn" style="margin-top: 8px; padding: 6px 12px; background: #b9975c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">View Details</button>
-              ${verifyButtonHtml}
-            </div>
-          `;
-
-          marker.bindPopup(popupContent);
-
-          if (onLocationVerify && !isVerified && !readonly) {
-            marker.options.draggable = true;
-            marker.on('dragend', () => {
-              const newPos = marker.getLatLng();
-              onLocationVerify(location.locid, newPos.lat, newPos.lng);
-            });
-          }
-
-          marker.on('click', () => {
-            marker.openPopup();
-          });
-
-          locationLookup.set(location.locid, location);
-          markersLayer!.addLayer(marker);
-        }
-      });
-
-      // Yield between chunks to keep UI responsive
-      if (i + MARKER_CHUNK_SIZE < clusters.length) {
-        await yieldToMain();
-      }
-    }
-
-    // Handle single location zoom
-    if (locations.length === 1 && !initialViewSet) {
-      const coords = getLocationCoordinates(locations[0]);
-      if (coords) {
-        const zoomLevel = zoom ?? (coords.isApproximate ? 10 : 17);
-        initialViewSet = true;
-        map.setView([coords.lat, coords.lng], zoomLevel);
-
-        if (limitedInteraction) {
-          const bounds = L.latLngBounds(
-            [coords.lat - 0.005, coords.lng - 0.007],
-            [coords.lat + 0.005, coords.lng + 0.007]
-          );
-          map.setMaxBounds(bounds);
-        }
-      }
-    }
-
-    // Campus markers (synchronous - usually few)
     if (campusMarkersLayer && campusSubLocations.length > 0) {
       campusMarkersLayer.clearLayers();
       const accentColor = '#b9975c';
