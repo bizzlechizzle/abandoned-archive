@@ -306,6 +306,9 @@
             deleteOriginals,
             is_contributed: contributed,
             contribution_source: source || null,
+            // OPT-058: Unified progress across chunks
+            chunkOffset: chunkIdx * IMPORT_CHUNK_SIZE,
+            totalOverall: filePaths.length,
           })) as ImportSessionResult;
 
           // Aggregate chunk results
@@ -314,7 +317,8 @@
           totalErrors += result.errors;
           processedFiles += chunk.length;
 
-          // Update progress bar with aggregate values
+          // OPT-058: Real-time IPC events now report global progress
+          // Keep local tracking for final status but don't need to update mid-import
           progressCurrent = processedFiles;
           progressTotal = filePaths.length;
 

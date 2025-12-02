@@ -261,8 +261,40 @@ export interface ElectronAPI {
       locid: string;
       subid?: string | null;
       auth_imp: string | null;
-      deleteOriginals: boolean;
-    }) => Promise<unknown>;
+      deleteOriginals?: boolean;
+      // Migration 26: Contributor tracking
+      is_contributed?: number;
+      contribution_source?: string | null;
+      // OPT-058: Unified progress across chunks
+      chunkOffset?: number;
+      totalOverall?: number;
+    }) => Promise<{
+      total: number;
+      imported: number;
+      duplicates: number;
+      skipped: number;
+      sidecarOnly: number;
+      errors: number;
+      importId: string;
+      results: Array<{
+        success: boolean;
+        hash: string;
+        type: 'image' | 'video' | 'map' | 'document' | 'skipped' | 'sidecar';
+        duplicate: boolean;
+        skipped?: boolean;
+        sidecarOnly?: boolean;
+        archivePath?: string;
+        error?: string;
+        gpsWarning?: {
+          message: string;
+          distance: number;
+          severity: 'minor' | 'major';
+          locationGPS: { lat: number; lng: number };
+          mediaGPS: { lat: number; lng: number };
+        };
+        warnings?: string[];
+      }>;
+    }>;
     phaseImport: (input: {
       files: Array<{ filePath: string; originalName: string }>;
       locid: string;

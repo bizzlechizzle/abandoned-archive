@@ -700,6 +700,9 @@
             deleteOriginals: false,
             is_contributed: contributed,
             contribution_source: source || null,
+            // OPT-058: Unified progress across chunks
+            chunkOffset: chunkIdx * IMPORT_CHUNK_SIZE,
+            totalOverall: filePaths.length,
           });
 
           // Aggregate chunk results
@@ -708,8 +711,7 @@
           totalErrors += result.errors;
           processedFiles += chunk.length;
 
-          // Update store progress with aggregate
-          importStore.updateProgress(processedFiles, filePaths.length);
+          // OPT-058: Real-time IPC events now report global progress, no need to update store here
 
           // Collect warnings and failures from this chunk
           if (result.results) {
@@ -740,6 +742,7 @@
           // Count all files in failed chunk as errors, continue with next chunk
           totalErrors += chunk.length;
           processedFiles += chunk.length;
+          // OPT-058: Must update manually here since backend didn't send progress for failed chunk
           importStore.updateProgress(processedFiles, filePaths.length);
         }
 

@@ -316,6 +316,9 @@ export function registerMediaImportHandlers(
         // Migration 26: Contributor tracking
         is_contributed: z.number().default(0),
         contribution_source: z.string().nullable().optional(),
+        // OPT-058: Unified progress across chunks
+        chunkOffset: z.number().int().min(0).default(0),
+        totalOverall: z.number().int().min(1).optional(),
       });
 
       const validatedInput = ImportInputSchema.parse(input);
@@ -363,7 +366,10 @@ export function registerMediaImportHandlers(
           (current, total, filename) => {
             try {
               if (_event.sender && !_event.sender.isDestroyed()) {
-                _event.sender.send('media:import:progress', { current, total, filename, importId });
+                // OPT-058: Adjust for chunk offset to report global progress
+                const adjustedCurrent = validatedInput.chunkOffset + current;
+                const adjustedTotal = validatedInput.totalOverall || total;
+                _event.sender.send('media:import:progress', { current: adjustedCurrent, total: adjustedTotal, filename, importId });
               }
             } catch (e) { console.warn('[media:import] Failed to send progress:', e); }
           },
