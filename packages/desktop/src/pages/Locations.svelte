@@ -59,15 +59,39 @@
   let scrollContainerRef = $state<HTMLDivElement | null>(null);
   const ROW_HEIGHT = 60; // Fixed row height for virtualization
 
-  // Create virtualizer - recreates when filteredLocations changes
-  let virtualizer = $derived.by(() => {
+  // Store the virtualizer instance and its reactive value
+  let virtualizerInstance = $state<ReturnType<typeof createVirtualizer> | null>(null);
+  let virtualItems = $state<{ index: number; start: number; size: number }[]>([]);
+  let totalSize = $state(0);
+
+  // Create and subscribe to virtualizer when dependencies change
+  $effect(() => {
     const items = filteredLocations();
-    return createVirtualizer({
+    const container = scrollContainerRef;
+
+    // Guard: Don't create virtualizer until scroll container is mounted
+    if (!container) {
+      virtualItems = [];
+      totalSize = 0;
+      return;
+    }
+
+    const store = createVirtualizer({
       count: items.length,
-      getScrollElement: () => scrollContainerRef,
+      getScrollElement: () => container,
       estimateSize: () => ROW_HEIGHT,
-      overscan: 5, // Render 5 extra rows above/below viewport for smooth scrolling
+      overscan: 5,
     });
+
+    virtualizerInstance = store;
+
+    // Subscribe to store updates
+    const unsub = store.subscribe((v) => {
+      virtualItems = v.getVirtualItems();
+      totalSize = v.getTotalSize();
+    });
+
+    return unsub;
   });
 
   // Subscribe to router for query params
@@ -504,9 +528,9 @@
         style="height: calc(100vh - 420px); min-height: 300px;"
       >
         <div
-          style="height: {virtualizer.getTotalSize()}px; width: 100%; position: relative;"
+          style="height: {totalSize}px; width: 100%; position: relative;"
         >
-          {#each virtualizer.getVirtualItems() as virtualRow (virtualRow.index)}
+          {#each virtualItems as virtualRow (virtualRow.index)}
             {@const location = filteredLocations()[virtualRow.index]}
             <div
               class="grid grid-cols-[1fr_150px_200px_80px] absolute top-0 left-0 w-full hover:bg-gray-50 cursor-pointer border-b border-gray-100"

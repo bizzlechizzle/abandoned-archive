@@ -612,6 +612,18 @@
           }
         }
       }
+
+      // OPT-037 FIX: Emit initial bounds immediately after map setup
+      // This allows Atlas to load viewport-filtered data instead of waiting 3s fallback
+      if (onBoundsChange) {
+        const initialBounds = map.getBounds();
+        onBoundsChange({
+          north: initialBounds.getNorth(),
+          south: initialBounds.getSouth(),
+          east: initialBounds.getEast(),
+          west: initialBounds.getWest(),
+        });
+      }
     }
   });
 

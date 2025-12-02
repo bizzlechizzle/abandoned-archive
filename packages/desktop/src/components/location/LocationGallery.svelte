@@ -33,15 +33,39 @@
   // For virtual mode: calculate number of rows needed
   const rowCount = $derived(Math.ceil(images.length / COLUMNS));
 
-  // Create virtualizer for row-based scrolling
-  let virtualizer = $derived.by(() => {
-    if (!useVirtual) return null;
-    return createVirtualizer({
+  // Reactive state for virtual scrolling
+  let virtualItems = $state<{ index: number; start: number; size: number }[]>([]);
+  let totalSize = $state(0);
+
+  // Create and subscribe to virtualizer when dependencies change
+  $effect(() => {
+    if (!useVirtual) {
+      virtualItems = [];
+      totalSize = 0;
+      return;
+    }
+
+    const container = scrollContainerRef;
+    // Guard: Don't create virtualizer until scroll container is mounted
+    if (!container) {
+      virtualItems = [];
+      totalSize = 0;
+      return;
+    }
+
+    const store = createVirtualizer({
       count: rowCount,
-      getScrollElement: () => scrollContainerRef,
+      getScrollElement: () => container,
       estimateSize: () => ROW_HEIGHT,
-      overscan: 3, // Render 3 extra rows above/below
+      overscan: 3,
     });
+
+    const unsub = store.subscribe((v) => {
+      virtualItems = v.getVirtualItems();
+      totalSize = v.getTotalSize();
+    });
+
+    return unsub;
   });
 
   // For non-virtual mode: display limited images
@@ -94,7 +118,7 @@
 
     {#if isOpen}
       <div class="pb-4">
-        {#if useVirtual && virtualizer}
+        {#if useVirtual && virtualItems.length > 0}
           <!-- OPT-039: Virtual scrolling grid for large collections -->
           <div
             bind:this={scrollContainerRef}
@@ -102,9 +126,9 @@
             style="height: 500px; max-height: 60vh;"
           >
             <div
-              style="height: {virtualizer.getTotalSize()}px; width: 100%; position: relative;"
+              style="height: {totalSize}px; width: 100%; position: relative;"
             >
-              {#each virtualizer.getVirtualItems() as virtualRow (virtualRow.index)}
+              {#each virtualItems as virtualRow (virtualRow.index)}
                 <div
                   class="grid grid-cols-2 md:grid-cols-4 gap-3 absolute top-0 left-0 w-full px-0.5"
                   style="height: {virtualRow.size}px; transform: translateY({virtualRow.start}px);"

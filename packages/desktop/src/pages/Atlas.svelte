@@ -28,7 +28,7 @@
   }
 
   let locations = $state<Location[]>([]);
-  let loading = $state(true);
+  let loading = $state(false); // OPT-038: Start false, set true only during actual fetch
   let showFilters = $state(false);
   let filterState = $state('');
   let filterType = $state('');
@@ -148,7 +148,9 @@
   /**
    * OPT-037: Handle viewport bounds change from Map component
    * Debounced to avoid excessive queries during pan/zoom
+   * OPT-038: First load happens immediately (no debounce)
    */
+  let isFirstBoundsLoad = true;
   function handleBoundsChange(bounds: ViewportBounds) {
     currentBounds = bounds;
 
@@ -157,7 +159,17 @@
       clearTimeout(boundsDebounceTimer);
     }
 
-    // Debounce the actual data loading
+    // OPT-038: First load happens immediately for fast initial render
+    if (isFirstBoundsLoad) {
+      isFirstBoundsLoad = false;
+      loadLocationsInBounds(bounds);
+      if (showRefMapLayer) {
+        loadRefPointsInBounds(bounds);
+      }
+      return;
+    }
+
+    // Debounce subsequent loads during pan/zoom
     boundsDebounceTimer = setTimeout(() => {
       loadLocationsInBounds(bounds);
       if (showRefMapLayer) {
@@ -307,28 +319,18 @@
   }
 
   onMount(() => {
-    // OPT-038: Don't call loadLocations() here - viewport-based loading handles it
-    // The Map component emits onBoundsChange when initialized, triggering loadLocationsInBounds
-    // This prevents double-loading (previously loaded ALL then reloaded in viewport)
+    // OPT-038: Viewport-based loading - Map emits onBoundsChange when ready
+    // DO NOT load all locations here - that causes beach ball freezing
+    // The Map component will emit bounds after leaflet initializes
 
     // Load ref map points (small dataset, OK to load all)
     loadRefMapPoints();
-
-    // Safety fallback: if no bounds received within 3s, load all locations
-    // This handles edge case where Map fails to emit initial bounds
-    const fallbackTimer = setTimeout(() => {
-      if (locations.length === 0 && !currentBounds) {
-        console.warn('[Atlas] No bounds received from Map, falling back to full load');
-        loadLocations();
-      }
-    }, 3000);
 
     // Close context menu on click outside
     const handleClickOutside = () => closeContextMenu();
     document.addEventListener('click', handleClickOutside);
 
     return () => {
-      clearTimeout(fallbackTimer);
       document.removeEventListener('click', handleClickOutside);
     };
   });
