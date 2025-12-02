@@ -337,7 +337,8 @@ export interface ElectronAPI {
     fixLocationImages: (locid: string) => Promise<{ fixed: number; errors: number; total: number }>;
     fixLocationVideos: (locid: string) => Promise<{ fixed: number; errors: number; total: number }>;
 
-    // Video Proxy System (Migration 36)
+    // Video Proxy System (Migration 36, updated OPT-053 Immich Model)
+    // Proxies generated at import time, stored alongside originals, permanent (no purge)
     generateProxy: (vidsha: string, sourcePath: string, metadata: { width: number; height: number }) => Promise<{
       success: boolean;
       proxyPath?: string;
@@ -346,6 +347,8 @@ export interface ElectronAPI {
       proxyHeight?: number;
     }>;
     getProxyPath: (vidsha: string) => Promise<string | null>;
+    // OPT-053: Fast filesystem check for proxy existence (no DB lookup)
+    proxyExists: (videoPath: string, vidsha: string) => Promise<boolean>;
     getProxyCacheStats: () => Promise<{
       totalCount: number;
       totalSizeBytes: number;
@@ -353,17 +356,21 @@ export interface ElectronAPI {
       oldestAccess: string | null;
       newestAccess: string | null;
     }>;
+    // OPT-053: DEPRECATED - Proxies are permanent, always returns empty result
     purgeOldProxies: (daysOld?: number) => Promise<{
       deleted: number;
       freedBytes: number;
       freedMB: number;
     }>;
+    // OPT-053: DEPRECATED - Proxies are permanent, always returns empty result
     clearAllProxies: () => Promise<{
       deleted: number;
       freedBytes: number;
       freedMB: number;
     }>;
+    // OPT-053: DEPRECATED - No last_accessed tracking, always returns 0
     touchLocationProxies: (locid: string) => Promise<number>;
+    // For migration/repair of old imports
     generateProxiesForLocation: (locid: string) => Promise<{
       generated: number;
       failed: number;

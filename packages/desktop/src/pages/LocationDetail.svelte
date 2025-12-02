@@ -869,19 +869,9 @@
       });
     }
 
-    // Migration 36: Video Proxy Pre-generation
-    // Touch all proxies for this location (updates last_accessed to prevent purge)
-    // Then generate proxies for any videos that don't have them yet
-    if (locationId) {
-      window.electronAPI?.media?.touchLocationProxies(locationId).catch((err: unknown) => {
-        console.warn('[LocationDetail] Failed to touch location proxies:', err);
-      });
-
-      // Start background proxy generation (non-blocking)
-      window.electronAPI?.media?.generateProxiesForLocation(locationId).catch((err: unknown) => {
-        console.warn('[LocationDetail] Failed to generate proxies:', err);
-      });
-    }
+    // OPT-053: Removed video proxy pre-generation
+    // Proxies are now generated at import time (Immich model)
+    // touchLocationProxies and generateProxiesForLocation are deprecated
 
     try {
       const settings = await window.electronAPI.settings.getAll();

@@ -19,6 +19,8 @@ import { LocationEntity } from '@au-archive/core';
 import { ThumbnailService } from './thumbnail-service';
 import { PreviewExtractorService } from './preview-extractor-service';
 import { PosterFrameService } from './poster-frame-service';
+// OPT-053: Import video proxy service for instant playback (Immich model)
+import { generateProxy as generateVideoProxy } from './video-proxy-service';
 import { SQLiteMediaRepository } from '../repositories/sqlite-media-repository';
 import { SQLiteImportRepository } from '../repositories/sqlite-import-repository';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
@@ -779,6 +781,36 @@ export class FileImportService {
       fileSizeBytes
     );
     console.log('[FileImport] Step 7 complete in', Date.now() - insertStart, 'ms');
+
+    // OPT-053: Step 7b - Generate video proxy for instant playback (Immich model)
+    // Proxy is generated AFTER file is organized so it's placed alongside the video
+    // Non-fatal: if proxy fails, import still succeeds (fallback to original on playback)
+    if (type === 'video' && metadata?.width && metadata?.height) {
+      console.log('[FileImport] Step 7b: Generating 720p video proxy (OPT-053 Immich model)...');
+      const proxyStart = Date.now();
+      try {
+        const proxyResult = await generateVideoProxy(
+          this.db,
+          this.archivePath,
+          hash,
+          archivePath, // Use organized path (where video now lives)
+          { width: metadata.width, height: metadata.height }
+        );
+        if (proxyResult.success) {
+          console.log('[FileImport] Step 7b complete in', Date.now() - proxyStart, 'ms');
+          console.log(`[FileImport]   Proxy: ${proxyResult.proxyPath} (${proxyResult.proxyWidth}x${proxyResult.proxyHeight})`);
+        } else {
+          // Non-fatal: log warning but don't fail import
+          console.warn('[FileImport] Video proxy generation failed (non-fatal):', proxyResult.error);
+          warnings.push(`Video proxy generation failed: ${proxyResult.error}`);
+        }
+      } catch (proxyError) {
+        // Non-fatal: catch any unexpected errors
+        const errMsg = proxyError instanceof Error ? proxyError.message : String(proxyError);
+        console.warn('[FileImport] Video proxy generation error (non-fatal):', errMsg);
+        warnings.push(`Video proxy generation error: ${errMsg}`);
+      }
+    }
 
     // FIX-PROGRESS: Steps 8a-8b (GPS enrichment, geocoding) moved to importFiles()
     // These run AFTER progress fires so UI updates immediately on DB insert

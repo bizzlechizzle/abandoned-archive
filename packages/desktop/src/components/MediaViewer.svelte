@@ -427,7 +427,9 @@
     }
   }
 
-  // Video Proxy: Load or generate proxy for smooth playback
+  // OPT-053 Immich Model: Video proxies generated at import, stored alongside originals
+  // Most videos should have proxy ready (instant playback)
+  // Fallback to on-demand generation for old imports without proxy
   async function loadVideoProxy(video: {
     hash: string;
     path: string;
@@ -438,15 +440,25 @@
     proxyError = null;
     generatingProxy = false;
 
-    // Check for existing proxy
-    const existingProxy = await window.electronAPI?.media?.getProxyPath(video.hash);
+    // OPT-053: Fast filesystem check - proxy should exist for new imports
+    const exists = await window.electronAPI?.media?.proxyExists(video.path, video.hash);
 
+    if (exists) {
+      // Compute expected proxy path (hidden file alongside original)
+      // Pattern: dirname(video.path) + '.' + hash + '.proxy.mp4'
+      const dirPath = video.path.substring(0, video.path.lastIndexOf('/'));
+      proxyPath = `${dirPath}/.${video.hash}.proxy.mp4`;
+      return;
+    }
+
+    // Fallback: Check DB (may have old-style proxy in cache)
+    const existingProxy = await window.electronAPI?.media?.getProxyPath(video.hash);
     if (existingProxy) {
       proxyPath = existingProxy;
       return;
     }
 
-    // Generate proxy
+    // No proxy exists - generate on-demand (old import without proxy)
     generatingProxy = true;
     const result = await window.electronAPI?.media?.generateProxy(
       video.hash,

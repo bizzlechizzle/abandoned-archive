@@ -18,8 +18,9 @@ import { PosterFrameService } from '../../services/poster-frame-service';
 import { MediaCacheService } from '../../services/media-cache-service';
 import { PreloadService } from '../../services/preload-service';
 import { XmpService } from '../../services/xmp-service';
-import { generateProxy, getProxyPath } from '../../services/video-proxy-service';
-import { getCacheStats, purgeOldProxies, clearAllProxies, touchLocationProxies, getVideosNeedingProxies } from '../../services/proxy-cache-service';
+import { generateProxy, getProxyPath, proxyExistsForVideo } from '../../services/video-proxy-service';
+// OPT-053: Removed purgeOldProxies, clearAllProxies, touchLocationProxies - proxies are now permanent
+import { getCacheStats, getVideosNeedingProxies } from '../../services/proxy-cache-service';
 
 export function registerMediaProcessingHandlers(
   db: Kysely<Database>,
@@ -741,36 +742,36 @@ export function registerMediaProcessingHandlers(
     }
   });
 
-  // Purge old proxies (30 days default)
-  ipcMain.handle('media:purgeOldProxies', async (_event, daysOld?: unknown) => {
-    try {
-      const validDays = daysOld !== undefined ? z.number().positive().parse(daysOld) : 30;
-      return await purgeOldProxies(db, validDays);
-    } catch (error) {
-      console.error('Error purging old proxies:', error);
-      return { deleted: 0, freedBytes: 0, freedMB: 0 };
-    }
+  // OPT-053: DEPRECATED - Proxies are now permanent (Immich model), no purge needed
+  // Kept for backwards compatibility but always returns empty result
+  ipcMain.handle('media:purgeOldProxies', async () => {
+    console.log('[media:purgeOldProxies] DEPRECATED: Proxies are permanent per OPT-053');
+    return { deleted: 0, freedBytes: 0, freedMB: 0 };
   });
 
-  // Clear all proxies
+  // OPT-053: DEPRECATED - Proxies are now permanent (Immich model), no clear needed
+  // Kept for backwards compatibility but always returns empty result
   ipcMain.handle('media:clearAllProxies', async () => {
-    try {
-      const archivePath = await getArchivePath();
-      return await clearAllProxies(db, archivePath);
-    } catch (error) {
-      console.error('Error clearing all proxies:', error);
-      return { deleted: 0, freedBytes: 0, freedMB: 0 };
-    }
+    console.log('[media:clearAllProxies] DEPRECATED: Proxies are permanent per OPT-053');
+    return { deleted: 0, freedBytes: 0, freedMB: 0 };
   });
 
-  // Touch location proxies (update last_accessed)
-  ipcMain.handle('media:touchLocationProxies', async (_event, locid: unknown) => {
+  // OPT-053: DEPRECATED - No last_accessed tracking (Immich model)
+  // Kept for backwards compatibility but always returns 0
+  ipcMain.handle('media:touchLocationProxies', async () => {
+    console.log('[media:touchLocationProxies] DEPRECATED: No last_accessed tracking per OPT-053');
+    return 0;
+  });
+
+  // OPT-053: New handler - check if proxy exists by filesystem (fast, no DB)
+  ipcMain.handle('media:proxyExists', async (_event, videoPath: unknown, vidsha: unknown) => {
     try {
-      const validLocid = z.string().uuid().parse(locid);
-      return await touchLocationProxies(db, validLocid);
+      const validPath = z.string().min(1).parse(videoPath);
+      const validVidsha = z.string().min(1).parse(vidsha);
+      return await proxyExistsForVideo(validPath, validVidsha);
     } catch (error) {
-      console.error('Error touching location proxies:', error);
-      return 0;
+      console.error('Error checking proxy exists:', error);
+      return false;
     }
   });
 

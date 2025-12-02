@@ -128,6 +128,7 @@
   let livePhotoMessage = $state('');
 
   // Migration 36: Video Proxy state
+  // OPT-053: Proxies are now permanent (Immich model), purge/clear no longer used
   let proxyCacheStats = $state<{
     totalCount: number;
     totalSizeBytes: number;
@@ -135,6 +136,7 @@
     oldestAccess: string | null;
     newestAccess: string | null;
   } | null>(null);
+  // OPT-053: DEPRECATED - kept for backwards compatibility but unused
   let purgingProxies = $state(false);
   let clearingProxies = $state(false);
   let proxyMessage = $state('');
@@ -810,7 +812,8 @@
   }
 
   /**
-   * Migration 36: Purge old proxies (30 days)
+   * OPT-053: DEPRECATED - Proxies are now permanent (Immich model)
+   * This function calls a no-op handler for backwards compatibility
    */
   async function purgeOldProxies() {
     if (!window.electronAPI?.media?.purgeOldProxies) {
@@ -844,7 +847,8 @@
   }
 
   /**
-   * Migration 36: Clear all video proxies
+   * OPT-053: DEPRECATED - Proxies are now permanent (Immich model)
+   * This function calls a no-op handler for backwards compatibility
    */
   async function clearAllProxies() {
     if (!window.electronAPI?.media?.clearAllProxies) {
@@ -2353,13 +2357,7 @@
             {#if maintenanceExpanded}
             <div class="py-3">
               <div class="flex flex-wrap gap-2">
-                <button
-                  onclick={() => openLocationPicker('purge')}
-                  disabled={purgingProxies || clearingProxies}
-                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
-                >
-                  Purge Cache
-                </button>
+                <!-- OPT-053: Removed "Purge Cache" button - proxies are now permanent (Immich model) -->
                 <button
                   onclick={() => openLocationPicker('addresses')}
                   disabled={normalizing || backfillingRegions}

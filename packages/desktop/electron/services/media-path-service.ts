@@ -70,6 +70,20 @@ export class MediaPathService {
     return path.join(parsed.dir, `${parsed.name}.xmp`);
   }
 
+  /**
+   * Get video proxy path for a given video
+   * OPT-053 Immich Model: Proxies stored alongside originals as hidden files
+   * Pattern: .{hash}.proxy.mp4 in the same directory as the original
+   *
+   * @param videoPath - Full path to the original video file
+   * @param hash - SHA256 hash of the video
+   * @returns Full path to the proxy file
+   */
+  getVideoProxyPath(videoPath: string, hash: string): string {
+    const videoDir = path.dirname(videoPath);
+    return path.join(videoDir, `.${hash}.proxy.mp4`);
+  }
+
   // === Directory Initialization ===
 
   /**

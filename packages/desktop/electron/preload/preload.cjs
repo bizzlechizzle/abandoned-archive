@@ -289,20 +289,25 @@ const api = {
     fixLocationImages: (locid) => invokeAuto("media:fixLocationImages")(locid),
     fixLocationVideos: (locid) => invokeAuto("media:fixLocationVideos")(locid),
 
-    // Video Proxy System (Migration 36)
-    // Generate optimized H.264 proxy for smooth playback
+    // Video Proxy System (Migration 36, updated OPT-053 Immich Model)
+    // Proxies generated at import time, stored alongside originals, permanent (no purge)
     generateProxy: (vidsha, sourcePath, metadata) =>
       invokeAuto("media:generateProxy")(vidsha, sourcePath, metadata),
     getProxyPath: (vidsha) =>
       invokeAuto("media:getProxyPath")(vidsha),
+    // OPT-053: Fast filesystem check for proxy existence (no DB lookup)
+    proxyExists: (videoPath, vidsha) =>
+      invokeAuto("media:proxyExists")(videoPath, vidsha),
     getProxyCacheStats: () =>
       invokeAuto("media:getProxyCacheStats")(),
+    // OPT-053: DEPRECATED - Proxies are permanent, these always return empty results
     purgeOldProxies: (daysOld) =>
       invokeAuto("media:purgeOldProxies")(daysOld),
     clearAllProxies: () =>
       invokeAuto("media:clearAllProxies")(),
     touchLocationProxies: (locid) =>
       invokeAuto("media:touchLocationProxies")(locid),
+    // For migration/repair of old imports
     generateProxiesForLocation: (locid) =>
       invokeAuto("media:generateProxiesForLocation")(locid),
     onProxyProgress: (callback) => {

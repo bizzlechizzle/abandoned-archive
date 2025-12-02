@@ -1668,6 +1668,25 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 44 completed: file_size_bytes added to imgs, vids, docs, maps');
     }
+
+    // Migration 45: Video Proxy Immich Model (OPT-053)
+    // - Add proxy_version column for tracking re-encode needs
+    // - proxy_path now stores path relative to video location (alongside original)
+    // - last_accessed column deprecated (no longer used - proxies are permanent)
+    // Per OPT-053: Proxies generated at import time, stored alongside originals, never purged
+    const vpHasVersion = sqlite.prepare('PRAGMA table_info(video_proxies)').all() as Array<{ name: string }>;
+    if (!vpHasVersion.some(col => col.name === 'proxy_version')) {
+      console.log('Running migration 45: Video proxy Immich model (OPT-053)');
+
+      // Add proxy_version column (default 1 for existing proxies)
+      sqlite.exec('ALTER TABLE video_proxies ADD COLUMN proxy_version INTEGER DEFAULT 1');
+
+      // Note: last_accessed column remains but is deprecated (unused)
+      // Note: idx_video_proxies_last_accessed index remains but is unused
+      // We don't drop them to avoid table rebuild - they're harmless
+
+      console.log('Migration 45 completed: proxy_version added, Immich model ready');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

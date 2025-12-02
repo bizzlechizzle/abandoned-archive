@@ -472,8 +472,8 @@ const api = {
     }> =>
       ipcRenderer.invoke('media:regenerateSingleFile', hash, filePath),
 
-    // Video Proxy System (Migration 36)
-    // Generate optimized H.264 proxy for smooth playback
+    // Video Proxy System (Migration 36, updated OPT-053 Immich Model)
+    // Proxies generated at import time, stored alongside originals, permanent (no purge)
     generateProxy: (vidsha: string, sourcePath: string, metadata: { width: number; height: number }): Promise<{
       success: boolean;
       proxyPath?: string;
@@ -487,6 +487,10 @@ const api = {
     getProxyPath: (vidsha: string): Promise<string | null> =>
       ipcRenderer.invoke('media:getProxyPath', vidsha),
 
+    // OPT-053: Fast filesystem check for proxy existence (no DB lookup)
+    proxyExists: (videoPath: string, vidsha: string): Promise<boolean> =>
+      ipcRenderer.invoke('media:proxyExists', videoPath, vidsha),
+
     // Get cache statistics
     getProxyCacheStats: (): Promise<{
       totalCount: number;
@@ -497,7 +501,7 @@ const api = {
     }> =>
       ipcRenderer.invoke('media:getProxyCacheStats'),
 
-    // Purge old proxies (30 days default)
+    // OPT-053: DEPRECATED - Proxies are permanent, always returns empty result
     purgeOldProxies: (daysOld?: number): Promise<{
       deleted: number;
       freedBytes: number;
@@ -505,7 +509,7 @@ const api = {
     }> =>
       ipcRenderer.invoke('media:purgeOldProxies', daysOld),
 
-    // Clear all proxies
+    // OPT-053: DEPRECATED - Proxies are permanent, always returns empty result
     clearAllProxies: (): Promise<{
       deleted: number;
       freedBytes: number;
@@ -513,11 +517,11 @@ const api = {
     }> =>
       ipcRenderer.invoke('media:clearAllProxies'),
 
-    // Touch location proxies (update last_accessed to prevent purge)
+    // OPT-053: DEPRECATED - No last_accessed tracking, always returns 0
     touchLocationProxies: (locid: string): Promise<number> =>
       ipcRenderer.invoke('media:touchLocationProxies', locid),
 
-    // Generate proxies for all videos in a location (background batch)
+    // For migration/repair of old imports
     generateProxiesForLocation: (locid: string): Promise<{
       generated: number;
       failed: number;

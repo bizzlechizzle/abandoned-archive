@@ -1,23 +1,20 @@
 /**
- * ProxyCacheService - Manage video proxy cache lifecycle
+ * ProxyCacheService - Manage video proxy statistics
  *
- * Per video-proxy-system-plan.md:
- * - 30-day auto-purge for locations not viewed
- * - Manual clear option in Settings
- * - Cache stats for transparency
+ * OPT-053 Immich Model:
+ * - Proxies are now permanent (no purge)
+ * - Proxies stored alongside originals (not in cache directory)
+ * - Most functions deprecated but kept for backwards compatibility
  */
-import * as fs from 'fs/promises';
-import * as path from 'path';
 import type { Kysely } from 'kysely';
 import type { Database } from '../main/database.types';
-import { getProxyCacheDir } from './video-proxy-service';
 
 export interface CacheStats {
   totalCount: number;
   totalSizeBytes: number;
   totalSizeMB: number;
-  oldestAccess: string | null;
-  newestAccess: string | null;
+  oldestAccess: string | null;  // Deprecated but kept for type compat
+  newestAccess: string | null;  // Deprecated but kept for type compat
 }
 
 export interface PurgeResult {
@@ -27,7 +24,8 @@ export interface PurgeResult {
 }
 
 /**
- * Get cache statistics.
+ * Get proxy statistics from database.
+ * Still useful for displaying proxy count and total size.
  */
 export async function getCacheStats(db: Kysely<Database>): Promise<CacheStats> {
   const result = await db
@@ -35,8 +33,8 @@ export async function getCacheStats(db: Kysely<Database>): Promise<CacheStats> {
     .select(({ fn }) => [
       fn.count<number>('vidsha').as('count'),
       fn.sum<number>('file_size_bytes').as('size'),
-      fn.min<string>('last_accessed').as('oldest'),
-      fn.max<string>('last_accessed').as('newest')
+      fn.min<string>('generated_at').as('oldest'),
+      fn.max<string>('generated_at').as('newest')
     ])
     .executeTakeFirst();
 
@@ -47,152 +45,15 @@ export async function getCacheStats(db: Kysely<Database>): Promise<CacheStats> {
     totalCount,
     totalSizeBytes,
     totalSizeMB: Math.round(totalSizeBytes / 1024 / 1024 * 10) / 10,
+    // OPT-053: Using generated_at instead of deprecated last_accessed
     oldestAccess: result?.oldest || null,
     newestAccess: result?.newest || null
   };
 }
 
 /**
- * Purge proxies not accessed in the last N days.
- */
-export async function purgeOldProxies(
-  db: Kysely<Database>,
-  daysOld: number = 30
-): Promise<PurgeResult> {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - daysOld);
-  const cutoffISO = cutoff.toISOString();
-
-  console.log(`[ProxyCache] Purging proxies not accessed since ${cutoffISO}...`);
-
-  // Find stale proxies
-  const stale = await db
-    .selectFrom('video_proxies')
-    .select(['vidsha', 'proxy_path', 'file_size_bytes'])
-    .where('last_accessed', '<', cutoffISO)
-    .execute();
-
-  let deleted = 0;
-  let freedBytes = 0;
-
-  for (const proxy of stale) {
-    // Delete file
-    try {
-      await fs.unlink(proxy.proxy_path);
-      freedBytes += proxy.file_size_bytes || 0;
-      console.log(`[ProxyCache] Deleted proxy file: ${proxy.proxy_path}`);
-    } catch {
-      // File may already be gone
-    }
-
-    // Delete record
-    await db
-      .deleteFrom('video_proxies')
-      .where('vidsha', '=', proxy.vidsha)
-      .execute();
-
-    deleted++;
-  }
-
-  console.log(`[ProxyCache] Purged ${deleted} proxies, freed ${(freedBytes / 1024 / 1024).toFixed(1)}MB`);
-
-  return {
-    deleted,
-    freedBytes,
-    freedMB: Math.round(freedBytes / 1024 / 1024 * 10) / 10
-  };
-}
-
-/**
- * Clear all proxies (manual purge from Settings).
- */
-export async function clearAllProxies(
-  db: Kysely<Database>,
-  archivePath: string
-): Promise<PurgeResult> {
-  console.log(`[ProxyCache] Clearing all proxies...`);
-
-  const all = await db
-    .selectFrom('video_proxies')
-    .select(['vidsha', 'proxy_path', 'file_size_bytes'])
-    .execute();
-
-  let freedBytes = 0;
-
-  // Delete all proxy files
-  for (const proxy of all) {
-    try {
-      await fs.unlink(proxy.proxy_path);
-      freedBytes += proxy.file_size_bytes || 0;
-    } catch {
-      // Ignore errors for missing files
-    }
-  }
-
-  // Delete all records
-  await db.deleteFrom('video_proxies').execute();
-
-  // Also clean up any orphaned files in the cache directory
-  try {
-    const cacheDir = await getProxyCacheDir(archivePath);
-    const files = await fs.readdir(cacheDir);
-    for (const file of files) {
-      if (file.endsWith('_proxy.mp4')) {
-        try {
-          const filePath = path.join(cacheDir, file);
-          const stats = await fs.stat(filePath);
-          await fs.unlink(filePath);
-          freedBytes += stats.size;
-        } catch {
-          // Ignore
-        }
-      }
-    }
-  } catch {
-    // Cache directory may not exist
-  }
-
-  console.log(`[ProxyCache] Cleared ${all.length} proxies, freed ${(freedBytes / 1024 / 1024).toFixed(1)}MB`);
-
-  return {
-    deleted: all.length,
-    freedBytes,
-    freedMB: Math.round(freedBytes / 1024 / 1024 * 10) / 10
-  };
-}
-
-/**
- * Update last_accessed for all videos in a location.
- * Called when user views a location to prevent proxies from being purged.
- */
-export async function touchLocationProxies(
-  db: Kysely<Database>,
-  locid: string
-): Promise<number> {
-  const now = new Date().toISOString();
-
-  // Get all video SHAs for this location
-  const videos = await db
-    .selectFrom('vids')
-    .select('vidsha')
-    .where('locid', '=', locid)
-    .execute();
-
-  if (videos.length === 0) return 0;
-
-  const shas = videos.map(v => v.vidsha);
-
-  const result = await db
-    .updateTable('video_proxies')
-    .set({ last_accessed: now })
-    .where('vidsha', 'in', shas)
-    .execute();
-
-  return Number(result[0]?.numUpdatedRows || 0);
-}
-
-/**
  * Get videos in a location that don't have proxies yet.
+ * Still useful for migration/repair of old imports.
  */
 export async function getVideosNeedingProxies(
   db: Kysely<Database>,
@@ -213,4 +74,33 @@ export async function getVideosNeedingProxies(
     .execute();
 
   return videos;
+}
+
+// ============================================================
+// DEPRECATED FUNCTIONS - OPT-053
+// Kept for backwards compatibility but now no-ops
+// ============================================================
+
+/**
+ * @deprecated OPT-053: Proxies are permanent, purge no longer needed
+ */
+export async function purgeOldProxies(): Promise<PurgeResult> {
+  console.log('[ProxyCache] purgeOldProxies is DEPRECATED per OPT-053');
+  return { deleted: 0, freedBytes: 0, freedMB: 0 };
+}
+
+/**
+ * @deprecated OPT-053: Proxies are permanent, clear no longer needed
+ */
+export async function clearAllProxies(): Promise<PurgeResult> {
+  console.log('[ProxyCache] clearAllProxies is DEPRECATED per OPT-053');
+  return { deleted: 0, freedBytes: 0, freedMB: 0 };
+}
+
+/**
+ * @deprecated OPT-053: No last_accessed tracking, touch no longer needed
+ */
+export async function touchLocationProxies(): Promise<number> {
+  console.log('[ProxyCache] touchLocationProxies is DEPRECATED per OPT-053');
+  return 0;
 }

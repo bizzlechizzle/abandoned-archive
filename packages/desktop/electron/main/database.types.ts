@@ -479,18 +479,19 @@ export interface LocationViewsTable {
   viewed_at: string;  // ISO timestamp
 }
 
-// Video Proxies table (Migration 36) - Optimized H.264 preview videos
-// Per video-proxy-system-plan.md: Enables instant playback, smooth scrubbing, and correct rotation
+// Video Proxies table (Migration 36, updated Migration 45 OPT-053)
+// Per OPT-053 Immich Model: Proxies generated at import, stored alongside originals, never purged
 export interface VideoProxiesTable {
   vidsha: string;           // Primary key, matches vids table
-  proxy_path: string;       // Absolute path to proxy file
+  proxy_path: string;       // Path to proxy file (alongside original: .{hash}.proxy.mp4)
   generated_at: string;     // ISO timestamp when proxy was created
-  last_accessed: string;    // ISO timestamp for 30-day purge
+  last_accessed: string;    // DEPRECATED (OPT-053): No longer used, proxies are permanent
   file_size_bytes: number | null;
   original_width: number | null;
   original_height: number | null;
   proxy_width: number | null;
   proxy_height: number | null;
+  proxy_version: number | null;  // Migration 45: Track proxy encoding version for re-encode
 }
 
 // Migration 37: Reference Maps - User-imported map files
