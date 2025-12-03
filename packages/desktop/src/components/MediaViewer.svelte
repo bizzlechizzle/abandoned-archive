@@ -198,9 +198,9 @@
     try {
       await window.electronAPI?.media?.setHidden({
         hash: currentMedia.hash,
-        mediaType: currentMedia.type,
+        type: currentMedia.type,
         hidden: newHiddenState,
-        reason: newHiddenState ? 'user' : null,
+        reason: newHiddenState ? 'user' : undefined,
       });
 
       // Update local state in mediaList

@@ -423,6 +423,13 @@ export interface ElectronAPI {
     moveToSubLocation: (input: { hash: string; type: 'image' | 'video' | 'document'; subid: string | null }) => Promise<{
       success: boolean;
     }>;
+    // Hide/Unhide media (Migration 23)
+    setHidden: (input: {
+      hash: string;
+      type: 'image' | 'video' | 'document';
+      hidden: boolean;
+      reason?: string;
+    }) => Promise<{ success: boolean }>;
   };
 
   notes: {
