@@ -1000,9 +1000,10 @@
         {:else if isHostLocation && sublocations.length > 0}
           <!-- Buildings tagline (host location view) - list building names -->
           <!-- OPT-066: Wrap to second row if wider than hero title; add top margin when wrapped for balance -->
+          <!-- OPT-069: Increase top margin when wrapped (2 rows) for better visual balance -->
           <div
             bind:this={sublocTaglineEl}
-            class="host-tagline flex flex-wrap justify-center gap-x-4 gap-y-1 w-[88%] mx-auto uppercase text-center {sublocTaglineWraps ? 'mt-2' : 'mt-0'}"
+            class="host-tagline flex flex-wrap justify-center gap-x-4 gap-y-1 w-[88%] mx-auto uppercase text-center {sublocTaglineWraps ? 'mt-10' : 'mt-0'}"
           >
             {#each sublocations as subloc}
               <button
