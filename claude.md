@@ -2,17 +2,18 @@
 
 Document every abandoned place with verifiable, local-first evidence.
 
-## Three-Doc Stack
+## Four-Doc Stack
 
-This project uses three core instruction files. Read them in order before any task:
+This project uses four core instruction files. Read them in order before any task:
 
 | File | Purpose | Modify? |
 |------|---------|---------|
 | **CLAUDE.md** (this file) | Project rules, architecture, constraints, reference index | ❌ Never |
 | **@techguide.md** | Implementation details, build setup, environment config, deep troubleshooting | ❌ Never |
 | **@lilbits.md** | Script registry — every utility script with purpose, usage, line count | ❌ Never |
+| **@DESIGN.md** | Design language, visual patterns, component specs, anti-patterns | ❌ Never |
 
-These three files are the complete instruction set. All other docs are reference material consulted on-demand.
+These four files are the complete instruction set. All other docs are reference material consulted on-demand.
 
 **If any of these files are missing, empty, or unreadable: STOP and report to human. Do not proceed.**
 
@@ -29,8 +30,9 @@ These three files are the complete instruction set. All other docs are reference
 1. Read this file (CLAUDE.md) completely
 2. Read @techguide.md for implementation details
 3. Read @lilbits.md for script registry
-4. Read the task request
-5. **Then** touch code — not before
+4. Read @DESIGN.md for visual language (if task involves UI)
+5. Read the task request
+6. **Then** touch code — not before
 
 ## Commands
 
@@ -68,12 +70,13 @@ pnpm reinstall        # Clean and reinstall (fixes native module issues)
 - Add third-party SDKs or services without logging licenses and confirming they function offline
 - Mention AI assistants in UI, user docs, exports, or metadata
 - Leave TODOs or unexplained generated code in production branches
-- **Modify or remove core instruction files** — CLAUDE.md, techguide.md, and lilbits.md are protected; flag issues for human review instead of auto-fixing
+- **Modify or remove core instruction files** — CLAUDE.md, techguide.md, lilbits.md, and DESIGN.md are protected; flag issues for human review instead of auto-fixing
 - **Assume when uncertain** — If a task is ambiguous or conflicts with these rules, stop and ask
+- **Violate design language** — No gradients on images, no decorative elements, no pure black, no animated loaders. See DESIGN.md anti-patterns.
 
 ## Stop and Ask When
 
-- Task requires modifying CLAUDE.md, techguide.md, or lilbits.md
+- Task requires modifying CLAUDE.md, techguide.md, lilbits.md, or DESIGN.md
 - Task conflicts with a rule in this file
 - Referenced file or path doesn't exist
 - Task scope is unclear or seems to exceed "one feature"
@@ -126,6 +129,8 @@ Prefer graceful degradation (disabled buttons + tooltips) over throwing when res
 | Change Type | Required Steps |
 |-------------|----------------|
 | UI copy/layout | Update `docs/ui-spec.md` + summary in `docs/decisions/` |
+| Visual/design change | Verify against `DESIGN.md`; document deviations in `docs/decisions/` |
+| New component | Follow patterns in `docs/DESIGN_SYSTEM.md`; use design tokens |
 | Schema change | New migration file only; never edit existing migrations |
 | New dependency | Log license in commit message; verify offline functionality |
 | Deviation from spec | Document in `docs/decisions/` with decision ID; reference in commit |
@@ -168,6 +173,10 @@ Read these when the task touches the relevant area:
 - @docs/workflows/mapping.md — Map interactions, clustering, filter logic
 - @docs/workflows/addressing.md — Address lookup, normalization, manual overrides
 - @docs/workflows/export.md — Export packaging and verification
+
+**Design:**
+- @docs/DESIGN_SYSTEM.md — Full design specifications, tokens, component patterns
+- @DESIGN.md — Quick reference (colors, typography, anti-patterns)
 
 ## Authoritative Sources
 
