@@ -204,11 +204,21 @@
     return prefix + baseName;
   });
 
+  // OPT-070: Host display name for consistent title sizing across host/sub-location views
+  // Always based on host location name, never sub-location name
+  const hostDisplayName = $derived.by(() => {
+    if (!location) return '';
+    const baseName = location.locnamShort || generateHeroName(location.locnam, location.type, location.stype);
+    const prefix = location.locnamUseThe ? 'The ' : '';
+    return prefix + baseName;
+  });
+
   // Function to calculate and set title size
   // RULES:
   // 1. Never cut off titles, no exceptions
   // 2. If only 2 words, always 1 line (never wrap)
   // 3. If 3+ words, max 2 lines allowed
+  // OPT-070: Use hostDisplayName for sizing (consistent across host/sub-location views)
   function fitTitle() {
     const el = heroTitleEl;
     const container = heroContainerEl;
@@ -217,8 +227,9 @@
     const maxSize = 128; // Max size cap
     const minSize = 24;  // Min size ensures readability for long titles
 
-    // Count words in the display name
-    const wordCount = heroDisplayName.split(/\s+/).filter(w => w.length > 0).length;
+    // OPT-070: Use host name for size calculation (not displayed name)
+    // This ensures consistent title size when navigating between host and sub-locations
+    const wordCount = hostDisplayName.split(/\s+/).filter(w => w.length > 0).length;
     const isTwoWordTitle = wordCount <= 2;
 
     // For 2-word titles: force single line (no wrap)
@@ -230,6 +241,10 @@
     }
 
     const MAX_LINES = isTwoWordTitle ? 1 : 2;
+
+    // OPT-070: Temporarily swap in host name for measurement, then restore display name
+    const originalText = el.textContent;
+    el.textContent = hostDisplayName;
 
     // Binary search for optimal size (faster and more accurate)
     let low = minSize;
@@ -260,13 +275,16 @@
       }
     }
 
+    // OPT-070: Restore the display name (host or sub-location) after measuring
+    el.textContent = originalText;
     el.style.fontSize = `${bestFit}px`;
     heroTitleFontSize = bestFit;
   }
 
   // Effect: Auto-size title (2-word = 1 line, 3+ words = max 2 lines)
+  // OPT-070: Track hostDisplayName (not heroDisplayName) so size only recalculates when host changes
   $effect(() => {
-    const name = heroDisplayName; // Track dependency
+    const name = hostDisplayName; // Track dependency on HOST name for consistent sizing
     const el = heroTitleEl;
     const container = heroContainerEl;
     if (!el || !name) return;
@@ -980,7 +998,8 @@
     />
 
     <!-- Title overlaps hero gradient: centered, premium text fitting - up to 2 lines -->
-    <div class="max-w-6xl mx-auto px-8 pb-4 relative z-20 -mt-10">
+    <!-- OPT-069: Add bottom padding when sub-location tagline wraps to 2 rows for visual balance -->
+    <div class="max-w-6xl mx-auto px-8 relative z-20 -mt-10 {sublocTaglineWraps ? 'pb-10' : 'pb-4'}">
       <div bind:this={heroContainerEl} class="w-[88%] mx-auto text-center">
         <h1
           bind:this={heroTitleEl}
@@ -1003,7 +1022,7 @@
           <!-- OPT-069: Increase top margin when wrapped (2 rows) for better visual balance -->
           <div
             bind:this={sublocTaglineEl}
-            class="host-tagline flex flex-wrap justify-center gap-x-4 gap-y-1 w-[88%] mx-auto uppercase text-center {sublocTaglineWraps ? 'mt-10' : 'mt-0'}"
+            class="host-tagline flex flex-wrap justify-center gap-x-4 gap-y-1 w-[88%] mx-auto uppercase text-center mt-0"
           >
             {#each sublocations as subloc}
               <button
