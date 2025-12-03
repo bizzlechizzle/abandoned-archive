@@ -257,7 +257,7 @@
   />
 
   <!-- Title overlaps hero gradient -->
-  <div class="max-w-6xl mx-auto px-8 pb-4 relative z-20 -mt-10">
+  <div class="max-w-6xl mx-auto px-8 pb-2 relative z-20 -mt-10">
     <div bind:this={heroContainerEl} class="w-[88%] mx-auto text-center">
       <h1
         bind:this={heroTitleEl}
@@ -267,9 +267,35 @@
         Dashboard
       </h1>
     </div>
+
+    <!-- Stats Row - directly under title -->
+    {#if !loading}
+      <div class="flex justify-center gap-8 mt-2">
+        <div class="text-center">
+          <div class="text-2xl font-bold text-accent">{formatCount(totalLocations)}</div>
+          <div class="text-xs text-gray-500">locations</div>
+        </div>
+        <div class="text-center">
+          <div class="text-2xl font-bold text-accent">{formatCount(totalImages)}</div>
+          <div class="text-xs text-gray-500">images</div>
+        </div>
+        <div class="text-center">
+          <div class="text-2xl font-bold text-accent">{formatCount(totalVideos)}</div>
+          <div class="text-xs text-gray-500">videos</div>
+        </div>
+        <div class="text-center">
+          <div class="text-2xl font-bold text-accent">{formatCount(totalDocuments)}</div>
+          <div class="text-xs text-gray-500">documents</div>
+        </div>
+        <div class="text-center">
+          <div class="text-2xl font-bold text-accent">{formatCount(totalBookmarks)}</div>
+          <div class="text-xs text-gray-500">bookmarks</div>
+        </div>
+      </div>
+    {/if}
   </div>
 
-  <div class="max-w-6xl mx-auto px-8 pt-6 pb-8">
+  <div class="max-w-6xl mx-auto px-8 pt-4 pb-8">
   {#if loading}
     <!-- OPT-040: Premium skeleton loaders instead of "Loading..." text -->
     <div class="space-y-6">
@@ -360,30 +386,6 @@
         </div>
       </div>
     {/if}
-
-    <!-- Stats Row -->
-    <div class="flex justify-center gap-8 mb-8">
-      <div class="text-center">
-        <div class="text-2xl font-bold text-accent">{formatCount(totalLocations)}</div>
-        <div class="text-xs text-gray-500">locations</div>
-      </div>
-      <div class="text-center">
-        <div class="text-2xl font-bold text-accent">{formatCount(totalImages)}</div>
-        <div class="text-xs text-gray-500">images</div>
-      </div>
-      <div class="text-center">
-        <div class="text-2xl font-bold text-accent">{formatCount(totalVideos)}</div>
-        <div class="text-xs text-gray-500">videos</div>
-      </div>
-      <div class="text-center">
-        <div class="text-2xl font-bold text-accent">{formatCount(totalDocuments)}</div>
-        <div class="text-xs text-gray-500">documents</div>
-      </div>
-      <div class="text-center">
-        <div class="text-2xl font-bold text-accent">{formatCount(totalBookmarks)}</div>
-        <div class="text-xs text-gray-500">bookmarks</div>
-      </div>
-    </div>
 
     <!-- Projects (Pinned Locations) -->
     <div class="mb-6">
