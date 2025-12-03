@@ -118,6 +118,8 @@ export const LocationInputSchema = z.object({
   created_by: z.string().optional(),
   modified_by_id: z.string().uuid().optional(),
   modified_by: z.string().optional(),
+  // OPT-062: Host-only location (campus/complex expecting sub-locations)
+  isHostOnly: z.boolean().default(false),
 });
 
 export type LocationInput = z.infer<typeof LocationInputSchema>;

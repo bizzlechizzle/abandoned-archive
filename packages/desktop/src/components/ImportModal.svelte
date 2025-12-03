@@ -421,6 +421,8 @@
       stype: subType || undefined,
       access: access || undefined,
       auth_imp: author.trim() || undefined,
+      // OPT-062: Pass host-only flag to create a location expecting sub-locations
+      isHostOnly: isHostLocation,
       address: {
         state: selectedState.toUpperCase(),
       },

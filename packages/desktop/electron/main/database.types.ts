@@ -136,6 +136,7 @@ export interface LocsTable {
   // Relationships
   sublocs: string | null;
   sub12: string | null;
+  is_host_only: number;  // 0/1 - Location is a host/campus expecting sub-locations (OPT-062)
 
   // Metadata
   locadd: string | null;

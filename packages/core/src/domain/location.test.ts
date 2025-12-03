@@ -34,6 +34,8 @@ const baseLocation = {
   // Per-user view tracking
   viewCount: 0,
   lastViewedAt: undefined,
+  // OPT-062: Host-only location flag
+  isHostOnly: false,
 };
 
 describe('LocationEntity', () => {

@@ -163,6 +163,7 @@ export class SQLiteLocationRepository implements LocationRepository {
         locnam_use_the: input.locnamUseThe ? 1 : 0,
         sublocs: null,
         sub12: null,
+        is_host_only: input.isHostOnly ? 1 : 0,
         locadd,
         locup: null,
         auth_imp: input.auth_imp || null,
@@ -449,6 +450,8 @@ export class SQLiteLocationRepository implements LocationRepository {
     // Migration 22: Hero focal point fields
     if (input.hero_focal_x !== undefined) updates.hero_focal_x = input.hero_focal_x;
     if (input.hero_focal_y !== undefined) updates.hero_focal_y = input.hero_focal_y;
+    // OPT-062: Host-only location flag
+    if (input.isHostOnly !== undefined) updates.is_host_only = input.isHostOnly ? 1 : 0;
 
     // Kanye9: Handle flat GPS field updates (for cascade geocoding and other direct updates)
     const inputAny = input as any;
@@ -869,6 +872,8 @@ export class SQLiteLocationRepository implements LocationRepository {
       // Migration 33: View tracking for Nerd Stats
       viewCount: row.view_count ?? 0,
       lastViewedAt: row.last_viewed_at ?? undefined,
+      // OPT-062: Host-only location flag
+      isHostOnly: row.is_host_only === 1,
     };
   }
 

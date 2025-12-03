@@ -1729,6 +1729,23 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 47 completed: Metadata sidecar files hidden');
     }
+
+    // Migration 48: Add is_host_only column to locs table (OPT-062)
+    // Marks locations as "host-only" - campuses/complexes expecting sub-locations
+    // When checked, user intends to add sub-locations later; location created without media
+    const isHostOnlyExists = sqlite.prepare(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('locs') WHERE name='is_host_only'"
+    ).get() as { cnt: number };
+
+    if (isHostOnlyExists.cnt === 0) {
+      console.log('Running migration 48: Adding is_host_only column to locs');
+
+      sqlite.exec(`
+        ALTER TABLE locs ADD COLUMN is_host_only INTEGER DEFAULT 0;
+      `);
+
+      console.log('Migration 48 completed: is_host_only column added');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;
