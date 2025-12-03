@@ -108,6 +108,16 @@ export class FileImportService {
     '.acr',                            // Adobe Camera Raw settings
   ];
 
+  // OPT-060: Metadata sidecar extensions - import but auto-hide
+  // These files are archived for completeness but hidden from UI by default
+  // They contain technical metadata about their parent media files
+  // Hidden BEFORE commit to prevent orphan visible metadata files
+  private readonly METADATA_EXTENSIONS = [
+    '.srt',                            // DJI drone telemetry subtitles
+    '.lrf',                            // DJI low-resolution reference frames
+    '.thm',                            // Thumbnail/preview files
+  ];
+
   // Comprehensive format support based on ExifTool capabilities
   private readonly IMAGE_EXTENSIONS = [
     // Standard formats
@@ -541,30 +551,62 @@ export class FileImportService {
 
   /**
    * OPT-055: Process SRT telemetry files and link to matching videos
-   * - Finds all .srt documents for the location
-   * - Checks if each is DJI telemetry format
+   * OPT-060: Also ensures all metadata files (.srt, .lrf) are hidden
+   * - Finds all .srt/.lrf documents for the location
+   * - Ensures they are hidden (safety net for pre-existing data)
+   * - Checks if SRTs are DJI telemetry format
    * - Parses telemetry and stores summary on matching video record
+   * - Hides files REGARDLESS of telemetry parse success (they're still metadata)
    */
   private async processSrtTelemetryFiles(locid: string): Promise<void> {
     try {
-      // Get all documents for this location (SRT files are imported as documents)
+      // Get all documents for this location (metadata files are imported as documents)
       const docs = await this.db
         .selectFrom('docs')
-        .select(['docsha', 'docnam', 'docnamo', 'docloc'])
+        .select(['docsha', 'docnam', 'docnamo', 'docloc', 'hidden'])
         .where('locid', '=', locid)
         .execute();
 
-      // Filter to just .srt files
-      const srtDocs = docs.filter(doc =>
+      // Filter to metadata files (.srt, .lrf, .thm)
+      const metadataDocs = docs.filter(doc => {
+        const ext = path.extname(doc.docnamo).toLowerCase();
+        return this.METADATA_EXTENSIONS.includes(ext);
+      });
+
+      if (metadataDocs.length === 0) {
+        console.log('[FileImport] No metadata sidecar files found for location');
+        return;
+      }
+
+      console.log(`[FileImport] Found ${metadataDocs.length} metadata sidecar files to process`);
+
+      // OPT-060: First, ensure ALL metadata files are hidden (safety net)
+      // This catches any files that weren't hidden during import (pre-existing data)
+      let hiddenCount = 0;
+      for (const doc of metadataDocs) {
+        if (!doc.hidden) {
+          await this.db
+            .updateTable('docs')
+            .set({ hidden: 1, hidden_reason: 'metadata_sidecar' })
+            .where('docsha', '=', doc.docsha)
+            .execute();
+          hiddenCount++;
+          console.log(`[FileImport] OPT-060: Hidden metadata file (safety net): ${doc.docnamo}`);
+        }
+      }
+      if (hiddenCount > 0) {
+        console.log(`[FileImport] OPT-060: Hidden ${hiddenCount} previously visible metadata files`);
+      }
+
+      // Filter to just .srt files for telemetry processing
+      const srtDocs = metadataDocs.filter(doc =>
         doc.docnamo.toLowerCase().endsWith('.srt')
       );
 
       if (srtDocs.length === 0) {
-        console.log('[FileImport] No SRT files found for location');
+        console.log('[FileImport] No SRT files to check for telemetry');
         return;
       }
-
-      console.log(`[FileImport] Found ${srtDocs.length} SRT files to check for telemetry`);
 
       // Get all videos for this location (for matching by filename)
       const videos = await this.db
@@ -588,6 +630,7 @@ export class FileImportService {
           // Check if it's DJI telemetry format
           if (!isDjiTelemetry(content)) {
             console.log(`[FileImport] SRT is standard subtitle format (not telemetry): ${srtDoc.docnamo}`);
+            // File is still hidden (done above), just not telemetry
             continue;
           }
 
@@ -601,6 +644,7 @@ export class FileImportService {
 
           if (!matchingVidsha) {
             console.log(`[FileImport] No matching video found for SRT: ${srtDoc.docnamo}`);
+            // File is still hidden (done above), just no matching video
             continue;
           }
 
@@ -623,7 +667,8 @@ export class FileImportService {
             console.log(`[FileImport]   Altitude: ${telemetry.altitude_range.min_m}m - ${telemetry.altitude_range.max_m}m`);
           }
         } catch (srtError) {
-          console.warn(`[FileImport] Failed to process SRT file ${srtDoc.docnamo}:`, srtError);
+          // OPT-060: Even if telemetry parsing fails, file stays hidden (done above)
+          console.warn(`[FileImport] Failed to process SRT file ${srtDoc.docnamo} (file remains hidden):`, srtError);
           // Continue with other SRT files
         }
       }
@@ -917,7 +962,9 @@ export class FileImportService {
       previewPath,
       rawPreviewPath,  // For RAW files
       // OPT-047: File size for archive size tracking
-      fileSizeBytes
+      fileSizeBytes,
+      // OPT-060: Extension for metadata file auto-hide detection
+      ext
     );
     console.log('[FileImport] Step 7 complete in', Date.now() - insertStart, 'ms');
 
@@ -1055,6 +1102,15 @@ export class FileImportService {
    */
   private shouldSkipFile(ext: string): boolean {
     return this.SKIP_EXTENSIONS.includes(ext);
+  }
+
+  /**
+   * OPT-060: Check if file is a metadata sidecar that should be auto-hidden
+   * These files are imported for archive completeness but hidden from UI
+   * Examples: .srt (DJI telemetry), .lrf (DJI low-res reference), .thm (thumbnails)
+   */
+  private isMetadataFile(ext: string): boolean {
+    return this.METADATA_EXTENSIONS.includes(ext);
   }
 
   /**
@@ -1210,7 +1266,7 @@ export class FileImportService {
     ext: string,
     type: 'image' | 'video' | 'map' | 'document',
     location: any // Pre-fetched location from Step 0
-  ): Promise<string> {
+  ): Promise<{ path: string; fileSizeBytes: number }> {
     console.log('[organizeFile] Starting for:', file.originalName);
     console.log('[organizeFile] Using pre-fetched location:', location.locnam);
 
@@ -1296,6 +1352,7 @@ export class FileImportService {
    * Insert media record in database within transaction
    * Kanye3: Multi-tier thumbnails (400px, 800px, 1920px)
    * OPT-047: file_size_bytes for archive size tracking
+   * OPT-060: Auto-hide metadata sidecars BEFORE commit (transaction-safe)
    */
   private async insertMediaRecordInTransaction(
     trx: any,
@@ -1309,7 +1366,8 @@ export class FileImportService {
     thumbPathLg: string | null = null,
     previewPath: string | null = null,
     rawPreviewPath: string | null = null,
-    fileSizeBytes: number | null = null
+    fileSizeBytes: number | null = null,
+    fileExtension: string = ''  // OPT-060: Extension for metadata file detection
   ): Promise<void> {
     const timestamp = new Date().toISOString();
 
@@ -1435,6 +1493,13 @@ export class FileImportService {
         .execute();
     } else if (type === 'document') {
       // FIX 3.1: Store ExifTool metadata for documents
+      // OPT-060: Auto-hide metadata sidecars BEFORE commit (transaction-safe)
+      // This ensures metadata files (.srt, .lrf, .thm) are never visible as documents
+      const isMetadata = this.isMetadataFile(fileExtension);
+      if (isMetadata) {
+        console.log(`[FileImport] OPT-060: Auto-hiding metadata file: ${originalName} (${fileExtension})`);
+      }
+
       await trx
         .insertInto('docs')
         .values({
@@ -1451,6 +1516,10 @@ export class FileImportService {
           meta_page_count: null, // ExifTool doesn't provide this consistently
           meta_author: null,     // Could extract from exif if available
           meta_title: null,      // Could extract from exif if available
+          // OPT-060: Auto-hide metadata sidecars BEFORE commit
+          // Hidden in INSERT, not as a separate UPDATE, ensuring atomic transaction
+          hidden: isMetadata ? 1 : 0,
+          hidden_reason: isMetadata ? 'metadata_sidecar' : null,
           // Migration 25: Activity tracking
           imported_by_id: file.imported_by_id || null,
           imported_by: file.imported_by || null,

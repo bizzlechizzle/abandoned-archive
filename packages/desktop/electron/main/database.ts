@@ -1700,6 +1700,35 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 46 completed: srt_telemetry column added');
     }
+
+    // Migration 47: Auto-hide existing metadata sidecar files (OPT-060)
+    // Fixes existing .srt, .lrf, .thm files that were imported before OPT-060
+    // These are metadata sidecars that should be hidden from the documents list
+    // New imports will be auto-hidden during INSERT (transaction-safe)
+    const unhiddenMetadataCount = sqlite.prepare(`
+      SELECT COUNT(*) as cnt FROM docs
+      WHERE (
+        lower(docnamo) LIKE '%.srt' OR
+        lower(docnamo) LIKE '%.lrf' OR
+        lower(docnamo) LIKE '%.thm'
+      ) AND hidden = 0
+    `).get() as { cnt: number };
+
+    if (unhiddenMetadataCount.cnt > 0) {
+      console.log(`Running migration 47: Hiding ${unhiddenMetadataCount.cnt} existing metadata sidecar files (OPT-060)`);
+
+      sqlite.exec(`
+        UPDATE docs
+        SET hidden = 1, hidden_reason = 'metadata_sidecar'
+        WHERE (
+          lower(docnamo) LIKE '%.srt' OR
+          lower(docnamo) LIKE '%.lrf' OR
+          lower(docnamo) LIKE '%.thm'
+        ) AND hidden = 0
+      `);
+
+      console.log('Migration 47 completed: Metadata sidecar files hidden');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;
