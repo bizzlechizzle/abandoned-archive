@@ -1,20 +1,14 @@
 /**
- * Copier - Atomic file copy with hardlink/symlink/reflink support (Step 3)
+ * Copier - Atomic file copy with hardlink/reflink support (Step 3)
  *
  * Per Import Spec v2.0:
  * - Strategy detection (same device check)
- * - Hardlink operation (fs.link) - preferred for local filesystems
- * - Symlink operation (fs.symlink) - fallback for SMB/network shares
+ * - Hardlink operation (fs.link)
  * - Reflink operation (APFS copy-on-write)
  * - Copy fallback (fs.copyFile)
  * - Atomic temp-file-then-rename
  * - Archive path builder
  * - Progress reporting (40-80%)
- *
- * Strategy priority: hardlink > symlink > copy
- * - Hardlink: Same inode, no extra space, works on local filesystems
- * - Symlink: Points to original, no extra space, works on SMB/network
- * - Copy: Full duplicate, uses 2x space, universal fallback
  *
  * @module services/import/copier
  */
@@ -26,12 +20,8 @@ import type { HashedFile } from './hasher';
 
 /**
  * Copy strategy types
- * - hardlink: Same inode reference (local filesystems only)
- * - symlink: Symbolic link to original (works on SMB/network)
- * - reflink: Copy-on-write clone (APFS/Btrfs)
- * - copy: Full file copy (universal fallback)
  */
-export type CopyStrategy = 'hardlink' | 'symlink' | 'reflink' | 'copy';
+export type CopyStrategy = 'hardlink' | 'reflink' | 'copy';
 
 /**
  * Copy result for a single file
@@ -178,9 +168,6 @@ export class Copier {
 
   /**
    * Detect the best copy strategy for the given files
-   *
-   * Returns 'hardlink' for same-device scenarios (will fallback to symlink→copy if needed)
-   * Returns 'copy' for different-device scenarios
    */
   async detectStrategy(files: HashedFile[], location: LocationInfo): Promise<CopyStrategy> {
     if (files.length === 0) {
@@ -203,29 +190,19 @@ export class Copier {
       ]);
 
       if (sourceStat.dev === destStat.dev) {
-        // Same device - try hardlink first (will cascade to symlink→copy if needed)
-        console.log(`[Copier] Strategy: hardlink (same device: ${sourceStat.dev})`);
-        console.log(`[Copier]   Source: ${sourcePath}`);
-        console.log(`[Copier]   Dest:   ${destPath}`);
+        // Same device - try hardlink first
         return 'hardlink';
-      } else {
-        console.log(`[Copier] Strategy: copy (different devices: source=${sourceStat.dev}, dest=${destStat.dev})`);
-        return 'copy';
       }
-    } catch (error) {
+    } catch {
       // If stat fails, fall back to copy
-      console.warn(`[Copier] Strategy detection failed, using copy:`, error);
-      return 'copy';
     }
+
+    // Different devices - use regular copy
+    return 'copy';
   }
 
   /**
-   * Copy a single file using the specified strategy with fallback chain
-   *
-   * Fallback order: hardlink → symlink → copy
-   * - hardlink: Fastest, no space used, but fails on network shares
-   * - symlink: No space used, works on SMB/network, but breaks if original moves
-   * - copy: Always works, but uses 2x disk space
+   * Copy a single file using the specified strategy
    */
   private async copyFile(
     file: HashedFile,
@@ -248,35 +225,24 @@ export class Copier {
       // Ensure destination directory exists
       await fs.mkdir(destDir, { recursive: true });
 
-      // Use temp file for atomic operation (except for symlinks which don't need atomicity)
+      // Use temp file for atomic operation
       const tempPath = `${destPath}.${randomUUID().slice(0, 8)}.tmp`;
 
       try {
         // Try the selected strategy
         if (strategy === 'hardlink') {
           await this.tryHardlink(file.originalPath, tempPath);
-          console.log(`[Copier] ✓ Hardlink created: ${file.filename}`);
-        } else if (strategy === 'symlink') {
-          // Symlinks go directly to final path (no temp-rename needed)
-          await this.trySymlink(file.originalPath, destPath);
-          result.archivePath = destPath;
-          result.copyStrategy = 'symlink';
-          result.bytesCopied = 0; // Symlinks use no space
-          console.log(`[Copier] ✓ Symlink created: ${file.filename} → ${file.originalPath}`);
-          return result;
         } else if (strategy === 'reflink') {
           await this.tryReflink(file.originalPath, tempPath);
-          console.log(`[Copier] ✓ Reflink created: ${file.filename}`);
         } else {
           await this.tryCopy(file.originalPath, tempPath);
-          console.log(`[Copier] ✓ File copied: ${file.filename} (${this.formatBytes(file.size)})`);
         }
 
         // Atomic rename from temp to final
         await fs.rename(tempPath, destPath);
 
         result.archivePath = destPath;
-        result.bytesCopied = strategy === 'hardlink' ? 0 : file.size;
+        result.bytesCopied = file.size;
 
       } catch (error) {
         // Clean up temp file if it exists
@@ -289,55 +255,24 @@ export class Copier {
       }
 
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      result.copyError = errorMsg;
+      result.copyError = error instanceof Error ? error.message : String(error);
 
-      // Fallback chain: hardlink → symlink → copy
+      // If hardlink failed, retry with copy
       if (strategy === 'hardlink') {
-        console.warn(`[Copier] Hardlink failed for ${file.filename}: ${errorMsg}`);
-        console.log(`[Copier] Trying symlink fallback...`);
-        const retryResult = await this.copyFile(file, location, 'symlink');
-        return retryResult;
-      } else if (strategy === 'symlink') {
-        console.warn(`[Copier] Symlink failed for ${file.filename}: ${errorMsg}`);
-        console.log(`[Copier] Falling back to full copy...`);
+        console.warn(`[Copier] Hardlink failed for ${file.filename}, retrying with copy`);
         const retryResult = await this.copyFile(file, location, 'copy');
         return retryResult;
       }
-      // If copy fails, no more fallbacks - error will be returned
     }
 
     return result;
   }
 
   /**
-   * Format bytes as human-readable string
-   */
-  private formatBytes(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-  }
-
-  /**
    * Try to create a hardlink
-   * Works on local filesystems (HFS+, APFS, ext4, NTFS)
-   * Fails on network shares (SMB, NFS, AFP)
    */
   private async tryHardlink(source: string, dest: string): Promise<void> {
     await fs.link(source, dest);
-  }
-
-  /**
-   * Try to create a symbolic link
-   * Works on most filesystems including SMB/network shares
-   * Points to the original file - if original moves, link breaks
-   */
-  private async trySymlink(source: string, dest: string): Promise<void> {
-    // Use absolute path for symlink target to ensure it works from any location
-    const absoluteSource = path.isAbsolute(source) ? source : path.resolve(source);
-    await fs.symlink(absoluteSource, dest);
   }
 
   /**
