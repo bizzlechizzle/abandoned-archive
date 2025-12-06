@@ -163,7 +163,45 @@
   <div class="max-w-6xl mx-auto px-8 pt-8 pb-4">
     <h1 class="text-4xl font-bold text-braun-900">Dashboard</h1>
 
-    <!-- Stats Row - directly under title -->
+    <!-- Projects (Pinned Locations) - above stats -->
+    {#if !loading}
+      <div class="mt-6">
+        <div class="bg-white border border-braun-300 rounded p-8">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="section-label mb-0">Projects</h3>
+            <button onclick={() => router.navigate('/locations', undefined, { project: true })} class="text-xs text-braun-600 hover:text-braun-900 hover:underline font-medium">
+              show all
+            </button>
+          </div>
+          {#if projects.length > 0}
+            <div class="space-y-3">
+              {#each projects as location}
+                <button
+                  onclick={() => router.navigate(`/location/${location.locid}`)}
+                  class="flex items-center gap-4 w-full text-left px-3 py-3 rounded hover:bg-braun-100 transition"
+                >
+                  <div class="w-32 h-20 bg-braun-200 rounded flex-shrink-0 overflow-hidden">
+                    {#if location.heroThumbPath}
+                      <img src={`media://${location.heroThumbPath}?v=${cacheVersion}`} alt="" class="w-full h-full object-cover" loading="lazy" width="128" height="80" />
+                    {/if}
+                  </div>
+                  <div class="min-w-0">
+                    <span class="text-base text-braun-900 font-medium truncate block">{location.locnam}</span>
+                    {#if location.address?.state}
+                      <span class="text-sm text-braun-500">{location.address.state}</span>
+                    {/if}
+                  </div>
+                </button>
+              {/each}
+            </div>
+          {:else}
+            <p class="text-sm text-braun-500">No pinned locations yet</p>
+          {/if}
+        </div>
+      </div>
+    {/if}
+
+    <!-- Stats Row -->
     {#if !loading}
       <div class="flex justify-center gap-8 mt-6">
         <div class="text-center">
@@ -281,42 +319,6 @@
         </div>
       </div>
     {/if}
-
-    <!-- Projects (Pinned Locations) -->
-    <div class="mb-6">
-      <div class="bg-white border border-braun-300 rounded p-8">
-        <div class="flex justify-between items-center mb-4">
-          <h3 class="section-label mb-0">Projects</h3>
-          <button onclick={() => router.navigate('/locations', undefined, { project: true })} class="text-xs text-braun-600 hover:text-braun-900 hover:underline font-medium">
-            show all
-          </button>
-        </div>
-        {#if projects.length > 0}
-          <div class="space-y-3">
-            {#each projects as location}
-              <button
-                onclick={() => router.navigate(`/location/${location.locid}`)}
-                class="flex items-center gap-4 w-full text-left px-3 py-3 rounded hover:bg-braun-100 transition"
-              >
-                <div class="w-32 h-20 bg-braun-200 rounded flex-shrink-0 overflow-hidden">
-                  {#if location.heroThumbPath}
-                    <img src={`media://${location.heroThumbPath}?v=${cacheVersion}`} alt="" class="w-full h-full object-cover" loading="lazy" width="128" height="80" />
-                  {/if}
-                </div>
-                <div class="min-w-0">
-                  <span class="text-base text-braun-900 font-medium truncate block">{location.locnam}</span>
-                  {#if location.address?.state}
-                    <span class="text-sm text-braun-500">{location.address.state}</span>
-                  {/if}
-                </div>
-              </button>
-            {/each}
-          </div>
-        {:else}
-          <p class="text-sm text-braun-500">No pinned locations yet</p>
-        {/if}
-      </div>
-    </div>
 
     <!-- Recent Locations + Recent Imports -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
