@@ -12,7 +12,6 @@
   import { router } from '../stores/router';
   import { isImporting, importProgress, recentImports as storeRecentImports } from '../stores/import-store';
   import { thumbnailCache } from '../stores/thumbnail-cache-store';
-  import { LocationHero, type MediaImage } from '../components/location';
   import SkeletonLoader from '../components/SkeletonLoader.svelte';
 
   interface ImportRecord {
@@ -69,42 +68,10 @@
   let topTypes = $state<TypeStat[]>([]);
   let topStates = $state<StateStat[]>([]);
 
-  // Dashboard hero
-  let dashboardHero = $state<{imghash: string; focalX: number; focalY: number} | null>(null);
-  let dashboardHeroImage = $state<{thumb_path?: string; preview_path?: string; thumb_path_lg?: string; thumb_path_sm?: string} | null>(null);
-
   let loading = $state(true);
-
-  // Hero title auto-sizing: responsive to container width
-  let heroTitleEl = $state<HTMLElement | null>(null);
-  let heroTitleFontSize = $state(128); // Start at max, shrink as needed
-  let heroContainerEl = $state<HTMLElement | null>(null);
 
   // Cache version for busting browser cache after thumbnail regeneration
   const cacheVersion = $derived($thumbnailCache);
-
-  // Build images array for LocationHero component (empty array = show empty state)
-  const heroImages = $derived<MediaImage[]>(() => {
-    if (!dashboardHero || !dashboardHeroImage) return [];
-    return [{
-      imghash: dashboardHero.imghash,
-      imgnam: 'Dashboard Hero',
-      imgloc: '',
-      locid: null,
-      subid: null,
-      meta_width: null,
-      meta_height: null,
-      meta_date_taken: null,
-      meta_camera_make: null,
-      meta_camera_model: null,
-      meta_gps_lat: null,
-      meta_gps_lng: null,
-      thumb_path: dashboardHeroImage.thumb_path || null,
-      thumb_path_sm: dashboardHeroImage.thumb_path_sm || null,
-      thumb_path_lg: dashboardHeroImage.thumb_path_lg || null,
-      preview_path: dashboardHeroImage.preview_path || null,
-    }];
-  });
 
   onMount(async () => {
     if (!window.electronAPI?.locations) {
@@ -168,20 +135,6 @@
       console.error('Failed to load top states:', e);
     }
 
-    // Load dashboard hero
-    try {
-      const imghash = await window.electronAPI.settings.get('dashboard_hero_imghash');
-      if (imghash) {
-        const focalX = parseFloat(await window.electronAPI.settings.get('dashboard_hero_focal_x') || '0.5');
-        const focalY = parseFloat(await window.electronAPI.settings.get('dashboard_hero_focal_y') || '0.5');
-        dashboardHero = { imghash, focalX, focalY };
-        // Load the image thumbnail paths
-        dashboardHeroImage = await window.electronAPI.media.findImageByHash(imghash);
-      }
-    } catch (e) {
-      console.error('Failed to load dashboard hero:', e);
-    }
-
     // OPT-068: Deduplicate locations across sections (Projects > Imports > Recent)
     // Priority: Projects > Imports > Recent. Each location appears only once.
     const projectIds = new Set(projects.map(p => p.locid));
@@ -203,90 +156,16 @@
     const date = new Date(isoDate);
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
-
-  // Responsive title sizing (simplified for single-word "Dashboard")
-  function fitTitle() {
-    const el = heroTitleEl;
-    const container = heroContainerEl;
-    if (!el || !container) return;
-
-    const maxSize = 128;
-    const minSize = 14;
-
-    // "Dashboard" is always single line
-    el.style.whiteSpace = 'nowrap';
-
-    // Binary search for optimal size
-    let low = minSize;
-    let high = maxSize;
-    let bestFit = minSize;
-
-    while (low <= high) {
-      const mid = Math.floor((low + high) / 2);
-      el.style.fontSize = `${mid}px`;
-
-      const containerWidth = container.clientWidth;
-      const textWidth = el.scrollWidth;
-
-      if (textWidth <= containerWidth) {
-        bestFit = mid;
-        low = mid + 1;
-      } else {
-        high = mid - 1;
-      }
-    }
-
-    el.style.fontSize = `${bestFit}px`;
-    heroTitleFontSize = bestFit;
-  }
-
-  // Effect: Auto-size title on mount and container resize
-  $effect(() => {
-    const el = heroTitleEl;
-    const container = heroContainerEl;
-    if (!el) return;
-
-    requestAnimationFrame(fitTitle);
-
-    const resizeObserver = new ResizeObserver(() => {
-      fitTitle();
-    });
-
-    if (container) {
-      resizeObserver.observe(container);
-    }
-
-    return () => resizeObserver.disconnect();
-  });
 </script>
 
-<!-- Resize handler for title text fitting -->
-<svelte:window onresize={fitTitle} />
-
 <div class="h-full overflow-auto">
-  <!-- Dashboard Hero (uses same component as Location pages) -->
-  <LocationHero
-    images={heroImages()}
-    heroImghash={dashboardHero?.imghash || null}
-    focalX={dashboardHero?.focalX ?? 0.5}
-    focalY={dashboardHero?.focalY ?? 0.5}
-  />
-
-  <!-- Title overlaps hero gradient -->
-  <div class="max-w-6xl mx-auto px-8 pb-2 relative z-20 -mt-10">
-    <div bind:this={heroContainerEl} class="w-[88%] mx-auto text-center">
-      <h1
-        bind:this={heroTitleEl}
-        class="hero-title font-bold uppercase leading-tight text-center mb-0"
-        style="font-size: {heroTitleFontSize}px;"
-      >
-        Dashboard
-      </h1>
-    </div>
+  <!-- Page Header -->
+  <div class="max-w-6xl mx-auto px-8 pt-8 pb-4">
+    <h1 class="text-4xl font-bold text-braun-900">Dashboard</h1>
 
     <!-- Stats Row - directly under title -->
     {#if !loading}
-      <div class="flex justify-center gap-8 mt-4">
+      <div class="flex justify-center gap-8 mt-6">
         <div class="text-center">
           <div class="text-2xl font-bold text-braun-900">{formatCount(totalLocations)}</div>
           <div class="text-[11px] uppercase tracking-wider text-braun-500">locations</div>
@@ -570,13 +449,5 @@
 </div>
 
 <style>
-  /* Hero title: auto-sized to fit container, Braun design - no decorative shadow */
-  .hero-title {
-    color: #1C1C1A;
-    letter-spacing: -0.02em;
-    font-weight: 700;
-    text-wrap: balance;
-  }
-
   /* Braun: No shimmer animation - static loading states only */
 </style>

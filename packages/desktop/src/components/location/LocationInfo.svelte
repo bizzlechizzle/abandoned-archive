@@ -126,8 +126,6 @@
     // Location/Building name (locnam or subnam depending on mode)
     locnam: '',
     locnamVerified: false,
-    locnamShort: '',      // Migration 21: Custom short name for hero (or ssubname for sub-location)
-    locnamUseThe: false,  // Migration 21: Prepend "The" to display name (host only)
     historicalName: '',
     historicalNameVerified: false,
     akanam: '',
@@ -306,8 +304,6 @@
         // Sub-location specific fields
         locnam: currentSubLocation.subnam || '',
         locnamVerified: false, // Not used for sub-locations
-        locnamShort: currentSubLocation.ssubname || '',
-        locnamUseThe: false, // Not used for sub-locations
         historicalName: currentSubLocation.historicalName || '',
         historicalNameVerified: false, // Not used for sub-locations
         akanam: currentSubLocation.akanam || '',
@@ -337,8 +333,6 @@
       editForm = {
         locnam: location.locnam || '',
         locnamVerified: location.locnamVerified || false,
-        locnamShort: location.locnamShort || '',
-        locnamUseThe: location.locnamUseThe || false,
         historicalName: location.historicalName || '',
         historicalNameVerified: location.historicalNameVerified || false,
         akanam: location.akanam || '',
@@ -375,7 +369,6 @@
         // Sub-location mode: save to both subloc and host location
         const subUpdates: SubLocationUpdates = {
           subnam: editForm.locnam,
-          ssubname: editForm.locnamShort || null,
           type: editForm.type || null, // Building Type
           status: editForm.access || null,
           is_primary: editForm.is_primary,
@@ -409,8 +402,6 @@
         await onSave({
           locnam: editForm.locnam,
           locnamVerified: editForm.locnamVerified,
-          locnamShort: editForm.locnamShort || undefined,
-          locnamUseThe: editForm.locnamUseThe,
           historicalName: editForm.historicalName || undefined,
           historicalNameVerified: editForm.historicalNameVerified,
           akanam: editForm.akanam || undefined,
@@ -737,39 +728,6 @@
             class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
             placeholder={isSubLocationMode ? 'Building name' : 'Location name'}
           />
-        </div>
-
-        <!-- Hero Display Name - Migration 21 (simplified for sub-locations) -->
-        <div class="bg-braun-50 rounded p-4 -mx-1">
-          <label class="form-label">{isSubLocationMode ? 'Short Name' : 'Hero Display Name'}</label>
-          <p class="text-xs text-braun-500 mb-3">{isSubLocationMode ? 'Optional shortened name for display' : 'Override the auto-generated title shown on the hero image'}</p>
-
-          <div class="space-y-3">
-            <div>
-              <input
-                type="text"
-                bind:value={editForm.locnamShort}
-                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
-                placeholder={isSubLocationMode ? 'Short name (optional)' : 'Custom short name (leave empty for auto)'}
-              />
-            </div>
-
-            {#if !isSubLocationMode}
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  bind:checked={editForm.locnamUseThe}
-                  class="w-4 h-4 text-braun-900 rounded border-braun-300 focus:ring-braun-600"
-                />
-                <span class="text-sm">Prepend "The"</span>
-              </label>
-
-              <!-- Preview -->
-              <div class="text-xs text-braun-500">
-                Preview: <span class="font-medium text-braun-900">{editForm.locnamUseThe ? 'The ' : ''}{editForm.locnamShort || '(auto-generated from name)'}</span>
-              </div>
-            {/if}
-          </div>
         </div>
 
         <!-- AKA Name - Pill tag UI -->

@@ -12,17 +12,6 @@ const SPELLING_MAP: Record<string, string> = {
   'harbour': 'harbor',
 };
 
-// Location suffixes - kept for other uses (e.g., stripLocationSuffix) but NOT used in generateShortName
-const LOCATION_SUFFIXES = [
-  'church', 'hospital', 'factory', 'mill', 'school', 'building',
-  'house', 'mansion', 'hotel', 'motel', 'inn', 'theater', 'theatre',
-  'station', 'depot', 'warehouse', 'plant', 'complex', 'center',
-  'centre', 'asylum', 'sanitarium', 'sanatorium', 'prison', 'jail',
-  'penitentiary', 'cemetery', 'memorial', 'monument', 'cathedral',
-  'chapel', 'temple', 'synagogue', 'mosque', 'abbey', 'monastery',
-  'convent', 'rectory', 'parsonage', 'vicarage', 'catholic'
-];
-
 // GPS Coordinates Schema
 export const GPSCoordinatesSchema = z.object({
   lat: z.number().min(-90).max(90),
@@ -101,18 +90,12 @@ export const LocationInputSchema = z.object({
   docMapFind: z.boolean().default(false),    // Map Find documentation checkbox
   statusChangedAt: z.string().datetime().optional(),  // Track when status last changed
   hero_imghash: z.string().length(16).regex(/^[a-f0-9]+$/).optional(),
-  // Hero Focal Point (Migration 22: Crop center for hero images)
-  hero_focal_x: z.number().min(0).max(1).default(0.5),
-  hero_focal_y: z.number().min(0).max(1).default(0.5),
   auth_imp: z.string().optional(),
   // DECISION-019: Information Box overhaul fields
   historicalName: z.string().optional(),       // Historical/original name of location
   locnamVerified: z.boolean().default(false),  // User verified location name is correct
   historicalNameVerified: z.boolean().default(false), // User verified historical name is correct
   akanamVerified: z.boolean().default(false),  // User verified AKA name is correct
-  // Hero Display Name (Migration 21)
-  locnamShort: z.string().optional(),          // Optional custom short name for hero
-  locnamUseThe: z.boolean().default(false),    // Prepend "The" to display name
   // Migration 25: Activity tracking (optional on input, set by system)
   created_by_id: z.string().uuid().optional(),
   created_by: z.string().optional(),
@@ -275,83 +258,6 @@ export class LocationEntity {
       return `${this.data.locnam} (${this.data.akanam})`;
     }
     return this.data.locnam;
-  }
-
-  /**
-   * Get hero display name - smart single-line title for hero section
-   * Priority: locnamShort (custom) > auto-generated from locnam
-   * Rules:
-   * - Strip type/subtype suffixes from end (e.g., "First Baptist Church" → "First Baptist")
-   * - Never reduce below 2 words (avoid single word titles)
-   * - Prepend "The" if locnamUseThe is true
-   */
-  getHeroDisplayName(): string {
-    // If custom short name is set, use it
-    if (this.data.locnamShort) {
-      const prefix = this.data.locnamUseThe ? 'The ' : '';
-      return prefix + this.data.locnamShort;
-    }
-
-    // Auto-generate from locnam
-    const autoName = LocationEntity.generateHeroName(
-      this.data.locnam,
-      this.data.type || undefined,
-      this.data.stype || undefined
-    );
-
-    const prefix = this.data.locnamUseThe ? 'The ' : '';
-    return prefix + autoName;
-  }
-
-  /**
-   * Generate hero display name from full location name
-   * Strips leading "The" and type/subtype suffixes, maintains minimum 2 words
-   */
-  static generateHeroName(name: string, type?: string, subtype?: string): string {
-    // Split into words (preserve case)
-    let words = name.split(/\s+/).filter(w => w.length > 0);
-
-    // Strip leading "The" - the toggle can add it back
-    if (words.length > 0 && words[0].toLowerCase() === 'the') {
-      words = words.slice(1);
-    }
-
-    if (words.length <= 2) {
-      // Already short enough, keep as-is
-      return words.join(' ');
-    }
-
-    // Build list of suffixes to strip (type, subtype, and common location terms)
-    const suffixesToStrip = new Set<string>();
-
-    // Add type and subtype variations
-    if (type) {
-      suffixesToStrip.add(type.toLowerCase());
-      // Also add plural forms
-      suffixesToStrip.add(type.toLowerCase() + 's');
-    }
-    if (subtype) {
-      suffixesToStrip.add(subtype.toLowerCase());
-      suffixesToStrip.add(subtype.toLowerCase() + 's');
-    }
-
-    // Add common location suffixes
-    LOCATION_SUFFIXES.forEach(s => suffixesToStrip.add(s));
-
-    // Work backwards, stripping matching suffixes while keeping at least 2 words
-    const result = [...words];
-
-    while (result.length > 2) {
-      const lastWord = result[result.length - 1].toLowerCase();
-      // Remove common suffix patterns (like "Church", "Factory", "Hospital")
-      if (suffixesToStrip.has(lastWord)) {
-        result.pop();
-      } else {
-        break;
-      }
-    }
-
-    return result.join(' ');
   }
 
   // Check if location is documented

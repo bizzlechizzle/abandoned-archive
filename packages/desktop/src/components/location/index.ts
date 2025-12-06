@@ -4,7 +4,6 @@
  * Per PUEA: Components show only what exists
  */
 
-export { default as LocationHero } from './LocationHero.svelte';
 export { default as LocationHeader } from './LocationHeader.svelte';
 export { default as LocationInfo } from './LocationInfo.svelte';
 export { default as LocationAddress } from './LocationAddress.svelte';

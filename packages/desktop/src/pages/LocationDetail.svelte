@@ -14,7 +14,7 @@
   import NotesSection from '../components/NotesSection.svelte';
   import MediaViewer from '../components/MediaViewer.svelte';
   import {
-    LocationHero, LocationInfo,
+    LocationInfo,
     LocationMapSection, LocationOriginalAssets,
     LocationImportZone, LocationBookmarks, LocationNerdStats,
     SubLocationGrid,
@@ -99,11 +99,6 @@
   let newBuildingIsPrimary = $state(false);
   let addingBuilding = $state(false);
 
-  // Hero title auto-sizing: max 2 lines, never truncate
-  let heroTitleEl = $state<HTMLElement | null>(null);
-  let heroTitleFontSize = $state(108); // Start at max, shrink as needed
-  let heroContainerEl = $state<HTMLElement | null>(null);
-
   // OPT-066: Track if sub-locations tagline wraps to multiple lines
   let sublocTaglineEl = $state<HTMLElement | null>(null);
   let sublocTaglineWraps = $state(false);
@@ -148,143 +143,6 @@
 
   // Combined list: images first, then videos
   const mediaViewerList = $derived([...imageMediaList, ...videoMediaList]);
-
-  // Hero display name: uses custom short name or auto-generates from locnam
-  const LOCATION_SUFFIXES = new Set([
-    'church', 'hospital', 'factory', 'mill', 'school', 'building',
-    'house', 'mansion', 'hotel', 'motel', 'inn', 'theater', 'theatre',
-    'station', 'depot', 'warehouse', 'plant', 'complex', 'center',
-    'centre', 'asylum', 'sanitarium', 'sanatorium', 'prison', 'jail',
-    'penitentiary', 'cemetery', 'memorial', 'monument', 'cathedral',
-    'chapel', 'temple', 'synagogue', 'mosque', 'abbey', 'monastery',
-    'convent', 'rectory', 'parsonage', 'vicarage', 'catholic',
-    'works', 'facility', 'site', 'company', 'co', 'corp', 'inc'
-  ]);
-
-  function generateHeroName(name: string, type?: string, subtype?: string): string {
-    let words = name.split(/\s+/).filter(w => w.length > 0);
-
-    // NEVER shorten names with 3 or fewer words - return unchanged
-    if (words.length <= 3) return words.join(' ');
-
-    // Strip leading "The" for longer names - the toggle can add it back
-    if (words[0].toLowerCase() === 'the') {
-      words = words.slice(1);
-    }
-
-    // After stripping "The", check again - don't over-shorten
-    if (words.length <= 3) return words.join(' ');
-
-    const suffixesToStrip = new Set<string>(LOCATION_SUFFIXES);
-    if (type) { suffixesToStrip.add(type.toLowerCase()); suffixesToStrip.add(type.toLowerCase() + 's'); }
-    if (subtype) { suffixesToStrip.add(subtype.toLowerCase()); suffixesToStrip.add(subtype.toLowerCase() + 's'); }
-
-    // Keep "School" when name contains "Union" - "Union School" is meaningful
-    const lowerName = name.toLowerCase();
-    if (lowerName.includes('union')) {
-      suffixesToStrip.delete('school');
-    }
-
-    const result = [...words];
-    while (result.length > 3) {
-      const lastWord = result[result.length - 1].toLowerCase();
-      if (suffixesToStrip.has(lastWord)) result.pop();
-      else break;
-    }
-    return result.join(' ');
-  }
-
-  const heroDisplayName = $derived.by(() => {
-    // For sub-locations, show the sub-location name
-    if (currentSubLocation) return currentSubLocation.subnam;
-    if (!location) return '';
-    // Priority: custom short name > auto-generated
-    const baseName = location.locnamShort || generateHeroName(location.locnam, location.type, location.stype);
-    const prefix = location.locnamUseThe ? 'The ' : '';
-    return prefix + baseName;
-  });
-
-  // Function to calculate and set title size
-  // RULES:
-  // 1. Never cut off titles, no exceptions
-  // 2. If only 2 words, always 1 line (never wrap)
-  // 3. If 3+ words, max 2 lines allowed
-  function fitTitle() {
-    const el = heroTitleEl;
-    const container = heroContainerEl;
-    if (!el || !container) return;
-
-    const maxSize = 128; // Max size cap
-    const minSize = 24;  // Min size ensures readability for long titles
-
-    // Count words in the display name
-    const wordCount = heroDisplayName.split(/\s+/).filter(w => w.length > 0).length;
-    const isTwoWordTitle = wordCount <= 2;
-
-    // For 2-word titles: force single line (no wrap)
-    // For 3+ word titles: allow up to 2 lines
-    if (isTwoWordTitle) {
-      el.style.whiteSpace = 'nowrap';
-    } else {
-      el.style.whiteSpace = 'normal';
-    }
-
-    const MAX_LINES = isTwoWordTitle ? 1 : 2;
-
-    // Binary search for optimal size (faster and more accurate)
-    let low = minSize;
-    let high = maxSize;
-    let bestFit = minSize;
-
-    while (low <= high) {
-      const mid = Math.floor((low + high) / 2);
-      el.style.fontSize = `${mid}px`;
-
-      // Force reflow to get accurate measurements
-      const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || mid * 1.2;
-      const maxAllowedHeight = lineHeight * MAX_LINES * 1.05; // lines with 5% tolerance
-      const actualHeight = el.scrollHeight;
-
-      // Also check horizontal overflow for single-line titles
-      const containerWidth = container.clientWidth;
-      const textWidth = el.scrollWidth;
-      const fitsHorizontally = isTwoWordTitle ? textWidth <= containerWidth : true;
-
-      if (actualHeight <= maxAllowedHeight && fitsHorizontally) {
-        // Fits - try larger
-        bestFit = mid;
-        low = mid + 1;
-      } else {
-        // Doesn't fit - try smaller
-        high = mid - 1;
-      }
-    }
-
-    el.style.fontSize = `${bestFit}px`;
-    heroTitleFontSize = bestFit;
-  }
-
-  // Effect: Auto-size title (2-word = 1 line, 3+ words = max 2 lines)
-  $effect(() => {
-    const name = heroDisplayName; // Track dependency
-    const el = heroTitleEl;
-    const container = heroContainerEl;
-    if (!el || !name) return;
-
-    // Initial fit
-    requestAnimationFrame(fitTitle);
-
-    // Refit on resize
-    const resizeObserver = new ResizeObserver(() => {
-      fitTitle();
-    });
-
-    if (container) {
-      resizeObserver.observe(container);
-    }
-
-    return () => resizeObserver.disconnect();
-  });
 
   // OPT-066: Detect if sub-locations tagline wraps to multiple lines
   function checkTaglineWrap() {
@@ -552,15 +410,11 @@
     await loadLocation();
   }
 
-  /** Kanye6 + Migration 22: Set hero image with focal point */
-  async function setHeroImageWithFocal(imghash: string, fx: number, fy: number) {
+  /** Set hero image for card thumbnails */
+  async function setHeroImage(imghash: string) {
     if (!location) return;
     try {
-      await window.electronAPI.locations.update(locationId, {
-        hero_imghash: imghash,
-        hero_focal_x: fx,
-        hero_focal_y: fy,
-      });
+      await window.electronAPI.locations.update(locationId, { hero_imghash: imghash });
       await loadLocation();
     } catch (err) { console.error('Error setting hero image:', err); }
   }
@@ -947,9 +801,6 @@
   });
 </script>
 
-<!-- Resize handler for title text fitting -->
-<svelte:window onresize={fitTitle} />
-
 <div class="h-full overflow-auto">
   {#if loading}
     <div class="flex items-center justify-center h-full"><p class="text-braun-500">Loading location...</p></div>
@@ -961,62 +812,36 @@
       </div>
     </div>
   {:else}
-    <!-- Hero outside max-w container for full-width stretch -->
-    <!-- OPT-065: Pass allImagesForAuthors so hero can be found even when filtered images is empty -->
-    <LocationHero
-      images={allImagesForAuthors.length > 0 ? allImagesForAuthors : images}
-      heroImghash={currentSubLocation?.hero_imghash || location.hero_imghash || null}
-      focalX={currentSubLocation ? 0.5 : (location.hero_focal_x ?? 0.5)}
-      focalY={currentSubLocation ? 0.5 : (location.hero_focal_y ?? 0.5)}
-      onRegeneratePreview={async (imghash) => {
-        // Issue 1: Regenerate preview for low-quality hero image
-        // OPT-065: Search all images, not just filtered
-        const img = allImagesForAuthors.find(i => i.imghash === imghash) || images.find(i => i.imghash === imghash);
-        if (img && window.electronAPI?.media?.regenerateSingleFile) {
-          await window.electronAPI.media.regenerateSingleFile(imghash, img.imgloc);
-          await loadLocation(); // Refresh to get new thumbnail paths
-        }
-      }}
-    />
-
-    <!-- Title overlaps hero gradient: centered, premium text fitting - up to 2 lines -->
-    <div class="max-w-6xl mx-auto px-8 pb-4 relative z-20 -mt-10">
-      <div bind:this={heroContainerEl} class="w-[88%] mx-auto text-center">
-        <h1
-          bind:this={heroTitleEl}
-          class="hero-title font-bold uppercase leading-tight text-center mb-0"
-          style="font-size: {heroTitleFontSize}px;"
-          title={isViewingSubLocation ? currentSubLocation?.subnam : location.locnam}
+    <!-- Page Header -->
+    <div class="max-w-6xl mx-auto px-8 pt-8 pb-4">
+      <h1 class="text-4xl font-bold text-braun-900">
+        {isViewingSubLocation && currentSubLocation ? currentSubLocation.subnam : location.locnam}
+      </h1>
+      {#if isViewingSubLocation}
+        <!-- Host location breadcrumb (sub-location view) -->
+        <button
+          onclick={() => router.navigate(`/location/${locationId}`)}
+          class="text-sm text-braun-500 hover:text-braun-900 hover:underline mt-1"
         >
-          {heroDisplayName}
-        </h1>{#if isViewingSubLocation}
-          <!-- Host location tagline (sub-location view) -->
-          <button
-            onclick={() => router.navigate(`/location/${locationId}`)}
-            class="host-tagline block w-[90%] mx-auto mt-0 uppercase hover:underline text-center"
-          >
-            {location.locnam}
-          </button>
-        {:else if isHostLocation && sublocations.length > 0}
-          <!-- Buildings tagline (host location view) - list building names -->
-          <!-- OPT-066: Wrap to second row if wider than hero title; add top margin when wrapped for balance -->
-          <!-- OPT-069: Increase top margin when wrapped (2 rows) for better visual balance -->
-          <div
-            bind:this={sublocTaglineEl}
-            class="host-tagline flex flex-wrap justify-center gap-x-4 gap-y-1 w-[88%] mx-auto uppercase text-center {sublocTaglineWraps ? 'mt-10' : 'mt-0'}"
-          >
-            {#each sublocations as subloc}
-              <button
-                onclick={() => router.navigate(`/location/${locationId}/sub/${subloc.subid}`)}
-                class="hover:underline"
-              >{subloc.subnam}</button>
-            {/each}
-          </div>
-        {/if}
-      </div>
+          {location.locnam}
+        </button>
+      {:else if isHostLocation && sublocations.length > 0}
+        <!-- Buildings tagline (host location view) - list building names -->
+        <div
+          bind:this={sublocTaglineEl}
+          class="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-sm text-braun-500"
+        >
+          {#each sublocations as subloc}
+            <button
+              onclick={() => router.navigate(`/location/${locationId}/sub/${subloc.subid}`)}
+              class="hover:text-braun-900 hover:underline"
+            >{subloc.subnam}</button>
+          {/each}
+        </div>
+      {/if}
     </div>
 
-    <div class="max-w-6xl mx-auto px-8 pt-6 pb-8">
+    <div class="max-w-6xl mx-auto px-8 pt-2 pb-8">
 
       {#if isEditing}
         <LocationEditForm {location} onSave={handleSave} onCancel={() => isEditing = false} />
@@ -1115,15 +940,12 @@
       startIndex={selectedMediaIndex}
       onClose={() => selectedMediaIndex = null}
       heroImghash={currentSubLocation?.hero_imghash || location?.hero_imghash || null}
-      focalX={currentSubLocation ? 0.5 : (location?.hero_focal_x ?? 0.5)}
-      focalY={currentSubLocation ? 0.5 : (location?.hero_focal_y ?? 0.5)}
       onSetHeroImage={currentSubLocation
-        ? async (imghash, fx, fy) => {
+        ? async (imghash) => {
             await window.electronAPI.sublocations.update(currentSubLocation.subid, { hero_imghash: imghash });
             await loadLocation();
           }
-        : setHeroImageWithFocal}
-      onSetHostHeroImage={currentSubLocation ? setHeroImageWithFocal : undefined}
+        : setHeroImage}
       onHiddenChanged={handleHiddenChanged}
       onDeleted={handleMediaDeleted}
       onMoved={handleMediaMoved}
@@ -1315,19 +1137,5 @@
 </div>
 
 <style>
-  /* Hero title: Braun design - no decorative shadow, clean typography */
-  .hero-title {
-    color: #1C1C1A;
-    letter-spacing: -0.02em;
-    font-weight: 700;
-    text-wrap: balance;
-  }
-
-  /* Host location tagline - Braun neutral style */
-  .host-tagline {
-    color: #5C5C58;
-    font-size: 18px;
-    letter-spacing: 0.08em;
-    font-weight: 500;
-  }
+  /* Component styles - Braun design system */
 </style>

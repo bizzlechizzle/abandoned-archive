@@ -87,11 +87,6 @@ export function createTestLocation(overrides: Partial<any> = {}) {
     locnam_verified: 0,
     historical_name_verified: 0,
     akanam_verified: 0,
-    locnam_use_the: 0,
-
-    // Hero image focal points (required numbers)
-    hero_focal_x: 0.5,
-    hero_focal_y: 0.5,
 
     // View tracking (required number)
     view_count: 0,

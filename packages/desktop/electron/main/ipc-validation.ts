@@ -69,10 +69,6 @@ export const SettingKeySchema = z.enum([
   'login_required',
   'import_map',
   'map_import',
-  // Dashboard hero settings
-  'dashboard_hero_imghash',
-  'dashboard_hero_focal_x',
-  'dashboard_hero_focal_y',
 ]);
 
 export const SettingValueSchema = z.union([
