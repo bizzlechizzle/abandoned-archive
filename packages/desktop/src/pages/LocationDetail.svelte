@@ -952,12 +952,12 @@
 
 <div class="h-full overflow-auto">
   {#if loading}
-    <div class="flex items-center justify-center h-full"><p class="text-gray-500">Loading location...</p></div>
+    <div class="flex items-center justify-center h-full"><p class="text-braun-500">Loading location...</p></div>
   {:else if error || !location}
     <div class="flex items-center justify-center h-full">
       <div class="text-center">
-        <p class="text-red-500 text-lg">{error || 'Location not found'}</p>
-        <button onclick={() => router.navigate('/locations')} class="mt-4 px-4 py-2 bg-accent text-white rounded hover:opacity-90">Back to Locations</button>
+        <p class="text-error text-lg">{error || 'Location not found'}</p>
+        <button onclick={() => router.navigate('/locations')} class="mt-4 px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition-colors">Back to Locations</button>
       </div>
     </div>
   {:else}
@@ -1143,16 +1143,16 @@
       aria-labelledby="attribution-title"
     >
       <div
-        class="bg-[#fff8f2] rounded-lg shadow-xl w-full max-w-md mx-4"
+        class="bg-white border border-braun-300 rounded w-full max-w-md mx-4"
         onclick={(e) => e.stopPropagation()}
       >
-        <div class="p-5 flex justify-between items-center">
-          <h2 id="attribution-title" class="text-xl font-semibold text-foreground">
+        <div class="p-5 border-b border-braun-200 flex justify-between items-center">
+          <h2 id="attribution-title" class="text-lg font-medium text-braun-900">
             Import Author
           </h2>
           <button
             onclick={cancelImport}
-            class="text-gray-400 hover:text-gray-600 transition p-1 rounded hover:bg-gray-200"
+            class="text-braun-400 hover:text-braun-600 transition p-1 rounded hover:bg-braun-100"
             aria-label="Close"
           >
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1164,26 +1164,26 @@
         <div class="p-5 space-y-4">
           <!-- Current user or Someone Else -->
           <div class="space-y-3">
-            <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition bg-white {!isSomeoneElse ? 'border-accent' : 'border-gray-200'}">
+            <label class="flex items-center gap-3 p-3 border rounded cursor-pointer hover:bg-braun-50 transition bg-white {!isSomeoneElse ? 'border-braun-900' : 'border-braun-300'}">
               <input
                 type="radio"
                 name="attribution"
                 checked={!isSomeoneElse}
                 onchange={() => { isSomeoneElse = false; selectedAuthor = ''; contributionSource = ''; }}
-                class="w-4 h-4 text-accent"
+                class="w-4 h-4 text-braun-900"
               />
-              <span class="font-medium text-foreground">{users.find(u => u.username === currentUser)?.display_name || currentUser}</span>
+              <span class="font-medium text-braun-900">{users.find(u => u.username === currentUser)?.display_name || currentUser}</span>
             </label>
 
-            <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition bg-white {isSomeoneElse ? 'border-accent' : 'border-gray-200'}">
+            <label class="flex items-center gap-3 p-3 border rounded cursor-pointer hover:bg-braun-50 transition bg-white {isSomeoneElse ? 'border-braun-900' : 'border-braun-300'}">
               <input
                 type="radio"
                 name="attribution"
                 checked={isSomeoneElse}
                 onchange={() => isSomeoneElse = true}
-                class="w-4 h-4 text-accent"
+                class="w-4 h-4 text-braun-900"
               />
-              <span class="font-medium text-foreground">Someone Else</span>
+              <span class="font-medium text-braun-900">Someone Else</span>
             </label>
           </div>
 
@@ -1191,13 +1191,13 @@
           {#if isSomeoneElse}
             <div class="pt-2 space-y-3">
               <div>
-                <label for="author-select" class="block text-sm font-medium text-gray-700 mb-1">
+                <label for="author-select" class="form-label">
                   Who shot these?
                 </label>
                 <select
                   id="author-select"
                   bind:value={selectedAuthor}
-                  class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                  class="w-full px-4 py-3 bg-white border border-braun-400 rounded text-sm text-braun-900 focus:outline-none focus:border-braun-600 transition-colors"
                 >
                   <option value="">Select...</option>
                   {#each users.filter(u => u.username !== currentUser) as user}
@@ -1210,7 +1210,7 @@
               <!-- If External: show source field -->
               {#if selectedAuthor === 'external'}
                 <div>
-                  <label for="contribution-source" class="block text-sm font-medium text-gray-700 mb-1">
+                  <label for="contribution-source" class="form-label">
                     Source
                   </label>
                   <input
@@ -1218,7 +1218,7 @@
                     type="text"
                     bind:value={contributionSource}
                     placeholder="e.g., John Smith via text"
-                    class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                    class="w-full px-4 py-3 bg-white border border-braun-400 rounded text-sm text-braun-900 placeholder:text-braun-400 focus:outline-none focus:border-braun-600 transition-colors"
                   />
                 </div>
               {/if}
@@ -1226,17 +1226,17 @@
           {/if}
         </div>
 
-        <div class="p-5 flex justify-end gap-3">
+        <div class="p-5 border-t border-braun-200 flex justify-end gap-3">
           <button
             onclick={cancelImport}
-            class="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition font-medium"
+            class="px-4 py-2 text-sm text-braun-600 bg-white border border-braun-400 rounded hover:border-braun-500 transition font-medium"
           >
             Cancel
           </button>
           <button
             onclick={confirmImport}
             disabled={isSomeoneElse && !selectedAuthor || (selectedAuthor === 'external' && !contributionSource.trim())}
-            class="px-3 py-1.5 text-sm bg-accent text-white rounded-lg hover:bg-accent/90 transition disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-sm"
+            class="px-4 py-2 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50 disabled:cursor-not-allowed font-medium"
           >
             Import
           </button>
@@ -1254,20 +1254,20 @@
       aria-modal="true"
     >
       <div
-        class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4"
+        class="bg-white border border-braun-300 rounded w-full max-w-md mx-4"
         onclick={(e) => e.stopPropagation()}
       >
-        <div class="p-4 border-b">
-          <h2 class="text-lg font-semibold text-foreground">Add Building</h2>
-          <p class="text-sm text-gray-500 mt-1">
+        <div class="p-4 border-b border-braun-200">
+          <h2 class="text-lg font-medium text-braun-900">Add Building</h2>
+          <p class="text-sm text-braun-500 mt-1">
             Add a building to {location?.locnam || 'this location'}
           </p>
         </div>
 
         <div class="p-4 space-y-4">
           <div>
-            <label for="building-name" class="block text-sm font-medium text-gray-700 mb-1">
-              Building Name <span class="text-red-500">*</span>
+            <label for="building-name" class="form-label">
+              Building Name <span class="text-error">*</span>
             </label>
             <input
               id="building-name"
@@ -1275,7 +1275,7 @@
               bind:value={newBuildingName}
               disabled={addingBuilding}
               placeholder="e.g., Main Building, Powerhouse"
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+              class="w-full px-4 py-3 bg-white border border-braun-400 rounded text-sm text-braun-900 placeholder:text-braun-400 focus:outline-none focus:border-braun-600 transition-colors disabled:opacity-50"
             />
           </div>
 
@@ -1284,27 +1284,27 @@
               type="checkbox"
               bind:checked={newBuildingIsPrimary}
               disabled={addingBuilding}
-              class="h-5 w-5 rounded border-gray-300 text-accent focus:ring-accent"
+              class="h-5 w-5 rounded border-braun-400 text-braun-900 focus:ring-braun-600"
             />
             <div>
-              <span class="text-sm font-medium text-gray-700">Primary Building</span>
-              <p class="text-xs text-gray-500">Set as main structure of this campus</p>
+              <span class="text-sm font-medium text-braun-900">Primary Building</span>
+              <p class="text-xs text-braun-500">Set as main structure of this campus</p>
             </div>
           </label>
         </div>
 
-        <div class="p-4 border-t flex justify-end gap-2">
+        <div class="p-4 border-t border-braun-200 flex justify-end gap-2">
           <button
             onclick={closeAddBuildingModal}
             disabled={addingBuilding}
-            class="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200 transition disabled:opacity-50"
+            class="px-4 py-2 text-braun-600 bg-braun-100 rounded hover:bg-braun-200 transition disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             onclick={handleAddBuilding}
             disabled={addingBuilding || !newBuildingName.trim()}
-            class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {addingBuilding ? 'Adding...' : 'Add Building'}
           </button>
@@ -1315,23 +1315,19 @@
 </div>
 
 <style>
-  /* Hero title: auto-sized to fit max 2 lines, never truncate */
+  /* Hero title: Braun design - no decorative shadow, clean typography */
   .hero-title {
-    color: #454545;
-    letter-spacing: 0.02em; /* Tight, premium spacing */
-    word-spacing: -0.02em; /* Cohesive word blocks */
-    font-weight: 800;
-    text-wrap: balance; /* Balances word distribution across lines */
-    /* Hand-painted sign style - hard offset shadow, accent gold */
-    text-shadow: 3px 3px 0 rgba(185, 151, 92, 0.5);
+    color: #1C1C1A;
+    letter-spacing: -0.02em;
+    font-weight: 700;
+    text-wrap: balance;
   }
 
-  /* Host location tagline (cinematic - tiny link under title) */
-  /* OPT-066: Allow wrapping for many sub-locations */
+  /* Host location tagline - Braun neutral style */
   .host-tagline {
-    color: var(--color-accent, #b9975c); /* Accent color */
-    font-size: 18px; /* Taller tagline */
+    color: #5C5C58;
+    font-size: 18px;
     letter-spacing: 0.08em;
-    font-weight: 700; /* Bold */
+    font-weight: 500;
   }
 </style>

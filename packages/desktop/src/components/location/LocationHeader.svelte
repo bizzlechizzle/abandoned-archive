@@ -18,14 +18,14 @@
 <div class="mb-6">
   <button
     onclick={() => router.navigate('/locations')}
-    class="text-sm text-accent hover:underline mb-2"
+    class="text-sm text-braun-900 hover:underline mb-2"
   >
     &larr; Back to Locations
   </button>
   <div class="flex items-center">
-    <h1 class="text-3xl font-bold text-foreground drop-shadow-sm">{location.locnam}</h1>
+    <h1 class="text-3xl font-bold text-braun-900">{location.locnam}</h1>
   </div>
   {#if location.akanam}
-    <p class="text-gray-500 mt-1">Also Known As: {location.akanam}</p>
+    <p class="text-braun-500 mt-1">Also Known As: {location.akanam}</p>
   {/if}
 </div>

@@ -495,15 +495,15 @@
 <svelte:window onkeydown={showEditModal ? handleKeydown : undefined} />
 
 <!-- DECISION-019: Information Box styled to match LocationMapSection -->
-<div class="bg-white rounded-lg shadow-md">
+<div class="bg-white rounded border border-braun-300">
   <!-- Header with edit button -->
   <div class="flex items-start justify-between px-8 pt-6 pb-4">
-    <h2 class="text-2xl font-semibold text-foreground leading-none">Information</h2>
+    <h2 class="text-2xl font-semibold text-braun-900 leading-none">Information</h2>
     <div class="flex items-center gap-3">
       {#if onSave || onSubLocationSave}
         <button
           onclick={openEditModal}
-          class="text-sm text-accent hover:underline leading-none mt-1"
+          class="text-sm text-braun-900 hover:underline leading-none mt-1"
           title="Edit information"
         >
           edit
@@ -522,7 +522,7 @@
           <h3 class="section-title mb-1">Also Known As</h3>
           <div class="flex flex-wrap gap-2">
             {#each displayAkaNames as name}
-              <span class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm">{name}</span>
+              <span class="px-2 py-0.5 bg-braun-100 text-braun-900 rounded text-sm">{name}</span>
             {/each}
           </div>
         </div>
@@ -536,13 +536,13 @@
             {#if hasStatus}
               <button
                 onclick={() => onNavigateFilter('access', location.access!)}
-                class="text-base text-accent hover:underline"
+                class="text-base text-braun-900 hover:underline"
                 title="View all locations with this status"
               >
                 {location.access}
               </button>
             {:else}
-              <p class="text-sm text-gray-400 italic">Not set</p>
+              <p class="text-sm text-braun-500 italic">Not set</p>
             {/if}
           </div>
           <div>
@@ -551,16 +551,16 @@
               <p class="text-base">
                 <button
                   onclick={() => onNavigateFilter('type', location.type!)}
-                  class="text-accent hover:underline"
+                  class="text-braun-900 hover:underline"
                   title="View all {location.type} locations"
                 >
                   {location.type}
                 </button>
                 {#if location.stype}
-                  <span class="text-gray-400"> / </span>
+                  <span class="text-braun-400"> / </span>
                   <button
                     onclick={() => onNavigateFilter('stype', location.stype!)}
-                    class="text-accent hover:underline"
+                    class="text-braun-900 hover:underline"
                     title="View all {location.stype} locations"
                   >
                     {location.stype}
@@ -568,7 +568,7 @@
                 {/if}
               </p>
             {:else}
-              <p class="text-sm text-gray-400 italic">Not set</p>
+              <p class="text-sm text-braun-500 italic">Not set</p>
             {/if}
           </div>
         </div>
@@ -580,17 +580,17 @@
           <div>
             <h3 class="section-title mb-1">Built</h3>
             {#if location.builtYear}
-              <span class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm">{formatYearDisplay(location.builtYear, location.builtType)}</span>
+              <span class="px-2 py-0.5 bg-braun-100 text-braun-900 rounded text-sm">{formatYearDisplay(location.builtYear, location.builtType)}</span>
             {:else}
-              <p class="text-sm text-gray-400 italic">Not set</p>
+              <p class="text-sm text-braun-500 italic">Not set</p>
             {/if}
           </div>
           <div>
             <h3 class="section-title mb-1">Abandoned</h3>
             {#if location.abandonedYear}
-              <span class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm">{formatYearDisplay(location.abandonedYear, location.abandonedType)}</span>
+              <span class="px-2 py-0.5 bg-braun-100 text-braun-900 rounded text-sm">{formatYearDisplay(location.abandonedYear, location.abandonedType)}</span>
             {:else}
-              <p class="text-sm text-gray-400 italic">Not set</p>
+              <p class="text-sm text-braun-500 italic">Not set</p>
             {/if}
           </div>
         </div>
@@ -602,7 +602,7 @@
           <h3 class="section-title mb-1">Documentation</h3>
           <div class="flex flex-wrap gap-2">
             {#each activeDocTypes as docType}
-              <span class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm">
+              <span class="px-2 py-0.5 bg-braun-100 text-braun-900 rounded text-sm">
                 {docType}
               </span>
             {/each}
@@ -618,7 +618,7 @@
             {#if location.project}
               <button
                 onclick={() => onNavigateFilter('project', 'true')}
-                class="text-base text-accent hover:underline"
+                class="text-base text-braun-900 hover:underline"
                 title="View all project locations"
               >
                 Project
@@ -627,7 +627,7 @@
             {#if location.favorite}
               <button
                 onclick={() => onNavigateFilter('favorite', 'true')}
-                class="text-base text-accent hover:underline"
+                class="text-base text-braun-900 hover:underline"
                 title="View all favorites"
               >
                 Favorite
@@ -636,7 +636,7 @@
             {#if location.historic}
               <button
                 onclick={() => onNavigateFilter('historic', 'true')}
-                class="text-base text-accent hover:underline"
+                class="text-base text-braun-900 hover:underline"
                 title="View all historic landmarks"
               >
                 Historical
@@ -650,7 +650,7 @@
       {#if hasHistoricalName}
         <div class="mb-4">
           <h3 class="section-title mb-1">Historical Name</h3>
-          <span class="px-2 py-0.5 bg-accent/10 text-accent rounded text-sm">{location.historicalName}</span>
+          <span class="px-2 py-0.5 bg-braun-100 text-braun-900 rounded text-sm">{location.historicalName}</span>
         </div>
       {/if}
 
@@ -663,30 +663,30 @@
             {#if showAuthImp}
               <button
                 onclick={() => onNavigateFilter('author', location.auth_imp!)}
-                class="text-accent hover:underline"
+                class="text-braun-900 hover:underline"
                 title="View all locations by {location.auth_imp}"
               >{location.auth_imp}</button>
             {/if}
             {#each authors as author, i}
-              {#if showAuthImp || i > 0}<span class="text-gray-400"> / </span>{/if}
+              {#if showAuthImp || i > 0}<span class="text-braun-400"> / </span>{/if}
               <button
                 onclick={() => router.navigate('/locations', undefined, { authorId: author.user_id })}
-                class="text-accent hover:underline"
+                class="text-braun-900 hover:underline"
                 title="View all locations by {author.display_name || author.username}"
-              >{author.display_name || author.username} <span class="text-sm text-accent/60">({roleLabels[author.role] || author.role})</span></button>
+              >{author.display_name || author.username} <span class="text-sm text-braun-500">({roleLabels[author.role] || author.role})</span></button>
             {/each}
             {#each mediaAuthors() as mediaAuthor, i}
-              {#if showAuthImp || authors.length > 0 || i > 0}<span class="text-gray-400"> / </span>{/if}
+              {#if showAuthImp || authors.length > 0 || i > 0}<span class="text-braun-400"> / </span>{/if}
               <button
                 onclick={() => onNavigateFilter('author', mediaAuthor)}
-                class="text-accent hover:underline"
+                class="text-braun-900 hover:underline"
                 title="View all locations by {mediaAuthor}"
               >{mediaAuthor}</button>
             {/each}
             {#each externalContributors() as source, i}
-              {#if showAuthImp || authors.length > 0 || mediaAuthors().length > 0 || i > 0}<span class="text-gray-400"> / </span>{/if}
+              {#if showAuthImp || authors.length > 0 || mediaAuthors().length > 0 || i > 0}<span class="text-braun-400"> / </span>{/if}
               <span
-                class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-sm"
+                class="px-2 py-0.5 bg-gps-medium/10 text-gps-medium rounded text-sm"
                 title="Contributed media"
               >{source}</span>
             {/each}
@@ -694,7 +694,7 @@
         </div>
       {/if}
     {:else}
-      <p class="text-gray-400 text-sm italic">No information added yet</p>
+      <p class="text-braun-500 text-sm italic">No information added yet</p>
     {/if}
   </div>
 </div>
@@ -708,16 +708,16 @@
     tabindex="-1"
   >
     <div
-      class="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden relative z-[100000]"
+      class="bg-white rounded border border-braun-300 w-full max-w-lg max-h-[90vh] overflow-hidden relative z-[100000]"
       onclick={(e) => e.stopPropagation()}
       role="dialog"
     >
       <!-- Header -->
-      <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-        <h2 class="text-lg font-semibold text-foreground">Edit Information</h2>
+      <div class="flex items-center justify-between px-6 py-4 border-b border-braun-200">
+        <h2 class="text-lg font-semibold text-braun-900">Edit Information</h2>
         <button
           onclick={() => showEditModal = false}
-          class="p-1 text-gray-400 hover:text-gray-600 transition"
+          class="p-1 text-braun-400 hover:text-braun-600 transition"
           aria-label="Close"
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -730,26 +730,26 @@
       <div class="p-6 overflow-y-auto max-h-[65vh] space-y-5">
         <!-- Location/Building Name -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">{isSubLocationMode ? 'Building Name' : 'Location Name'}</label>
+          <label class="form-label">{isSubLocationMode ? 'Building Name' : 'Location Name'}</label>
           <input
             type="text"
             bind:value={editForm.locnam}
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
             placeholder={isSubLocationMode ? 'Building name' : 'Location name'}
           />
         </div>
 
         <!-- Hero Display Name - Migration 21 (simplified for sub-locations) -->
-        <div class="bg-gray-50 rounded-lg p-4 -mx-1">
-          <label class="block text-sm font-medium text-gray-700 mb-2">{isSubLocationMode ? 'Short Name' : 'Hero Display Name'}</label>
-          <p class="text-xs text-gray-500 mb-3">{isSubLocationMode ? 'Optional shortened name for display' : 'Override the auto-generated title shown on the hero image'}</p>
+        <div class="bg-braun-50 rounded p-4 -mx-1">
+          <label class="form-label">{isSubLocationMode ? 'Short Name' : 'Hero Display Name'}</label>
+          <p class="text-xs text-braun-500 mb-3">{isSubLocationMode ? 'Optional shortened name for display' : 'Override the auto-generated title shown on the hero image'}</p>
 
           <div class="space-y-3">
             <div>
               <input
                 type="text"
                 bind:value={editForm.locnamShort}
-                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
                 placeholder={isSubLocationMode ? 'Short name (optional)' : 'Custom short name (leave empty for auto)'}
               />
             </div>
@@ -759,14 +759,14 @@
                 <input
                   type="checkbox"
                   bind:checked={editForm.locnamUseThe}
-                  class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+                  class="w-4 h-4 text-braun-900 rounded border-braun-300 focus:ring-braun-600"
                 />
                 <span class="text-sm">Prepend "The"</span>
               </label>
 
               <!-- Preview -->
-              <div class="text-xs text-gray-500">
-                Preview: <span class="font-medium text-gray-700">{editForm.locnamUseThe ? 'The ' : ''}{editForm.locnamShort || '(auto-generated from name)'}</span>
+              <div class="text-xs text-braun-500">
+                Preview: <span class="font-medium text-braun-900">{editForm.locnamUseThe ? 'The ' : ''}{editForm.locnamShort || '(auto-generated from name)'}</span>
               </div>
             {/if}
           </div>
@@ -774,17 +774,17 @@
 
         <!-- AKA Name - Pill tag UI -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Also Known As</label>
+          <label class="form-label">Also Known As</label>
           <!-- Existing AKA names as pills -->
           {#if akaNames.length > 0}
             <div class="flex flex-wrap gap-2 mb-2">
               {#each akaNames as name}
-                <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-accent/10 text-accent rounded text-sm">
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-braun-100 text-braun-900 rounded text-sm">
                   {name}
                   <button
                     type="button"
                     onclick={() => removeAkaName(name)}
-                    class="text-accent/60 hover:text-accent ml-0.5"
+                    class="text-braun-400 hover:text-braun-600 ml-0.5"
                     title="Remove {name}"
                   >
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -800,17 +800,17 @@
             type="text"
             bind:value={newAkaInput}
             onkeydown={handleAkaKeydown}
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
             placeholder="Type a name and press Enter"
           />
         </div>
 
         <!-- Historical Name - dropdown from AKA values -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Historical Name</label>
+          <label class="form-label">Historical Name</label>
           <select
             bind:value={editForm.historicalName}
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
           >
             <option value="">Select from AKA names...</option>
             {#each akaNames as name}
@@ -821,10 +821,10 @@
 
         <!-- Status - dropdown -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Status</label>
+          <label class="form-label">Status</label>
           <select
             bind:value={editForm.access}
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
           >
             <option value="">Select status...</option>
             {#each ACCESS_OPTIONS as option}
@@ -837,12 +837,12 @@
         {#if isSubLocationMode}
           <!-- Sub-location: Building Type only -->
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Building Type</label>
+            <label class="form-label">Building Type</label>
             <input
               type="text"
               list="type-options"
               bind:value={editForm.type}
-              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+              class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
               placeholder="e.g., Administration, Dormitory, Chapel"
             />
             <datalist id="type-options">
@@ -857,26 +857,26 @@
             <input
               type="checkbox"
               bind:checked={editForm.is_primary}
-              class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+              class="w-4 h-4 text-braun-900 rounded border-braun-300 focus:ring-braun-600"
             />
-            <span class="text-sm font-medium text-gray-700">Primary Building</span>
-            <span class="text-xs text-gray-500">(main building on campus)</span>
+            <span class="text-sm font-medium text-braun-700">Primary Building</span>
+            <span class="text-xs text-braun-500">(main building on campus)</span>
           </label>
 
           <!-- Campus Info divider -->
-          <div class="border-t border-gray-200 pt-4 -mx-1 px-1">
-            <h3 class="text-sm font-medium text-gray-500 mb-4">Campus Info</h3>
+          <div class="border-t border-braun-200 pt-4 -mx-1 px-1">
+            <h3 class="text-sm font-medium text-braun-500 mb-4">Campus Info</h3>
           </div>
         {:else}
           <!-- Host location: Type + Sub-Type -->
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">Type</label>
+              <label class="form-label">Type</label>
               <input
                 type="text"
                 list="type-options"
                 bind:value={editForm.type}
-                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
                 placeholder="e.g., Hospital, Factory"
               />
               <datalist id="type-options">
@@ -886,12 +886,12 @@
               </datalist>
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">Sub-Type</label>
+              <label class="form-label">Sub-Type</label>
               <input
                 type="text"
                 list="stype-options"
                 bind:value={editForm.stype}
-                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
                 placeholder="e.g., Psychiatric, Textile"
               />
               <datalist id="stype-options">
@@ -905,11 +905,11 @@
 
         <!-- Built -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Built</label>
+          <label class="form-label">Built</label>
           <div class="flex gap-2">
             <select
               bind:value={editForm.builtType}
-              class="px-2 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent text-sm"
+              class="px-2 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 text-sm"
             >
               <option value="year">Year</option>
               <option value="range">Range</option>
@@ -919,18 +919,18 @@
               type="text"
               bind:value={editForm.builtYear}
               placeholder={editForm.builtType === 'year' ? '1920' : editForm.builtType === 'range' ? '1920-1925' : '1920-05-15'}
-              class="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+              class="flex-1 px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
             />
           </div>
         </div>
 
         <!-- Abandoned -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Abandoned</label>
+          <label class="form-label">Abandoned</label>
           <div class="flex gap-2">
             <select
               bind:value={editForm.abandonedType}
-              class="px-2 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent text-sm"
+              class="px-2 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 text-sm"
             >
               <option value="year">Year</option>
               <option value="range">Range</option>
@@ -940,20 +940,20 @@
               type="text"
               bind:value={editForm.abandonedYear}
               placeholder={editForm.abandonedType === 'year' ? '2005' : editForm.abandonedType === 'range' ? '2005-2010' : '2005-03-20'}
-              class="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+              class="flex-1 px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
             />
           </div>
         </div>
 
         <!-- Documentation checkboxes - Drone auto-selects Exterior -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Documentation</label>
+          <label class="form-label">Documentation</label>
           <div class="grid grid-cols-2 gap-2">
             <label class="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
                 bind:checked={editForm.docInterior}
-                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+                class="w-4 h-4 text-braun-900 rounded border-braun-300 focus:ring-braun-600"
               />
               <span class="text-sm">Interior</span>
             </label>
@@ -961,7 +961,7 @@
               <input
                 type="checkbox"
                 bind:checked={editForm.docExterior}
-                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+                class="w-4 h-4 text-braun-900 rounded border-braun-300 focus:ring-braun-600"
               />
               <span class="text-sm">Exterior</span>
             </label>
@@ -970,7 +970,7 @@
                 type="checkbox"
                 checked={editForm.docDrone}
                 onchange={(e) => handleDroneChange(e.currentTarget.checked)}
-                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+                class="w-4 h-4 text-braun-900 rounded border-braun-300 focus:ring-braun-600"
               />
               <span class="text-sm">Drone</span>
             </label>
@@ -978,7 +978,7 @@
               <input
                 type="checkbox"
                 bind:checked={editForm.docMapFind}
-                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+                class="w-4 h-4 text-braun-900 rounded border-braun-300 focus:ring-braun-600"
               />
               <span class="text-sm">Map Find</span>
             </label>
@@ -986,7 +986,7 @@
               <input
                 type="checkbox"
                 bind:checked={editForm.docWebHistory}
-                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+                class="w-4 h-4 text-braun-900 rounded border-braun-300 focus:ring-braun-600"
               />
               <span class="text-sm">Web Find</span>
             </label>
@@ -995,13 +995,13 @@
 
         <!-- Flags - accent color for all -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Flags</label>
+          <label class="form-label">Flags</label>
           <div class="flex flex-wrap gap-4">
             <label class="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
                 bind:checked={editForm.project}
-                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+                class="w-4 h-4 text-braun-900 rounded border-braun-300 focus:ring-braun-600"
               />
               <span class="text-sm">Project</span>
             </label>
@@ -1009,7 +1009,7 @@
               <input
                 type="checkbox"
                 bind:checked={editForm.favorite}
-                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+                class="w-4 h-4 text-braun-900 rounded border-braun-300 focus:ring-braun-600"
               />
               <span class="text-sm">Favorite</span>
             </label>
@@ -1017,7 +1017,7 @@
               <input
                 type="checkbox"
                 bind:checked={editForm.historic}
-                class="w-4 h-4 text-accent rounded border-gray-300 focus:ring-accent"
+                class="w-4 h-4 text-braun-900 rounded border-braun-300 focus:ring-braun-600"
               />
               <span class="text-sm">Historical</span>
             </label>
@@ -1026,23 +1026,23 @@
 
         <!-- Author -->
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Author</label>
+          <label class="form-label">Author</label>
           <input
             type="text"
             bind:value={editForm.auth_imp}
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
             placeholder="Who documented this location"
           />
         </div>
       </div>
 
       <!-- Footer -->
-      <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+      <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-braun-200 bg-braun-50">
         {#if canConvertToHost}
           <button
             type="button"
             onclick={openConvertModal}
-            class="mr-auto text-sm text-gray-500 hover:text-accent hover:underline"
+            class="mr-auto text-sm text-braun-500 hover:text-braun-900 hover:underline"
             title="Enable sub-locations for this location"
           >
             Convert to Host Location
@@ -1051,7 +1051,7 @@
         <button
           type="button"
           onclick={() => showEditModal = false}
-          class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
+          class="px-4 py-2 text-sm font-medium text-braun-900 bg-white border border-braun-300 rounded hover:bg-braun-100 transition"
         >
           Cancel
         </button>
@@ -1059,7 +1059,7 @@
           type="button"
           onclick={handleSave}
           disabled={saving}
-          class="px-4 py-2 text-sm font-medium text-white bg-accent rounded hover:opacity-90 transition disabled:opacity-50"
+          class="px-4 py-2 text-sm font-medium text-white bg-braun-900 rounded hover:bg-braun-600 transition disabled:opacity-50"
         >
           {saving ? 'Saving...' : 'Save Changes'}
         </button>
@@ -1077,16 +1077,16 @@
     tabindex="-1"
   >
     <div
-      class="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden relative z-[100000]"
+      class="bg-white rounded border border-braun-300 w-full max-w-sm overflow-hidden relative z-[100000]"
       onclick={(e) => e.stopPropagation()}
       role="dialog"
     >
       <!-- Header -->
-      <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-        <h2 class="text-lg font-semibold text-foreground">Convert to Host Location</h2>
+      <div class="flex items-center justify-between px-6 py-4 border-b border-braun-200">
+        <h2 class="text-lg font-semibold text-braun-900">Convert to Host Location</h2>
         <button
           onclick={() => showConvertModal = false}
-          class="p-1 text-gray-400 hover:text-gray-600 transition"
+          class="p-1 text-braun-400 hover:text-braun-600 transition"
           aria-label="Close"
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1097,23 +1097,23 @@
 
       <!-- Content -->
       <div class="p-6 space-y-4">
-        <p class="text-sm text-gray-600">
+        <p class="text-sm text-braun-600">
           Converting this location to a host location enables you to add buildings (sub-locations) to it.
           This action requires PIN verification.
         </p>
 
         {#if convertError}
-          <div class="p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+          <div class="p-3 bg-error/10 border border-error/20 rounded text-sm text-error">
             {convertError}
           </div>
         {/if}
 
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Enter PIN</label>
+          <label class="form-label">Enter PIN</label>
           <input
             type="password"
             bind:value={convertPin}
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent text-center text-lg tracking-widest"
+            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 text-center text-lg tracking-widest"
             placeholder="****"
             maxlength="6"
             onkeydown={(e) => e.key === 'Enter' && handleConvertToHost()}
@@ -1122,11 +1122,11 @@
       </div>
 
       <!-- Footer -->
-      <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+      <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-braun-200 bg-braun-50">
         <button
           type="button"
           onclick={() => showConvertModal = false}
-          class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
+          class="px-4 py-2 text-sm font-medium text-braun-900 bg-white border border-braun-300 rounded hover:bg-braun-100 transition"
         >
           Cancel
         </button>
@@ -1134,7 +1134,7 @@
           type="button"
           onclick={handleConvertToHost}
           disabled={converting}
-          class="px-4 py-2 text-sm font-medium text-white bg-accent rounded hover:opacity-90 transition disabled:opacity-50"
+          class="px-4 py-2 text-sm font-medium text-white bg-braun-900 rounded hover:bg-braun-600 transition disabled:opacity-50"
         >
           {converting ? 'Converting...' : 'Convert'}
         </button>
@@ -1144,11 +1144,13 @@
 {/if}
 
 <style>
-  /* DECISION-019: Section titles - match LocationMapSection styling */
+  /* DECISION-019: Section titles - Braun design system */
   .section-title {
-    font-size: 0.9rem;
-    font-weight: 500;
-    color: rgb(107, 114, 128); /* text-gray-500 */
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #8A8A86; /* braun-500 */
     line-height: 1.25;
   }
 </style>

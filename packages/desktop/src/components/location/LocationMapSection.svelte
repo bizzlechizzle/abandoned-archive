@@ -254,13 +254,13 @@
   const mapZoom = $derived(isHostLocation ? Math.max(1, baseZoom - 1) : baseZoom);
 </script>
 
-<div class="bg-white rounded-lg shadow-md">
+<div class="bg-white rounded border border-braun-300">
   <!-- Header: Location with verification status and edit button (DECISION-013: No border) -->
   <div class="flex items-start justify-between px-8 pt-6 pb-4">
-    <h2 class="text-2xl font-semibold text-foreground leading-none">Location</h2>
+    <h2 class="text-2xl font-semibold text-braun-900 leading-none">Location</h2>
     <button
       onclick={handleEditClick}
-      class="text-sm text-accent hover:underline leading-none mt-1"
+      class="text-sm text-braun-900 hover:underline leading-none mt-1"
       title={subLocation ? 'Edit building GPS' : 'Edit location'}
     >
       edit
@@ -272,7 +272,7 @@
     <h3 class="section-title mb-2">
       GPS
       {#if subLocation}
-        <span class="text-xs font-normal text-gray-400 ml-1">(Building)</span>
+        <span class="text-xs font-normal text-braun-400 ml-1">(Building)</span>
       {/if}
     </h3>
 
@@ -281,17 +281,17 @@
       <div class="relative" onmouseup={handleGpsSelection} oncontextmenu={handleGpsContextMenu}>
         <button
           onclick={openOnAtlas}
-          class="text-accent hover:underline font-mono text-sm text-left"
+          class="text-braun-900 hover:underline font-mono text-sm text-left"
           title="View on Atlas"
         >
           {effectiveGpsLat!.toFixed(6)}, {effectiveGpsLng!.toFixed(6)}
         </button>
         {#if copiedGps}
-          <span class="absolute -right-2 top-0 text-xs text-verified animate-pulse">Copied!</span>
+          <span class="absolute -right-2 top-0 text-xs text-gps-verified font-medium">Copied!</span>
         {/if}
       </div>
     {:else}
-      <p class="text-sm text-gray-400 italic">No coordinates available</p>
+      <p class="text-sm text-braun-500 italic">No coordinates available</p>
     {/if}
   </div>
 
@@ -301,43 +301,43 @@
 
     {#if hasAddress}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="text-base text-gray-900 relative" onmouseup={handleAddressSelection} oncontextmenu={handleAddressContextMenu}>
+      <div class="text-base text-braun-900 relative" onmouseup={handleAddressSelection} oncontextmenu={handleAddressContextMenu}>
         <p>
           {#if location.address?.street}
             <button
               onclick={openOnAtlas}
-              class="text-accent hover:underline text-left"
+              class="text-braun-900 hover:underline text-left"
               title="View on Atlas"
             >{location.address.street}</button>{displayCity || location.address?.state || location.address?.zipcode ? ', ' : ''}
           {/if}
           {#if displayCity}
             <button
               onclick={() => onNavigateFilter('city', displayCity)}
-              class="text-accent hover:underline"
+              class="text-braun-900 hover:underline"
               title="View all locations in {displayCity}"
             >{displayCity}</button>{location.address?.state || location.address?.zipcode ? ', ' : ''}
           {/if}
           {#if location.address?.state}
             <button
               onclick={() => onNavigateFilter('state', location.address!.state!)}
-              class="text-accent hover:underline"
+              class="text-braun-900 hover:underline"
               title="View all locations in {location.address.state}"
             >{location.address.state}</button>{' '}
           {/if}
           {#if location.address?.zipcode}
             <button
               onclick={() => onNavigateFilter('zipcode', location.address!.zipcode!)}
-              class="text-accent hover:underline"
+              class="text-braun-900 hover:underline"
               title="View all locations with zipcode {location.address.zipcode}"
             >{location.address.zipcode}</button>
           {/if}
         </p>
         {#if copiedAddress}
-          <span class="absolute -right-2 top-0 text-xs text-verified animate-pulse">Copied!</span>
+          <span class="absolute -right-2 top-0 text-xs text-gps-verified font-medium">Copied!</span>
         {/if}
       </div>
     {:else}
-      <p class="text-sm text-gray-400 italic">No address set</p>
+      <p class="text-sm text-braun-500 italic">No address set</p>
     {/if}
   </div>
 
@@ -345,7 +345,7 @@
   <!-- Campus map shows host location + all sub-locations with GPS -->
   <div class="px-8 mt-5">
     {#if hasGps}
-      <div class="relative rounded-lg overflow-hidden border border-gray-200 group" style="aspect-ratio: 2 / 1;">
+      <div class="relative rounded overflow-hidden border border-braun-200 group" style="aspect-ratio: 2 / 1;">
         <Map
           locations={[mapLocation]}
           zoom={mapZoom}
@@ -361,7 +361,7 @@
         <!-- Expand to Atlas button -->
         <button
           onclick={openOnAtlas}
-          class="absolute bottom-2 right-2 z-[1000] px-2 py-1 bg-white/90 rounded shadow text-xs font-medium text-gray-700 hover:bg-white transition flex items-center gap-1 opacity-0 group-hover:opacity-100"
+          class="absolute bottom-2 right-2 z-[1000] px-2 py-1 bg-white/90 rounded shadow text-xs font-medium text-braun-900 hover:bg-white transition flex items-center gap-1 opacity-0 group-hover:opacity-100"
           title="Open in Atlas"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -372,15 +372,15 @@
       </div>
     {:else}
       <!-- No GPS - Show state-only placeholder -->
-      <div class="relative rounded-lg overflow-hidden border border-gray-200 bg-gray-100 flex items-center justify-center" style="aspect-ratio: 2 / 1;">
-        <div class="text-center text-gray-500">
-          <svg class="w-8 h-8 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div class="relative rounded overflow-hidden border border-braun-200 bg-braun-100 flex items-center justify-center" style="aspect-ratio: 2 / 1;">
+        <div class="text-center text-braun-500">
+          <svg class="w-8 h-8 mx-auto mb-2 text-braun-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
           <p class="text-sm font-medium">No GPS coordinates</p>
           {#if location.address?.state}
-            <p class="text-xs text-gray-400 mt-1">Location in {fullStateName || location.address.state}</p>
+            <p class="text-xs text-braun-400 mt-1">Location in {fullStateName || location.address.state}</p>
           {/if}
         </div>
       </div>
@@ -396,38 +396,38 @@
         {#if location.address?.county}
           <button
             onclick={() => onNavigateFilter('county', location.address!.county!, location.address?.state ? { state: location.address.state } : undefined)}
-            class="text-accent hover:underline"
+            class="text-braun-900 hover:underline"
             title="View all locations in {location.address.county} County"
           >{location.address.county} County</button>
         {/if}
         {#if culturalRegion}
-          {#if location.address?.county}<span class="text-gray-400"> - </span>{/if}
+          {#if location.address?.county}<span class="text-braun-400"> - </span>{/if}
           <button
             onclick={() => onNavigateFilter('culturalRegion', culturalRegion)}
-            class="text-accent hover:underline"
+            class="text-braun-900 hover:underline"
             title="View all locations in {culturalRegion}"
           >{culturalRegion}</button>
-          {#if localCulturalRegionVerified}<span class="text-verified ml-1 text-xs" title="Verified">(verified)</span>{/if}
+          {#if localCulturalRegionVerified}<span class="text-gps-verified ml-1 text-xs" title="Verified">(verified)</span>{/if}
         {/if}
         {#if directionOnly}
-          {#if location.address?.county || culturalRegion}<span class="text-gray-400"> - </span>{/if}
+          {#if location.address?.county || culturalRegion}<span class="text-braun-400"> - </span>{/if}
           <button
             onclick={() => onNavigateFilter('stateDirection', stateDirection)}
-            class="text-accent hover:underline"
+            class="text-braun-900 hover:underline"
             title="View all locations in {stateDirection}"
           >{directionOnly}</button>
         {/if}
         {#if fullStateName}
-          {#if location.address?.county || culturalRegion || directionOnly}<span class="text-gray-400"> - </span>{/if}
+          {#if location.address?.county || culturalRegion || directionOnly}<span class="text-braun-400"> - </span>{/if}
           <button
             onclick={() => onNavigateFilter('state', location.address!.state!)}
-            class="text-accent hover:underline"
+            class="text-braun-900 hover:underline"
             title="View all locations in {fullStateName}"
           >{fullStateName}</button>
         {/if}
       </p>
     {:else}
-      <p class="text-sm text-gray-400 italic">No local information available</p>
+      <p class="text-sm text-braun-500 italic">No local information available</p>
     {/if}
   </div>
 
@@ -440,38 +440,38 @@
         {#if countryCulturalRegion}
           <button
             onclick={() => onNavigateFilter('countryCulturalRegion', countryCulturalRegion)}
-            class="text-accent hover:underline"
+            class="text-braun-900 hover:underline"
             title="View all locations in {countryCulturalRegion}"
           >{countryCulturalRegion}</button>
-          {#if countryCulturalRegionVerified}<span class="text-verified ml-1 text-xs" title="Verified">(verified)</span>{/if}
+          {#if countryCulturalRegionVerified}<span class="text-gps-verified ml-1 text-xs" title="Verified">(verified)</span>{/if}
         {/if}
         {#if censusRegion}
-          {#if countryCulturalRegion}<span class="text-gray-400"> - </span>{/if}
+          {#if countryCulturalRegion}<span class="text-braun-400"> - </span>{/if}
           <button
             onclick={() => onNavigateFilter('censusRegion', censusRegion)}
-            class="text-accent hover:underline"
+            class="text-braun-900 hover:underline"
             title="View all locations in {censusRegion}"
           >{censusRegion}</button>
         {/if}
         {#if country}
-          {#if countryCulturalRegion || censusRegion}<span class="text-gray-400"> - </span>{/if}
+          {#if countryCulturalRegion || censusRegion}<span class="text-braun-400"> - </span>{/if}
           <button
             onclick={() => onNavigateFilter('country', country)}
-            class="text-accent hover:underline"
+            class="text-braun-900 hover:underline"
             title="View all locations in {country}"
           >{country}</button>
         {/if}
         {#if continent}
-          {#if countryCulturalRegion || censusRegion || country}<span class="text-gray-400"> - </span>{/if}
+          {#if countryCulturalRegion || censusRegion || country}<span class="text-braun-400"> - </span>{/if}
           <button
             onclick={() => onNavigateFilter('continent', continent)}
-            class="text-accent hover:underline"
+            class="text-braun-900 hover:underline"
             title="View all locations in {continent}"
           >{continent}</button>
         {/if}
       </p>
     {:else}
-      <p class="text-sm text-gray-400 italic">No region information available</p>
+      <p class="text-sm text-braun-500 italic">No region information available</p>
     {/if}
   </div>
 </div>
@@ -498,20 +498,15 @@
 {/if}
 
 <style>
-  /* Pulse animation for "Copied!" notification */
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
-  .animate-pulse {
-    animation: pulse 1s ease-in-out infinite;
-  }
+  /* Braun: No pulse animation - static text only */
 
-  /* DECISION-011: Section titles - slightly larger for better hierarchy */
+  /* DECISION-011: Section titles - Braun design system */
   .section-title {
-    font-size: 0.9rem;
-    font-weight: 500;
-    color: rgb(107, 114, 128); /* text-gray-500 */
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #8A8A86; /* braun-500 */
     line-height: 1.25;
   }
 

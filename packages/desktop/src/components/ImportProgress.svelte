@@ -22,42 +22,42 @@
 
 {#if $isImporting && $importProgress}
   <!-- Top center, thin horizontal bar, z-60 to stay above MediaViewer -->
-  <div class="fixed top-4 left-1/2 -translate-x-1/2 bg-white rounded-lg shadow-lg border border-gray-200 px-4 py-2 z-[60] flex items-center gap-4">
-    <!-- Pulsing indicator + count -->
+  <div class="fixed top-4 left-1/2 -translate-x-1/2 bg-white rounded border border-braun-300 px-4 py-2 z-[60] flex items-center gap-4">
+    <!-- Static indicator + count (Braun: no animation) -->
     <div class="flex items-center gap-2 shrink-0">
-      <div class="w-2 h-2 bg-accent rounded-full animate-pulse"></div>
-      <span class="text-sm font-medium text-gray-700">
+      <div class="w-2 h-2 bg-braun-900 rounded-full"></div>
+      <span class="text-sm font-medium text-braun-700">
         Importing...
       </span>
     </div>
 
     <!-- Progress bar -->
-    <div class="w-32 bg-gray-200 rounded-full h-2 shrink-0">
+    <div class="w-32 bg-braun-200 rounded-full h-2 shrink-0">
       <div
-        class="bg-accent h-2 rounded-full transition-all duration-300 ease-out"
+        class="bg-braun-900 h-2 rounded-full transition-all duration-300 ease-out"
         style="width: {$importProgress.percent}%"
       ></div>
     </div>
 
     <!-- Percentage + time remaining -->
-    <span class="text-xs text-gray-500 shrink-0">
+    <span class="text-xs text-braun-500 shrink-0">
       {$importProgress.percent}%
       {#if activeJob}
-        <span class="text-gray-400 ml-1">
+        <span class="text-braun-400 ml-1">
           {formatTimeRemaining(activeJob.startedAt, $importProgress.current, $importProgress.total)}
         </span>
       {/if}
     </span>
 
     <!-- Location name (truncated) -->
-    <span class="text-xs text-gray-500 truncate max-w-[150px]" title={$importProgress.locationName}>
+    <span class="text-xs text-braun-500 truncate max-w-[150px]" title={$importProgress.locationName}>
       {$importProgress.locationName}
     </span>
 
     <!-- Cancel button -->
     <button
       onclick={() => importStore.cancelImport()}
-      class="text-xs text-accent hover:text-red-600 hover:underline shrink-0 ml-2"
+      class="text-xs text-braun-900 hover:text-error hover:underline shrink-0 ml-2"
     >
       Cancel
     </button>

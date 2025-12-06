@@ -120,12 +120,12 @@
   }
 </script>
 
-<div class="h-full min-h-0 bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4 overflow-auto">
+<div class="h-full min-h-0 bg-braun-50 flex items-center justify-center p-4 overflow-auto">
   <div class="max-w-xl w-full">
     <!-- Logo and Title -->
     <div class="text-center mb-6">
       <img src={logo} alt="Abandoned Upstate" class="h-14 w-auto mx-auto mb-3" />
-      <p class="text-gray-600">Archive Setup</p>
+      <p class="text-braun-600">Archive Setup</p>
     </div>
 
     <!-- Progress Indicator -->
@@ -135,16 +135,16 @@
           <div class="flex items-center">
             <div
               class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition {i + 1 <= currentStep
-                ? 'bg-accent text-white'
-                : 'bg-gray-200 text-gray-500'}"
+                ? 'bg-braun-900 text-white'
+                : 'bg-braun-200 text-braun-500'}"
             >
               {i + 1}
             </div>
             {#if i < totalSteps - 1}
               <div
                 class="w-12 h-0.5 mx-1 transition {i + 1 < currentStep
-                  ? 'bg-accent'
-                  : 'bg-gray-200'}"
+                  ? 'bg-braun-900'
+                  : 'bg-braun-200'}"
               ></div>
             {/if}
           </div>
@@ -153,25 +153,25 @@
     </div>
 
     <!-- Main Card -->
-    <div class="bg-white rounded-lg shadow-lg p-6">
+    <div class="bg-white rounded border border-braun-300 p-6">
       <!-- Step 1: Welcome -->
       {#if currentStep === 1}
         <div class="text-center">
           <h2 class="text-xl font-bold text-foreground mb-4">Welcome to the Abandoned Archive!</h2>
           <div class="space-y-3 text-left max-w-md mx-auto">
-            <p class="text-gray-700 text-sm">
+            <p class="text-braun-700 text-sm">
               A powerful tool for documenting and organizing abandoned locations.
             </p>
-            <div class="bg-gray-50 rounded-lg p-3 space-y-2">
+            <div class="bg-braun-50 rounded p-3 space-y-2">
               <h3 class="font-semibold text-foreground text-sm">Key Features:</h3>
-              <ul class="list-disc list-inside text-xs text-gray-600 space-y-1">
+              <ul class="list-disc list-inside text-xs text-braun-600 space-y-1">
                 <li>GPS-based location tracking with interactive maps</li>
                 <li>Media import with automatic metadata extraction</li>
                 <li>Organize photos, videos, and documents</li>
                 <li>Local-first data storage for complete privacy</li>
               </ul>
             </div>
-            <p class="text-gray-700 text-sm">
+            <p class="text-braun-700 text-sm">
               Let's get started by setting up your archive.
             </p>
           </div>
@@ -186,7 +186,7 @@
           <div class="space-y-4">
             <!-- Name Field -->
             <div>
-              <label for="username" class="block text-sm font-medium text-gray-700 mb-1">
+              <label for="username" class="block text-sm font-medium text-braun-700 mb-1">
                 Name
               </label>
               <input
@@ -194,13 +194,13 @@
                 type="text"
                 bind:value={username}
                 placeholder="First Last"
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition text-sm"
+                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 transition text-sm"
               />
             </div>
 
             <!-- Nickname Field -->
             <div>
-              <label for="nickname" class="block text-sm font-medium text-gray-700 mb-1">
+              <label for="nickname" class="block text-sm font-medium text-braun-700 mb-1">
                 Nickname
               </label>
               <input
@@ -208,14 +208,14 @@
                 type="text"
                 bind:value={nickname}
                 placeholder="Optional"
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition text-sm"
+                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 transition text-sm"
               />
             </div>
 
             <!-- PIN Fields -->
             <div class="grid grid-cols-2 gap-3">
               <div>
-                <label for="pin" class="block text-sm font-medium text-gray-700 mb-1">
+                <label for="pin" class="block text-sm font-medium text-braun-700 mb-1">
                   PIN
                 </label>
                 <input
@@ -226,11 +226,11 @@
                   maxlength="6"
                   bind:value={pin}
                   placeholder="4-6 digits"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition text-center tracking-widest text-sm"
+                  class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 transition text-center tracking-widest text-sm"
                 />
               </div>
               <div>
-                <label for="confirmPin" class="block text-sm font-medium text-gray-700 mb-1">
+                <label for="confirmPin" class="block text-sm font-medium text-braun-700 mb-1">
                   Confirm PIN
                 </label>
                 <input
@@ -241,7 +241,7 @@
                   maxlength="6"
                   bind:value={confirmPin}
                   placeholder="Re-enter PIN"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition text-center tracking-widest text-sm"
+                  class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 transition text-center tracking-widest text-sm"
                 />
               </div>
             </div>
@@ -253,7 +253,7 @@
             <div class="border-t pt-4 mt-4">
               <h3 class="font-medium text-foreground mb-3 text-sm">Archive Location</h3>
               <div>
-                <label for="archivePath" class="block text-sm font-medium text-gray-700 mb-1">
+                <label for="archivePath" class="block text-sm font-medium text-braun-700 mb-1">
                   Folder
                 </label>
                 <div class="flex gap-2">
@@ -263,17 +263,17 @@
                     bind:value={archivePath}
                     placeholder="Select a folder..."
                     readonly
-                    class="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-700 text-sm"
+                    class="flex-1 px-3 py-2 border border-braun-300 rounded bg-braun-50 text-braun-700 text-sm"
                   />
                   <button
                     type="button"
                     onclick={selectFolder}
-                    class="px-4 py-2 bg-accent text-white rounded-lg hover:opacity-90 transition font-medium text-sm"
+                    class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition font-medium text-sm"
                   >
                     Browse
                   </button>
                 </div>
-                <p class="text-xs text-gray-500 mt-1">
+                <p class="text-xs text-braun-500 mt-1">
                   Where your media files will be stored.
                 </p>
               </div>
@@ -285,7 +285,7 @@
                   id="deleteOriginals"
                   class="mt-0.5"
                 />
-                <label for="deleteOriginals" class="text-xs text-gray-700 cursor-pointer">
+                <label for="deleteOriginals" class="text-xs text-braun-700 cursor-pointer">
                   Delete original files after import
                 </label>
               </div>
@@ -300,7 +300,7 @@
           {#if currentStep > 1}
             <button
               onclick={previousStep}
-              class="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium transition text-sm"
+              class="px-4 py-2 text-braun-600 hover:text-braun-800 font-medium transition text-sm"
             >
               Back
             </button>
@@ -312,7 +312,7 @@
             <button
               onclick={nextStep}
               disabled={!canProceed()}
-              class="px-6 py-2 bg-accent text-white rounded-lg hover:opacity-90 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+              class="px-6 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed text-sm"
             >
               Continue
             </button>
@@ -320,7 +320,7 @@
             <button
               onclick={completeSetup}
               disabled={!canProceed() || isProcessing}
-              class="px-6 py-2 bg-accent text-white rounded-lg hover:opacity-90 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+              class="px-6 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed text-sm"
             >
               {isProcessing ? 'Setting up...' : 'Complete Setup'}
             </button>
@@ -329,7 +329,7 @@
       </div>
 
       <!-- Step Indicator Text -->
-      <div class="mt-4 text-center text-xs text-gray-500">
+      <div class="mt-4 text-center text-xs text-braun-500">
         Step {currentStep} of {totalSteps}
       </div>
     </div>

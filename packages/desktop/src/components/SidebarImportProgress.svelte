@@ -4,24 +4,24 @@
 
 {#if $isImporting && $importProgress}
   <!-- Minimal sidebar import progress - premium clean design -->
-  <div class="px-4 py-3 border-b border-gray-200">
+  <div class="px-4 py-3 border-b border-braun-200">
     <!-- Header row: indicator + count -->
     <div class="flex items-center justify-between mb-2">
       <div class="flex items-center gap-2">
-        <div class="w-2 h-2 bg-accent rounded-full"></div>
-        <span class="text-sm font-medium text-gray-700">
+        <div class="w-2 h-2 bg-braun-900 rounded-full"></div>
+        <span class="text-sm font-medium text-braun-700">
           Importing...
         </span>
       </div>
-      <span class="text-xs text-gray-500">
+      <span class="text-xs text-braun-500">
         {$importProgress.percent}%
       </span>
     </div>
 
     <!-- Progress bar -->
-    <div class="w-full bg-gray-200 rounded-full h-1.5 mb-2">
+    <div class="w-full bg-braun-200 rounded-full h-1.5 mb-2">
       <div
-        class="bg-accent h-1.5 rounded-full transition-all duration-300 ease-out"
+        class="bg-braun-900 h-1.5 rounded-full transition-all duration-300 ease-out"
         style="width: {$importProgress.percent}%"
       ></div>
     </div>
@@ -30,7 +30,7 @@
     <div class="flex items-center justify-end">
       <button
         onclick={() => importStore.cancelImport()}
-        class="text-xs text-accent hover:text-red-600 hover:underline"
+        class="text-xs text-braun-900 hover:text-error hover:underline"
       >
         Cancel
       </button>

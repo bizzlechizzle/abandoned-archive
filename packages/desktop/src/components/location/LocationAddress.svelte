@@ -36,10 +36,10 @@
 {#if hasAddress}
   <div class="mb-4">
     <div class="flex items-center justify-between mb-2">
-      <h3 class="text-sm font-medium text-gray-500">Address</h3>
+      <h3 class="text-sm font-medium text-braun-500">Address</h3>
       <button
         onclick={copyAddress}
-        class="text-xs text-accent hover:underline flex items-center gap-1"
+        class="text-xs text-braun-900 hover:underline flex items-center gap-1"
         title="Copy address to clipboard"
       >
         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -49,13 +49,13 @@
       </button>
     </div>
 
-    <div class="text-base text-gray-900 space-y-1">
+    <div class="text-base text-braun-900 space-y-1">
       {#if address?.street}
         <div>
           {#if onOpenOnMap}
             <button
               onclick={onOpenOnMap}
-              class="font-medium text-accent hover:underline"
+              class="font-medium text-braun-900 hover:underline"
               title="View on map"
             >{address.street}</button>
           {:else}
@@ -68,21 +68,21 @@
         {#if displayCity}
           <button
             onclick={() => onNavigateFilter('city', getDisplayCity(address?.city))}
-            class="text-accent hover:underline"
+            class="text-braun-900 hover:underline"
             title="View all locations in {getDisplayCity(address?.city)}"
           >{getDisplayCity(address?.city)}</button>{address?.state || address?.zipcode ? ', ' : ''}
         {/if}
         {#if address?.state}
           <button
             onclick={() => onNavigateFilter('state', address!.state!)}
-            class="text-accent hover:underline"
+            class="text-braun-900 hover:underline"
             title="View all locations in {address.state}"
           >{address.state}</button>{' '}
         {/if}
         {#if address?.zipcode}
           <button
             onclick={() => onNavigateFilter('zipcode', address!.zipcode!)}
-            class="text-accent hover:underline"
+            class="text-braun-900 hover:underline"
             title="View all locations with zipcode {address.zipcode}"
           >{address.zipcode}</button>
         {/if}

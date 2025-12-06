@@ -120,34 +120,34 @@
 
 <svelte:window on:keydown={handleKeydown} />
 
-<div class="h-full min-h-0 bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4 overflow-auto">
+<div class="h-full min-h-0 bg-braun-50 flex items-center justify-center p-4 overflow-auto">
   <div class="max-w-md w-full">
     <!-- Logo and Title -->
     <div class="text-center mb-8">
       <img src={logo} alt="Abandoned Upstate" class="h-16 w-auto mx-auto mb-4" />
-      <p class="text-gray-600">Sign In</p>
+      <p class="text-braun-600">Sign In</p>
     </div>
 
     <!-- Main Card -->
-    <div class="bg-white rounded-lg shadow-lg p-8">
+    <div class="bg-white rounded border border-braun-300 p-8">
       {#if loading}
         <div class="text-center py-8">
-          <p class="text-gray-500">Loading...</p>
+          <p class="text-braun-500">Loading...</p>
         </div>
       {:else if users.length === 0}
         <div class="text-center py-8">
-          <p class="text-gray-500">No users found. Please run setup.</p>
+          <p class="text-braun-500">No users found. Please run setup.</p>
         </div>
       {:else}
         <!-- User Selection -->
         <div class="mb-6">
-          <label for="user-select" class="block text-sm font-medium text-gray-700 mb-2">
+          <label for="user-select" class="block text-sm font-medium text-braun-700 mb-2">
             Select User
           </label>
           <select
             id="user-select"
             bind:value={selectedUserId}
-            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent text-lg"
+            class="w-full px-4 py-3 border border-braun-300 rounded focus:outline-none focus:border-braun-600 text-lg"
           >
             <option value={null}>Choose a user...</option>
             {#each users as user}
@@ -161,12 +161,12 @@
         <!-- PIN Entry (only show if selected user has PIN) -->
         {#if selectedUser?.has_pin}
           <div class="mb-6">
-            <label class="block text-sm font-medium text-gray-700 mb-2 text-center">
+            <label class="block text-sm font-medium text-braun-700 mb-2 text-center">
               Enter PIN
             </label>
 
             <!-- PIN Display -->
-            <div class="text-center text-3xl tracking-widest mb-4 font-mono text-gray-700">
+            <div class="text-center text-3xl tracking-widest mb-4 font-mono text-braun-700">
               {pinDisplay}
             </div>
 
@@ -175,26 +175,26 @@
               {#each ['1', '2', '3', '4', '5', '6', '7', '8', '9'] as digit}
                 <button
                   onclick={() => handlePinInput(digit)}
-                  class="p-4 text-xl font-medium bg-gray-100 rounded-lg hover:bg-gray-200 transition"
+                  class="p-4 text-xl font-medium bg-braun-100 rounded hover:bg-braun-200 transition"
                 >
                   {digit}
                 </button>
               {/each}
               <button
                 onclick={handleClear}
-                class="p-4 text-sm font-medium bg-gray-100 rounded-lg hover:bg-gray-200 transition text-gray-500"
+                class="p-4 text-sm font-medium bg-braun-100 rounded hover:bg-braun-200 transition text-braun-500"
               >
                 Clear
               </button>
               <button
                 onclick={() => handlePinInput('0')}
-                class="p-4 text-xl font-medium bg-gray-100 rounded-lg hover:bg-gray-200 transition"
+                class="p-4 text-xl font-medium bg-braun-100 rounded hover:bg-braun-200 transition"
               >
                 0
               </button>
               <button
                 onclick={handleBackspace}
-                class="p-4 text-xl font-medium bg-gray-100 rounded-lg hover:bg-gray-200 transition"
+                class="p-4 text-xl font-medium bg-braun-100 rounded hover:bg-braun-200 transition"
               >
                 ←
               </button>
@@ -213,7 +213,7 @@
         <button
           onclick={handleLogin}
           disabled={!selectedUser || verifying || (selectedUser?.has_pin && pin.length < 4)}
-          class="w-full py-3 bg-accent text-white rounded-lg hover:opacity-90 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          class="w-full py-3 bg-braun-900 text-white rounded hover:bg-braun-600 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {verifying ? 'Verifying...' : 'Sign In'}
         </button>

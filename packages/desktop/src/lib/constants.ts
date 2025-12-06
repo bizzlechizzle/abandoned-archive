@@ -99,18 +99,19 @@ export const FILE_CONFIG = {
   LOCATION_FOLDER_PATTERN: '[SLOCNAM]-[LOC12]' as const,
 } as const;
 
-// Theme Colors
+// Theme Colors - Braun/Rams Design System
+// ADR: Gold accent removed entirely. Functional colors only.
 export const THEME = {
-  ACCENT: '#b9975c',
-  BACKGROUND: '#fffbf7',
-  FOREGROUND: '#454545',
-  // P3a: All pin colors changed to accent color per v010steps.md
+  BACKGROUND: '#FAFAF8',       // cool paper
+  SURFACE: '#FFFFFF',          // white
+  FOREGROUND: '#1C1C1A',       // near-black
+  // GPS functional colors: color = information hierarchy
   GPS_CONFIDENCE_COLORS: {
-    verified: '#b9975c',
-    high: '#b9975c',
-    medium: '#b9975c',
-    low: '#b9975c',
-    none: '#b9975c',
+    verified: '#4A8C5E',       // muted sage green - map confirmed
+    high: '#5A7A94',           // muted steel blue - EXIF <10m
+    medium: '#C9A227',         // muted ochre - reverse geocoded
+    low: '#B85C4A',            // muted terracotta - manual/estimate
+    none: '#8A8A86',           // warm gray - no GPS
   },
 } as const;
 

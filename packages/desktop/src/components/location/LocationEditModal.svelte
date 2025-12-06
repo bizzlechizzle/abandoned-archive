@@ -202,16 +202,16 @@
 >
   <!-- Modal content -->
   <div
-    class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden relative z-[100000]"
+    class="bg-white rounded border border-braun-300 w-full max-w-2xl max-h-[90vh] overflow-hidden relative z-[100000]"
     onclick={(e) => e.stopPropagation()}
     role="dialog"
   >
     <!-- Header -->
-    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-      <h2 class="text-lg font-semibold text-foreground">Edit Location</h2>
+    <div class="flex items-center justify-between px-6 py-4 border-b border-braun-200">
+      <h2 class="text-lg font-semibold text-braun-900">Edit Location</h2>
       <button
         onclick={onClose}
-        class="p-1 text-gray-400 hover:text-gray-600 transition"
+        class="p-1 text-braun-400 hover:text-braun-600 transition"
         aria-label="Close"
       >
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -221,13 +221,13 @@
     </div>
 
     <!-- Tabs -->
-    <div class="flex border-b border-gray-200">
+    <div class="flex border-b border-braun-200">
       <button
         onclick={() => activeTab = 'address'}
         class="flex-1 px-4 py-3 text-sm font-medium transition
           {activeTab === 'address'
-            ? 'text-accent border-b-2 border-accent bg-accent/5'
-            : 'text-gray-500 hover:text-gray-700'}"
+            ? 'text-braun-900 border-b-2 border-braun-900 bg-braun-50'
+            : 'text-braun-500 hover:text-braun-700'}"
       >
         Mailing Address
       </button>
@@ -235,8 +235,8 @@
         onclick={() => activeTab = 'gps'}
         class="flex-1 px-4 py-3 text-sm font-medium transition
           {activeTab === 'gps'
-            ? 'text-accent border-b-2 border-accent bg-accent/5'
-            : 'text-gray-500 hover:text-gray-700'}"
+            ? 'text-braun-900 border-b-2 border-braun-900 bg-braun-50'
+            : 'text-braun-500 hover:text-braun-700'}"
       >
         GPS & Map
       </button>
@@ -244,8 +244,8 @@
         onclick={() => activeTab = 'cultural'}
         class="flex-1 px-4 py-3 text-sm font-medium transition
           {activeTab === 'cultural'
-            ? 'text-accent border-b-2 border-accent bg-accent/5'
-            : 'text-gray-500 hover:text-gray-700'}"
+            ? 'text-braun-900 border-b-2 border-braun-900 bg-braun-50'
+            : 'text-braun-500 hover:text-braun-700'}"
       >
         Cultural Region
       </button>
@@ -263,69 +263,69 @@
         <!-- Address Tab -->
         <div class="space-y-4">
           <div>
-            <label for="street" class="block text-sm font-medium text-gray-700 mb-1">Street</label>
+            <label for="street" class="block text-sm font-medium text-braun-700 mb-1">Street</label>
             <input
               id="street"
               type="text"
               bind:value={formData.address_street}
-              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+              class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
             />
           </div>
 
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <label for="city" class="block text-sm font-medium text-gray-700 mb-1">City</label>
+              <label for="city" class="block text-sm font-medium text-braun-700 mb-1">City</label>
               <input
                 id="city"
                 type="text"
                 bind:value={formData.address_city}
-                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
               />
             </div>
             <div>
-              <label for="county" class="block text-sm font-medium text-gray-700 mb-1">County</label>
+              <label for="county" class="block text-sm font-medium text-braun-700 mb-1">County</label>
               <input
                 id="county"
                 type="text"
                 bind:value={formData.address_county}
-                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
               />
             </div>
           </div>
 
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <label for="state" class="block text-sm font-medium text-gray-700 mb-1">State</label>
+              <label for="state" class="block text-sm font-medium text-braun-700 mb-1">State</label>
               <input
                 id="state"
                 type="text"
                 bind:value={formData.address_state}
                 maxlength="2"
                 placeholder="NY"
-                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent uppercase"
+                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 uppercase"
               />
             </div>
             <div>
-              <label for="zipcode" class="block text-sm font-medium text-gray-700 mb-1">Zipcode</label>
+              <label for="zipcode" class="block text-sm font-medium text-braun-700 mb-1">Zipcode</label>
               <input
                 id="zipcode"
                 type="text"
                 bind:value={formData.address_zipcode}
                 placeholder="12345"
-                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
               />
             </div>
           </div>
 
           <!-- Address Verification -->
-          <div class="pt-4 border-t border-gray-200">
+          <div class="pt-4 border-t border-braun-200">
             <label class="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
                 bind:checked={formData.address_verified}
-                class="w-4 h-4 text-verified rounded border-gray-300 focus:ring-verified"
+                class="w-4 h-4 text-verified rounded border-braun-300 focus:ring-verified"
               />
-              <span class="text-sm font-medium text-gray-700">
+              <span class="text-sm font-medium text-braun-700">
                 Confirm Mailing Address
               </span>
             </label>
@@ -336,33 +336,33 @@
         <div class="space-y-4">
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <label for="gps_lat" class="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
+              <label for="gps_lat" class="block text-sm font-medium text-braun-700 mb-1">Latitude</label>
               <input
                 id="gps_lat"
                 type="text"
                 bind:value={formData.gps_lat}
                 placeholder="42.123456"
-                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent font-mono text-sm"
+                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 font-mono text-sm"
               />
             </div>
             <div>
-              <label for="gps_lng" class="block text-sm font-medium text-gray-700 mb-1">Longitude</label>
+              <label for="gps_lng" class="block text-sm font-medium text-braun-700 mb-1">Longitude</label>
               <input
                 id="gps_lng"
                 type="text"
                 bind:value={formData.gps_lng}
                 placeholder="-73.123456"
-                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent font-mono text-sm"
+                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 font-mono text-sm"
               />
             </div>
           </div>
 
           <!-- Map for GPS verification -->
           <div>
-            <p class="text-sm text-gray-600 mb-2">
+            <p class="text-sm text-braun-600 mb-2">
               Drag the marker to the exact location, or click on the map to set GPS
             </p>
-            <div class="h-64 rounded border border-gray-200 overflow-hidden">
+            <div class="h-64 rounded border border-braun-200 overflow-hidden">
               <Map
                 locations={mapLocation.gps ? [mapLocation] : []}
                 onLocationVerify={handleGpsUpdate}
@@ -379,14 +379,14 @@
           </div>
 
           <!-- GPS Verification -->
-          <div class="pt-4 border-t border-gray-200">
+          <div class="pt-4 border-t border-braun-200">
             <label class="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
                 bind:checked={formData.gps_verified}
-                class="w-4 h-4 text-verified rounded border-gray-300 focus:ring-verified"
+                class="w-4 h-4 text-verified rounded border-braun-300 focus:ring-verified"
               />
-              <span class="text-sm font-medium text-gray-700">
+              <span class="text-sm font-medium text-braun-700">
                 Confirm GPS Location
               </span>
             </label>
@@ -397,13 +397,13 @@
         <div class="space-y-4">
           <!-- Local Cultural Region -->
           <div>
-            <label for="cultural_region" class="block text-sm font-medium text-gray-700 mb-1">
+            <label for="cultural_region" class="block text-sm font-medium text-braun-700 mb-1">
               Local Cultural Region
             </label>
             <select
               id="cultural_region"
               bind:value={formData.cultural_region}
-              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+              class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
             >
               <option value="">Not specified</option>
               {#each localCulturalRegions() as region}
@@ -411,7 +411,7 @@
               {/each}
             </select>
             {#if suggestedCulturalRegion && !formData.cultural_region}
-              <p class="text-xs text-accent mt-1">
+              <p class="text-xs text-braun-900 mt-1">
                 Suggestion based on county: <button
                   type="button"
                   onclick={() => formData.cultural_region = suggestedCulturalRegion}
@@ -426,23 +426,23 @@
                 type="checkbox"
                 bind:checked={formData.local_cultural_region_verified}
                 disabled={!formData.cultural_region}
-                class="w-4 h-4 text-verified rounded border-gray-300 focus:ring-verified disabled:opacity-50"
+                class="w-4 h-4 text-verified rounded border-braun-300 focus:ring-verified disabled:opacity-50"
               />
-              <span class="text-sm text-gray-600 {!formData.cultural_region ? 'opacity-50' : ''}">
+              <span class="text-sm text-braun-600 {!formData.cultural_region ? 'opacity-50' : ''}">
                 Confirm Local Cultural Region
               </span>
             </label>
           </div>
 
           <!-- Country Cultural Region -->
-          <div class="pt-4 border-t border-gray-200">
-            <label for="country_cultural_region" class="block text-sm font-medium text-gray-700 mb-1">
+          <div class="pt-4 border-t border-braun-200">
+            <label for="country_cultural_region" class="block text-sm font-medium text-braun-700 mb-1">
               Country Cultural Region
             </label>
             <select
               id="country_cultural_region"
               bind:value={formData.country_cultural_region}
-              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+              class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
             >
               <option value="">Not specified</option>
               {#each nearbyCountryCulturalRegions() as region}
@@ -455,7 +455,7 @@
               {/each}
             </select>
             {#if suggestedCountryCulturalRegion() && !formData.country_cultural_region}
-              <p class="text-xs text-accent mt-1">
+              <p class="text-xs text-braun-900 mt-1">
                 Detected from GPS: <button
                   type="button"
                   onclick={() => formData.country_cultural_region = suggestedCountryCulturalRegion()!}
@@ -470,9 +470,9 @@
                 type="checkbox"
                 bind:checked={formData.country_cultural_region_verified}
                 disabled={!formData.country_cultural_region}
-                class="w-4 h-4 text-verified rounded border-gray-300 focus:ring-verified disabled:opacity-50"
+                class="w-4 h-4 text-verified rounded border-braun-300 focus:ring-verified disabled:opacity-50"
               />
-              <span class="text-sm text-gray-600 {!formData.country_cultural_region ? 'opacity-50' : ''}">
+              <span class="text-sm text-braun-600 {!formData.country_cultural_region ? 'opacity-50' : ''}">
                 Confirm Country Cultural Region
               </span>
             </label>
@@ -482,11 +482,11 @@
     </div>
 
     <!-- Footer -->
-    <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+    <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-braun-200 bg-braun-50">
       <button
         type="button"
         onclick={onClose}
-        class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
+        class="px-4 py-2 text-sm font-medium text-braun-700 bg-white border border-braun-300 rounded hover:bg-braun-50 transition"
       >
         Cancel
       </button>
@@ -494,7 +494,7 @@
         type="button"
         onclick={handleSubmit}
         disabled={saving}
-        class="px-4 py-2 text-sm font-medium text-white bg-accent rounded hover:opacity-90 transition disabled:opacity-50"
+        class="px-4 py-2 text-sm font-medium text-white bg-braun-900 rounded hover:bg-braun-600 transition disabled:opacity-50"
       >
         {saving ? 'Saving...' : 'Save Changes'}
       </button>

@@ -683,19 +683,19 @@
   >
     <!-- Modal - wider for 2-column layout -->
     <div
-      class="bg-[#fff8f2] rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto relative z-[100000]"
+      class="bg-braun-50 rounded border border-braun-300 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto relative z-[100000]"
       onclick={(e) => e.stopPropagation()}
     >
       <!-- Header -->
-      <div class="p-5 flex justify-between items-center bg-[#fff8f2]">
+      <div class="p-5 flex justify-between items-center bg-braun-50">
         <div>
-          <h2 id="modal-title" class="text-xl font-semibold text-foreground">
+          <h2 id="modal-title" class="text-xl font-semibold text-braun-900">
             New Location
           </h2>
         </div>
         <button
           onclick={handleCancel}
-          class="text-gray-400 hover:text-gray-600 transition p-1 rounded hover:bg-gray-200"
+          class="text-braun-400 hover:text-braun-600 transition p-1 rounded hover:bg-braun-200"
           aria-label="Close"
         >
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -741,7 +741,7 @@
         <!-- Show form only when intelligence is dismissed or no GPS -->
         {#if !showIntelligence || intelligenceDismissed || !$importModal.prefilledData?.gps_lat}
         {#if error}
-          <div class="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center gap-2">
+          <div class="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm flex items-center gap-2">
             <svg class="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
               <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
             </svg>
@@ -752,7 +752,7 @@
         <!-- Row 1: Location Name + Checkboxes (Host / Sub-Location) -->
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label for="loc-name" class="block text-sm font-medium text-gray-700 mb-1.5">
+            <label for="loc-name" class="block text-sm font-medium text-braun-700 mb-1.5">
               Location Name
             </label>
             <input
@@ -761,7 +761,7 @@
               bind:value={name}
               disabled={saving}
               placeholder="Enter location name"
-              class="w-full px-3 py-2.5 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition"
+              class="w-full px-3 py-2.5 border border-braun-300 rounded bg-white focus:outline-none focus:border-braun-600 focus:border-transparent disabled:opacity-50 transition"
             />
           </div>
           <div class="flex items-end pb-2 gap-4">
@@ -771,9 +771,9 @@
                 checked={isHostLocation}
                 onchange={handleHostLocationToggle}
                 disabled={saving}
-                class="h-4 w-4 rounded border-gray-300 text-accent focus:ring-accent cursor-pointer"
+                class="h-4 w-4 rounded border-braun-300 text-braun-900 focus:border-braun-600 cursor-pointer"
               />
-              <span class="text-sm font-medium text-gray-700">Host</span>
+              <span class="text-sm font-medium text-braun-700">Host</span>
             </label>
             <label class="flex items-center gap-2 cursor-pointer select-none">
               <input
@@ -781,38 +781,38 @@
                 checked={addFirstBuilding}
                 onchange={handleAddBuildingToggle}
                 disabled={saving || !isHostLocation}
-                class="h-4 w-4 rounded border-gray-300 text-accent focus:ring-accent cursor-pointer disabled:opacity-40"
+                class="h-4 w-4 rounded border-braun-300 text-braun-900 focus:border-braun-600 cursor-pointer disabled:opacity-40"
               />
-              <span class="text-sm font-medium text-gray-700 {!isHostLocation ? 'opacity-40' : ''}">Sub-Location</span>
+              <span class="text-sm font-medium text-braun-700 {!isHostLocation ? 'opacity-40' : ''}">Sub-Location</span>
             </label>
           </div>
         </div>
 
         <!-- Phase 2: Reference Map Match Suggestions -->
         {#if refMapMatches.length > 0 && !matchesDismissed}
-          <div class="bg-accent/10 border border-accent/30 rounded-lg p-3 animate-in fade-in duration-200">
+          <div class="bg-braun-100 border border-braun-300 rounded p-3 animate-in fade-in duration-200">
             <div class="flex items-start gap-2">
-              <svg class="w-5 h-5 text-accent flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg class="w-5 h-5 text-braun-900 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
               <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-foreground">
+                <p class="text-sm font-medium text-braun-900">
                   {refMapMatches.length === 1 ? 'Possible match found' : `${refMapMatches.length} possible matches found`}
                 </p>
                 <div class="mt-2 space-y-2">
                   {#each refMapMatches as match}
-                    <div class="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-accent/20">
+                    <div class="flex items-center justify-between bg-white rounded px-3 py-2 border border-braun-200">
                       <div class="min-w-0 flex-1">
-                        <p class="text-sm font-medium text-gray-900 truncate">{match.name}</p>
-                        <p class="text-xs text-gray-500">
+                        <p class="text-sm font-medium text-braun-900 truncate">{match.name}</p>
+                        <p class="text-xs text-braun-500">
                           From: {match.mapName}
-                          <span class="ml-2 text-accent">{Math.round(match.score * 100)}% match</span>
+                          <span class="ml-2 text-braun-900">{Math.round(match.score * 100)}% match</span>
                         </p>
                       </div>
                       <button
                         onclick={() => applyMatchGps(match)}
-                        class="ml-3 px-3 py-1.5 bg-accent text-white text-xs font-medium rounded hover:opacity-90 transition flex-shrink-0"
+                        class="ml-3 px-3 py-1.5 bg-braun-900 text-white text-xs font-medium rounded hover:bg-braun-600 transition flex-shrink-0"
                       >
                         Apply GPS
                       </button>
@@ -821,7 +821,7 @@
                 </div>
                 <button
                   onclick={dismissMatches}
-                  class="mt-2 text-xs text-accent hover:opacity-80 transition"
+                  class="mt-2 text-xs text-braun-900 hover:opacity-80 transition"
                 >
                   Dismiss suggestions
                 </button>
@@ -829,10 +829,10 @@
             </div>
           </div>
         {:else if matchesLoading}
-          <div class="text-xs text-gray-400 flex items-center gap-1">
-            <svg class="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
+          <div class="text-xs text-braun-400 flex items-center gap-1">
+            <div class="w-3 h-3 border border-braun-400 rounded flex items-center justify-center">
+              <div class="w-1.5 h-1.5 bg-braun-400 rounded"></div>
+            </div>
             Checking reference maps...
           </div>
         {/if}
@@ -841,7 +841,7 @@
         {#if addFirstBuilding}
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <label for="subloc-name" class="block text-sm font-medium text-gray-700 mb-1.5">
+              <label for="subloc-name" class="block text-sm font-medium text-braun-700 mb-1.5">
                 Sub-Location Name
               </label>
               <input
@@ -850,7 +850,7 @@
                 bind:value={subLocationName}
                 disabled={saving}
                 placeholder="e.g., Main Building, Powerhouse"
-                class="w-full px-3 py-2.5 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition"
+                class="w-full px-3 py-2.5 border border-braun-300 rounded bg-white focus:outline-none focus:border-braun-600 focus:border-transparent disabled:opacity-50 transition"
               />
               {#if subLocNameDuplicate}
                 <p class="text-xs text-red-600 mt-1">Name already exists</p>
@@ -862,9 +862,9 @@
                   type="checkbox"
                   bind:checked={isPrimaryBuilding}
                   disabled={saving}
-                  class="h-4 w-4 rounded border-gray-300 text-accent focus:ring-accent cursor-pointer"
+                  class="h-4 w-4 rounded border-braun-300 text-braun-900 focus:border-braun-600 cursor-pointer"
                 />
-                <span class="text-sm font-medium text-gray-700">Primary</span>
+                <span class="text-sm font-medium text-braun-700">Primary</span>
               </label>
             </div>
           </div>
@@ -872,7 +872,7 @@
 
         <!-- State (required) -->
         <div>
-          <label for="loc-state" class="block text-sm font-medium text-gray-700 mb-1.5">
+          <label for="loc-state" class="block text-sm font-medium text-braun-700 mb-1.5">
             State
           </label>
           <AutocompleteInput
@@ -881,15 +881,15 @@
             suggestions={getStateSuggestions()}
             id="loc-state"
             placeholder="NY or New York"
-            class="w-full px-3 py-2.5 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition uppercase"
+            class="w-full px-3 py-2.5 border border-braun-300 rounded bg-white focus:outline-none focus:border-braun-600 focus:border-transparent disabled:opacity-50 transition uppercase"
           />
-          <p class="text-xs text-gray-500 mt-1">Type 2-letter code or full state name</p>
+          <p class="text-xs text-braun-500 mt-1">Type 2-letter code or full state name</p>
         </div>
 
         <!-- Row 3: Type + Sub-Type -->
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label for="loc-type" class="block text-sm font-medium text-gray-700 mb-1.5">
+            <label for="loc-type" class="block text-sm font-medium text-braun-700 mb-1.5">
               Type
             </label>
             <AutocompleteInput
@@ -898,11 +898,11 @@
               suggestions={allTypes}
               id="loc-type"
               placeholder="e.g., Factory, Hospital"
-              class="w-full px-3 py-2.5 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition"
+              class="w-full px-3 py-2.5 border border-braun-300 rounded bg-white focus:outline-none focus:border-braun-600 focus:border-transparent disabled:opacity-50 transition"
             />
           </div>
           <div>
-            <label for="loc-subtype" class="block text-sm font-medium text-gray-700 mb-1.5">
+            <label for="loc-subtype" class="block text-sm font-medium text-braun-700 mb-1.5">
               Sub-Type
             </label>
             <AutocompleteInput
@@ -911,7 +911,7 @@
               suggestions={getSubTypeSuggestions()}
               id="loc-subtype"
               placeholder="e.g., Textile Mill, Asylum"
-              class="w-full px-3 py-2.5 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition"
+              class="w-full px-3 py-2.5 border border-braun-300 rounded bg-white focus:outline-none focus:border-braun-600 focus:border-transparent disabled:opacity-50 transition"
             />
           </div>
         </div>
@@ -919,14 +919,14 @@
         <!-- Row 4: Author + Status -->
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label for="loc-author" class="block text-sm font-medium text-gray-700 mb-1.5">
+            <label for="loc-author" class="block text-sm font-medium text-braun-700 mb-1.5">
               Author
             </label>
             <select
               id="loc-author"
               bind:value={author}
               disabled={saving}
-              class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition bg-white"
+              class="w-full px-3 py-2.5 border border-braun-300 rounded focus:outline-none focus:border-braun-600 focus:border-transparent disabled:opacity-50 transition bg-white"
             >
               {#each users as user}
                 <option value={user.username}>
@@ -936,14 +936,14 @@
             </select>
           </div>
           <div>
-            <label for="loc-access" class="block text-sm font-medium text-gray-700 mb-1.5">
+            <label for="loc-access" class="block text-sm font-medium text-braun-700 mb-1.5">
               Status
             </label>
             <select
               id="loc-access"
               bind:value={access}
               disabled={saving}
-              class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent disabled:opacity-50 transition bg-white"
+              class="w-full px-3 py-2.5 border border-braun-300 rounded focus:outline-none focus:border-braun-600 focus:border-transparent disabled:opacity-50 transition bg-white"
             >
               {#each ACCESS_OPTIONS as opt}
                 <option value={opt}>{opt}</option>
@@ -954,7 +954,7 @@
 
         <!-- GPS Pre-fill indicator -->
         {#if $importModal.prefilledData?.gps_lat && $importModal.prefilledData?.gps_lng}
-          <div class="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+          <div class="p-3 bg-green-50 border border-green-200 rounded flex items-center gap-2">
             <svg class="w-5 h-5 text-green-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
               <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" />
             </svg>
@@ -969,26 +969,26 @@
 
       <!-- Footer - hide when showing intelligence -->
       {#if !showIntelligence || intelligenceDismissed || !$importModal.prefilledData?.gps_lat}
-      <div class="p-5 bg-[#fff8f2] flex justify-end items-center">
+      <div class="p-5 bg-braun-50 flex justify-end items-center">
         <div class="flex gap-3">
           <button
             onclick={handleCancel}
             disabled={saving}
-            class="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-50 font-medium"
+            class="px-3 py-1.5 text-sm text-braun-700 bg-white border border-braun-300 rounded hover:bg-braun-50 transition disabled:opacity-50 font-medium"
           >
             Cancel
           </button>
           <button
             onclick={handleCreateAndAddMedia}
             disabled={saving}
-            class="px-3 py-1.5 text-sm border-2 border-accent text-accent bg-white rounded-lg hover:bg-accent hover:text-white transition disabled:opacity-50 font-medium"
+            class="px-3 py-1.5 text-sm border-2 border-braun-400 text-braun-900 bg-white rounded hover:bg-braun-900 hover:text-white transition disabled:opacity-50 font-medium"
           >
             {saving ? 'Adding...' : 'Add Media'}
           </button>
           <button
             onclick={handleCreate}
             disabled={saving}
-            class="px-3 py-1.5 text-sm bg-accent text-white rounded-lg hover:bg-accent/90 transition disabled:opacity-50 font-medium shadow-sm"
+            class="px-3 py-1.5 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50 font-medium "
           >
             {saving ? 'Creating...' : 'Create'}
           </button>

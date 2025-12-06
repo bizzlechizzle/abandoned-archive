@@ -14,7 +14,7 @@
 <div class="flex h-screen overflow-hidden">
   <Navigation />
 
-  <main class="flex-1 overflow-auto bg-background">
+  <main class="flex-1 overflow-auto bg-braun-50">
     {@render children?.()}
   </main>
 </div>

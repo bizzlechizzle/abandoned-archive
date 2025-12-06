@@ -221,10 +221,12 @@
 </script>
 
 {#if checkingSetup}
-  <div class="min-h-screen flex items-center justify-center bg-gray-50">
+  <div class="min-h-screen flex items-center justify-center bg-braun-50">
     <div class="text-center">
-      <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-accent mb-4"></div>
-      <p class="text-gray-600">Loading...</p>
+      <div class="inline-block rounded-full h-12 w-12 border-2 border-braun-300 mb-4 flex items-center justify-center">
+        <div class="w-4 h-4 bg-braun-900 rounded-full"></div>
+      </div>
+      <p class="text-braun-600">Loading...</p>
     </div>
   </div>
 {:else if currentRoute.path === '/setup'}

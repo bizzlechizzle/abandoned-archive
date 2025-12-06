@@ -52,7 +52,7 @@
 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
   {#each items as item, index}
     <button
-      class="aspect-square relative group overflow-hidden rounded-lg bg-gray-800 hover:ring-2 hover:ring-blue-500 transition"
+      class="aspect-square relative group overflow-hidden rounded bg-braun-800 hover:ring-2 hover:ring-braun-500 transition"
       onclick={() => onSelect(index)}
     >
       {#if item.thumbPath || isBrowserSupported(item.path)}
@@ -65,8 +65,8 @@
         />
       {:else}
         <!-- Placeholder for unsupported formats without thumbnails -->
-        <div class="w-full h-full flex items-center justify-center bg-gray-700">
-          <div class="text-center text-gray-400">
+        <div class="w-full h-full flex items-center justify-center bg-braun-700">
+          <div class="text-center text-braun-400">
             <svg class="w-8 h-8 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
@@ -84,11 +84,11 @@
         </div>
       {/if}
 
-      <!-- Hover overlay with name -->
-      <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black to-transparent p-2 opacity-0 group-hover:opacity-100 transition">
+      <!-- Hover overlay with name - solid background, no gradient -->
+      <div class="absolute inset-x-0 bottom-0 bg-black/70 p-2 opacity-0 group-hover:opacity-100 transition">
         <p class="text-white text-xs truncate">{item.name}</p>
         {#if item.width && item.height}
-          <p class="text-gray-400 text-xs">{item.width}×{item.height}</p>
+          <p class="text-braun-400 text-xs">{item.width}×{item.height}</p>
         {/if}
       </div>
     </button>

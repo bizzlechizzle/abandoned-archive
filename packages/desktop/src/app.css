@@ -2,49 +2,102 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Braun Linear Font Family */
+@font-face {
+  font-family: 'Braun Linear';
+  src: url('/fonts/BraunLinear-Thin.woff2') format('woff2');
+  font-weight: 100;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Braun Linear';
+  src: url('/fonts/BraunLinear-Light.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Braun Linear';
+  src: url('/fonts/BraunLinear-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Braun Linear';
+  src: url('/fonts/BraunLinear-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Braun Linear';
+  src: url('/fonts/BraunLinear-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 @layer base {
   :root {
-    /* Brand colors per brand_guide.md */
-    --color-accent: #b9975c;
-    --color-background: #fffbf7;
-    --color-foreground: #454545;
+    /* Braun color tokens */
+    --color-bg: #FAFAF8;
+    --color-bg-alt: #F4F4F2;
+    --color-surface: #FFFFFF;
+    --color-border: #E2E1DE;
+    --color-border-muted: #EEEEED;
+    --color-text: #1C1C1A;
+    --color-text-secondary: #5C5C58;
+    --color-text-muted: #8A8A86;
+    --color-text-disabled: #C0BFBC;
 
-    /* Font families per website global.css */
-    --font-heading: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-    --font-body: "Lora", Georgia, serif;
+    /* Typography */
+    --font-sans: 'Braun Linear', system-ui, -apple-system, sans-serif;
 
-    /* Fluid type scale per website */
-    --step--1: clamp(0.88rem, 0.82rem + 0.3vw, 0.95rem);
-    --step-0: clamp(1rem, 0.95rem + 0.4vw, 1.125rem);
-    --step-1: clamp(1.25rem, 1.1rem + 1.2vw, 1.6rem);
-    --step-2: clamp(1.6rem, 1.3rem + 2vw, 2.25rem);
-    --step-3: clamp(2.25rem, 1.6rem + 3.5vw, 3.5rem);
+    /* Legacy aliases (for gradual migration) */
+    --color-accent: #1C1C1A;
+    --color-background: #FAFAF8;
+    --color-foreground: #1C1C1A;
+
+    /* Type scale - simplified for Braun system */
+    --step--1: 0.8125rem;   /* 13px */
+    --step-0: 0.875rem;     /* 14px */
+    --step-1: 1rem;         /* 16px */
+    --step-2: 1.25rem;      /* 20px */
+    --step-3: 1.75rem;      /* 28px */
+    --step-4: 2.5rem;       /* 40px */
+    --step-5: 6rem;         /* 96px - hero */
   }
 
   body {
     margin: 0;
     padding: 0;
-    font-family: var(--font-body);
+    font-family: var(--font-sans);
+    font-size: var(--step-0);
+    line-height: 1.5;
+    color: var(--color-text);
+    background-color: var(--color-bg);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background-color: var(--color-background);
-    color: var(--color-foreground);
-    font-size: var(--step-0);
-    line-height: 1.65;
   }
 
-  /* Heading styles per website global.css */
-  h1, h2, h3 {
-    font-family: var(--font-heading);
-    font-weight: 700;
-    line-height: 1.1;
-    letter-spacing: 0.05em;
-    margin: 0 0 0.5em;
+  /* Headings - all same font, differentiated by weight/size */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-sans);
+    font-weight: 500;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    margin: 0;
   }
 
   h1 {
     font-size: var(--step-3);
-    text-transform: uppercase;
+    font-weight: 700;
   }
 
   h2 {
@@ -55,22 +108,36 @@
     font-size: var(--step-1);
   }
 
-  h4, h5, h6 {
-    font-family: var(--font-heading);
-    font-weight: 500;
-    line-height: 1.25;
-    letter-spacing: 0.04em;
-    margin: 0 0 0.5em;
-  }
-
   p {
-    margin: 0 0 1.25em;
+    margin: 0 0 1rem;
   }
 
-  /* Selection styling */
+  /* Selection - neutral, not branded */
   ::selection {
-    background-color: rgba(185, 151, 92, 0.75);
-    color: var(--color-background);
+    background-color: rgba(28, 28, 26, 0.15);
+    color: inherit;
+  }
+}
+
+/* Section label utility class */
+@layer components {
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #8A8A86;
+    margin-bottom: 1rem;
+  }
+
+  .form-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #5C5C58;
+    margin-bottom: 0.5rem;
+    display: block;
   }
 }
 

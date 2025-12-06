@@ -286,26 +286,26 @@
 
     <!-- Stats Row - directly under title -->
     {#if !loading}
-      <div class="flex justify-center gap-8 mt-2">
+      <div class="flex justify-center gap-8 mt-4">
         <div class="text-center">
-          <div class="text-2xl font-bold text-accent">{formatCount(totalLocations)}</div>
-          <div class="text-xs text-gray-500">locations</div>
+          <div class="text-2xl font-bold text-braun-900">{formatCount(totalLocations)}</div>
+          <div class="text-[11px] uppercase tracking-wider text-braun-500">locations</div>
         </div>
         <div class="text-center">
-          <div class="text-2xl font-bold text-accent">{formatCount(totalImages)}</div>
-          <div class="text-xs text-gray-500">images</div>
+          <div class="text-2xl font-bold text-braun-900">{formatCount(totalImages)}</div>
+          <div class="text-[11px] uppercase tracking-wider text-braun-500">images</div>
         </div>
         <div class="text-center">
-          <div class="text-2xl font-bold text-accent">{formatCount(totalVideos)}</div>
-          <div class="text-xs text-gray-500">videos</div>
+          <div class="text-2xl font-bold text-braun-900">{formatCount(totalVideos)}</div>
+          <div class="text-[11px] uppercase tracking-wider text-braun-500">videos</div>
         </div>
         <div class="text-center">
-          <div class="text-2xl font-bold text-accent">{formatCount(totalDocuments)}</div>
-          <div class="text-xs text-gray-500">documents</div>
+          <div class="text-2xl font-bold text-braun-900">{formatCount(totalDocuments)}</div>
+          <div class="text-[11px] uppercase tracking-wider text-braun-500">documents</div>
         </div>
         <div class="text-center">
-          <div class="text-2xl font-bold text-accent">{formatCount(totalBookmarks)}</div>
-          <div class="text-xs text-gray-500">bookmarks</div>
+          <div class="text-2xl font-bold text-braun-900">{formatCount(totalBookmarks)}</div>
+          <div class="text-[11px] uppercase tracking-wider text-braun-500">bookmarks</div>
         </div>
       </div>
     {/if}
@@ -319,24 +319,24 @@
       <div class="flex justify-center gap-8 mb-8">
         {#each Array(5) as _}
           <div class="text-center space-y-1">
-            <div class="skeleton-shimmer h-8 w-12 bg-gray-200 rounded mx-auto"></div>
-            <div class="skeleton-shimmer h-3 w-16 bg-gray-200 rounded"></div>
+            <div class="skeleton-shimmer h-8 w-12 bg-braun-200 rounded mx-auto"></div>
+            <div class="skeleton-shimmer h-3 w-16 bg-braun-200 rounded"></div>
           </div>
         {/each}
       </div>
       <!-- Projects skeleton -->
-      <div class="bg-white rounded-lg shadow p-6">
-        <div class="skeleton-shimmer h-5 w-24 bg-gray-200 rounded mb-4"></div>
+      <div class="bg-white border border-braun-300 rounded p-8">
+        <div class="skeleton-shimmer h-5 w-24 bg-braun-200 rounded mb-4"></div>
         <SkeletonLoader type="row" count={3} />
       </div>
       <!-- Two-column skeleton -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div class="bg-white rounded-lg shadow p-6">
-          <div class="skeleton-shimmer h-5 w-32 bg-gray-200 rounded mb-4"></div>
+        <div class="bg-white border border-braun-300 rounded p-8">
+          <div class="skeleton-shimmer h-5 w-32 bg-braun-200 rounded mb-4"></div>
           <SkeletonLoader type="row" count={3} />
         </div>
-        <div class="bg-white rounded-lg shadow p-6">
-          <div class="skeleton-shimmer h-5 w-28 bg-gray-200 rounded mb-4"></div>
+        <div class="bg-white border border-braun-300 rounded p-8">
+          <div class="skeleton-shimmer h-5 w-28 bg-braun-200 rounded mb-4"></div>
           <SkeletonLoader type="row" count={3} />
         </div>
       </div>
@@ -345,31 +345,31 @@
     <!-- Active Import Status -->
     {#if $isImporting && $importProgress}
       <div class="mb-6">
-        <div class="bg-white rounded-lg shadow p-6 border-l-4 border-accent">
+        <div class="bg-white border border-braun-300 rounded p-8 border-l-4 border-l-braun-900">
           <div class="flex items-center justify-between mb-3">
             <div class="flex items-center gap-2">
-              <div class="w-3 h-3 bg-accent rounded-full animate-pulse"></div>
-              <h3 class="text-lg font-semibold text-foreground">Import In Progress</h3>
+              <div class="w-3 h-3 bg-braun-900 rounded-full"></div>
+              <h3 class="section-label mb-0">Import In Progress</h3>
             </div>
-            <span class="text-sm text-gray-500">
+            <span class="text-sm text-braun-500">
               {$importProgress.current} of {$importProgress.total} files
             </span>
           </div>
-          <p class="text-sm text-gray-600 mb-2">
-            Importing to <button onclick={() => router.navigate(`/location/${$importProgress.locid}`)} class="text-accent hover:underline font-medium">{$importProgress.locationName}</button>
+          <p class="text-sm text-braun-600 mb-2">
+            Importing to <button onclick={() => router.navigate(`/location/${$importProgress.locid}`)} class="text-braun-900 hover:underline font-medium">{$importProgress.locationName}</button>
           </p>
           {#if $importProgress.currentFilename}
-            <p class="text-xs text-gray-500 mb-2 truncate" title={$importProgress.currentFilename}>
+            <p class="text-xs text-braun-500 mb-2 truncate" title={$importProgress.currentFilename}>
               Processing: {$importProgress.currentFilename}
             </p>
           {/if}
-          <div class="w-full bg-gray-200 rounded-full h-3">
+          <div class="w-full bg-braun-200 rounded-full h-3">
             <div
-              class="bg-accent h-3 rounded-full transition-all duration-300 ease-out"
+              class="bg-braun-900 h-3 rounded-full transition-all duration-300 ease-out"
               style="width: {$importProgress.percent}%"
             ></div>
           </div>
-          <p class="text-xs text-gray-500 mt-2">
+          <p class="text-xs text-braun-500 mt-2">
             {$importProgress.percent}% complete
           </p>
         </div>
@@ -379,21 +379,21 @@
     <!-- Recent Background Imports -->
     {#if $storeRecentImports.length > 0}
       <div class="mb-6">
-        <div class="bg-white rounded-lg shadow p-6">
-          <h3 class="text-lg font-semibold text-foreground mb-3">Recent Background Imports</h3>
+        <div class="bg-white border border-braun-300 rounded p-8">
+          <h3 class="section-label">Recent Background Imports</h3>
           <div class="space-y-2">
             {#each $storeRecentImports.slice(0, 3) as job}
-              <div class="flex items-center justify-between text-sm py-2 border-b border-gray-100 last:border-0">
+              <div class="flex items-center justify-between text-sm py-2 border-b border-braun-200 last:border-0">
                 <div class="flex items-center gap-2">
-                  <button onclick={() => router.navigate(`/location/${job.locid}`)} class="text-accent hover:underline">
+                  <button onclick={() => router.navigate(`/location/${job.locid}`)} class="text-braun-900 hover:underline font-medium">
                     {job.locationName}
                   </button>
                 </div>
-                <div class="text-gray-500 text-xs">
+                <div class="text-braun-500 text-xs">
                   {#if job.status === 'completed'}
                     {job.imported} imported, {job.duplicates} duplicates
                   {:else}
-                    <span class="text-red-500">{job.error || 'Failed'}</span>
+                    <span class="text-error">{job.error || 'Failed'}</span>
                   {/if}
                 </div>
               </div>
@@ -405,10 +405,10 @@
 
     <!-- Projects (Pinned Locations) -->
     <div class="mb-6">
-      <div class="bg-white rounded-lg shadow p-6">
-        <div class="flex justify-between items-center mb-3">
-          <h3 class="text-lg font-semibold text-foreground">Projects</h3>
-          <button onclick={() => router.navigate('/locations', undefined, { project: true })} class="text-xs text-accent hover:underline">
+      <div class="bg-white border border-braun-300 rounded p-8">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="section-label mb-0">Projects</h3>
+          <button onclick={() => router.navigate('/locations', undefined, { project: true })} class="text-xs text-braun-600 hover:text-braun-900 hover:underline font-medium">
             show all
           </button>
         </div>
@@ -417,24 +417,24 @@
             {#each projects as location}
               <button
                 onclick={() => router.navigate(`/location/${location.locid}`)}
-                class="flex items-center gap-4 w-full text-left px-3 py-3 rounded-lg hover:bg-gray-50 transition"
+                class="flex items-center gap-4 w-full text-left px-3 py-3 rounded hover:bg-braun-100 transition"
               >
-                <div class="w-32 h-20 bg-gray-200 rounded-lg flex-shrink-0 overflow-hidden">
+                <div class="w-32 h-20 bg-braun-200 rounded flex-shrink-0 overflow-hidden">
                   {#if location.heroThumbPath}
                     <img src={`media://${location.heroThumbPath}?v=${cacheVersion}`} alt="" class="w-full h-full object-cover" loading="lazy" width="128" height="80" />
                   {/if}
                 </div>
                 <div class="min-w-0">
-                  <span class="text-base text-accent font-medium truncate block">{location.locnam}</span>
+                  <span class="text-base text-braun-900 font-medium truncate block">{location.locnam}</span>
                   {#if location.address?.state}
-                    <span class="text-sm text-gray-400">{location.address.state}</span>
+                    <span class="text-sm text-braun-500">{location.address.state}</span>
                   {/if}
                 </div>
               </button>
             {/each}
           </div>
         {:else}
-          <p class="text-sm text-gray-400">No pinned locations yet</p>
+          <p class="text-sm text-braun-500">No pinned locations yet</p>
         {/if}
       </div>
     </div>
@@ -442,10 +442,10 @@
     <!-- Recent Locations + Recent Imports -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
       <!-- Recent Locations -->
-      <div class="bg-white rounded-lg shadow p-6">
-        <div class="flex justify-between items-center mb-3">
-          <h3 class="text-lg font-semibold text-foreground">Recent Locations</h3>
-          <button onclick={() => router.navigate('/locations')} class="text-xs text-accent hover:underline">
+      <div class="bg-white border border-braun-300 rounded p-8">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="section-label mb-0">Recent Locations</h3>
+          <button onclick={() => router.navigate('/locations')} class="text-xs text-braun-600 hover:text-braun-900 hover:underline font-medium">
             show all
           </button>
         </div>
@@ -454,32 +454,32 @@
             {#each recentLocations as location}
               <button
                 onclick={() => router.navigate(`/location/${location.locid}`)}
-                class="flex items-center gap-4 w-full text-left px-2 py-2 rounded-lg hover:bg-gray-50 transition"
+                class="flex items-center gap-4 w-full text-left px-2 py-2 rounded hover:bg-braun-100 transition"
               >
-                <div class="w-16 h-16 bg-gray-200 rounded-lg flex-shrink-0 overflow-hidden">
+                <div class="w-16 h-16 bg-braun-200 rounded flex-shrink-0 overflow-hidden">
                   {#if location.heroThumbPath}
                     <img src={`media://${location.heroThumbPath}?v=${cacheVersion}`} alt="" class="w-full h-full object-cover" loading="lazy" width="64" height="64" />
                   {/if}
                 </div>
                 <div class="min-w-0">
-                  <span class="text-sm text-accent font-medium truncate block">{location.locnam}</span>
+                  <span class="text-sm text-braun-900 font-medium truncate block">{location.locnam}</span>
                   {#if location.address?.state}
-                    <span class="text-xs text-gray-400">{location.address.state}</span>
+                    <span class="text-xs text-braun-500">{location.address.state}</span>
                   {/if}
                 </div>
               </button>
             {/each}
           </div>
         {:else}
-          <p class="text-sm text-gray-400">No recent locations</p>
+          <p class="text-sm text-braun-500">No recent locations</p>
         {/if}
       </div>
 
       <!-- Recent Imports -->
-      <div class="bg-white rounded-lg shadow p-6">
-        <div class="flex justify-between items-center mb-3">
-          <h3 class="text-lg font-semibold text-foreground">Recent Imports</h3>
-          <button onclick={() => router.navigate('/imports')} class="text-xs text-accent hover:underline">
+      <div class="bg-white border border-braun-300 rounded p-8">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="section-label mb-0">Recent Imports</h3>
+          <button onclick={() => router.navigate('/imports')} class="text-xs text-braun-600 hover:text-braun-900 hover:underline font-medium">
             show all
           </button>
         </div>
@@ -488,10 +488,10 @@
             {#each recentImports as importRecord}
               <button
                 onclick={() => importRecord.locid && router.navigate(`/location/${importRecord.locid}`)}
-                class="flex items-center gap-4 w-full text-left px-2 py-2 rounded-lg hover:bg-gray-50 transition"
+                class="flex items-center gap-4 w-full text-left px-2 py-2 rounded hover:bg-braun-100 transition"
                 disabled={!importRecord.locid}
               >
-                <div class="w-16 h-16 bg-gray-200 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center text-gray-400 text-lg font-medium">
+                <div class="w-16 h-16 bg-braun-200 rounded flex-shrink-0 overflow-hidden flex items-center justify-center text-braun-500 text-lg font-medium">
                   {#if importRecord.heroThumbPath}
                     <img src={`media://${importRecord.heroThumbPath}?v=${cacheVersion}`} alt="" class="w-full h-full object-cover" loading="lazy" width="64" height="64" />
                   {:else}
@@ -499,16 +499,16 @@
                   {/if}
                 </div>
                 <div class="min-w-0">
-                  <span class="text-sm text-accent font-medium truncate block">
+                  <span class="text-sm text-braun-900 font-medium truncate block">
                     {importRecord.locnam || `Import #${importRecord.import_id.slice(0, 8)}`}
                   </span>
-                  <span class="text-xs text-gray-400">{formatDate(importRecord.import_date)}</span>
+                  <span class="text-xs text-braun-500">{formatDate(importRecord.import_date)}</span>
                 </div>
               </button>
             {/each}
           </div>
         {:else}
-          <p class="text-sm text-gray-400">No imports yet</p>
+          <p class="text-sm text-braun-500">No imports yet</p>
         {/if}
       </div>
     </div>
@@ -516,10 +516,10 @@
     <!-- Top Type + Top State (no thumbnails) -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <!-- Top Type -->
-      <div class="bg-white rounded-lg shadow p-6">
-        <div class="flex justify-between items-center mb-3">
-          <h3 class="text-lg font-semibold text-foreground">Top Type</h3>
-          <button onclick={() => router.navigate('/locations')} class="text-xs text-accent hover:underline">
+      <div class="bg-white border border-braun-300 rounded p-8">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="section-label mb-0">Top Type</h3>
+          <button onclick={() => router.navigate('/locations')} class="text-xs text-braun-600 hover:text-braun-900 hover:underline font-medium">
             show all
           </button>
         </div>
@@ -528,23 +528,23 @@
             {#each topTypes as stat}
               <button
                 onclick={() => router.navigate('/locations', undefined, { type: stat.type })}
-                class="flex items-center justify-between w-full text-left px-2 py-2 rounded hover:bg-gray-50 transition"
+                class="flex items-center justify-between w-full text-left px-2 py-2 rounded hover:bg-braun-100 transition"
               >
-                <span class="text-sm text-accent font-medium truncate">{stat.type}</span>
-                <span class="text-xs text-gray-500">{stat.count}</span>
+                <span class="text-sm text-braun-900 font-medium truncate">{stat.type}</span>
+                <span class="text-xs text-braun-500">{stat.count}</span>
               </button>
             {/each}
           </div>
         {:else}
-          <p class="text-sm text-gray-400">No data yet</p>
+          <p class="text-sm text-braun-500">No data yet</p>
         {/if}
       </div>
 
       <!-- Top State -->
-      <div class="bg-white rounded-lg shadow p-6">
-        <div class="flex justify-between items-center mb-3">
-          <h3 class="text-lg font-semibold text-foreground">Top State</h3>
-          <button onclick={() => router.navigate('/locations')} class="text-xs text-accent hover:underline">
+      <div class="bg-white border border-braun-300 rounded p-8">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="section-label mb-0">Top State</h3>
+          <button onclick={() => router.navigate('/locations')} class="text-xs text-braun-600 hover:text-braun-900 hover:underline font-medium">
             show all
           </button>
         </div>
@@ -553,15 +553,15 @@
             {#each topStates as stat}
               <button
                 onclick={() => router.navigate('/locations', undefined, { state: stat.state })}
-                class="flex items-center justify-between w-full text-left px-2 py-2 rounded hover:bg-gray-50 transition"
+                class="flex items-center justify-between w-full text-left px-2 py-2 rounded hover:bg-braun-100 transition"
               >
-                <span class="text-sm text-accent font-medium truncate">{stat.state}</span>
-                <span class="text-xs text-gray-500">{stat.count}</span>
+                <span class="text-sm text-braun-900 font-medium truncate">{stat.state}</span>
+                <span class="text-xs text-braun-500">{stat.count}</span>
               </button>
             {/each}
           </div>
         {:else}
-          <p class="text-sm text-gray-400">No data yet</p>
+          <p class="text-sm text-braun-500">No data yet</p>
         {/if}
       </div>
     </div>
@@ -570,41 +570,13 @@
 </div>
 
 <style>
-  /* Hero title: auto-sized to fit container, matches LocationDetail styling */
+  /* Hero title: auto-sized to fit container, Braun design - no decorative shadow */
   .hero-title {
-    color: #454545;
-    letter-spacing: 0.02em; /* Tight, premium spacing */
-    word-spacing: -0.02em; /* Cohesive word blocks */
-    font-weight: 800;
-    text-wrap: balance; /* Balances word distribution across lines */
-    /* Hand-painted sign style - hard offset shadow, accent gold */
-    text-shadow: 3px 3px 0 rgba(185, 151, 92, 0.5);
+    color: #1C1C1A;
+    letter-spacing: -0.02em;
+    font-weight: 700;
+    text-wrap: balance;
   }
 
-  /* OPT-040: Skeleton shimmer animation */
-  .skeleton-shimmer {
-    position: relative;
-    overflow: hidden;
-  }
-
-  .skeleton-shimmer::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      rgba(255, 255, 255, 0.4) 50%,
-      transparent 100%
-    );
-    animation: shimmer 1.5s infinite;
-  }
-
-  @keyframes shimmer {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(100%); }
-  }
+  /* Braun: No shimmer animation - static loading states only */
 </style>

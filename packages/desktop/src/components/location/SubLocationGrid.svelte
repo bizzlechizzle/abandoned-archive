@@ -37,20 +37,20 @@
 
 <section class="mt-8">
   <div class="mb-4">
-    <h2 class="text-lg font-semibold text-foreground">Buildings & Structures</h2>
+    <h2 class="text-lg font-semibold text-braun-900">Buildings & Structures</h2>
   </div>
 
   {#if sublocations.length === 0}
-    <div class="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
-      <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div class="text-center py-12 bg-braun-50 rounded border-2 border-dashed border-braun-200">
+      <svg class="w-12 h-12 mx-auto text-braun-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
       </svg>
-      <p class="text-gray-500 mb-2">No buildings added yet</p>
-      <p class="text-sm text-gray-400">Add buildings to organize media by structure</p>
+      <p class="text-braun-500 mb-2">No buildings added yet</p>
+      <p class="text-sm text-braun-400">Add buildings to organize media by structure</p>
       {#if onAddSubLocation}
         <button
           onclick={onAddSubLocation}
-          class="mt-4 px-4 py-2 bg-accent text-white rounded-full hover:opacity-90 transition shadow-sm"
+          class="mt-4 px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition"
         >
           Add First Building
         </button>
@@ -61,10 +61,10 @@
       {#each sublocations as subloc}
         <button
           onclick={() => navigateToSubLocation(subloc.subid)}
-          class="building-card rounded-lg overflow-hidden text-left"
+          class="building-card rounded overflow-hidden text-left"
         >
           <!-- Hero image with cinematic text overlay (golden ratio) -->
-          <div class="card-container aspect-[1.618] bg-gray-100 relative overflow-hidden">
+          <div class="card-container aspect-[1.618] bg-braun-100 relative overflow-hidden">
             {#if subloc.hero_thumb_path}
               <img
                 src="media://{subloc.hero_thumb_path}"
@@ -72,8 +72,8 @@
                 class="w-full h-full object-cover"
               />
             {:else}
-              <div class="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
-                <svg class="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div class="w-full h-full flex items-center justify-center bg-braun-200">
+                <svg class="w-12 h-12 text-braun-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                 </svg>
               </div>
@@ -82,8 +82,8 @@
             <!-- Permanent dark overlay for text legibility -->
             <div class="absolute inset-0 pointer-events-none" style="background: rgba(69,69,69,0.25);"></div>
 
-            <!-- Gold gradient hover overlay -->
-            <div class="gold-overlay absolute inset-0 opacity-0 transition-opacity duration-300 pointer-events-none" style="background: linear-gradient(135deg, rgba(185,151,92,0.4) 0%, rgba(212,175,55,0.25) 50%, rgba(185,151,92,0.4) 100%);"></div>
+            <!-- Subtle hover overlay -->
+            <div class="hover-overlay absolute inset-0 opacity-0 transition-opacity duration-300 pointer-events-none" style="background: rgba(28,28,26,0.15);"></div>
 
             <!-- Cinematic centered title -->
             <div class="absolute inset-0 flex items-center justify-center">
@@ -100,13 +100,13 @@
       {#if onAddSubLocation}
         <button
           onclick={onAddSubLocation}
-          class="add-card rounded-lg border-2 border-dashed border-gray-200 hover:border-accent hover:bg-accent/5 transition flex flex-col items-center justify-center gap-2 {addCardFullWidth ? 'col-span-2' : ''}"
+          class="add-card rounded border-2 border-dashed border-braun-200 hover:border-braun-900 hover:bg-braun-100 transition flex flex-col items-center justify-center gap-2 {addCardFullWidth ? 'col-span-2' : ''}"
           style="aspect-ratio: {addCardFullWidth ? '3.3' : '1.618'};"
         >
-          <svg class="w-8 h-8 text-gray-400 group-hover:text-accent transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="w-8 h-8 text-braun-400 group-hover:text-braun-900 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
-          <span class="text-sm text-gray-500">Add Building</span>
+          <span class="text-sm text-braun-500">Add Building</span>
         </button>
       {/if}
     </div>
@@ -114,20 +114,19 @@
 </section>
 
 <style>
-  /* Premium hover effect - matches LocationGallery */
+  /* Premium hover effect - Braun design system */
   .building-card {
-    transition: transform 200ms ease, box-shadow 200ms ease;
+    transition: transform 200ms ease, border-color 200ms ease;
     border: 2px solid transparent;
   }
 
   .building-card:hover {
     transform: scale(1.02);
-    box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.15);
-    border-color: var(--color-accent, #b9975c);
+    border-color: #1C1C1A; /* braun-900 */
   }
 
-  /* Gold gradient overlay on hover */
-  .building-card:hover .gold-overlay {
+  /* Subtle overlay on hover */
+  .building-card:hover .hover-overlay {
     opacity: 1;
   }
 
@@ -137,10 +136,10 @@
   }
 
   /* Cinematic title - scales with container width */
+  /* Braun: No text-shadow, use overlay for legibility */
   .cinematic-title {
     font-size: 10cqw;
     line-height: 1.2;
-    text-shadow: 0 2px 6px rgba(0,0,0,0.6);
   }
 
   /* Add card hover */
@@ -150,6 +149,6 @@
 
   .add-card:hover svg,
   .add-card:hover span {
-    color: var(--color-accent, #b9975c);
+    color: #1C1C1A; /* braun-900 */
   }
 </style>

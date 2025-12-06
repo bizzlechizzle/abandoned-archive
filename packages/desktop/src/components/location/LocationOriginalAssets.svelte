@@ -82,21 +82,21 @@
   }
 </script>
 
-<div class="mt-6 bg-white rounded-lg shadow">
+<div class="mt-6 bg-white rounded border border-braun-300">
   <!-- Outer accordion header -->
   <button
     onclick={() => isOpen = !isOpen}
     aria-expanded={isOpen}
-    class="w-full p-6 flex items-center justify-between text-left hover:bg-gray-50 transition-colors rounded-lg"
+    class="w-full p-6 flex items-center justify-between text-left hover:bg-braun-100 transition-colors"
   >
-    <h2 class="text-xl font-semibold text-foreground">
+    <h2 class="text-xl font-semibold text-braun-900">
       Original Assets
-      <span class="text-base font-normal text-gray-400 ml-2">
+      <span class="text-base font-normal text-braun-400 ml-2">
         ({visibleCount}{totalHiddenCount > 0 && !showHidden ? ` of ${totalCount}` : ''})
       </span>
     </h2>
     <svg
-      class="w-5 h-5 text-gray-400 transition-transform duration-200 {isOpen ? 'rotate-180' : ''}"
+      class="w-5 h-5 text-braun-400 transition-transform duration-200 {isOpen ? 'rotate-180' : ''}"
       fill="none"
       stroke="currentColor"
       viewBox="0 0 24 24"
@@ -112,7 +112,7 @@
         <div class="flex items-center justify-end mb-2">
           <button
             onclick={() => showHidden = !showHidden}
-            class="text-sm flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors {showHidden ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
+            class="text-sm flex items-center gap-2 px-3 py-1.5 rounded transition-colors {showHidden ? 'bg-braun-200 text-braun-900' : 'bg-braun-100 text-braun-600 hover:bg-braun-200'}"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               {#if showHidden}

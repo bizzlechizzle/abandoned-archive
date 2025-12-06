@@ -111,12 +111,12 @@
   <div class="mb-8 flex justify-between items-center">
     <div>
       <h1 class="text-3xl font-bold text-foreground mb-2">Projects</h1>
-      <p class="text-gray-600">Organize locations into projects</p>
+      <p class="text-braun-600">Organize locations into projects</p>
     </div>
     {#if !showCreateForm}
       <button
         onclick={() => (showCreateForm = true)}
-        class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition"
+        class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition"
       >
         New Project
       </button>
@@ -130,11 +130,11 @@
   {/if}
 
   {#if showCreateForm}
-    <div class="mb-6 p-6 bg-white rounded-lg shadow">
+    <div class="mb-6 p-6 bg-white rounded border border-braun-300">
       <h2 class="text-lg font-semibold mb-4">Create New Project</h2>
       <div class="space-y-4">
         <div>
-          <label for="project_name" class="block text-sm font-medium text-gray-700 mb-1">
+          <label for="project_name" class="block text-sm font-medium text-braun-700 mb-1">
             Project Name <span class="text-red-500">*</span>
           </label>
           <input
@@ -142,11 +142,11 @@
             type="text"
             bind:value={newProjectName}
             placeholder="Enter project name"
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
           />
         </div>
         <div>
-          <label for="description" class="block text-sm font-medium text-gray-700 mb-1">
+          <label for="description" class="block text-sm font-medium text-braun-700 mb-1">
             Description
           </label>
           <textarea
@@ -154,7 +154,7 @@
             bind:value={newProjectDescription}
             placeholder="Enter project description"
             rows="3"
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
           ></textarea>
         </div>
         <div class="flex justify-end gap-2">
@@ -165,14 +165,14 @@
               newProjectDescription = '';
             }}
             disabled={creating}
-            class="px-4 py-2 bg-gray-200 text-foreground rounded hover:bg-gray-300 transition disabled:opacity-50"
+            class="px-4 py-2 bg-braun-200 text-foreground rounded hover:bg-braun-300 transition disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             onclick={handleCreateProject}
             disabled={creating || !newProjectName.trim()}
-            class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+            class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
           >
             {creating ? 'Creating...' : 'Create Project'}
           </button>
@@ -182,13 +182,13 @@
   {/if}
 
   {#if loading}
-    <p class="text-gray-500">Loading projects...</p>
+    <p class="text-braun-500">Loading projects...</p>
   {:else if projects.length === 0}
-    <div class="bg-white rounded-lg shadow p-12 text-center">
-      <p class="text-gray-400 mb-4">No projects yet</p>
+    <div class="bg-white rounded border border-braun-300 p-12 text-center">
+      <p class="text-braun-400 mb-4">No projects yet</p>
       <button
         onclick={() => (showCreateForm = true)}
-        class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition"
+        class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition"
       >
         Create Your First Project
       </button>
@@ -196,7 +196,7 @@
   {:else}
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {#each projects as project}
-        <div class="bg-white rounded-lg shadow p-6 hover:shadow-lg transition">
+        <div class="bg-white rounded border border-braun-300 p-6 hover:border-braun-400 transition">
           <div class="flex justify-between items-start mb-3">
             <h3 class="text-lg font-semibold text-foreground">{project.project_name}</h3>
             <button
@@ -210,17 +210,17 @@
             </button>
           </div>
           {#if project.description}
-            <p class="text-sm text-gray-600 mb-4 line-clamp-2">{project.description}</p>
+            <p class="text-sm text-braun-600 mb-4 line-clamp-2">{project.description}</p>
           {/if}
-          <div class="text-sm text-gray-500 mb-4">
+          <div class="text-sm text-braun-500 mb-4">
             <p>Created: {formatDate(project.created_date)}</p>
-            <p class="font-semibold text-accent mt-1">
+            <p class="font-semibold text-braun-900 mt-1">
               {project.location_count || 0} locations
             </p>
           </div>
           <button
             onclick={() => viewProject(project.project_id)}
-            class="w-full px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition"
+            class="w-full px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition"
           >
             View Project
           </button>

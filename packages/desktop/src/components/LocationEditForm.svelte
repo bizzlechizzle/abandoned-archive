@@ -168,12 +168,12 @@
   }
 </script>
 
-<div class="bg-white rounded-lg shadow p-6">
+<div class="bg-white rounded border border-braun-300 p-6">
   <div class="flex justify-between items-center mb-6">
     <h2 class="text-xl font-semibold text-foreground">Edit Location</h2>
     <button
       onclick={onCancel}
-      class="text-sm text-gray-500 hover:text-gray-700"
+      class="text-sm text-braun-500 hover:text-braun-700"
     >
       Cancel
     </button>
@@ -188,7 +188,7 @@
   <form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }} class="space-y-6">
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div class="md:col-span-2">
-        <label for="locnam" class="block text-sm font-medium text-gray-700 mb-1">
+        <label for="locnam" class="block text-sm font-medium text-braun-700 mb-1">
           Location Name *
         </label>
         <input
@@ -196,19 +196,19 @@
           type="text"
           bind:value={formData.locnam}
           required
-          class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+          class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
         />
       </div>
 
       <div>
-        <label for="akanam" class="block text-sm font-medium text-gray-700 mb-1">
+        <label for="akanam" class="block text-sm font-medium text-braun-700 mb-1">
           Also Known As
         </label>
         <input
           id="akanam"
           type="text"
           bind:value={formData.akanam}
-          class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+          class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
         />
       </div>
 
@@ -220,28 +220,28 @@
             id="is_sublocation"
             class="mr-2"
           />
-          <label for="is_sublocation" class="text-sm font-medium text-gray-700">
+          <label for="is_sublocation" class="text-sm font-medium text-braun-700">
             This is a sub-location
           </label>
         </div>
-        <p class="text-xs text-gray-500">
+        <p class="text-xs text-braun-500">
           Sub-locations are places within a larger location (e.g., "East Wing" within "Abandoned Hospital")
         </p>
       </div>
 
       {#if formData.is_sublocation}
-        <div class="md:col-span-2 p-4 bg-blue-50 border border-blue-200 rounded">
-          <h4 class="text-sm font-semibold text-blue-900 mb-3">Sub-Location Details</h4>
+        <div class="md:col-span-2 p-4 bg-braun-50 border border-braun-200 rounded">
+          <h4 class="text-sm font-semibold text-braun-900 mb-3">Sub-Location Details</h4>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label for="parent_locid" class="block text-sm font-medium text-gray-700 mb-1">
+              <label for="parent_locid" class="block text-sm font-medium text-braun-700 mb-1">
                 Parent Location <span class="text-red-500">*</span>
               </label>
               <select
                 id="parent_locid"
                 bind:value={formData.parent_locid}
                 required={formData.is_sublocation}
-                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
               >
                 <option value="">Select parent location...</option>
                 {#each allLocations as parentLoc}
@@ -250,7 +250,7 @@
                   </option>
                 {/each}
               </select>
-              <p class="text-xs text-gray-500 mt-1">
+              <p class="text-xs text-braun-500 mt-1">
                 The main location this sub-location belongs to
               </p>
             </div>
@@ -262,7 +262,7 @@
                 id="primary_sublocation"
                 class="mr-2"
               />
-              <label for="primary_sublocation" class="text-sm text-gray-700">
+              <label for="primary_sublocation" class="text-sm text-braun-700">
                 Primary sub-location
               </label>
             </div>
@@ -271,7 +271,7 @@
       {/if}
 
       <div>
-        <label for="type" class="block text-sm font-medium text-gray-700 mb-1">
+        <label for="type" class="block text-sm font-medium text-braun-700 mb-1">
           Type
         </label>
         <AutocompleteInput
@@ -280,15 +280,15 @@
           suggestions={typeSuggestions}
           id="type"
           placeholder="e.g., Hospital, Factory, School..."
-          class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+          class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
         />
-        <p class="text-xs text-gray-500 mt-1">
+        <p class="text-xs text-braun-500 mt-1">
           Start typing to see suggestions from existing locations
         </p>
       </div>
 
       <div>
-        <label for="stype" class="block text-sm font-medium text-gray-700 mb-1">
+        <label for="stype" class="block text-sm font-medium text-braun-700 mb-1">
           Sub-Type
         </label>
         <AutocompleteInput
@@ -297,9 +297,9 @@
           suggestions={subtypeSuggestions}
           id="stype"
           placeholder="e.g., Psychiatric, Manufacturing..."
-          class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+          class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
         />
-        <p class="text-xs text-gray-500 mt-1">
+        <p class="text-xs text-braun-500 mt-1">
           Start typing to see suggestions
         </p>
       </div>
@@ -307,26 +307,26 @@
       <!-- P0: Condition and Status fields removed - use Access only -->
 
       <div>
-        <label for="documentation" class="block text-sm font-medium text-gray-700 mb-1">
+        <label for="documentation" class="block text-sm font-medium text-braun-700 mb-1">
           Documentation
         </label>
         <input
           id="documentation"
           type="text"
           bind:value={formData.documentation}
-          class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+          class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
         />
       </div>
 
       <div>
-        <label for="access" class="block text-sm font-medium text-gray-700 mb-1">
+        <label for="access" class="block text-sm font-medium text-braun-700 mb-1">
           Access
         </label>
         <input
           id="access"
           type="text"
           bind:value={formData.access}
-          class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+          class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
         />
       </div>
 
@@ -337,7 +337,7 @@
           id="historic"
           class="mr-2"
         />
-        <label for="historic" class="text-sm text-gray-700">
+        <label for="historic" class="text-sm text-braun-700">
           Historic Landmark
         </label>
       </div>
@@ -347,43 +347,43 @@
       <h3 class="text-lg font-semibold mb-4 text-foreground">Address</h3>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div class="md:col-span-2">
-          <label for="street" class="block text-sm font-medium text-gray-700 mb-1">
+          <label for="street" class="block text-sm font-medium text-braun-700 mb-1">
             Street
           </label>
           <input
             id="street"
             type="text"
             bind:value={formData.address_street}
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
           />
         </div>
 
         <div>
-          <label for="city" class="block text-sm font-medium text-gray-700 mb-1">
+          <label for="city" class="block text-sm font-medium text-braun-700 mb-1">
             City
           </label>
           <input
             id="city"
             type="text"
             bind:value={formData.address_city}
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
           />
         </div>
 
         <div>
-          <label for="county" class="block text-sm font-medium text-gray-700 mb-1">
+          <label for="county" class="block text-sm font-medium text-braun-700 mb-1">
             County
           </label>
           <input
             id="county"
             type="text"
             bind:value={formData.address_county}
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
           />
         </div>
 
         <div>
-          <label for="state" class="block text-sm font-medium text-gray-700 mb-1">
+          <label for="state" class="block text-sm font-medium text-braun-700 mb-1">
             State
           </label>
           <AutocompleteInput
@@ -392,12 +392,12 @@
             suggestions={stateSuggestions}
             id="state"
             placeholder="NY or New York"
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
           />
         </div>
 
         <div>
-          <label for="zipcode" class="block text-sm font-medium text-gray-700 mb-1">
+          <label for="zipcode" class="block text-sm font-medium text-braun-700 mb-1">
             Zipcode
           </label>
           <input
@@ -405,7 +405,7 @@
             type="text"
             bind:value={formData.address_zipcode}
             placeholder="12345"
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
           />
         </div>
       </div>
@@ -415,7 +415,7 @@
       <h3 class="text-lg font-semibold mb-4 text-foreground">GPS Coordinates</h3>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label for="gps_lat" class="block text-sm font-medium text-gray-700 mb-1">
+          <label for="gps_lat" class="block text-sm font-medium text-braun-700 mb-1">
             Latitude
           </label>
           <input
@@ -423,12 +423,12 @@
             type="text"
             bind:value={formData.gps_lat}
             placeholder="42.123456"
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
           />
         </div>
 
         <div>
-          <label for="gps_lng" class="block text-sm font-medium text-gray-700 mb-1">
+          <label for="gps_lng" class="block text-sm font-medium text-braun-700 mb-1">
             Longitude
           </label>
           <input
@@ -436,7 +436,7 @@
             type="text"
             bind:value={formData.gps_lng}
             placeholder="-73.123456"
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
           />
         </div>
       </div>
@@ -446,14 +446,14 @@
       <button
         type="button"
         onclick={onCancel}
-        class="px-4 py-2 bg-gray-200 text-foreground rounded hover:bg-gray-300 transition"
+        class="px-4 py-2 bg-braun-200 text-foreground rounded hover:bg-braun-300 transition"
       >
         Cancel
       </button>
       <button
         type="submit"
         disabled={saving}
-        class="px-6 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+        class="px-6 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
       >
         {saving ? 'Saving...' : 'Save Changes'}
       </button>

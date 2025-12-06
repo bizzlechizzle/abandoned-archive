@@ -129,14 +129,14 @@
   });
 </script>
 
-<div class="mt-6 bg-white rounded-lg shadow-md p-6">
+<div class="mt-6 bg-white rounded border border-braun-300 p-6">
   <div class="flex justify-between items-center mb-3">
-    <h2 class="text-lg font-semibold text-foreground">Notes</h2>
+    <h2 class="text-lg font-semibold text-braun-900">Notes</h2>
     {#if !showAddForm}
       <button
         onclick={() => (showAddForm = true)}
         disabled={saving}
-        class="px-3 py-1 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+        class="px-3 py-1 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
       >
         Add Note
       </button>
@@ -150,13 +150,13 @@
   {/if}
 
   {#if showAddForm}
-    <div class="mb-3 p-4 bg-blue-50 border border-blue-200 rounded">
-      <h3 class="text-sm font-semibold text-blue-900 mb-2">New Note</h3>
+    <div class="mb-3 p-4 bg-braun-50 border border-braun-200 rounded">
+      <h3 class="text-sm font-semibold text-braun-900 mb-2">New Note</h3>
       <textarea
         bind:value={newNoteText}
         placeholder="Enter your note here..."
         rows="4"
-        class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent mb-3"
+        class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 mb-3"
       ></textarea>
       <div class="flex justify-end gap-2">
         <button
@@ -165,14 +165,14 @@
             newNoteText = '';
           }}
           disabled={saving}
-          class="px-3 py-1 text-sm bg-gray-200 text-foreground rounded hover:bg-gray-300 transition disabled:opacity-50"
+          class="px-3 py-1 text-sm bg-braun-200 text-braun-900 rounded hover:bg-braun-300 transition disabled:opacity-50"
         >
           Cancel
         </button>
         <button
           onclick={handleAddNote}
           disabled={saving || !newNoteText.trim()}
-          class="px-3 py-1 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+          class="px-3 py-1 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
         >
           {saving ? 'Saving...' : 'Save Note'}
         </button>
@@ -181,37 +181,37 @@
   {/if}
 
   {#if loading}
-    <p class="text-gray-500 text-sm">Loading notes...</p>
+    <p class="text-braun-500 text-sm">Loading notes...</p>
   {:else if notes.length === 0}
-    <p class="text-gray-400 text-sm text-center py-8">
+    <p class="text-braun-400 text-sm text-center py-8">
       No notes yet. Add your first note to get started!
     </p>
   {:else}
     <div class="space-y-3">
       {#each notes as note}
-        <div class="border border-gray-200 rounded p-4">
+        <div class="border border-braun-200 rounded p-4">
           {#if editingNoteId === note.note_id}
             <textarea
               bind:value={editingNoteText}
               rows="4"
-              class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent mb-3"
+              class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 mb-3"
             ></textarea>
             <div class="flex justify-between items-center">
-              <div class="text-xs text-gray-500">
+              <div class="text-xs text-braun-500">
                 Editing note
               </div>
               <div class="flex gap-2">
                 <button
                   onclick={cancelEdit}
                   disabled={saving}
-                  class="px-3 py-1 text-sm bg-gray-200 text-foreground rounded hover:bg-gray-300 transition disabled:opacity-50"
+                  class="px-3 py-1 text-sm bg-braun-200 text-braun-900 rounded hover:bg-braun-300 transition disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   onclick={() => handleUpdateNote(note.note_id)}
                   disabled={saving || !editingNoteText.trim()}
-                  class="px-3 py-1 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+                  class="px-3 py-1 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
                 >
                   {saving ? 'Saving...' : 'Save'}
                 </button>
@@ -219,7 +219,7 @@
             </div>
           {:else}
             <div class="flex justify-between items-start mb-2">
-              <div class="text-sm text-gray-500">
+              <div class="text-sm text-braun-500">
                 {formatDate(note.note_date)}
                 {#if note.auth_imp}
                   · by {note.auth_imp}
@@ -229,20 +229,20 @@
                 <button
                   onclick={() => startEdit(note)}
                   disabled={saving}
-                  class="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                  class="text-xs text-braun-600 hover:text-braun-800 disabled:opacity-50"
                 >
                   Edit
                 </button>
                 <button
                   onclick={() => handleDeleteNote(note.note_id)}
                   disabled={saving}
-                  class="text-xs text-red-600 hover:text-red-800 disabled:opacity-50"
+                  class="text-xs text-error hover:opacity-80 disabled:opacity-50"
                 >
                   Delete
                 </button>
               </div>
             </div>
-            <p class="text-sm text-gray-800 whitespace-pre-wrap">{note.note_text}</p>
+            <p class="text-sm text-braun-800 whitespace-pre-wrap">{note.note_text}</p>
           {/if}
         </div>
       {/each}

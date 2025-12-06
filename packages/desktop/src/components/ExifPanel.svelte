@@ -30,14 +30,14 @@
   const hasCamera = $derived(exif.cameraMake || exif.cameraModel);
 </script>
 
-<div class="bg-gray-900 text-white p-4 rounded-lg">
-  <h3 class="text-lg font-semibold mb-4 border-b border-gray-700 pb-2">Metadata</h3>
+<div class="bg-braun-900 text-white p-4 rounded">
+  <h3 class="text-lg font-semibold mb-4 border-b border-braun-700 pb-2">Metadata</h3>
 
   <div class="space-y-3 text-sm">
     <!-- Dimensions -->
     {#if exif.width && exif.height}
       <div class="flex justify-between">
-        <span class="text-gray-400">Dimensions</span>
+        <span class="text-braun-400">Dimensions</span>
         <span>{exif.width} × {exif.height}</span>
       </div>
     {/if}
@@ -45,7 +45,7 @@
     <!-- Date Taken -->
     {#if exif.dateTaken}
       <div class="flex justify-between">
-        <span class="text-gray-400">Date Taken</span>
+        <span class="text-braun-400">Date Taken</span>
         <span>{new Date(exif.dateTaken).toLocaleDateString()} {new Date(exif.dateTaken).toLocaleTimeString()}</span>
       </div>
     {/if}
@@ -53,7 +53,7 @@
     <!-- Camera -->
     {#if hasCamera}
       <div class="flex justify-between">
-        <span class="text-gray-400">Camera</span>
+        <span class="text-braun-400">Camera</span>
         <span>{[exif.cameraMake, exif.cameraModel].filter(Boolean).join(' ')}</span>
       </div>
     {/if}
@@ -61,14 +61,14 @@
     <!-- GPS -->
     {#if hasGps}
       <div class="flex justify-between items-start">
-        <span class="text-gray-400">Location</span>
+        <span class="text-braun-400">Location</span>
         <div class="text-right">
           <div>{exif.gpsLat?.toFixed(6)}, {exif.gpsLng?.toFixed(6)}</div>
           <a
             href={`https://www.openstreetmap.org/?mlat=${exif.gpsLat}&mlon=${exif.gpsLng}&zoom=15`}
             target="_blank"
             rel="noopener noreferrer"
-            class="text-blue-400 hover:underline text-xs"
+            class="text-braun-300 hover:underline text-xs"
           >
             View on Map →
           </a>
@@ -78,16 +78,16 @@
 
     <!-- Raw EXIF Toggle -->
     {#if exif.rawExif}
-      <div class="pt-2 border-t border-gray-700">
+      <div class="pt-2 border-t border-braun-700">
         <button
           onclick={() => showRaw = !showRaw}
-          class="text-blue-400 hover:underline text-sm"
+          class="text-braun-300 hover:underline text-sm"
         >
           {showRaw ? 'Hide' : 'Show'} Raw EXIF Data
         </button>
 
         {#if showRaw}
-          <pre class="mt-2 text-xs bg-gray-800 p-2 rounded overflow-auto max-h-60">
+          <pre class="mt-2 text-xs bg-braun-800 p-2 rounded overflow-auto max-h-60">
 {exif.rawExif}
           </pre>
         {/if}

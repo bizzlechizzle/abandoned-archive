@@ -373,29 +373,29 @@
 <div class="p-8">
   <div class="mb-8">
     <h1 class="text-3xl font-bold text-foreground mb-2">Imports</h1>
-    <p class="text-gray-600">Import media files for your locations</p>
+    <p class="text-braun-600">Import media files for your locations</p>
   </div>
 
   {#if loading}
-    <p class="text-gray-500">Loading...</p>
+    <p class="text-braun-500">Loading...</p>
   {:else if !archiveFolderConfigured}
     <!-- Archive folder not configured - block imports -->
-    <div class="max-w-3xl bg-yellow-50 border-2 border-yellow-300 rounded-lg p-6">
+    <div class="max-w-3xl bg-braun-100 border-2 border-braun-400 rounded p-6">
       <div class="flex items-start gap-4">
         <div class="flex-shrink-0">
-          <svg class="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="w-8 h-8 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
         </div>
         <div class="flex-1">
-          <h3 class="text-lg font-semibold text-yellow-800">Archive Folder Not Configured</h3>
-          <p class="text-yellow-700 mt-1">
+          <h3 class="text-lg font-semibold text-braun-900">Archive Folder Not Configured</h3>
+          <p class="text-braun-600 mt-1">
             Before you can import media files, you need to set up an archive folder where your files will be organized and stored.
           </p>
           <div class="mt-4 flex gap-3">
             <button
               onclick={() => router.navigate('/settings')}
-              class="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700 transition font-medium"
+              class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition font-medium"
             >
               Go to Settings
             </button>
@@ -431,14 +431,14 @@
     />
 
     {#if importResult}
-      <div class="max-w-3xl mt-4 p-4 bg-green-50 border border-green-200 rounded">
-        <h3 class="font-semibold text-green-800 mb-2">Import Summary</h3>
-        <div class="text-sm text-green-700 space-y-1">
+      <div class="max-w-3xl mt-4 p-4 bg-braun-100 border border-braun-300 rounded">
+        <h3 class="font-semibold text-braun-900 mb-2">Import Summary</h3>
+        <div class="text-sm text-braun-700 space-y-1">
           <p>Total files: {importResult.total}</p>
-          <p>Successfully imported: {importResult.imported}</p>
+          <p class="text-success">Successfully imported: {importResult.imported}</p>
           <p>Duplicates skipped: {importResult.duplicates}</p>
           {#if importResult.errors > 0}
-            <p class="text-red-600">Errors: {importResult.errors}</p>
+            <p class="text-error">Errors: {importResult.errors}</p>
           {/if}
         </div>
       </div>
@@ -457,7 +457,7 @@
       aria-labelledby="attribution-title"
     >
       <div
-        class="bg-[#fff8f2] rounded-lg shadow-xl w-full max-w-md mx-4"
+        class="bg-braun-50 rounded border border-braun-300 w-full max-w-md mx-4"
         onclick={(e) => e.stopPropagation()}
       >
         <div class="p-5 flex justify-between items-center">
@@ -466,7 +466,7 @@
           </h2>
           <button
             onclick={cancelImport}
-            class="text-gray-400 hover:text-gray-600 transition p-1 rounded hover:bg-gray-200"
+            class="text-braun-400 hover:text-braun-600 transition p-1 rounded hover:bg-braun-200"
             aria-label="Close"
           >
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -478,24 +478,24 @@
         <div class="p-5 space-y-4">
           <!-- Step 1: Current user or someone else? -->
           <div class="space-y-3">
-            <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition bg-white {!isSomeoneElse ? 'border-accent' : 'border-gray-200'}">
+            <label class="flex items-center gap-3 p-3 border rounded cursor-pointer hover:bg-braun-50 transition bg-white {!isSomeoneElse ? 'border-braun-400' : 'border-braun-200'}">
               <input
                 type="radio"
                 name="author-type"
                 checked={!isSomeoneElse}
                 onchange={() => { isSomeoneElse = false; selectedAuthor = ''; contributionSource = ''; }}
-                class="w-4 h-4 text-accent"
+                class="w-4 h-4 text-braun-900"
               />
               <span class="font-medium text-foreground">{currentUser}</span>
             </label>
 
-            <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition bg-white {isSomeoneElse ? 'border-accent' : 'border-gray-200'}">
+            <label class="flex items-center gap-3 p-3 border rounded cursor-pointer hover:bg-braun-50 transition bg-white {isSomeoneElse ? 'border-braun-400' : 'border-braun-200'}">
               <input
                 type="radio"
                 name="author-type"
                 checked={isSomeoneElse}
                 onchange={() => isSomeoneElse = true}
-                class="w-4 h-4 text-accent"
+                class="w-4 h-4 text-braun-900"
               />
               <span class="font-medium text-foreground">Someone Else</span>
             </label>
@@ -504,13 +504,13 @@
           <!-- Step 2: If someone else, who? -->
           {#if isSomeoneElse}
             <div class="pt-2 space-y-3">
-              <label for="author-select" class="block text-sm font-medium text-gray-700">
+              <label for="author-select" class="block text-sm font-medium text-braun-700">
                 Who shot these?
               </label>
               <select
                 id="author-select"
                 bind:value={selectedAuthor}
-                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
               >
                 <option value="">Select...</option>
                 {#each users.filter(u => u.username !== currentUser) as user}
@@ -522,7 +522,7 @@
               <!-- If external contributor, show source field -->
               {#if selectedAuthor === 'external'}
                 <div class="pt-2">
-                  <label for="contribution-source" class="block text-sm font-medium text-gray-700 mb-1">
+                  <label for="contribution-source" class="block text-sm font-medium text-braun-700 mb-1">
                     Source
                   </label>
                   <input
@@ -530,9 +530,9 @@
                     type="text"
                     bind:value={contributionSource}
                     placeholder="e.g., John Smith via text, Facebook group"
-                    class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                    class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
                   />
-                  <p class="text-xs text-gray-500 mt-1">Who contributed these or where they came from</p>
+                  <p class="text-xs text-braun-500 mt-1">Who contributed these or where they came from</p>
                 </div>
               {/if}
             </div>
@@ -542,14 +542,14 @@
         <div class="p-5 flex justify-end gap-3">
           <button
             onclick={cancelImport}
-            class="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition font-medium"
+            class="px-3 py-1.5 text-sm text-braun-700 bg-white border border-braun-300 rounded hover:bg-braun-50 transition font-medium"
           >
             Cancel
           </button>
           <button
             onclick={confirmImport}
             disabled={isSomeoneElse && !selectedAuthor || (selectedAuthor === 'external' && !contributionSource.trim())}
-            class="px-3 py-1.5 text-sm bg-accent text-white rounded-lg hover:bg-accent/90 transition disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-sm"
+            class="px-3 py-1.5 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50 disabled:cursor-not-allowed font-medium"
           >
             Import
           </button>

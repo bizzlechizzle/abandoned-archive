@@ -109,12 +109,12 @@
   <div class="mb-8 flex justify-between items-center">
     <div>
       <h1 class="text-3xl font-bold text-foreground mb-2">Bookmarks</h1>
-      <p class="text-gray-600">Saved web pages and resources</p>
+      <p class="text-braun-600">Saved web pages and resources</p>
     </div>
     {#if !showAddForm}
       <button
         onclick={() => (showAddForm = true)}
-        class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition"
+        class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition"
       >
         Add Bookmark
       </button>
@@ -128,11 +128,11 @@
   {/if}
 
   {#if showAddForm}
-    <div class="mb-6 p-6 bg-white rounded-lg shadow">
+    <div class="mb-6 p-6 bg-white rounded border border-braun-300">
       <h2 class="text-lg font-semibold mb-4">Add New Bookmark</h2>
       <div class="space-y-4">
         <div>
-          <label for="url" class="block text-sm font-medium text-gray-700 mb-1">
+          <label for="url" class="block text-sm font-medium text-braun-700 mb-1">
             URL <span class="text-red-500">*</span>
           </label>
           <input
@@ -140,11 +140,11 @@
             type="url"
             bind:value={newUrl}
             placeholder="https://example.com"
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
           />
         </div>
         <div>
-          <label for="title" class="block text-sm font-medium text-gray-700 mb-1">
+          <label for="title" class="block text-sm font-medium text-braun-700 mb-1">
             Title
           </label>
           <input
@@ -152,7 +152,7 @@
             type="text"
             bind:value={newTitle}
             placeholder="Optional title for the bookmark"
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
           />
         </div>
         <div class="flex justify-end gap-2">
@@ -163,14 +163,14 @@
               newTitle = '';
             }}
             disabled={adding}
-            class="px-4 py-2 bg-gray-200 text-foreground rounded hover:bg-gray-300 transition disabled:opacity-50"
+            class="px-4 py-2 bg-braun-200 text-foreground rounded hover:bg-braun-300 transition disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             onclick={handleAddBookmark}
             disabled={adding || !newUrl.trim()}
-            class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
+            class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
           >
             {adding ? 'Adding...' : 'Add Bookmark'}
           </button>
@@ -180,36 +180,36 @@
   {/if}
 
   {#if loading}
-    <p class="text-gray-500">Loading bookmarks...</p>
+    <p class="text-braun-500">Loading bookmarks...</p>
   {:else if bookmarks.length === 0}
-    <div class="bg-white rounded-lg shadow p-12 text-center">
-      <p class="text-gray-400 mb-4">No bookmarks yet</p>
+    <div class="bg-white rounded border border-braun-300 p-12 text-center">
+      <p class="text-braun-400 mb-4">No bookmarks yet</p>
       <button
         onclick={() => (showAddForm = true)}
-        class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition"
+        class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition"
       >
         Create Your First Bookmark
       </button>
     </div>
   {:else}
-    <div class="bg-white rounded-lg shadow">
-      <div class="divide-y divide-gray-200">
+    <div class="bg-white rounded border border-braun-300">
+      <div class="divide-y divide-braun-200">
         {#each bookmarks as bookmark}
-          <div class="p-4 hover:bg-gray-50 transition">
+          <div class="p-4 hover:bg-braun-50 transition">
             <div class="flex items-start justify-between">
               <div class="flex-1">
                 <button
                   onclick={() => openBookmark(bookmark.url)}
                   class="text-left group"
                 >
-                  <h3 class="font-medium text-gray-900 group-hover:text-accent transition">
+                  <h3 class="font-medium text-braun-900 group-hover:text-braun-600 transition">
                     {bookmark.title || bookmark.url}
                   </h3>
                   {#if bookmark.title}
-                    <p class="text-sm text-gray-500 mt-1">{bookmark.url}</p>
+                    <p class="text-sm text-braun-500 mt-1">{bookmark.url}</p>
                   {/if}
                 </button>
-                <div class="text-xs text-gray-400 mt-2">
+                <div class="text-xs text-braun-400 mt-2">
                   <span>{formatDate(bookmark.bookmark_date)}</span>
                   {#if bookmark.locnam}
                     <span class="ml-3">→ {bookmark.locnam}</span>
