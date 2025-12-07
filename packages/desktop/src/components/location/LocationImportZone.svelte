@@ -15,6 +15,13 @@
     return 'Finalizing';
   }
 
+  // OPT-092: Extract basename from path, truncate long filenames
+  function getBasename(filepath: string | undefined): string {
+    if (!filepath) return '...';
+    const basename = filepath.split('/').pop()?.split('\\').pop() || '...';
+    return basename.length > 25 ? basename.slice(0, 22) + '...' : basename;
+  }
+
   interface Props {
     isImporting: boolean;
     isDragging: boolean;
@@ -131,10 +138,8 @@
           ></div>
           <!-- Centered text overlay: Step · Filename · Percent -->
           <div class="absolute inset-0 flex items-center justify-center px-2">
-            {@const filename = $storeProgress.currentFilename?.split('/').pop()?.split('\\').pop() || '...'}
-            {@const truncated = filename.length > 25 ? filename.slice(0, 22) + '...' : filename}
             <span class="text-xs font-medium text-white mix-blend-difference whitespace-nowrap overflow-hidden text-ellipsis max-w-full">
-              {getStepName($storeProgress.percent)} · {truncated} · {$storeProgress.percent}%
+              {getStepName($storeProgress.percent)} · {getBasename($storeProgress.currentFilename)} · {$storeProgress.percent}%
             </span>
           </div>
         </div>
