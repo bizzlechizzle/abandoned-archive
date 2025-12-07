@@ -1,8 +1,8 @@
 <script lang="ts">
   /**
-   * SubLocationGrid - Premium grid of sub-location cards for host locations
-   * Migration 28: Max 4 per row, click to navigate to sub-location detail
-   * Design: Cinematic cards with golden ratio, centered text, premium hover
+   * SubLocationGrid - Grid of sub-location cards for host locations
+   * Migration 28: 2 cols, click to navigate to sub-location detail
+   * OPT-096: 4:1 aspect ratio with bottom-right text (matches sub-location page)
    */
   import { router } from '../../stores/router';
 
@@ -61,10 +61,10 @@
       {#each sublocations as subloc}
         <button
           onclick={() => navigateToSubLocation(subloc.subid)}
-          class="building-card rounded overflow-hidden text-left"
+          class="building-card rounded overflow-hidden text-left group"
         >
-          <!-- Hero image with cinematic text overlay (golden ratio) -->
-          <div class="card-container aspect-[1.618] bg-braun-100 relative overflow-hidden">
+          <!-- Hero image (4:1 aspect ratio to match sub-location page) -->
+          <div class="card-container bg-braun-100 relative overflow-hidden" style="aspect-ratio: 4 / 1;">
             {#if subloc.hero_thumb_path}
               <img
                 src="media://{subloc.hero_thumb_path}"
@@ -79,29 +79,26 @@
               </div>
             {/if}
 
-            <!-- Permanent dark overlay for text legibility -->
-            <div class="absolute inset-0 pointer-events-none bg-braun-900/25"></div>
+            <!-- Hover-only overlay (matches sub-location page) -->
+            <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition pointer-events-none"></div>
 
-            <!-- Subtle hover overlay -->
-            <div class="hover-overlay absolute inset-0 opacity-0 transition-opacity duration-300 pointer-events-none bg-braun-900/15"></div>
-
-            <!-- Cinematic centered title -->
-            <div class="absolute inset-0 flex items-center justify-center">
-              <h3 class="cinematic-title w-3/4 font-bold text-white text-center uppercase tracking-[0.2em]">
+            <!-- Bottom-right text (matches sub-location page) -->
+            <div class="absolute bottom-0 right-0 p-4 pointer-events-none">
+              <span class="text-2xl font-bold" style="color: #FAFAF8;">
                 {subloc.subnam}
-              </h3>
+              </span>
             </div>
 
           </div>
         </button>
       {/each}
 
-      <!-- Add card (full width when even number of buildings, same height as building cards) -->
+      <!-- Add card (4:1 aspect ratio to match building cards) -->
       {#if onAddSubLocation}
         <button
           onclick={onAddSubLocation}
           class="add-card rounded border-2 border-dashed border-braun-200 hover:border-braun-900 hover:bg-braun-100 transition flex flex-col items-center justify-center gap-2 {addCardFullWidth ? 'col-span-2' : ''}"
-          style="aspect-ratio: {addCardFullWidth ? '3.3' : '1.618'};"
+          style="aspect-ratio: 4 / 1;"
         >
           <svg class="w-8 h-8 text-braun-400 group-hover:text-braun-900 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -123,23 +120,6 @@
   .building-card:hover {
     transform: scale(1.02);
     border-color: #1C1C1A; /* braun-900 */
-  }
-
-  /* Subtle overlay on hover */
-  .building-card:hover .hover-overlay {
-    opacity: 1;
-  }
-
-  /* Container for scaling text */
-  .card-container {
-    container-type: inline-size;
-  }
-
-  /* Cinematic title - scales with container width */
-  /* Braun: No text-shadow, use overlay for legibility */
-  .cinematic-title {
-    font-size: 10cqw;
-    line-height: 1.2;
   }
 
   /* Add card hover */
