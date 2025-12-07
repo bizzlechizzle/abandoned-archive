@@ -12,11 +12,11 @@
  */
 
 import { Worker } from 'worker_threads';
-import { cpus } from 'os';
 import { randomUUID } from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import PQueue from 'p-queue';
+import { getHardwareProfile } from './hardware-profile';
 
 // Get the directory of this module for worker path resolution
 const __filename = fileURLToPath(import.meta.url);
@@ -87,9 +87,9 @@ export class WorkerPool {
   private readonly workerPath: string;
 
   constructor(options?: WorkerPoolOptions) {
-    // Calculate default concurrency: CPU cores - 1, minimum 1
-    const defaultConcurrency = Math.max(1, cpus().length - 1);
-    this.concurrency = options?.concurrency ?? defaultConcurrency;
+    // v2.1: Use hardware profile for concurrency
+    const hw = getHardwareProfile();
+    this.concurrency = options?.concurrency ?? hw.hashWorkers;
     this.taskTimeout = options?.taskTimeout ?? 60000;
     this.restartOnCrash = options?.restartOnCrash ?? true;
 
@@ -102,7 +102,7 @@ export class WorkerPool {
     // NOTE: .cjs extension required because package.json has "type": "module"
     this.workerPath = path.join(__dirname, '..', 'workers', 'hash.worker.cjs');
 
-    console.log(`[WorkerPool] Initializing with ${this.concurrency} workers`);
+    console.log(`[WorkerPool] Initializing with ${this.concurrency} workers (${hw.tier} tier)`);
     console.log(`[WorkerPool] Worker path: ${this.workerPath}`);
   }
 

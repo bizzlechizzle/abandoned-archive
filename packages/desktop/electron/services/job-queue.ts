@@ -230,6 +230,98 @@ export class JobQueue {
   }
 
   /**
+   * Get multiple available jobs from the queue (batch fetch)
+   * Uses atomic locking to prevent concurrent workers from claiming the same jobs.
+   * This is the key to aggressive parallelism - fill ALL worker slots in one poll.
+   *
+   * @param queue - Queue name to fetch from
+   * @param limit - Maximum number of jobs to fetch
+   * @returns Array of claimed jobs
+   */
+  async getNextBatch<T>(queue: string, limit: number): Promise<Job<T>[]> {
+    if (limit <= 0) return [];
+
+    const now = new Date().toISOString();
+    const staleThreshold = new Date(Date.now() - this.staleLockTimeoutMs).toISOString();
+
+    // First, release any stale locks (jobs that have been processing too long)
+    await this.db
+      .updateTable('jobs')
+      .set({
+        status: 'pending',
+        locked_by: null,
+        locked_at: null,
+      })
+      .where('status', '=', 'processing')
+      .where('locked_at', '<', staleThreshold)
+      .execute();
+
+    // Find next available jobs that:
+    // 1. Are in the specified queue
+    // 2. Have status 'pending'
+    // 3. Have no dependency OR dependency is completed
+    // 4. Are not locked
+    // 5. retry_after is null OR retry_after <= now
+    const pendingJobs = await this.db
+      .selectFrom('jobs')
+      .selectAll()
+      .where('queue', '=', queue)
+      .where('status', '=', 'pending')
+      .where('locked_by', 'is', null)
+      .where(eb => eb.or([
+        eb('retry_after', 'is', null),
+        eb('retry_after', '<=', now),
+      ]))
+      .where(eb => eb.or([
+        eb('depends_on', 'is', null),
+        eb.exists(
+          eb.selectFrom('jobs as parent')
+            .select('parent.job_id')
+            .whereRef('parent.job_id', '=', 'jobs.depends_on')
+            .where('parent.status', '=', 'completed')
+        ),
+      ]))
+      .orderBy('priority', 'desc')
+      .orderBy('created_at', 'asc')
+      .limit(limit)
+      .execute();
+
+    if (pendingJobs.length === 0) return [];
+
+    // Atomically claim all jobs in a transaction
+    const claimedJobs: Job<T>[] = [];
+
+    await this.db.transaction().execute(async (trx) => {
+      for (const job of pendingJobs) {
+        const result = await trx
+          .updateTable('jobs')
+          .set({
+            status: 'processing',
+            locked_by: this.workerId,
+            locked_at: now,
+            started_at: now,
+            attempts: job.attempts + 1,
+          })
+          .where('job_id', '=', job.job_id)
+          .where('status', '=', 'pending')
+          .where('locked_by', 'is', null)
+          .executeTakeFirst();
+
+        // Only add if we actually claimed it (no race condition)
+        if (result.numUpdatedRows && result.numUpdatedRows > BigInt(0)) {
+          claimedJobs.push(this.mapRowToJob<T>(job));
+        }
+      }
+    });
+
+    if (claimedJobs.length > 0) {
+      logger.debug('JobQueue', `Claimed ${claimedJobs.length}/${pendingJobs.length} jobs from ${queue}`);
+    }
+
+    return claimedJobs;
+  }
+
+  /**
    * Mark a job as completed with optional result
    */
   async complete(jobId: string, result?: unknown, queue?: string): Promise<void> {

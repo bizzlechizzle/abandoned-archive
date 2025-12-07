@@ -19,6 +19,7 @@ import PQueue from 'p-queue';
 import { getLogger } from './logger-service';
 import { getMetricsCollector, MetricNames } from './monitoring/metrics-collector';
 import { getTracer, OperationNames } from './monitoring/tracer';
+import { getHardwareProfile, type HardwareProfile } from './hardware-profile';
 
 const logger = getLogger();
 const metrics = getMetricsCollector();
@@ -55,6 +56,8 @@ export interface JobWorkerEvents {
 
 /**
  * Job worker service for processing background jobs
+ *
+ * v2.1 AGGRESSIVE: Hardware-scaled concurrency, batch fetching, adaptive polling
  */
 export class JobWorkerService extends EventEmitter {
   private jobQueue: JobQueue;
@@ -62,39 +65,58 @@ export class JobWorkerService extends EventEmitter {
   private pQueues: Map<string, PQueue> = new Map();
   private isRunning = false;
   private pollInterval: NodeJS.Timeout | null = null;
-  private readonly pollIntervalMs = 1000; // Poll every second
+  private readonly hwProfile: HardwareProfile;
 
   constructor(private readonly db: Kysely<Database>) {
     super();
     this.jobQueue = new JobQueue(db);
+    this.hwProfile = getHardwareProfile();
     this.setupDefaultQueues();
+
+    logger.info('JobWorker', `Initialized with ${this.hwProfile.tier} tier profile`, {
+      pollMs: this.hwProfile.pollIntervalMs,
+      pollIdleMs: this.hwProfile.pollIntervalIdleMs,
+    });
   }
 
   /**
    * Set up default queue configurations
-   * Per Import Spec v2.0 concurrency targets
+   * v2.1: HARDWARE-SCALED concurrency based on detected tier
    */
   private setupDefaultQueues(): void {
-    // ExifTool queue - 4 workers (spec: stay-open mode handles multiple)
-    this.registerQueue(IMPORT_QUEUES.EXIFTOOL, 4, this.handleExifToolJob.bind(this) as JobHandler);
+    const hw = this.hwProfile;
 
-    // FFprobe queue - 2 workers (spec: FFprobe is heavier than ExifTool)
-    this.registerQueue(IMPORT_QUEUES.FFPROBE, 2, this.handleFFprobeJob.bind(this) as JobHandler);
+    // ExifTool queue - scaled to hardware
+    this.registerQueue(IMPORT_QUEUES.EXIFTOOL, hw.exifToolWorkers, this.handleExifToolJob.bind(this) as JobHandler);
 
-    // Thumbnail queue - 4 workers for photos, 2 for videos (spec)
-    this.registerQueue(IMPORT_QUEUES.THUMBNAIL, 4, this.handleThumbnailJob.bind(this) as JobHandler);
+    // FFprobe queue - scaled to hardware
+    this.registerQueue(IMPORT_QUEUES.FFPROBE, hw.ffprobeWorkers, this.handleFFprobeJob.bind(this) as JobHandler);
 
-    // Video proxy queue - heavy, low concurrency
-    this.registerQueue(IMPORT_QUEUES.VIDEO_PROXY, 1, this.handleVideoProxyJob.bind(this) as JobHandler);
+    // Thumbnail queue - scaled to hardware
+    this.registerQueue(IMPORT_QUEUES.THUMBNAIL, hw.thumbnailWorkers, this.handleThumbnailJob.bind(this) as JobHandler);
 
-    // Live photo detection - quick DB operations
-    this.registerQueue(IMPORT_QUEUES.LIVE_PHOTO, 2, this.handleLivePhotoJob.bind(this) as JobHandler);
+    // Video proxy queue - scaled to hardware (heavy but modern machines can handle more)
+    this.registerQueue(IMPORT_QUEUES.VIDEO_PROXY, hw.videoProxyWorkers, this.handleVideoProxyJob.bind(this) as JobHandler);
 
-    // BagIt manifest updates - I/O bound
-    this.registerQueue(IMPORT_QUEUES.BAGIT, 1, this.handleBagItJob.bind(this) as JobHandler);
+    // Live photo detection - scaled to hardware
+    this.registerQueue(IMPORT_QUEUES.LIVE_PHOTO, hw.livePhotoWorkers, this.handleLivePhotoJob.bind(this) as JobHandler);
 
-    // Location stats - quick DB operations
-    this.registerQueue(IMPORT_QUEUES.LOCATION_STATS, 2, this.handleLocationStatsJob.bind(this) as JobHandler);
+    // BagIt manifest updates - scaled to hardware
+    this.registerQueue(IMPORT_QUEUES.BAGIT, hw.bagitWorkers, this.handleBagItJob.bind(this) as JobHandler);
+
+    // Location stats - scaled to hardware
+    this.registerQueue(IMPORT_QUEUES.LOCATION_STATS, hw.locationStatsWorkers, this.handleLocationStatsJob.bind(this) as JobHandler);
+
+    // Log configuration
+    logger.info('JobWorker', 'Queue configuration (hardware-scaled)', {
+      exifTool: hw.exifToolWorkers,
+      ffprobe: hw.ffprobeWorkers,
+      thumbnail: hw.thumbnailWorkers,
+      videoProxy: hw.videoProxyWorkers,
+      livePhoto: hw.livePhotoWorkers,
+      bagit: hw.bagitWorkers,
+      locationStats: hw.locationStatsWorkers,
+    });
   }
 
   /**
@@ -148,26 +170,37 @@ export class JobWorkerService extends EventEmitter {
 
   /**
    * Poll for and process jobs
+   *
+   * v2.1 AGGRESSIVE:
+   * - Batch fetch to fill ALL available worker slots
+   * - Adaptive polling: fast when busy, slower when idle
    */
   private async poll(): Promise<void> {
     if (!this.isRunning) {
       return;
     }
 
+    let totalJobsFetched = 0;
+
     try {
-      // Process each queue
+      // Process each queue - FILL ALL AVAILABLE SLOTS
       for (const [queueName, config] of this.queues) {
         const pQueue = this.pQueues.get(queueName)!;
 
         // Record queue depth metric
         metrics.gauge(MetricNames.JOBS_QUEUE_DEPTH, pQueue.pending, { queue: queueName });
 
-        // Only fetch if queue has capacity
-        if (pQueue.pending < config.concurrency) {
-          const job = await this.jobQueue.getNext(queueName);
+        // Calculate available slots
+        const availableSlots = config.concurrency - pQueue.pending;
 
-          if (job) {
-            // Add to p-queue for processing
+        if (availableSlots > 0) {
+          // BATCH FETCH - get multiple jobs at once to fill all slots
+          const jobs = await this.jobQueue.getNextBatch(queueName, availableSlots);
+
+          totalJobsFetched += jobs.length;
+
+          // Add ALL jobs to p-queue for parallel processing
+          for (const job of jobs) {
             pQueue.add(() => this.processJob(queueName, job, config.handler));
           }
         }
@@ -178,8 +211,12 @@ export class JobWorkerService extends EventEmitter {
       metrics.incrementCounter(MetricNames.ERRORS_COUNT, 1, { source: 'job_worker_poll' });
     }
 
-    // Schedule next poll
-    this.pollInterval = setTimeout(() => this.poll(), this.pollIntervalMs);
+    // ADAPTIVE POLLING: fast when busy, slower when idle
+    const nextPollMs = totalJobsFetched > 0
+      ? this.hwProfile.pollIntervalMs      // Busy: poll fast
+      : this.hwProfile.pollIntervalIdleMs; // Idle: poll slower
+
+    this.pollInterval = setTimeout(() => this.poll(), nextPollMs);
   }
 
   /**
