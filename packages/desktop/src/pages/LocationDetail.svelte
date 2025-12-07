@@ -896,24 +896,39 @@
             <!-- Hover overlay -->
             <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition"></div>
             <!-- Location name overlay - bottom right -->
-            <div class="absolute bottom-0 right-0 p-4 pointer-events-none">
-              <span
-                class="text-4xl font-bold"
-                style="color: #FAFAF8;"
-              >
-                {isViewingSubLocation && currentSubLocation ? currentSubLocation.subnam : location.locnam}
-              </span>
+            <div class="absolute bottom-0 right-0 p-4 pointer-events-none flex flex-col items-end">
+              {#if isViewingSubLocation && currentSubLocation}
+                <!-- Host location name (small, clickable) above sub-location name -->
+                <button
+                  onclick={(e) => { e.stopPropagation(); router.navigate(`/location/${locationId}`); }}
+                  class="text-sm hover:underline pointer-events-auto mb-1"
+                  style="color: #FAFAF8;"
+                >
+                  {location.locnam}
+                </button>
+                <span class="text-4xl font-bold" style="color: #FAFAF8;">
+                  {currentSubLocation.subnam}
+                </span>
+              {:else}
+                <span class="text-4xl font-bold" style="color: #FAFAF8;">
+                  {location.locnam}
+                </span>
+              {/if}
             </div>
-            {#if isViewingSubLocation}
-              <!-- Host location breadcrumb (sub-location view) -->
-              <button
-                onclick={(e) => { e.stopPropagation(); router.navigate(`/location/${locationId}`); }}
-                class="absolute top-0 left-0 p-4 text-sm hover:underline pointer-events-auto"
-                style="color: #FAFAF8;"
+            {#if isViewingSubLocation && sublocations.length > 1}
+              <!-- Sibling sub-locations (sub-location view) - top left, excluding current -->
+              <div
+                class="absolute top-0 left-0 p-4 flex flex-wrap gap-x-4 gap-y-1 text-sm pointer-events-auto"
               >
-                {location.locnam}
-              </button>
-            {:else if isHostLocation && sublocations.length > 0}
+                {#each sublocations.filter(s => s.subid !== currentSubLocation?.subid) as subloc}
+                  <button
+                    onclick={(e) => { e.stopPropagation(); router.navigate(`/location/${locationId}/sub/${subloc.subid}`); }}
+                    class="hover:underline"
+                    style="color: #FAFAF8;"
+                  >{subloc.subnam}</button>
+                {/each}
+              </div>
+            {:else if !isViewingSubLocation && isHostLocation && sublocations.length > 0}
               <!-- Buildings tagline (host location view) - top left -->
               <div
                 bind:this={sublocTaglineEl}
