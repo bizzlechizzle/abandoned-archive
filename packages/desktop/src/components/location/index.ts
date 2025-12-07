@@ -15,6 +15,7 @@ export { default as LocationOriginalAssets } from './LocationOriginalAssets.svel
 export { default as LocationImportZone } from './LocationImportZone.svelte';
 export { default as LocationBookmarks } from './LocationBookmarks.svelte';
 export { default as LocationNerdStats } from './LocationNerdStats.svelte';
+export { default as LocationSettings } from './LocationSettings.svelte';
 export { default as SubLocationGrid } from './SubLocationGrid.svelte';
 
 export * from './types';

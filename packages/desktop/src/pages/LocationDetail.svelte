@@ -17,7 +17,7 @@
     LocationInfo,
     LocationMapSection, LocationOriginalAssets,
     LocationImportZone, LocationBookmarks, LocationNerdStats,
-    SubLocationGrid,
+    LocationSettings, SubLocationGrid,
     type MediaImage, type MediaVideo, type MediaDocument, type Bookmark,
     type GpsWarning, type FailedFile
   } from '../components/location';
@@ -1045,6 +1045,7 @@
             onOpenDocument={openMediaFile}
           />
         </div>
+        <LocationSettings {location} onLocationUpdated={loadLocation} />
         <LocationNerdStats {location} imageCount={images.length} videoCount={videos.length} documentCount={documents.length} onLocationUpdated={loadLocation} />
       {/if}
     </div>
