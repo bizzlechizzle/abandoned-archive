@@ -290,48 +290,61 @@ export function registerMediaImportHandlers(
   });
 
   ipcMain.handle('media:expandPaths', async (_event, paths: unknown) => {
-    const validatedPaths = z.array(z.string()).parse(paths);
-    const expandedPaths: string[] = [];
-    let skippedCount = 0;  // Track skipped files for logging
+    try {
+      console.log('[media:expandPaths] Called with paths:', paths);
+      const validatedPaths = z.array(z.string()).parse(paths);
+      console.log('[media:expandPaths] Validated paths:', validatedPaths.length);
+      const expandedPaths: string[] = [];
+      let skippedCount = 0;  // Track skipped files for logging
 
-    async function processPath(filePath: string): Promise<void> {
-      try {
-        const stat = await fs.stat(filePath);
-        const fileName = path.basename(filePath).toLowerCase();
+      async function processPath(filePath: string): Promise<void> {
+        try {
+          const stat = await fs.stat(filePath);
+          const fileName = path.basename(filePath).toLowerCase();
 
-        if (stat.isFile()) {
-          if (SYSTEM_FILES.has(fileName)) return;
-          const ext = path.extname(filePath).toLowerCase().slice(1);
+          if (stat.isFile()) {
+            if (SYSTEM_FILES.has(fileName)) return;
+            const ext = path.extname(filePath).toLowerCase().slice(1);
 
-          // Skip excluded extensions (.aae, .psd, .psb)
-          if (SKIP_EXTENSIONS.has(ext)) {
-            skippedCount++;
-            console.log(`[media:expandPaths] Skipping excluded extension: ${fileName}`);
-            return;
+            // Skip excluded extensions (.aae, .psd, .psb)
+            if (SKIP_EXTENSIONS.has(ext)) {
+              skippedCount++;
+              console.log(`[media:expandPaths] Skipping excluded extension: ${fileName}`);
+              return;
+            }
+
+            if (ext || SUPPORTED_EXTENSIONS.has(ext)) {
+              expandedPaths.push(filePath);
+            }
+          } else if (stat.isDirectory()) {
+            const entries = await fs.readdir(filePath, { withFileTypes: true });
+            for (const entry of entries) {
+              if (entry.name.startsWith('.')) continue;
+              await processPath(path.join(filePath, entry.name));
+            }
           }
-
-          if (ext || SUPPORTED_EXTENSIONS.has(ext)) {
-            expandedPaths.push(filePath);
-          }
-        } else if (stat.isDirectory()) {
-          const entries = await fs.readdir(filePath, { withFileTypes: true });
-          for (const entry of entries) {
-            if (entry.name.startsWith('.')) continue;
-            await processPath(path.join(filePath, entry.name));
-          }
+        } catch (error) {
+          console.error(`Error processing path ${filePath}:`, error);
         }
-      } catch (error) {
-        console.error(`Error processing path ${filePath}:`, error);
       }
+
+      for (const p of validatedPaths) await processPath(p);
+
+      if (skippedCount > 0) {
+        console.log(`[media:expandPaths] Total files skipped (excluded extensions): ${skippedCount}`);
+      }
+
+      console.log('[media:expandPaths] Returning', expandedPaths.length, 'paths');
+      return expandedPaths;
+    } catch (error) {
+      console.error('[media:expandPaths] Error:', error);
+      // OPT-080: Serialize error to prevent structured clone failure in IPC
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
-
-    for (const p of validatedPaths) await processPath(p);
-
-    if (skippedCount > 0) {
-      console.log(`[media:expandPaths] Total files skipped (excluded extensions): ${skippedCount}`);
-    }
-
-    return expandedPaths;
   });
 
   ipcMain.handle('media:import', async (_event, input: unknown) => {

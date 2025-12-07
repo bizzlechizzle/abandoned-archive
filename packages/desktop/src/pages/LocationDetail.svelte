@@ -602,7 +602,8 @@
 
     try {
       // Use v2 import - no chunking needed, handles streaming internally
-      const result = await window.electronAPI.importV2.start({
+      // OPT-080: Force plain object to avoid Svelte $state() proxy serialization issues
+      const importInput = JSON.parse(JSON.stringify({
         paths: filePaths,
         locid: location.locid,
         loc12: location.loc12,
@@ -613,7 +614,9 @@
         auth_imp: author,
         is_contributed: contributed,
         contribution_source: source || null,
-      });
+      }));
+      console.log('[LocationDetail] Calling importV2.start with:', importInput);
+      const result = await window.electronAPI.importV2.start(importInput);
 
       // Extract results
       const totalImported = result.finalizationResult?.totalFinalized ?? 0;
