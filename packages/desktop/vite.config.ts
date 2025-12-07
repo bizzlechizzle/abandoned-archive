@@ -84,6 +84,29 @@ export default defineConfig({
           },
         },
       },
+      // Worker thread for parallel BLAKE3 hashing
+      {
+        entry: 'electron/workers/hash.worker.ts',
+        vite: {
+          build: {
+            outDir: 'dist-electron/workers',
+            lib: {
+              entry: 'electron/workers/hash.worker.ts',
+              formats: ['cjs'],
+              fileName: () => 'hash.worker.js',
+            },
+            rollupOptions: {
+              external: [
+                'blake3',
+                'worker_threads',
+                'fs',
+                'child_process',
+                'util',
+              ],
+            },
+          },
+        },
+      },
       // REMOVED: preload entry - handled by copyPreloadPlugin instead
     ]),
   ],
