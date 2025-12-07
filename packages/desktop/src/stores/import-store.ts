@@ -191,11 +191,9 @@ export const importProgress = derived(importStore, $store => {
   return {
     current: job.processedFiles,
     total: job.totalFiles,
-    percent: job.percent,  // Pre-calculated by orchestrator with step weights
+    percent: Math.round(job.percent),  // Round to whole number for UI display
     locationName: job.locationName,
     locid: job.locid,
-    // FIX 4.1: Include current filename
-    currentFilename: job.currentFilename,
   };
 });
 

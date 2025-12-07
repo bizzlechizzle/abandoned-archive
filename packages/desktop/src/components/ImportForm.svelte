@@ -4,15 +4,13 @@
   import AutocompleteInput from './AutocompleteInput.svelte';
   import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
   import { getTypeForSubtype } from '../lib/type-hierarchy';
+  import { importProgress as storeImportProgress, isImporting as storeIsImporting, importStore } from '../stores/import-store';
 
   interface Props {
     locations: Location[];
     selectedLocation: string;
     isImporting: boolean;
     isDragging: boolean;
-    importProgress: string;
-    progressCurrent: number;
-    progressTotal: number;
     onLocationChange: (locid: string) => void;
     onBrowse: () => void;
     onDragOver: (event: DragEvent) => void;
@@ -30,9 +28,6 @@
     selectedLocation,
     isImporting,
     isDragging,
-    importProgress,
-    progressCurrent,
-    progressTotal,
     onLocationChange,
     onBrowse,
     onDragOver,
@@ -765,23 +760,30 @@
       </div>
     </div>
 
-    <!-- Progress Display -->
-    {#if importProgress}
+    <!-- Progress Display: Braun minimal design -->
+    {#if $storeIsImporting && $storeImportProgress}
       <div class="mt-4 p-4 bg-braun-50 border border-braun-200 rounded">
-        <p class="text-sm text-braun-800">{importProgress}</p>
-        {#if isImporting && progressTotal > 0}
-          <div class="mt-3">
-            <div class="w-full bg-braun-200 rounded-full h-2.5">
-              <div
-                class="bg-braun-900 h-2.5 rounded-full transition-all duration-300"
-                style="width: {(progressCurrent / progressTotal) * 100}%"
-              ></div>
-            </div>
-            <p class="text-xs text-braun-600 mt-1 text-right">
-              {progressCurrent} / {progressTotal} files ({Math.round((progressCurrent / progressTotal) * 100)}%)
-            </p>
+        <!-- Header: label + cancel -->
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-medium text-braun-700">Importing</span>
+          <button
+            onclick={() => importStore.cancelImport()}
+            class="text-xs text-braun-500 hover:text-braun-700"
+          >
+            Cancel
+          </button>
+        </div>
+
+        <!-- Progress bar + percentage -->
+        <div class="flex items-center gap-3">
+          <div class="flex-1 bg-braun-200 rounded h-2">
+            <div
+              class="bg-braun-900 h-2 rounded transition-all duration-300"
+              style="width: {$storeImportProgress.percent}%"
+            ></div>
           </div>
-        {/if}
+          <span class="text-xs text-braun-500 w-8 text-right">{$storeImportProgress.percent}%</span>
+        </div>
       </div>
     {/if}
   {/if}

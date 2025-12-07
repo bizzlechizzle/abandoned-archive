@@ -73,7 +73,6 @@
   let selectedMediaIndex = $state<number | null>(null);
   let currentUser = $state('default');
   let isDragging = $state(false);
-  let importProgress = $state('');
   let verifyingGps = $state(false);
   let togglingFavorite = $state(false);
 
@@ -489,9 +488,8 @@
     if (!e.dataTransfer?.files || e.dataTransfer.files.length === 0 || !location) return;
     await new Promise(r => setTimeout(r, 10));
     const droppedPaths = window.getDroppedFilePaths?.() || [];
-    if (droppedPaths.length === 0) { importProgress = 'No valid files found'; setTimeout(() => importProgress = '', 3000); return; }
-    if (!window.electronAPI?.media?.expandPaths) { importProgress = 'API not available'; setTimeout(() => importProgress = '', 3000); return; }
-    importProgress = 'Scanning files...';
+    if (droppedPaths.length === 0) { toasts.warning('No valid files found'); return; }
+    if (!window.electronAPI?.media?.expandPaths) { toasts.error('API not available'); return; }
     const expandedPaths = await window.electronAPI.media.expandPaths(droppedPaths);
     if (expandedPaths.length > 0) {
       // Show attribution modal instead of importing directly
@@ -500,9 +498,8 @@
       selectedAuthor = '';
       contributionSource = '';
       showAttributionModal = true;
-      importProgress = '';
     }
-    else { importProgress = 'No supported media files found'; setTimeout(() => importProgress = '', 3000); }
+    else { toasts.warning('No supported media files found'); }
   }
 
   async function handleSelectFiles() {
@@ -511,7 +508,6 @@
       const filePaths = await window.electronAPI.media.selectFiles();
       if (!filePaths || filePaths.length === 0) return;
       if (window.electronAPI.media.expandPaths) {
-        importProgress = 'Scanning files...';
         const expandedPaths = await window.electronAPI.media.expandPaths(filePaths);
         if (expandedPaths.length > 0) {
           // Show attribution modal instead of importing directly
@@ -520,9 +516,8 @@
           selectedAuthor = '';
           contributionSource = '';
           showAttributionModal = true;
-          importProgress = '';
         }
-        else { importProgress = 'No supported media files found'; setTimeout(() => importProgress = '', 3000); }
+        else { toasts.warning('No supported media files found'); }
       } else {
         pendingImportPaths = filePaths;
         isSomeoneElse = false;
@@ -530,7 +525,7 @@
         contributionSource = '';
         showAttributionModal = true;
       }
-    } catch (err) { console.error('Error selecting files:', err); importProgress = 'Error selecting files'; setTimeout(() => importProgress = '', 3000); }
+    } catch (err) { console.error('Error selecting files:', err); toasts.error('Error selecting files'); }
   }
 
   // Called when user confirms attribution in modal
@@ -583,21 +578,12 @@
       ? `${location.locnam} / ${currentSubLocation.subnam}`
       : location.locnam;
     importStore.startJob(location.locid, jobLabel, filePaths.length);
-    importProgress = 'Import started';
 
     // Set up progress listener for real-time updates
     const unsubscribeProgress = window.electronAPI.importV2.onProgress((progress) => {
       // OPT-088: Update store with v2 progress including weighted percent
+      // Progress display handled by store + LocationImportZone clean progress bar
       importStore.updateProgress(progress.filesProcessed, progress.filesTotal, progress.percent);
-
-      // Update local progress text
-      const statusText = progress.status === 'scanning' ? 'Scanning files...'
-        : progress.status === 'hashing' ? 'Computing hashes...'
-        : progress.status === 'copying' ? 'Copying files...'
-        : progress.status === 'validating' ? 'Validating integrity...'
-        : progress.status === 'finalizing' ? 'Finalizing...'
-        : `${progress.percent}%`;
-      importProgress = `${statusText} (${progress.filesProcessed}/${progress.filesTotal})`;
     });
 
     try {
@@ -628,26 +614,20 @@
       if (result.status === 'failed' && result.error) {
         const errorMsg = `Import failed: ${result.error}`;
         importStore.completeJob(undefined, errorMsg);
-        importProgress = errorMsg;
         toasts.error(errorMsg);
       } else if (result.status === 'cancelled') {
         importStore.completeJob(undefined, 'Import cancelled');
-        importProgress = 'Import cancelled';
         toasts.info('Import was cancelled');
       } else {
         // Success or partial success
         importStore.completeJob({ imported: totalImported, duplicates: totalDuplicates, errors: totalErrors });
 
         if (totalErrors > 0) {
-          importProgress = `Imported ${totalImported} files (${totalErrors} failed)`;
           toasts.warning(`Imported ${totalImported} files. ${totalErrors} failed.`);
         } else if (totalImported > 0) {
-          const bgMsg = jobsQueued > 0 ? ` (${jobsQueued} background jobs queued)` : '';
-          importProgress = `Imported ${totalImported} files successfully${bgMsg}`;
           toasts.success(`Successfully imported ${totalImported} files`);
           failedFiles = [];
         } else if (totalDuplicates > 0) {
-          importProgress = `${totalDuplicates} files were already in archive`;
           toasts.info(`${totalDuplicates} files were already in archive`);
         }
       }
@@ -661,14 +641,11 @@
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
       importStore.completeJob(undefined, msg);
-      importProgress = `Import error: ${msg}`;
       toasts.error(`Import error: ${msg}`);
     } finally {
       // Clean up progress listener
       unsubscribeProgress();
     }
-
-    setTimeout(() => importProgress = '', 8000);
   }
 
   async function retryFailedImports() {
@@ -956,7 +933,6 @@
         <!-- Import zone - host locations get campus-level media, buildings get building media -->
         <LocationImportZone
           isImporting={$isImporting}
-          {importProgress}
           {isDragging}
           {gpsWarnings}
           {failedFiles}

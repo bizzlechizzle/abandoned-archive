@@ -4,10 +4,10 @@
    * Per LILBITS: ~200 lines, single responsibility
    */
   import type { GpsWarning, FailedFile } from './types';
+  import { importProgress as storeProgress, isImporting as storeIsImporting, importStore } from '../../stores/import-store';
 
   interface Props {
     isImporting: boolean;
-    importProgress: string;
     isDragging: boolean;
     gpsWarnings: GpsWarning[];
     failedFiles: FailedFile[];
@@ -22,7 +22,7 @@
   }
 
   let {
-    isImporting, importProgress, isDragging, gpsWarnings, failedFiles,
+    isImporting, isDragging, gpsWarnings, failedFiles,
     scopeLabel = null,
     onDragOver, onDragLeave, onDrop, onSelectFiles, onRetryFailed,
     onDismissWarning, onDismissAllWarnings
@@ -39,19 +39,14 @@
 >
   <div class="flex items-center justify-between mb-3">
     <h2 class="text-xl font-semibold text-braun-900">Import</h2>
-    <div class="flex items-center gap-2">
-      {#if importProgress}
-        <span class="text-sm text-braun-900">{importProgress}</span>
-      {/if}
-      {#if failedFiles.length > 0}
-        <button
-          onclick={onRetryFailed}
-          class="text-sm text-error hover:opacity-80 hover:underline"
-        >
-          Retry {failedFiles.length} failed
-        </button>
-      {/if}
-    </div>
+    {#if failedFiles.length > 0}
+      <button
+        onclick={onRetryFailed}
+        class="text-sm text-error hover:opacity-80 hover:underline"
+      >
+        Retry {failedFiles.length} failed
+      </button>
+    {/if}
   </div>
 
   <!-- GPS Mismatch Warnings -->
@@ -106,12 +101,27 @@
   <div
     class="p-6 border-2 border-dashed rounded text-center transition-colors {isDragging ? 'border-braun-900 bg-braun-100' : 'border-braun-300 hover:border-braun-400'}"
   >
-    {#if isImporting}
-      <div class="text-braun-500">
-        <div class="w-10 h-10 mx-auto mb-2 border-2 border-braun-400 rounded flex items-center justify-center">
-          <div class="w-4 h-4 bg-braun-400 rounded"></div>
+    {#if $storeIsImporting && $storeProgress}
+      <!-- Clean Braun progress bar -->
+      <div class="text-left">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-medium text-braun-700">Importing</span>
+          <button
+            onclick={() => importStore.cancelImport()}
+            class="text-xs text-braun-500 hover:text-braun-700"
+          >
+            Cancel
+          </button>
         </div>
-        <p class="text-sm">{importProgress}</p>
+        <div class="flex items-center gap-3">
+          <div class="flex-1 bg-braun-200 rounded h-2">
+            <div
+              class="bg-braun-900 h-2 rounded transition-all duration-300"
+              style="width: {$storeProgress.percent}%"
+            ></div>
+          </div>
+          <span class="text-xs text-braun-500 w-8 text-right">{$storeProgress.percent}%</span>
+        </div>
       </div>
     {:else}
       <svg class="w-10 h-10 mx-auto mb-2 text-braun-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

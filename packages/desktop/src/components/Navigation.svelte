@@ -1,7 +1,6 @@
 <script lang="ts">
   import { router } from '../stores/router';
   import { openImportModal } from '../stores/import-modal-store';
-  import SidebarImportProgress from './SidebarImportProgress.svelte';
 
   let currentRoute = $state('/dashboard');
 
@@ -68,9 +67,6 @@
       {/each}
     </ul>
   </div>
-
-  <!-- Import Progress: Shows above Search/Settings when importing -->
-  <SidebarImportProgress />
 
   <!-- Bottom Icon Bar: Search and Settings (icons only, right-justified) -->
   <div class="p-4 border-t border-braun-200">

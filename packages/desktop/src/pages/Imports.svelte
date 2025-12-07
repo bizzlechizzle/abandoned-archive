@@ -4,6 +4,7 @@
   import type { Location } from '@au-archive/core';
   import ImportForm from '../components/ImportForm.svelte';
   import RecentImports from '../components/RecentImports.svelte';
+  import { toasts } from '../stores/toast-store';
 
   interface ImportResult {
     success: boolean;
@@ -40,13 +41,10 @@
   let selectedLocation = $state('');
   let isDragging = $state(false);
   let isImporting = $state(false);
-  let importProgress = $state('');
   let importResult = $state<ImportSessionResult | null>(null);
   let recentImports = $state<ImportRecord[]>([]);
   let currentUser = $state('default');
   let loading = $state(true);
-  let progressCurrent = $state(0);
-  let progressTotal = $state(0);
   let archiveFolderConfigured = $state(false);
   let archiveFolder = $state('');
 
@@ -83,30 +81,9 @@
         users = await window.electronAPI.users.findAll();
       }
 
-      // Set up v2 progress listener for real-time import updates
-      const unsubscribeProgress = window.electronAPI.importV2.onProgress((progress) => {
-        progressCurrent = progress.filesProcessed;
-        progressTotal = progress.filesTotal;
-        // Display human-readable status based on v2 pipeline step
-        switch (progress.status) {
-          case 'scanning':
-            importProgress = 'Scanning files...';
-            break;
-          case 'hashing':
-            importProgress = 'Hashing files...';
-            break;
-          case 'copying':
-            importProgress = 'Copying to archive...';
-            break;
-          case 'validating':
-            importProgress = 'Validating integrity...';
-            break;
-          case 'finalizing':
-            importProgress = 'Finalizing import...';
-            break;
-          default:
-            importProgress = 'Importing...';
-        }
+      // Set up v2 progress listener - progress display handled by store
+      const unsubscribeProgress = window.electronAPI.importV2.onProgress(() => {
+        // Progress bar display handled by import store
       });
 
       // Clean up listener on unmount
@@ -145,17 +122,16 @@
     const droppedPaths = window.getDroppedFilePaths?.() || [];
 
     if (droppedPaths.length === 0) {
-      importProgress = 'No valid files found in dropped items';
+      toasts.warning('No valid files found in dropped items');
       return;
     }
 
     // Use main process to expand paths (handles directories recursively)
     if (!window.electronAPI?.media?.expandPaths) {
-      importProgress = 'API not available';
+      toasts.error('API not available');
       return;
     }
 
-    importProgress = 'Scanning files...';
     const expandedPaths = await window.electronAPI.media.expandPaths(droppedPaths);
 
     if (expandedPaths.length > 0) {
@@ -165,9 +141,8 @@
       selectedAuthor = '';
       contributionSource = '';
       showAttributionModal = true;
-      importProgress = '';
     } else {
-      importProgress = 'No supported media files found';
+      toasts.warning('No supported media files found');
     }
   }
 
@@ -187,7 +162,7 @@
       showAttributionModal = true;
     } catch (error) {
       console.error('Error selecting files:', error);
-      importProgress = 'Error selecting files';
+      toasts.error('Error selecting files');
     }
   }
 
@@ -229,24 +204,23 @@
   // Import v2.0: Uses v2 pipeline with streaming progress
   async function importFilePaths(filePaths: string[], author: string, contributed: number = 0, source: string = '') {
     if (!selectedLocation) {
-      importProgress = 'Please select a location first';
+      toasts.warning('Please select a location first');
       return;
     }
     if (!window.electronAPI?.importV2) {
-      importProgress = 'Import v2 API not available';
+      toasts.error('Import v2 API not available');
       return;
     }
 
     // Get full location object from locations array (v2 requires loc12 and other fields)
     const location = locations.find(loc => loc.locid === selectedLocation);
     if (!location) {
-      importProgress = 'Selected location not found';
+      toasts.error('Selected location not found');
       return;
     }
 
     try {
       isImporting = true;
-      importProgress = 'Starting import...';
 
       // Call v2 import pipeline - no chunking needed, v2 handles it internally
       const result = await window.electronAPI.importV2.start({
@@ -281,11 +255,13 @@
         importId: result.sessionId,
       };
 
-      // Success message includes background job count
-      if (jobsQueued > 0) {
-        importProgress = `Import complete! ${totalImported} imported, ${totalDuplicates} duplicates, ${totalErrors} errors. ${jobsQueued} background jobs queued.`;
-      } else {
-        importProgress = `Import complete! ${totalImported} imported, ${totalDuplicates} duplicates, ${totalErrors} errors`;
+      // Success toast
+      if (totalErrors > 0) {
+        toasts.warning(`Imported ${totalImported} files. ${totalErrors} failed.`);
+      } else if (totalImported > 0) {
+        toasts.success(`Successfully imported ${totalImported} files`);
+      } else if (totalDuplicates > 0) {
+        toasts.info(`${totalDuplicates} files were already in archive`);
       }
 
       // Refresh recent imports list
@@ -295,16 +271,11 @@
       // Clear result display after delay
       setTimeout(() => {
         importResult = null;
-        importProgress = '';
-        progressCurrent = 0;
-        progressTotal = 0;
       }, 5000);
 
     } catch (error) {
       console.error('Error importing files:', error);
-      importProgress = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
-      progressCurrent = 0;
-      progressTotal = 0;
+      toasts.error(`Import error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       isImporting = false;
     }
@@ -350,9 +321,6 @@
       {selectedLocation}
       {isImporting}
       {isDragging}
-      {importProgress}
-      {progressCurrent}
-      {progressTotal}
       onLocationChange={(locid) => (selectedLocation = locid)}
       onBrowse={handleBrowse}
       onDragOver={handleDragOver}
