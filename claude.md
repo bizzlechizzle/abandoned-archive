@@ -92,6 +92,7 @@ pnpm reinstall        # Clean and reinstall (fixes native module issues)
 | **Hashing first** | SHA256 computed before any metadata extraction or file moves |
 | **Archive folder structure** | `[base]/locations/[STATE]-[TYPE]/[SLOCNAM]-[LOC12]/org-{img,vid,doc}-[LOC12]/` |
 | **Ownership pledge** | All assets stay on disk. No telemetry, no cloud sync, no auto-updates. |
+| **Source file responsibility** | User's source files are THEIR responsibility. We make a complete, verified copy. Done. |
 | **pnpm v10+ native modules** | Project pre-configures `onlyBuiltDependencies` for better-sqlite3, electron, sharp, esbuild. If "Ignored build scripts" warnings appear, run `pnpm reinstall`. |
 
 ## Architecture (Quick)
