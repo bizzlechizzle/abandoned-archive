@@ -292,11 +292,6 @@
           <p class="text-sm text-braun-600 mb-2">
             Importing to <button onclick={() => router.navigate(`/location/${$importProgress.locid}`)} class="text-braun-900 hover:underline font-medium">{$importProgress.locationName}</button>
           </p>
-          {#if $importProgress.currentFilename}
-            <p class="text-xs text-braun-500 mb-2 truncate max-w-full" title={$importProgress.currentFilename}>
-              Processing: {$importProgress.currentFilename.length > 30 ? $importProgress.currentFilename.slice(0, 27) + '...' : $importProgress.currentFilename}
-            </p>
-          {/if}
           <div class="w-full bg-braun-200 rounded-full h-3">
             <div
               class="bg-braun-900 h-3 rounded-full transition-all duration-300 ease-out"
