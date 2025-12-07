@@ -1965,6 +1965,28 @@ function runMigrations(sqlite: Database.Database): void {
 
       console.log('Migration 51 completed: monitoring and audit tables created');
     }
+
+    // Migration 52: Restore hero_focal_x/y columns for image centering (OPT-074)
+    const locColumns52 = sqlite.prepare(`PRAGMA table_info(locs)`).all() as Array<{ name: string }>;
+    const hasHeroFocalX = locColumns52.some(col => col.name === 'hero_focal_x');
+    if (!hasHeroFocalX) {
+      sqlite.exec(`
+        ALTER TABLE locs ADD COLUMN hero_focal_x REAL DEFAULT 0.5;
+        ALTER TABLE locs ADD COLUMN hero_focal_y REAL DEFAULT 0.5;
+      `);
+      console.log('Migration 52 completed: hero_focal_x/y columns restored');
+    }
+
+    // Migration 52b: Restore hero_focal_x/y columns for sub-locations
+    const slocColumns52 = sqlite.prepare(`PRAGMA table_info(slocs)`).all() as Array<{ name: string }>;
+    const hasSlocHeroFocalX = slocColumns52.some(col => col.name === 'hero_focal_x');
+    if (!hasSlocHeroFocalX) {
+      sqlite.exec(`
+        ALTER TABLE slocs ADD COLUMN hero_focal_x REAL DEFAULT 0.5;
+        ALTER TABLE slocs ADD COLUMN hero_focal_y REAL DEFAULT 0.5;
+      `);
+      console.log('Migration 52b completed: hero_focal_x/y columns added to slocs');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

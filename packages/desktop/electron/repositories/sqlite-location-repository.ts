@@ -423,6 +423,8 @@ export class SQLiteLocationRepository implements LocationRepository {
     if (input.historic !== undefined) updates.historic = input.historic ? 1 : 0;
     if (input.favorite !== undefined) updates.favorite = input.favorite ? 1 : 0;
     if (input.hero_imghash !== undefined) updates.hero_imghash = input.hero_imghash;
+    if (input.hero_focal_x !== undefined) updates.hero_focal_x = input.hero_focal_x;
+    if (input.hero_focal_y !== undefined) updates.hero_focal_y = input.hero_focal_y;
     if (input.auth_imp !== undefined) updates.auth_imp = input.auth_imp;
     // DECISION-013: Information box fields
     if (input.builtYear !== undefined) updates.built_year = input.builtYear;
@@ -823,6 +825,8 @@ export class SQLiteLocationRepository implements LocationRepository {
       docMapFind: row.doc_map_find === 1,
       statusChangedAt: row.status_changed_at ?? undefined,
       hero_imghash: row.hero_imghash ?? undefined,
+      hero_focal_x: row.hero_focal_x ?? 0.5,
+      hero_focal_y: row.hero_focal_y ?? 0.5,
       sublocs: row.sublocs ? JSON.parse(row.sublocs) : [],
       sub12: row.sub12 ?? undefined,
       locadd: row.locadd ?? new Date().toISOString(),

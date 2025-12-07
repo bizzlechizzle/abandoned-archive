@@ -835,13 +835,14 @@
           <button
             onclick={handleHeroClick}
             class="relative overflow-hidden w-full group cursor-pointer rounded"
-            style="aspect-ratio: 3 / 1;"
+            style="aspect-ratio: 4 / 1;"
             title="View hero image"
           >
             <img
               src={`media://${heroThumbPath}`}
               alt="Hero image"
               class="w-full h-full object-cover"
+              style="object-position: {((currentSubLocation?.hero_focal_x ?? location?.hero_focal_x ?? 0.5) * 100)}% {((currentSubLocation?.hero_focal_y ?? location?.hero_focal_y ?? 0.5) * 100)}%;"
             />
             <!-- Hover overlay -->
             <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition flex items-center justify-center">
@@ -887,7 +888,7 @@
           <!-- No hero - placeholder -->
           <div
             class="relative overflow-hidden bg-braun-100 flex items-center justify-center rounded"
-            style="aspect-ratio: 3 / 1;"
+            style="aspect-ratio: 4 / 1;"
           >
               <div class="text-center text-braun-500">
                 <svg class="w-8 h-8 mx-auto mb-2 text-braun-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -996,12 +997,23 @@
       startIndex={selectedMediaIndex}
       onClose={() => selectedMediaIndex = null}
       heroImghash={currentSubLocation?.hero_imghash || location?.hero_imghash || null}
+      focalX={currentSubLocation?.hero_focal_x ?? location?.hero_focal_x ?? 0.5}
+      focalY={currentSubLocation?.hero_focal_y ?? location?.hero_focal_y ?? 0.5}
       onSetHeroImage={currentSubLocation
-        ? async (imghash) => {
-            await window.electronAPI.sublocations.update(currentSubLocation.subid, { hero_imghash: imghash });
+        ? async (imghash, focalX, focalY) => {
+            await window.electronAPI.sublocations.update(currentSubLocation.subid, { hero_imghash: imghash, hero_focal_x: focalX, hero_focal_y: focalY });
             await loadLocation();
           }
-        : setHeroImage}
+        : async (imghash, focalX, focalY) => {
+            await window.electronAPI.location.update(locationId, { hero_imghash: imghash, hero_focal_x: focalX, hero_focal_y: focalY });
+            await loadLocation();
+          }}
+      onSetHostHeroImage={currentSubLocation
+        ? async (imghash, focalX, focalY) => {
+            await window.electronAPI.location.update(locationId, { hero_imghash: imghash, hero_focal_x: focalX, hero_focal_y: focalY });
+            await loadLocation();
+          }
+        : undefined}
       onHiddenChanged={handleHiddenChanged}
       onDeleted={handleMediaDeleted}
       onMoved={handleMediaMoved}

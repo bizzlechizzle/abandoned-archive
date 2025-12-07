@@ -40,7 +40,11 @@
     onClose: () => void;
     // Hero image props (for card thumbnails)
     heroImghash?: string | null;
-    onSetHeroImage?: (imghash: string) => void;
+    focalX?: number;
+    focalY?: number;
+    onSetHeroImage?: (imghash: string, focalX: number, focalY: number) => void;
+    // Issue 7: Callback for setting host location hero from sub-location view
+    onSetHostHeroImage?: (imghash: string, focalX: number, focalY: number) => void;
     // Hidden status callback
     onHiddenChanged?: (hash: string, hidden: boolean) => void;
     // Delete and Move callbacks
@@ -54,7 +58,7 @@
     locid?: string;
   }
 
-  let { mediaList, startIndex = 0, onClose, heroImghash, onSetHeroImage, onHiddenChanged, onDeleted, onMoved, sublocations = [], currentSubid = null, locid }: Props = $props();
+  let { mediaList, startIndex = 0, onClose, heroImghash, focalX = 0.5, focalY = 0.5, onSetHeroImage, onSetHostHeroImage, onHiddenChanged, onDeleted, onMoved, sublocations = [], currentSubid = null, locid }: Props = $props();
 
   let currentIndex = $state(startIndex);
   let showExif = $state(false);
@@ -79,6 +83,15 @@
   const currentMedia = $derived(mediaList[currentIndex]);
   const isCurrentHero = $derived(currentMedia?.hash === heroImghash);
   const canBeHero = $derived(currentMedia?.type === 'image');
+
+  // Hero focal point editor state
+  let isEditingFocal = $state(false);
+  let pendingFocalX = $state(focalX);
+  let pendingFocalY = $state(focalY);
+  let isDraggingFocal = $state(false);
+  let focalPreviewEl: HTMLDivElement | null = $state(null);
+  let settingHeroFor = $state<'building' | 'campus' | null>(null);
+  let hostLocationSelected = $state(false);
 
   // Hidden status
   const isCurrentHidden = $derived(currentMedia?.hidden === 1);
@@ -115,7 +128,11 @@
   function handleKeydown(event: KeyboardEvent) {
     switch (event.key) {
       case 'Escape':
-        onClose();
+        if (isEditingFocal) {
+          cancelFocalEdit();
+        } else {
+          onClose();
+        }
         break;
       case 'ArrowLeft':
         goToPrevious();
@@ -134,6 +151,7 @@
       currentIndex--;
       imageError = false;
       showAllFields = false;
+      isEditingFocal = false;
       // Reset proxy state (effect will load new proxy if needed)
       proxyPath = null;
       proxyError = null;
@@ -148,6 +166,7 @@
       currentIndex++;
       imageError = false;
       showAllFields = false;
+      isEditingFocal = false;
       // Reset proxy state (effect will load new proxy if needed)
       proxyPath = null;
       proxyError = null;
@@ -323,10 +342,87 @@
     }
   }
 
-  // Simple hero image setter (for card thumbnails)
-  function setAsHero() {
-    if (currentMedia && onSetHeroImage) {
-      onSetHeroImage(currentMedia.hash);
+  // Hero focal point editing functions
+  function startFocalEdit(heroType: 'building' | 'campus' = 'building') {
+    pendingFocalX = isCurrentHero ? focalX : 0.5;
+    pendingFocalY = isCurrentHero ? focalY : 0.5;
+    settingHeroFor = heroType;
+    isEditingFocal = true;
+  }
+
+  function updateFocalFromEvent(e: MouseEvent) {
+    if (!focalPreviewEl) return;
+    const rect = focalPreviewEl.getBoundingClientRect();
+    pendingFocalX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    pendingFocalY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+  }
+
+  function handleFocalMouseDown(e: MouseEvent) {
+    isDraggingFocal = true;
+    updateFocalFromEvent(e);
+  }
+
+  function handlePinMouseDown(e: MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    isDraggingFocal = true;
+  }
+
+  function handleFocalMouseMove(e: MouseEvent) {
+    if (isDraggingFocal) {
+      updateFocalFromEvent(e);
+    }
+  }
+
+  function handleFocalMouseUp() {
+    isDraggingFocal = false;
+  }
+
+  function handleGlobalMouseMove(e: MouseEvent) {
+    if (isDraggingFocal && focalPreviewEl) {
+      updateFocalFromEvent(e);
+    }
+  }
+
+  function handleGlobalMouseUp() {
+    isDraggingFocal = false;
+  }
+
+  function saveFocalEdit() {
+    if (currentMedia) {
+      if (settingHeroFor === 'campus' && onSetHostHeroImage) {
+        onSetHostHeroImage(currentMedia.hash, pendingFocalX, pendingFocalY);
+      } else if (onSetHeroImage) {
+        onSetHeroImage(currentMedia.hash, pendingFocalX, pendingFocalY);
+      }
+    }
+    settingHeroFor = null;
+    hostLocationSelected = false;
+    isEditingFocal = false;
+  }
+
+  function cancelFocalEdit() {
+    settingHeroFor = null;
+    hostLocationSelected = false;
+    isEditingFocal = false;
+  }
+
+  function handleHostLocationClick() {
+    if (!currentMedia || !onSetHostHeroImage) return;
+
+    if (hostLocationSelected) {
+      onSetHostHeroImage(currentMedia.hash, pendingFocalX, pendingFocalY);
+      isEditingFocal = false;
+      settingHeroFor = null;
+      hostLocationSelected = false;
+    } else {
+      hostLocationSelected = true;
+    }
+  }
+
+  function handleFocalKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      cancelFocalEdit();
     }
   }
 
@@ -640,17 +736,38 @@
         {:else if metadataError}
           <div class="text-red-500 text-sm">{metadataError}</div>
         {:else}
-          <!-- Hero Image Section (Images only) - for card thumbnails -->
+          <!-- Hero Image Section (Images only) -->
           {#if canBeHero && onSetHeroImage}
             <div class="pb-4 mb-4 border-b border-braun-200">
-              <div class="text-xs font-medium text-braun-400 uppercase tracking-wide mb-3">Card Thumbnail</div>
-              <button
-                onclick={setAsHero}
-                disabled={isCurrentHero}
-                class="w-full px-4 py-2.5 text-sm font-medium {isCurrentHero ? 'bg-braun-100 text-braun-400 cursor-not-allowed' : 'bg-braun-900 text-white hover:bg-braun-900/90'} rounded transition"
-              >
-                {isCurrentHero ? 'Current Thumbnail' : 'Set as Thumbnail'}
-              </button>
+              <div class="text-xs font-medium text-braun-400 uppercase tracking-wide mb-3">Hero Image</div>
+
+              {#if !isEditingFocal}
+                <!-- Preview thumbnail with current focal point -->
+                <div class="space-y-3">
+                  <div class="relative w-full aspect-[4/1] bg-braun-100 rounded overflow-hidden">
+                    <img
+                      src={imageSrc()}
+                      alt="Hero preview"
+                      class="w-full h-full object-cover opacity-80"
+                      style="object-position: {(focalX ?? 0.5) * 100}% {(focalY ?? 0.5) * 100}%;"
+                    />
+                    <div class="absolute inset-0 bg-background/40"></div>
+                    {#if isCurrentHero}
+                      <div class="absolute top-2 left-2">
+                        <span class="inline-flex items-center px-2 py-1 bg-braun-900 text-white text-xs font-medium rounded">
+                          Current Hero
+                        </span>
+                      </div>
+                    {/if}
+                  </div>
+                  <button
+                    onclick={() => startFocalEdit('building')}
+                    class="w-full px-4 py-2.5 text-sm font-medium {isCurrentHero ? 'bg-braun-100 hover:bg-braun-200 text-braun-700' : 'bg-braun-900 text-white hover:bg-braun-900/90'} rounded transition"
+                  >
+                    {isCurrentHero ? 'Edit Focal Point' : 'Set as Hero Image'}
+                  </button>
+                </div>
+              {/if}
             </div>
           {/if}
 
@@ -1133,6 +1250,102 @@
               class="px-4 py-2 text-sm font-medium text-white bg-braun-900 rounded hover:bg-braun-900/90 transition disabled:opacity-50"
             >
               {moving ? 'Moving...' : 'Move'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Focal Point Editor Modal -->
+  {#if isEditingFocal && currentMedia}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-8"
+      onmousemove={handleGlobalMouseMove}
+      onmouseup={handleGlobalMouseUp}
+      onkeydown={handleFocalKeydown}
+    >
+      <div class="bg-white rounded border border-braun-300 max-w-4xl w-full max-h-[90vh] flex flex-col">
+        <!-- Header -->
+        <div class="px-6 py-4 border-b border-braun-200">
+          <h3 class="text-lg font-semibold text-braun-900">Set Hero Focal Point</h3>
+          <p class="text-sm text-braun-500 mt-1">Drag the pin to set the center point for cropping</p>
+        </div>
+
+        <!-- Large Preview (matches hero constraints) -->
+        <div class="p-6 flex-1 overflow-hidden">
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            bind:this={focalPreviewEl}
+            class="relative w-full max-h-[40vh] mx-auto rounded overflow-hidden cursor-crosshair select-none bg-braun-100"
+            style="aspect-ratio: 4 / 1;"
+            onmousedown={handleFocalMouseDown}
+            onmousemove={handleFocalMouseMove}
+            onmouseup={handleFocalMouseUp}
+          >
+            <img
+              src={imageSrc()}
+              alt="Hero preview"
+              class="absolute inset-0 w-full h-full object-cover"
+              style="object-position: {pendingFocalX * 100}% {pendingFocalY * 100}%;"
+            />
+            <!-- Solid overlay for preview - no gradients per Braun -->
+            <div class="absolute bottom-0 left-0 right-0 h-16 pointer-events-none bg-white/60"></div>
+            <!-- Draggable focal point pin -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="absolute w-10 h-10 -translate-x-1/2 -translate-y-1/2 z-10 cursor-grab active:cursor-grabbing"
+              style="left: {pendingFocalX * 100}%; top: {pendingFocalY * 100}%;"
+              onmousedown={handlePinMouseDown}
+              role="slider"
+              aria-label="Focal point position"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(pendingFocalX * 100)}
+              tabindex="0"
+            >
+              <!-- Outer ring -->
+              <div class="absolute inset-0 rounded-full border-2 border-white"></div>
+              <!-- Inner circle -->
+              <div class="absolute inset-2 rounded-full bg-braun-900"></div>
+              <!-- Crosshair -->
+              <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div class="w-px h-4 bg-white/80"></div>
+              </div>
+              <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div class="w-4 h-px bg-white/80"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 py-4 border-t border-braun-200 bg-braun-50 rounded-b flex items-center justify-between">
+          <!-- Left side: Host-Location option -->
+          <div class="flex gap-2">
+            {#if onSetHostHeroImage}
+              <button
+                onclick={handleHostLocationClick}
+                class="px-3 py-2 text-sm font-medium rounded transition {hostLocationSelected ? 'bg-braun-900 text-white hover:bg-braun-600' : 'text-braun-600 bg-white border border-braun-300 hover:bg-braun-50'}"
+              >
+                {hostLocationSelected ? 'Save to Host' : 'Host-Location'}
+              </button>
+            {/if}
+          </div>
+          <!-- Right side: Cancel/Save -->
+          <div class="flex gap-3">
+            <button
+              onclick={cancelFocalEdit}
+              class="px-4 py-2 text-sm font-medium text-braun-700 bg-white border border-braun-300 rounded hover:bg-braun-50 transition"
+            >
+              Cancel
+            </button>
+            <button
+              onclick={saveFocalEdit}
+              class="px-5 py-2 text-sm font-medium text-white bg-braun-900 rounded hover:bg-braun-900/90 transition"
+            >
+              Save
             </button>
           </div>
         </div>

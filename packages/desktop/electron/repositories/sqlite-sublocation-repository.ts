@@ -14,6 +14,8 @@ export interface SubLocation {
   type: string | null;
   status: string | null;
   hero_imghash: string | null;
+  hero_focal_x: number;
+  hero_focal_y: number;
   is_primary: boolean;
   created_date: string;
   created_by: string | null;
@@ -63,6 +65,8 @@ export interface UpdateSubLocationInput {
   type?: string | null;
   status?: string | null;
   hero_imghash?: string | null;
+  hero_focal_x?: number;
+  hero_focal_y?: number;
   is_primary?: boolean;
   modified_by?: string | null;
   // Migration 32: AKA and historical name
@@ -231,6 +235,8 @@ export class SQLiteSubLocationRepository {
     if (input.type !== undefined) updateValues.type = input.type;
     if (input.status !== undefined) updateValues.status = input.status;
     if (input.hero_imghash !== undefined) updateValues.hero_imghash = input.hero_imghash;
+    if (input.hero_focal_x !== undefined) updateValues.hero_focal_x = input.hero_focal_x;
+    if (input.hero_focal_y !== undefined) updateValues.hero_focal_y = input.hero_focal_y;
     if (input.is_primary !== undefined) updateValues.is_primary = input.is_primary ? 1 : 0;
     if (input.akanam !== undefined) updateValues.akanam = input.akanam;
     if (input.historicalName !== undefined) updateValues.historicalName = input.historicalName;
@@ -491,6 +497,8 @@ export class SQLiteSubLocationRepository {
       type: row.type || null,
       status: row.status || null,
       hero_imghash: row.hero_imghash || null,
+      hero_focal_x: row.hero_focal_x ?? 0.5,
+      hero_focal_y: row.hero_focal_y ?? 0.5,
       is_primary: row.is_primary === 1,
       created_date: row.created_date || new Date().toISOString(),
       created_by: row.created_by || null,

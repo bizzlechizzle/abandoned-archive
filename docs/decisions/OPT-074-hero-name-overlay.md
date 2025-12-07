@@ -193,3 +193,33 @@ Changes made to `packages/desktop/src/pages/LocationDetail.svelte`:
 | No text shadows | ✅ Compliant |
 
 ## Status: IMPLEMENTED
+
+---
+
+## Update: Focal Point Editor Restored (OPT-074b)
+
+**Date:** 2025-12-06
+
+The focal point editor was incorrectly removed in ADR-071. This update restores the ability to center/crop hero images.
+
+### Changes Made
+
+1. **Migration 52**: Added `hero_focal_x` and `hero_focal_y` columns back to `locs` and `slocs` tables
+2. **database.types.ts**: Added focal point fields to LocsTable and SlocsTable interfaces
+3. **sqlite-location-repository.ts**: Updated to read/write focal point values
+4. **sqlite-sublocation-repository.ts**: Updated to read/write focal point values for sub-locations
+5. **MediaViewer.svelte**: Restored full focal point editor with:
+   - Draggable pin for setting image center point
+   - Preview showing cropped result at 4:1 aspect ratio
+   - Host-Location option for setting campus hero from sub-location view
+6. **LocationDetail.svelte**:
+   - Pass focal points to MediaViewer
+   - Apply focal point to hero image display via `object-position` CSS
+   - Updated handlers to save focal point with hero image
+
+### Focal Point System
+
+- Values are 0-1 representing percentage position
+- Default is 0.5, 0.5 (center)
+- Applied via CSS `object-position: X% Y%` on hero images
+- Stored per-location and per-sub-location

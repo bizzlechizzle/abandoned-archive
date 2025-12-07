@@ -136,6 +136,8 @@ export interface LocsTable {
 
   // Hero Image (Kanye6: User-selected featured image for card thumbnails)
   hero_imghash: string | null;
+  hero_focal_x: number;           // 0-1 horizontal position (0.5 = center)
+  hero_focal_y: number;           // 0-1 vertical position (0.5 = center)
 
   // Relationships
   sublocs: string | null;
@@ -181,6 +183,8 @@ export interface SlocsTable {
   type: string | null;
   status: string | null;
   hero_imghash: string | null;
+  hero_focal_x: number;           // 0-1 horizontal position (0.5 = center)
+  hero_focal_y: number;           // 0-1 vertical position (0.5 = center)
   is_primary: number;  // 0 or 1
 
   // Activity tracking
