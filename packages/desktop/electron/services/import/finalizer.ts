@@ -19,6 +19,7 @@ import type { Database } from '../../main/database.types';
 import type { ValidatedFile } from './validator';
 import type { ScanResult } from './scanner';
 import { JobQueue, IMPORT_QUEUES, JOB_PRIORITY, type JobInput } from '../job-queue';
+import type { LocationInfo } from './types';
 
 /**
  * Finalized file with DB record info
@@ -68,16 +69,9 @@ export interface FinalizerOptions {
   scanResult?: ScanResult;
 }
 
-/**
- * Location info for DB records
- */
-export interface LocationInfo {
-  locid: string;
-  loc12: string;
-  address_state: string | null;
-  type: string | null;
-  slocnam: string | null;
-}
+// LocationInfo imported from ./types - single source of truth
+// Re-export for backwards compatibility
+export type { LocationInfo } from './types';
 
 /**
  * Finalizer class for database commits
@@ -210,7 +204,7 @@ export class Finalizer {
 
     // Queue background jobs for each successfully imported file
     const successfulFiles = results.filter(f => f.dbRecordId);
-    const jobs = this.buildJobList(successfulFiles, location.locid);
+    const jobs = this.buildJobList(successfulFiles, location);
     if (jobs.length > 0) {
       await this.jobQueue.addBulk(jobs);
       jobsQueued = jobs.length;
@@ -219,7 +213,7 @@ export class Finalizer {
     // Auto-set hero image if location has no hero and we imported images
     // This ensures dashboard thumbnails appear immediately after first import
     if (totalFinalized > 0) {
-      await this.autoSetHeroImage(location.locid, results);
+      await this.autoSetHeroImage(location.locid, location.subid, results);
     }
 
     // Add non-imported files to results (duplicates, errors)
@@ -271,7 +265,7 @@ export class Finalizer {
             imgloc: file.archivePath!,
             imgloco: file.originalPath,
             locid: location.locid,
-            subid: null,
+            subid: location.subid,
             auth_imp: options?.user?.username ?? null,
             imgadd: now,
             meta_exiftool: null,
@@ -313,7 +307,7 @@ export class Finalizer {
             vidloc: file.archivePath!,
             vidloco: file.originalPath,
             locid: location.locid,
-            subid: null,
+            subid: location.subid,
             auth_imp: options?.user?.username ?? null,
             vidadd: now,
             meta_ffmpeg: null,
@@ -357,7 +351,7 @@ export class Finalizer {
             docloc: file.archivePath!,
             docloco: file.originalPath,
             locid: location.locid,
-            subid: null,
+            subid: location.subid,
             auth_imp: options?.user?.username ?? null,
             docadd: now,
             meta_exiftool: null,
@@ -386,7 +380,7 @@ export class Finalizer {
             maploc: file.archivePath!,
             maploco: file.originalPath,
             locid: location.locid,
-            subid: null,
+            subid: location.subid,
             auth_imp: options?.user?.username ?? null,
             mapadd: now,
             meta_exiftool: null,
@@ -453,7 +447,7 @@ export class Finalizer {
       imgloc: file.archivePath!,
       imgloco: file.originalPath,
       locid: location.locid,
-      subid: null,
+      subid: location.subid,
       auth_imp: options?.user?.username ?? null,
       imgadd: now,
       meta_exiftool: null,
@@ -529,7 +523,7 @@ export class Finalizer {
       vidloc: file.archivePath!,
       vidloco: file.originalPath,
       locid: location.locid,
-      subid: null,
+      subid: location.subid,
       auth_imp: options?.user?.username ?? null,
       vidadd: now,
       meta_ffmpeg: null,
@@ -607,7 +601,7 @@ export class Finalizer {
       docloc: file.archivePath!,
       docloco: file.originalPath,
       locid: location.locid,
-      subid: null,
+      subid: location.subid,
       auth_imp: options?.user?.username ?? null,
       docadd: now,
       meta_exiftool: null,
@@ -670,7 +664,7 @@ export class Finalizer {
       maploc: file.archivePath!,
       maploco: file.originalPath,
       locid: location.locid,
-      subid: null,
+      subid: location.subid,
       auth_imp: options?.user?.username ?? null,
       mapadd: now,
       meta_exiftool: null,
@@ -721,9 +715,12 @@ export class Finalizer {
    * - Per-location jobs: GPS Enrichment, Live Photo, SRT Telemetry, Location Stats, BagIt
    *
    * Location-level jobs run after all file-level jobs complete.
+   *
+   * OPT-093: Updated to accept LocationInfo for sub-location support
    */
-  private buildJobList(files: FinalizedFile[], locid: string): JobInput[] {
+  private buildJobList(files: FinalizedFile[], location: LocationInfo): JobInput[] {
     const jobs: JobInput[] = [];
+    const { locid, subid } = location;
 
     // Track last per-file job ID for dependencies
     let lastExifJobId: string | null = null;
@@ -791,22 +788,26 @@ export class Finalizer {
       return jobs;
     }
 
+    // OPT-093: Include subid in payloads for sub-location aware jobs
     const locationPayload = { locid };
+    const locationWithSubPayload = { locid, subid };
 
-    // GPS Enrichment - aggregate GPS from media to location
+    // GPS Enrichment - aggregate GPS from media to location/sub-location
     // Depends on last ExifTool job (ensures all metadata extracted first)
     // OPT-087: Pass pre-generated jobId for dependency chain
+    // OPT-093: Pass subid for sub-location GPS enrichment
     const gpsEnrichmentJobId = randomUUID();
     jobs.push({
       queue: IMPORT_QUEUES.GPS_ENRICHMENT,
       priority: JOB_PRIORITY.NORMAL,
       jobId: gpsEnrichmentJobId,  // OPT-087: Use this as actual job_id
-      payload: locationPayload,
+      payload: locationWithSubPayload,  // OPT-093: Include subid
       dependsOn: lastExifJobId ?? undefined,
     });
 
     // Live Photo Detection - match image/video pairs by ContentIdentifier
     // Depends on ExifTool (needs ContentIdentifier from metadata)
+    // Note: Live Photo detection is location-wide, not sub-location specific
     jobs.push({
       queue: IMPORT_QUEUES.LIVE_PHOTO,
       priority: JOB_PRIORITY.NORMAL,
@@ -816,6 +817,7 @@ export class Finalizer {
 
     // SRT Telemetry - link DJI telemetry to videos
     // Only queue if we imported any documents (SRT files are imported as documents)
+    // Note: SRT telemetry is location-wide, not sub-location specific
     const hasDocuments = files.some(f => f.mediaType === 'document');
     if (hasDocuments) {
       jobs.push({
@@ -828,19 +830,21 @@ export class Finalizer {
 
     // Location Stats - recalculate media counts and date range
     // Depends on GPS Enrichment (for complete location state)
+    // OPT-093: Pass subid for sub-location stats calculation
     jobs.push({
       queue: IMPORT_QUEUES.LOCATION_STATS,
       priority: JOB_PRIORITY.BACKGROUND,
-      payload: locationPayload,
+      payload: locationWithSubPayload,  // OPT-093: Include subid
       dependsOn: gpsEnrichmentJobId,
     });
 
     // BagIt Manifest - update RFC 8493 archive manifest
     // Runs last (needs all files + thumbnails + metadata to be complete)
+    // OPT-093: Pass subid for sub-location BagIt support
     jobs.push({
       queue: IMPORT_QUEUES.BAGIT,
       priority: JOB_PRIORITY.BACKGROUND,
-      payload: locationPayload,
+      payload: locationWithSubPayload,  // OPT-093: Include subid
       dependsOn: gpsEnrichmentJobId, // After enrichment
     });
 
@@ -848,35 +852,60 @@ export class Finalizer {
   }
 
   /**
-   * Auto-set hero image for location and sub-location
+   * Auto-set hero image for location or sub-location
    * Per Import Spec v2.0: Sets first successfully imported image as hero
    * Non-fatal: failures are logged but don't fail the import
+   *
+   * OPT-093: Added sub-location hero support
+   * - If subid is provided, sets hero on slocs table
+   * - Otherwise sets hero on locs table (host location)
    */
   private async autoSetHeroImage(
     locid: string,
+    subid: string | null,
     results: FinalizedFile[]
   ): Promise<void> {
     try {
-      // Check if location needs a hero image
-      const location = await this.db
-        .selectFrom('locs')
-        .select(['locid', 'hero_imghash'])
-        .where('locid', '=', locid)
-        .executeTakeFirst();
+      // Find the first successfully imported image (not hidden)
+      const firstImage = results.find(
+        f => f.mediaType === 'image' && f.dbRecordId && !f.shouldHide
+      );
 
-      if (location && !location.hero_imghash) {
-        // Find the first successfully imported image (not hidden)
-        const firstImage = results.find(
-          f => f.mediaType === 'image' && f.dbRecordId && !f.shouldHide
-        );
+      if (!firstImage || !firstImage.hash) {
+        return; // No eligible images to set as hero
+      }
 
-        if (firstImage && firstImage.hash) {
+      if (subid) {
+        // OPT-093: Set hero on sub-location
+        const subloc = await this.db
+          .selectFrom('slocs')
+          .select(['subid', 'hero_imghash'])
+          .where('subid', '=', subid)
+          .executeTakeFirst();
+
+        if (subloc && !subloc.hero_imghash) {
+          await this.db
+            .updateTable('slocs')
+            .set({ hero_imghash: firstImage.hash })
+            .where('subid', '=', subid)
+            .execute();
+          console.log(`[Finalizer] Auto-set sub-location hero: ${firstImage.hash.slice(0, 12)}...`);
+        }
+      } else {
+        // Set hero on host location
+        const location = await this.db
+          .selectFrom('locs')
+          .select(['locid', 'hero_imghash'])
+          .where('locid', '=', locid)
+          .executeTakeFirst();
+
+        if (location && !location.hero_imghash) {
           await this.db
             .updateTable('locs')
             .set({ hero_imghash: firstImage.hash })
             .where('locid', '=', locid)
             .execute();
-          console.log(`[Finalizer] Auto-set hero image: ${firstImage.hash.slice(0, 12)}...`);
+          console.log(`[Finalizer] Auto-set location hero: ${firstImage.hash.slice(0, 12)}...`);
         }
       }
     } catch (error) {

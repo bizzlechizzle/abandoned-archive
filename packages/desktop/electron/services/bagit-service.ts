@@ -69,6 +69,34 @@ export interface BagLocation {
   locup?: string | null;  // Updated date
 }
 
+/**
+ * OPT-093: Sub-location data needed for BagIt generation
+ * Per Option B: Each sub-location gets its own _archive-{sub12} folder
+ */
+export interface BagSubLocation {
+  subid: string;
+  sub12: string;
+  subnam: string;
+  ssubname?: string | null;
+  type?: string | null;
+  status?: string | null;
+  gps_lat?: number | null;
+  gps_lng?: number | null;
+  gps_source?: string | null;
+  gps_verified_on_map?: number | null;
+  gps_accuracy?: number | null;
+  notes?: string | null;
+  created_date?: string | null;
+  modified_date?: string | null;
+  // Parent location info (required for path construction)
+  parentLocid: string;
+  parentLoc12: string;
+  parentLocnam: string;
+  parentSlocnam?: string | null;
+  parentType?: string | null;
+  parentState?: string | null;
+}
+
 export class BagItService {
   constructor(private readonly archivePath: string) {}
 
@@ -366,6 +394,326 @@ export class BagItService {
     } catch (err) {
       return { status: 'invalid', error: `Failed to read bag-info: ${err}` };
     }
+  }
+
+  // ============ Sub-Location Methods (OPT-093) ============
+
+  /**
+   * Get the path to a sub-location's _archive-{sub12} folder
+   * OPT-093: Option B - separate archive per sub-location
+   */
+  getSubLocationArchiveFolderPath(subLocation: BagSubLocation): string {
+    const state = subLocation.parentState?.toUpperCase() || 'XX';
+    const locType = subLocation.parentType || 'Unknown';
+    const stateTypeFolder = `${state}-${this.sanitizeFolderName(locType)}`;
+
+    const slocnam = subLocation.parentSlocnam || this.generateShortName(subLocation.parentLocnam);
+    const locationFolder = `${this.sanitizeFolderName(slocnam)}-${subLocation.parentLoc12}`;
+
+    // Sub-location archive: _archive-{sub12}
+    return path.join(
+      this.archivePath,
+      'locations',
+      stateTypeFolder,
+      locationFolder,
+      `_archive-${subLocation.sub12}`
+    );
+  }
+
+  /**
+   * Initialize a new BagIt package for a sub-location
+   * OPT-093: Called when media is first imported to a sub-location
+   */
+  async initializeSubLocationBag(subLocation: BagSubLocation): Promise<void> {
+    const archiveDir = this.getSubLocationArchiveFolderPath(subLocation);
+
+    // Create _archive-{sub12} directory
+    await fs.mkdir(archiveDir, { recursive: true });
+
+    // Generate all BagIt files
+    await this.writeBagitTxt(archiveDir);
+    await this.writeSubLocationBagInfo(archiveDir, subLocation, { bytes: 0, count: 0 });
+    await this.writeManifest(archiveDir, []);
+    await this.writeTagManifest(archiveDir);
+
+    console.log(`[BagIt] Initialized bag for sub-location: ${subLocation.subnam} (${subLocation.sub12})`);
+  }
+
+  /**
+   * Update manifest when files are added or removed from a sub-location
+   * OPT-093: Called after media import or deletion
+   */
+  async updateSubLocationManifest(subLocation: BagSubLocation, mediaFiles: MediaFile[]): Promise<void> {
+    const archiveDir = this.getSubLocationArchiveFolderPath(subLocation);
+
+    // Ensure _archive-{sub12} directory exists
+    await fs.mkdir(archiveDir, { recursive: true });
+
+    // Ensure bagit.txt exists
+    const bagitPath = path.join(archiveDir, 'bagit.txt');
+    if (!fsSync.existsSync(bagitPath)) {
+      await this.writeBagitTxt(archiveDir);
+    }
+
+    // Calculate Payload-Oxum
+    const payloadOxum = this.calculatePayloadOxum(mediaFiles);
+
+    // Update all files
+    await this.writeSubLocationBagInfo(archiveDir, subLocation, payloadOxum);
+    await this.writeManifest(archiveDir, mediaFiles);
+    await this.writeTagManifest(archiveDir);
+
+    console.log(`[BagIt] Updated manifest for sub-location: ${subLocation.subnam} (${mediaFiles.length} files)`);
+  }
+
+  /**
+   * Regenerate all BagIt files for a sub-location from scratch
+   * OPT-093: Called manually or after recovery
+   */
+  async regenerateSubLocationBag(subLocation: BagSubLocation, mediaFiles: MediaFile[]): Promise<void> {
+    const archiveDir = this.getSubLocationArchiveFolderPath(subLocation);
+
+    // Remove existing _archive-{sub12} folder if it exists
+    try {
+      await fs.rm(archiveDir, { recursive: true });
+    } catch {
+      // Ignore if doesn't exist
+    }
+
+    // Create fresh
+    await fs.mkdir(archiveDir, { recursive: true });
+
+    // Calculate Payload-Oxum
+    const payloadOxum = this.calculatePayloadOxum(mediaFiles);
+
+    // Generate all files
+    await this.writeBagitTxt(archiveDir);
+    await this.writeSubLocationBagInfo(archiveDir, subLocation, payloadOxum);
+    await this.writeManifest(archiveDir, mediaFiles);
+    await this.writeTagManifest(archiveDir);
+
+    console.log(`[BagIt] Regenerated bag for sub-location: ${subLocation.subnam}`);
+  }
+
+  /**
+   * Validate a sub-location's BagIt package
+   * OPT-093: Returns status and any errors found
+   */
+  async validateSubLocationBag(subLocation: BagSubLocation, mediaFiles: MediaFile[]): Promise<BagValidationResult> {
+    const archiveDir = this.getSubLocationArchiveFolderPath(subLocation);
+
+    // Check if _archive-{sub12} folder exists
+    if (!fsSync.existsSync(archiveDir)) {
+      return { status: 'none' };
+    }
+
+    // Delegate to shared validation logic
+    return this.validateBagAtPath(archiveDir, mediaFiles);
+  }
+
+  /**
+   * Quick validation for a sub-location using Payload-Oxum only
+   * OPT-093: Faster than full validation
+   */
+  async quickValidateSubLocation(subLocation: BagSubLocation, mediaFiles: MediaFile[]): Promise<BagValidationResult> {
+    const archiveDir = this.getSubLocationArchiveFolderPath(subLocation);
+
+    // Check if _archive-{sub12} folder exists
+    if (!fsSync.existsSync(archiveDir)) {
+      return { status: 'none' };
+    }
+
+    // Check bag-info.txt exists
+    const bagInfoPath = path.join(archiveDir, 'bag-info.txt');
+    if (!fsSync.existsSync(bagInfoPath)) {
+      return { status: 'incomplete', error: 'Missing bag-info.txt' };
+    }
+
+    try {
+      const bagInfoContent = await fs.readFile(bagInfoPath, 'utf-8');
+      const oxumMatch = bagInfoContent.match(/Payload-Oxum:\s*(\d+)\.(\d+)/);
+
+      if (!oxumMatch) {
+        return { status: 'complete' }; // No Payload-Oxum, can't quick validate
+      }
+
+      const expectedBytes = parseInt(oxumMatch[1], 10);
+      const expectedCount = parseInt(oxumMatch[2], 10);
+      const actual = this.calculatePayloadOxum(mediaFiles);
+
+      if (actual.count !== expectedCount || Math.abs(actual.bytes - expectedBytes) > 1024) {
+        return {
+          status: 'incomplete',
+          error: `Payload mismatch: expected ${expectedCount} files (${expectedBytes} bytes), found ${actual.count} files (${actual.bytes} bytes)`,
+          payloadOxum: actual,
+        };
+      }
+
+      return { status: 'valid', payloadOxum: actual };
+    } catch (err) {
+      return { status: 'invalid', error: `Failed to read bag-info: ${err}` };
+    }
+  }
+
+  /**
+   * Write bag-info.txt for a sub-location
+   * OPT-093: Sub-location specific metadata
+   */
+  private async writeSubLocationBagInfo(
+    archiveDir: string,
+    subLocation: BagSubLocation,
+    payloadOxum: { bytes: number; count: number }
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    const baggingDate = now.split('T')[0]; // YYYY-MM-DD
+
+    const lines: string[] = [
+      `Source-Organization: Abandoned Archive`,
+      `Bagging-Date: ${baggingDate}`,
+      `Bag-Software-Agent: Abandoned Archive v${APP_VERSION}`,
+      `External-Identifier: ${subLocation.sub12}`,
+      `External-Description: ${subLocation.subnam}`,
+      `Bag-Type: Sub-Location`,
+      `Parent-Location-ID: ${subLocation.parentLoc12}`,
+      `Parent-Location-Name: ${subLocation.parentLocnam}`,
+    ];
+
+    // Sub-location metadata (optional fields)
+    if (subLocation.type) lines.push(`SubLocation-Type: ${subLocation.type}`);
+    if (subLocation.status) lines.push(`SubLocation-Status: ${subLocation.status}`);
+
+    // GPS (sub-location may have its own GPS coordinates)
+    if (subLocation.gps_lat !== null && subLocation.gps_lat !== undefined) {
+      lines.push(`GPS-Latitude: ${subLocation.gps_lat.toFixed(6)}`);
+    }
+    if (subLocation.gps_lng !== null && subLocation.gps_lng !== undefined) {
+      lines.push(`GPS-Longitude: ${subLocation.gps_lng.toFixed(6)}`);
+    }
+    if (subLocation.gps_source) lines.push(`GPS-Source: ${subLocation.gps_source}`);
+    if (subLocation.gps_verified_on_map !== null && subLocation.gps_verified_on_map !== undefined) {
+      lines.push(`GPS-Verified-On-Map: ${subLocation.gps_verified_on_map ? 'true' : 'false'}`);
+    }
+    if (subLocation.gps_accuracy !== null && subLocation.gps_accuracy !== undefined) {
+      lines.push(`GPS-Accuracy-Meters: ${subLocation.gps_accuracy}`);
+    }
+
+    // Payload info
+    lines.push(`Payload-Oxum: ${payloadOxum.bytes}.${payloadOxum.count}`);
+    lines.push(`Bag-Count: 1 of 1`);
+
+    // Notes (multi-line safe)
+    if (subLocation.notes) {
+      const escapedNotes = subLocation.notes.replace(/\n/g, ' ').substring(0, 1000);
+      lines.push(`Internal-Sender-Description: ${escapedNotes}`);
+    }
+
+    const content = lines.join('\n') + '\n';
+    await this.atomicWrite(path.join(archiveDir, 'bag-info.txt'), content);
+  }
+
+  /**
+   * Shared validation logic for a BagIt package at a specific path
+   * Used by both location and sub-location validation
+   */
+  private async validateBagAtPath(archiveDir: string, mediaFiles: MediaFile[]): Promise<BagValidationResult> {
+    // Check required files exist
+    const requiredFiles = ['bagit.txt', 'bag-info.txt', 'manifest-sha256.txt'];
+    const missingFiles: string[] = [];
+
+    for (const file of requiredFiles) {
+      if (!fsSync.existsSync(path.join(archiveDir, file))) {
+        missingFiles.push(file);
+      }
+    }
+
+    if (missingFiles.length > 0) {
+      return {
+        status: 'incomplete',
+        error: `Missing required files: ${missingFiles.join(', ')}`,
+        missingFiles,
+      };
+    }
+
+    // Quick check: Payload-Oxum
+    try {
+      const bagInfoContent = await fs.readFile(path.join(archiveDir, 'bag-info.txt'), 'utf-8');
+      const oxumMatch = bagInfoContent.match(/Payload-Oxum:\s*(\d+)\.(\d+)/);
+
+      if (oxumMatch) {
+        const expectedBytes = parseInt(oxumMatch[1], 10);
+        const expectedCount = parseInt(oxumMatch[2], 10);
+        const actual = this.calculatePayloadOxum(mediaFiles);
+
+        if (actual.count !== expectedCount) {
+          return {
+            status: 'incomplete',
+            error: `File count mismatch: expected ${expectedCount}, found ${actual.count}`,
+            payloadOxum: actual,
+          };
+        }
+
+        if (Math.abs(actual.bytes - expectedBytes) > 1024) {
+          return {
+            status: 'incomplete',
+            error: `Payload size mismatch: expected ${expectedBytes}, found ${actual.bytes}`,
+            payloadOxum: actual,
+          };
+        }
+      }
+    } catch {
+      // Continue with full validation if quick check fails
+    }
+
+    // Full validation: Check all checksums in manifest
+    const checksumErrors: string[] = [];
+
+    try {
+      const manifestContent = await fs.readFile(path.join(archiveDir, 'manifest-sha256.txt'), 'utf-8');
+      const lines = manifestContent.split('\n').filter((l) => l.trim());
+
+      for (const line of lines) {
+        const match = line.match(/^([a-f0-9]{64})\s+(.+)$/);
+        if (!match) continue;
+
+        const expectedHash = match[1];
+        const relativePath = match[2];
+
+        // Resolve relative path from _archive folder
+        const absolutePath = path.resolve(archiveDir, relativePath);
+
+        // Check file exists
+        if (!fsSync.existsSync(absolutePath)) {
+          checksumErrors.push(`Missing: ${relativePath}`);
+          continue;
+        }
+
+        // Verify checksum (files are named by hash, so we can check filename)
+        const filename = path.basename(absolutePath);
+        const filenameHash = filename.replace(/\.[^.]+$/, ''); // Remove extension
+
+        if (filenameHash !== expectedHash) {
+          checksumErrors.push(`Hash mismatch: ${relativePath}`);
+        }
+      }
+    } catch (err) {
+      return {
+        status: 'invalid',
+        error: `Failed to read manifest: ${err}`,
+      };
+    }
+
+    if (checksumErrors.length > 0) {
+      return {
+        status: 'invalid',
+        error: `Checksum errors found`,
+        checksumErrors,
+      };
+    }
+
+    return {
+      status: 'valid',
+      payloadOxum: this.calculatePayloadOxum(mediaFiles),
+    };
   }
 
   // ============ Private Methods ============

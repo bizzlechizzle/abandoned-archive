@@ -615,57 +615,97 @@ export class JobWorkerService extends EventEmitter {
   // ============ Per-Location Job Handlers ============
 
   /**
-   * GPS Enrichment job - aggregate GPS from media and enrich location
+   * GPS Enrichment job - aggregate GPS from media and enrich location/sub-location
    *
    * Per Import Spec v2.0:
-   * - Finds media with GPS coordinates for this location
+   * - Finds media with GPS coordinates for this location/sub-location
    * - Selects best GPS source (highest confidence)
-   * - Enriches location with GPS + address + regions
+   * - Enriches target with GPS + address + regions
+   *
+   * OPT-093: Added sub-location support
+   * - When subid is provided, filters media by subid and updates slocs table
+   * - Otherwise updates locs table (host location)
    *
    * Priority: map_confirmed > photo_exif > video_exif
    */
   private async handleGpsEnrichmentJob(
-    payload: { locid: string },
+    payload: { locid: string; subid?: string | null },
     emit: (event: string, data: unknown) => void
   ): Promise<{ enriched: boolean; source: string | null }> {
-    const { locid } = payload;
+    const { locid, subid } = payload;
 
-    // Check if location already has GPS
-    const location = await this.db
-      .selectFrom('locs')
-      .select(['locid', 'gps_lat', 'gps_lng', 'gps_source'])
-      .where('locid', '=', locid)
-      .executeTakeFirst();
+    // OPT-093: Check target entity (sub-location or host location)
+    let currentGps: { lat: number | null; lng: number | null; source: string | null } | null = null;
 
-    if (!location) {
-      logger.warn('JobWorker', 'GPS enrichment: location not found', { locid });
-      return { enriched: false, source: null };
-    }
+    if (subid) {
+      // Check sub-location GPS
+      const subloc = await this.db
+        .selectFrom('slocs')
+        .select(['subid', 'gps_lat', 'gps_lng', 'gps_source'])
+        .where('subid', '=', subid)
+        .executeTakeFirst();
 
-    // Skip if location already has map-confirmed GPS (highest confidence)
-    if (location.gps_source === 'user_map_click') {
-      logger.info('JobWorker', 'GPS enrichment: skipping, already map-confirmed', { locid });
-      return { enriched: false, source: 'already_confirmed' };
+      if (!subloc) {
+        logger.warn('JobWorker', 'GPS enrichment: sub-location not found', { subid });
+        return { enriched: false, source: null };
+      }
+
+      if (subloc.gps_source === 'user_map_click') {
+        logger.info('JobWorker', 'GPS enrichment: skipping sub-location, already map-confirmed', { subid });
+        return { enriched: false, source: 'already_confirmed' };
+      }
+
+      currentGps = { lat: subloc.gps_lat, lng: subloc.gps_lng, source: subloc.gps_source };
+    } else {
+      // Check host location GPS
+      const location = await this.db
+        .selectFrom('locs')
+        .select(['locid', 'gps_lat', 'gps_lng', 'gps_source'])
+        .where('locid', '=', locid)
+        .executeTakeFirst();
+
+      if (!location) {
+        logger.warn('JobWorker', 'GPS enrichment: location not found', { locid });
+        return { enriched: false, source: null };
+      }
+
+      if (location.gps_source === 'user_map_click') {
+        logger.info('JobWorker', 'GPS enrichment: skipping, already map-confirmed', { locid });
+        return { enriched: false, source: 'already_confirmed' };
+      }
+
+      currentGps = { lat: location.gps_lat, lng: location.gps_lng, source: location.gps_source };
     }
 
     // Find best GPS from imported media
+    // OPT-093: Filter by subid when targeting sub-location
     // Priority: images with GPS > videos with GPS (images typically more accurate)
-    const imagesWithGps = await this.db
+    let imgQuery = this.db
       .selectFrom('imgs')
       .select(['imghash', 'meta_gps_lat', 'meta_gps_lng', 'meta_date_taken'])
       .where('locid', '=', locid)
       .where('meta_gps_lat', 'is not', null)
-      .where('meta_gps_lng', 'is not', null)
-      .orderBy('meta_date_taken', 'asc') // Earliest photo first
-      .limit(1)
-      .execute();
+      .where('meta_gps_lng', 'is not', null);
 
-    const videosWithGps = await this.db
+    let vidQuery = this.db
       .selectFrom('vids')
       .select(['vidhash', 'meta_gps_lat', 'meta_gps_lng', 'meta_date_taken'])
       .where('locid', '=', locid)
       .where('meta_gps_lat', 'is not', null)
-      .where('meta_gps_lng', 'is not', null)
+      .where('meta_gps_lng', 'is not', null);
+
+    // Filter by subid when targeting sub-location
+    if (subid) {
+      imgQuery = imgQuery.where('subid', '=', subid);
+      vidQuery = vidQuery.where('subid', '=', subid);
+    }
+
+    const imagesWithGps = await imgQuery
+      .orderBy('meta_date_taken', 'asc')
+      .limit(1)
+      .execute();
+
+    const videosWithGps = await vidQuery
       .orderBy('meta_date_taken', 'asc')
       .limit(1)
       .execute();
@@ -690,55 +730,87 @@ export class JobWorkerService extends EventEmitter {
     }
 
     if (!gpsSource) {
-      logger.info('JobWorker', 'GPS enrichment: no media with GPS found', { locid });
+      const target = subid ? 'sub-location' : 'location';
+      logger.info('JobWorker', `GPS enrichment: no media with GPS found for ${target}`, { locid, subid });
       return { enriched: false, source: null };
     }
 
-    // Only enrich if location has no GPS, or new source is higher confidence
-    const shouldEnrich = !location.gps_lat || !location.gps_lng ||
-      (location.gps_source !== 'media_gps' && location.gps_source !== 'user_map_click');
+    // Only enrich if target has no GPS, or new source is higher confidence
+    const shouldEnrich = !currentGps?.lat || !currentGps?.lng ||
+      (currentGps?.source !== 'media_gps' && currentGps?.source !== 'user_map_click');
 
     if (!shouldEnrich) {
-      logger.info('JobWorker', 'GPS enrichment: location already has GPS from equal/higher source', { locid });
+      logger.info('JobWorker', 'GPS enrichment: target already has GPS from equal/higher source', { locid, subid });
       return { enriched: false, source: 'already_enriched' };
     }
 
-    // Use LocationEnrichmentService for full enrichment pipeline
     try {
-      const { LocationEnrichmentService } = await import('./location-enrichment-service');
-      const { GeocodingService } = await import('./geocoding-service');
+      if (subid) {
+        // OPT-093: Update sub-location GPS directly (no full enrichment service for sub-locations)
+        await this.db
+          .updateTable('slocs')
+          .set({
+            gps_lat: gpsSource.lat,
+            gps_lng: gpsSource.lng,
+            gps_source: 'media_gps',
+          })
+          .where('subid', '=', subid)
+          .execute();
 
-      const geocodingService = new GeocodingService(this.db);
-      const enrichmentService = new LocationEnrichmentService(this.db, geocodingService);
-
-      const result = await enrichmentService.enrichFromGPS(locid, {
-        lat: gpsSource.lat,
-        lng: gpsSource.lng,
-        source: 'media_gps',
-      });
-
-      if (result.success) {
-        logger.info('JobWorker', 'GPS enrichment complete', {
-          locid,
+        logger.info('JobWorker', 'GPS enrichment complete for sub-location', {
+          subid,
           source: gpsSource.type,
-          address: result.updated.address,
-          regions: result.updated.regions,
+          lat: gpsSource.lat,
+          lng: gpsSource.lng,
         });
-        // OPT-087: Emit gps-enriched event so frontend (map) can update
-        emit('location:gps-enriched', {
+
+        // Emit sub-location GPS enriched event
+        emit('sublocation:gps-enriched', {
+          subid,
           locid,
           lat: gpsSource.lat,
           lng: gpsSource.lng,
           source: gpsSource.type,
         });
+
         return { enriched: true, source: gpsSource.type };
       } else {
-        logger.warn('JobWorker', 'GPS enrichment failed', { locid, error: result.error });
-        return { enriched: false, source: null };
+        // Use LocationEnrichmentService for full host location enrichment pipeline
+        const { LocationEnrichmentService } = await import('./location-enrichment-service');
+        const { GeocodingService } = await import('./geocoding-service');
+
+        const geocodingService = new GeocodingService(this.db);
+        const enrichmentService = new LocationEnrichmentService(this.db, geocodingService);
+
+        const result = await enrichmentService.enrichFromGPS(locid, {
+          lat: gpsSource.lat,
+          lng: gpsSource.lng,
+          source: 'media_gps',
+        });
+
+        if (result.success) {
+          logger.info('JobWorker', 'GPS enrichment complete', {
+            locid,
+            source: gpsSource.type,
+            address: result.updated.address,
+            regions: result.updated.regions,
+          });
+          // OPT-087: Emit gps-enriched event so frontend (map) can update
+          emit('location:gps-enriched', {
+            locid,
+            lat: gpsSource.lat,
+            lng: gpsSource.lng,
+            source: gpsSource.type,
+          });
+          return { enriched: true, source: gpsSource.type };
+        } else {
+          logger.warn('JobWorker', 'GPS enrichment failed', { locid, error: result.error });
+          return { enriched: false, source: null };
+        }
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      logger.error('JobWorker', 'GPS enrichment error', undefined, { locid, error: errorMsg });
+      logger.error('JobWorker', 'GPS enrichment error', undefined, { locid, subid, error: errorMsg });
       throw error; // Re-throw to trigger retry
     }
   }
@@ -871,14 +943,22 @@ export class JobWorkerService extends EventEmitter {
 
   /**
    * BagIt manifest update job
+   *
+   * OPT-093: Sub-location support
+   * - When subid is provided, updates sub-location's _archive-{sub12} folder
+   * - Otherwise updates host location's _archive folder
    */
   private async handleBagItJob(
-    payload: { locid: string },
+    payload: { locid: string; subid?: string | null },
     emit: (event: string, data: unknown) => void
   ): Promise<{ success: boolean }> {
+    const { locid, subid } = payload;
+    const isSubLocation = subid !== undefined && subid !== null;
+
     // Import and instantiate the BagIt services
     const { BagItIntegrityService } = await import('./bagit-integrity-service');
     const { BagItService } = await import('./bagit-service');
+
     // Get archive path from settings
     const archiveSetting = await this.db
       .selectFrom('settings')
@@ -889,8 +969,16 @@ export class JobWorkerService extends EventEmitter {
     const bagItService = new BagItService(archivePath);
     const bagItIntegrityService = new BagItIntegrityService(this.db, bagItService, archivePath);
 
-    // Validate and update the bag for this location
-    await bagItIntegrityService.validateSingleBag(payload.locid);
+    // OPT-093: Route to appropriate method based on whether this is a sub-location
+    if (isSubLocation) {
+      // Update sub-location's BagIt manifest
+      await bagItIntegrityService.updateSubLocationManifest(subid);
+      logger.info('JobWorker', 'Sub-location BagIt manifest updated', { locid, subid });
+    } else {
+      // Update host location's BagIt manifest
+      await bagItIntegrityService.validateSingleBag(locid);
+      logger.info('JobWorker', 'Location BagIt manifest updated', { locid });
+    }
 
     return { success: true };
   }
@@ -903,11 +991,15 @@ export class JobWorkerService extends EventEmitter {
    * - Calculates date range from media metadata
    * - Updates location record with aggregated stats
    *
+   * OPT-093: Sub-location support
+   * - When subid is provided, filters media by subid
+   * - Updates slocs table instead of locs table for sub-locations
+   *
    * This ensures accurate counts after import, even if individual file
    * operations failed or were retried.
    */
   private async handleLocationStatsJob(
-    payload: { locid: string },
+    payload: { locid: string; subid?: string | null },
     emit: (event: string, data: unknown) => void
   ): Promise<{
     stats: {
@@ -920,10 +1012,22 @@ export class JobWorkerService extends EventEmitter {
       totalSizeBytes: number;
     };
   }> {
-    const { locid } = payload;
+    const { locid, subid } = payload;
+    const isSubLocation = subid !== undefined && subid !== null;
+
+    // OPT-093: Build query filter based on whether this is a sub-location
+    // Sub-locations filter by subid, host locations filter by locid with null subid
+    const buildMediaFilter = <T extends { locid: string; subid: string | null }>(
+      query: ReturnType<typeof this.db.selectFrom<'imgs'>>
+    ) => {
+      if (isSubLocation) {
+        return query.where('subid', '=', subid);
+      }
+      return query.where('locid', '=', locid);
+    };
 
     // Count images (excluding hidden)
-    const imgResult = await this.db
+    let imgQuery = this.db
       .selectFrom('imgs')
       .select([
         eb => eb.fn.count<number>('imghash').as('count'),
@@ -931,12 +1035,16 @@ export class JobWorkerService extends EventEmitter {
         eb => eb.fn.min<string>('meta_date_taken').as('earliestDate'),
         eb => eb.fn.max<string>('meta_date_taken').as('latestDate'),
       ])
-      .where('locid', '=', locid)
-      .where('hidden', '=', 0)
-      .executeTakeFirst();
+      .where('hidden', '=', 0);
+    if (isSubLocation) {
+      imgQuery = imgQuery.where('subid', '=', subid);
+    } else {
+      imgQuery = imgQuery.where('locid', '=', locid);
+    }
+    const imgResult = await imgQuery.executeTakeFirst();
 
     // Count videos (excluding hidden)
-    const vidResult = await this.db
+    let vidQuery = this.db
       .selectFrom('vids')
       .select([
         eb => eb.fn.count<number>('vidhash').as('count'),
@@ -944,30 +1052,42 @@ export class JobWorkerService extends EventEmitter {
         eb => eb.fn.min<string>('meta_date_taken').as('earliestDate'),
         eb => eb.fn.max<string>('meta_date_taken').as('latestDate'),
       ])
-      .where('locid', '=', locid)
-      .where('hidden', '=', 0)
-      .executeTakeFirst();
+      .where('hidden', '=', 0);
+    if (isSubLocation) {
+      vidQuery = vidQuery.where('subid', '=', subid);
+    } else {
+      vidQuery = vidQuery.where('locid', '=', locid);
+    }
+    const vidResult = await vidQuery.executeTakeFirst();
 
     // Count documents (excluding hidden)
-    const docResult = await this.db
+    let docQuery = this.db
       .selectFrom('docs')
       .select([
         eb => eb.fn.count<number>('dochash').as('count'),
         eb => eb.fn.sum<number>('file_size_bytes').as('totalSize'),
       ])
-      .where('locid', '=', locid)
-      .where('hidden', '=', 0)
-      .executeTakeFirst();
+      .where('hidden', '=', 0);
+    if (isSubLocation) {
+      docQuery = docQuery.where('subid', '=', subid);
+    } else {
+      docQuery = docQuery.where('locid', '=', locid);
+    }
+    const docResult = await docQuery.executeTakeFirst();
 
     // Count maps
-    const mapResult = await this.db
+    let mapQuery = this.db
       .selectFrom('maps')
       .select([
         eb => eb.fn.count<number>('maphash').as('count'),
         eb => eb.fn.sum<number>('file_size_bytes').as('totalSize'),
-      ])
-      .where('locid', '=', locid)
-      .executeTakeFirst();
+      ]);
+    if (isSubLocation) {
+      mapQuery = mapQuery.where('subid', '=', subid);
+    } else {
+      mapQuery = mapQuery.where('locid', '=', locid);
+    }
+    const mapResult = await mapQuery.executeTakeFirst();
 
     // Calculate aggregated stats
     const imgCount = Number(imgResult?.count ?? 0);
@@ -996,21 +1116,50 @@ export class JobWorkerService extends EventEmitter {
       ? allDates.reduce((a, b) => (a > b ? a : b))
       : null;
 
-    // Update location record with stats
-    await this.db
-      .updateTable('locs')
-      .set({
-        img_count: imgCount,
-        vid_count: vidCount,
-        doc_count: docCount,
-        map_count: mapCount,
-        total_size_bytes: totalSizeBytes,
-        earliest_media_date: earliestDate,
-        latest_media_date: latestDate,
-        stats_updated_at: new Date().toISOString(),
-      })
-      .where('locid', '=', locid)
-      .execute();
+    const statsData = {
+      img_count: imgCount,
+      vid_count: vidCount,
+      doc_count: docCount,
+      map_count: mapCount,
+      total_size_bytes: totalSizeBytes,
+      earliest_media_date: earliestDate,
+      latest_media_date: latestDate,
+      stats_updated_at: new Date().toISOString(),
+    };
+
+    // OPT-093: Update the appropriate table based on whether this is a sub-location
+    if (isSubLocation) {
+      await this.db
+        .updateTable('slocs')
+        .set(statsData)
+        .where('subid', '=', subid)
+        .execute();
+
+      logger.info('JobWorker', 'Sub-location stats recalculated', {
+        locid,
+        subid,
+        imgCount,
+        vidCount,
+        docCount,
+        mapCount,
+        totalSizeBytes,
+      });
+    } else {
+      await this.db
+        .updateTable('locs')
+        .set(statsData)
+        .where('locid', '=', locid)
+        .execute();
+
+      logger.info('JobWorker', 'Location stats recalculated', {
+        locid,
+        imgCount,
+        vidCount,
+        docCount,
+        mapCount,
+        totalSizeBytes,
+      });
+    }
 
     const stats = {
       imgCount,
@@ -1021,11 +1170,6 @@ export class JobWorkerService extends EventEmitter {
       latestDate,
       totalSizeBytes,
     };
-
-    logger.info('JobWorker', 'Location stats recalculated', {
-      locid,
-      ...stats,
-    });
 
     return { stats };
   }

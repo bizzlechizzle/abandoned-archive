@@ -2107,6 +2107,33 @@ function runMigrations(sqlite: Database.Database): void {
       `);
       console.log('Migration 55 completed: Added location stats columns (img_count, vid_count, etc.)');
     }
+
+    // Migration 56: OPT-093 Add sub-location stats and BagIt columns
+    // Mirror the locs stats columns for sub-locations
+    // Enables sub-location-specific media counts and stats
+    const slocs56Columns = sqlite.prepare('PRAGMA table_info(slocs)').all() as Array<{ name: string }>;
+    if (!slocs56Columns.some((c) => c.name === 'img_count')) {
+      sqlite.exec(`
+        ALTER TABLE slocs ADD COLUMN img_count INTEGER DEFAULT 0;
+        ALTER TABLE slocs ADD COLUMN vid_count INTEGER DEFAULT 0;
+        ALTER TABLE slocs ADD COLUMN doc_count INTEGER DEFAULT 0;
+        ALTER TABLE slocs ADD COLUMN map_count INTEGER DEFAULT 0;
+        ALTER TABLE slocs ADD COLUMN total_size_bytes INTEGER DEFAULT 0;
+        ALTER TABLE slocs ADD COLUMN earliest_media_date TEXT;
+        ALTER TABLE slocs ADD COLUMN latest_media_date TEXT;
+        ALTER TABLE slocs ADD COLUMN stats_updated_at TEXT;
+      `);
+      console.log('Migration 56a completed: Added sub-location stats columns (OPT-093)');
+    }
+    // Add BagIt status columns for sub-locations (separate check in case partial migration)
+    if (!slocs56Columns.some((c) => c.name === 'bag_status')) {
+      sqlite.exec(`
+        ALTER TABLE slocs ADD COLUMN bag_status TEXT DEFAULT 'none';
+        ALTER TABLE slocs ADD COLUMN bag_last_verified TEXT;
+        ALTER TABLE slocs ADD COLUMN bag_last_error TEXT;
+      `);
+      console.log('Migration 56b completed: Added sub-location BagIt columns (OPT-093)');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

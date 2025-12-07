@@ -11,9 +11,12 @@
  * @module services/import
  */
 
+// Shared types - single source of truth
+export type { LocationInfo, MediaType, BaseFileInfo } from './types';
+
 export { Scanner, getScanner, type ScannedFile, type ScanResult, type ScannerOptions } from './scanner';
 export { Hasher, createHasher, type HashedFile, type HashResult, type HasherOptions } from './hasher';
-export { Copier, createCopier, type CopiedFile, type CopyResult, type CopyStrategy, type CopierOptions, type LocationInfo } from './copier';
+export { Copier, createCopier, type CopiedFile, type CopyResult, type CopyStrategy, type CopierOptions } from './copier';
 export { Validator, createValidator, type ValidatedFile, type ValidationResult, type ValidatorOptions } from './validator';
 export { Finalizer, createFinalizer, type FinalizedFile, type FinalizationResult, type FinalizerOptions } from './finalizer';
 export {

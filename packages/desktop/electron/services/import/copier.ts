@@ -19,6 +19,7 @@ import { randomUUID } from 'crypto';
 import PQueue from 'p-queue';
 import type { HashedFile } from './hasher';
 import { getHardwareProfile } from '../hardware-profile';
+import type { LocationInfo } from './types';
 
 /**
  * Copy strategy type
@@ -80,16 +81,9 @@ export interface CopierOptions {
   concurrency?: number;
 }
 
-/**
- * Location info for path building
- */
-export interface LocationInfo {
-  locid: string;
-  loc12: string;
-  address_state: string | null;
-  type: string | null;
-  slocnam: string | null;
-}
+// LocationInfo imported from ./types - single source of truth
+// Re-export for backwards compatibility
+export type { LocationInfo } from './types';
 
 /**
  * Copier class with AGGRESSIVE parallel operations
@@ -370,28 +364,37 @@ export class Copier {
   /**
    * Build the full file path including media type subfolder
    * Format: [locationPath]/org-[type]-[LOC12]/[hash].[ext]
+   * Sub-location format: [locationPath]/org-[type]-[LOC12]-[SUB12]/[hash].[ext]
+   *
+   * OPT-093: Added sub-location folder support
    */
   private buildFilePath(file: HashedFile, location: LocationInfo): string {
     const locationPath = this.buildLocationPath(location);
     const loc12 = location.loc12;
 
+    // Determine subfolder suffix: include sub-location ID if provided
+    // Sub-location media goes to separate folder for organization
+    const subSuffix = location.subid
+      ? `-${location.sub12 || location.subid.substring(0, 12)}`
+      : '';
+
     // Determine subfolder based on media type
     let subfolder: string;
     switch (file.mediaType) {
       case 'image':
-        subfolder = `org-img-${loc12}`;
+        subfolder = `org-img-${loc12}${subSuffix}`;
         break;
       case 'video':
-        subfolder = `org-vid-${loc12}`;
+        subfolder = `org-vid-${loc12}${subSuffix}`;
         break;
       case 'document':
-        subfolder = `org-doc-${loc12}`;
+        subfolder = `org-doc-${loc12}${subSuffix}`;
         break;
       case 'map':
-        subfolder = `org-map-${loc12}`;
+        subfolder = `org-map-${loc12}${subSuffix}`;
         break;
       default:
-        subfolder = `org-misc-${loc12}`;
+        subfolder = `org-misc-${loc12}${subSuffix}`;
     }
 
     // Filename is hash + original extension

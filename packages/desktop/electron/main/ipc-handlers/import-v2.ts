@@ -161,6 +161,7 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
       };
 
       // Start import
+      // OPT-093: Pass subid for sub-location media assignment
       console.log('[TRACE import:v2:start] Starting orchestrator.import...');
       const result = await orchestrator.import(validated.paths, {
         location: {
@@ -169,6 +170,7 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
           address_state: validated.address_state,
           type: validated.type,
           slocnam: validated.slocnam,
+          subid: validated.subid ?? null,
         },
         archivePath,
         user: currentUser ? {
@@ -328,6 +330,8 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
         activeImports.set(progress.sessionId, abortController);
       };
 
+      // OPT-093: Resume currently doesn't restore subid context
+      // TODO: Store subid in import_sessions table for proper resume support
       const result = await orchestrator.resume(sessionId, {
         location: {
           locid: location.locid,
@@ -335,6 +339,7 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
           address_state: location.address_state,
           type: location.type,
           slocnam: location.slocnam,
+          subid: null, // Resume doesn't have original subid - media goes to host
         },
         archivePath: archiveSetting.value,
         user: currentUser ? {

@@ -96,6 +96,7 @@ describe('Finalizer', () => {
     address_state: 'NY',
     type: 'Factory',
     slocnam: 'old-factory',
+    subid: null,
   };
 
   beforeEach(() => {

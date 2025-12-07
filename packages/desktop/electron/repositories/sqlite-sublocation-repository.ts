@@ -1,6 +1,10 @@
 import { Kysely } from 'kysely';
 import { randomUUID } from 'crypto';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import type { Database, SlocsTable } from '../main/database.types';
+import { MediaPathService } from '../services/media-path-service';
+import { getLogger } from '../services/logger';
 
 /**
  * SubLocation entity for application use
@@ -256,16 +260,96 @@ export class SQLiteSubLocationRepository {
   }
 
   /**
-   * Delete a sub-location
+   * Delete a sub-location with cascade delete of all associated media
+   * OPT-093: Full cascade delete mirroring location delete behavior
+   *
+   * Cascade deletes:
+   * - All images with this subid
+   * - All videos with this subid
+   * - All documents with this subid
+   * - All maps with this subid
+   * - Physical media files from disk
+   * - Thumbnails, previews, posters, video proxies
+   * - BagIt _archive folder for this sub-location
    */
   async delete(subid: string): Promise<void> {
+    const logger = getLogger();
     const existing = await this.findById(subid);
     if (!existing) return;
 
-    await this.db
-      .deleteFrom('slocs')
+    // 1. Get parent location for folder path construction
+    const parentLocation = await this.db
+      .selectFrom('locs')
+      .select(['locid', 'loc12', 'locnam', 'slocnam', 'address_state', 'type'])
+      .where('locid', '=', existing.locid)
+      .executeTakeFirst();
+
+    // 2. Collect all media hashes for this sub-location
+    const imgHashes = await this.db
+      .selectFrom('imgs')
+      .select(['imghash as hash', 'organized_path'])
       .where('subid', '=', subid)
       .execute();
+
+    const vidHashes = await this.db
+      .selectFrom('vids')
+      .select(['vidhash as hash', 'organized_path'])
+      .where('subid', '=', subid)
+      .execute();
+
+    const docHashes = await this.db
+      .selectFrom('docs')
+      .select(['dochash as hash', 'organized_path'])
+      .where('subid', '=', subid)
+      .execute();
+
+    const mapHashes = await this.db
+      .selectFrom('maps')
+      .select(['maphash as hash', 'organized_path'])
+      .where('subid', '=', subid)
+      .execute();
+
+    // Combine with type annotations
+    const mediaHashes: Array<{ hash: string; type: 'img' | 'vid' | 'doc' | 'map'; path?: string }> = [
+      ...imgHashes.map(r => ({ hash: r.hash, type: 'img' as const, path: r.organized_path ?? undefined })),
+      ...vidHashes.map(r => ({ hash: r.hash, type: 'vid' as const, path: r.organized_path ?? undefined })),
+      ...docHashes.map(r => ({ hash: r.hash, type: 'doc' as const, path: r.organized_path ?? undefined })),
+      ...mapHashes.map(r => ({ hash: r.hash, type: 'map' as const, path: r.organized_path ?? undefined })),
+    ];
+
+    // 3. Get video proxy paths
+    const videoHashes = mediaHashes.filter(m => m.type === 'vid').map(m => m.hash);
+    const proxyPaths: string[] = [];
+    if (videoHashes.length > 0) {
+      const proxies = await this.db
+        .selectFrom('video_proxies')
+        .select('proxy_path')
+        .where('vidhash', 'in', videoHashes)
+        .execute();
+      proxyPaths.push(...proxies.map(p => p.proxy_path).filter((p): p is string => !!p));
+    }
+
+    // 4. Audit log BEFORE deletion
+    logger.info('SubLocationRepository', 'DELETION AUDIT: Deleting sub-location with files', {
+      subid,
+      locid: existing.locid,
+      subnam: existing.subnam,
+      sub12: existing.sub12,
+      is_primary: existing.is_primary,
+      media_count: mediaHashes.length,
+      video_proxies: proxyPaths.length,
+      deleted_at: new Date().toISOString(),
+    });
+
+    // 5. Delete DB records (cascade will handle video_proxies via trigger)
+    // Delete media records first (they reference slocs)
+    await this.db.deleteFrom('imgs').where('subid', '=', subid).execute();
+    await this.db.deleteFrom('vids').where('subid', '=', subid).execute();
+    await this.db.deleteFrom('docs').where('subid', '=', subid).execute();
+    await this.db.deleteFrom('maps').where('subid', '=', subid).execute();
+
+    // Delete the sub-location record
+    await this.db.deleteFrom('slocs').where('subid', '=', subid).execute();
 
     // Remove from parent location's sublocs array
     await this.removeFromParentSublocs(existing.locid, subid);
@@ -274,6 +358,111 @@ export class SQLiteSubLocationRepository {
     if (existing.is_primary) {
       await this.clearPrimaryOnParent(existing.locid);
     }
+
+    // 6. Background file cleanup (non-blocking for instant UI response)
+    const archivePath = await this.getArchivePath();
+
+    setImmediate(async () => {
+      try {
+        // 6a. Delete sub-location folder if it exists
+        // Folder structure: [archive]/locations/[STATE]-[TYPE]/[SLOCNAM]-[LOC12]/org-{type}-[LOC12]-[SUB12]/
+        if (archivePath && parentLocation) {
+          const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9-_]/g, '_').substring(0, 50);
+          const state = parentLocation.address_state?.toUpperCase() || 'XX';
+          const locType = parentLocation.type || 'Unknown';
+          const slocnam = parentLocation.slocnam || parentLocation.locnam.substring(0, 12);
+
+          // Sub-location specific folders
+          const locationFolder = path.join(
+            archivePath,
+            'locations',
+            `${state}-${sanitize(locType)}`,
+            `${sanitize(slocnam)}-${parentLocation.loc12}`
+          );
+
+          // Delete sub-location media folders (org-img-LOC12-SUB12, etc.)
+          for (const mediaType of ['img', 'vid', 'doc']) {
+            const subFolder = path.join(
+              locationFolder,
+              `org-${mediaType}-${parentLocation.loc12}-${existing.sub12}`
+            );
+            try {
+              await fs.rm(subFolder, { recursive: true, force: true });
+              logger.info('SubLocationRepository', `Deleted sub-location folder: ${subFolder}`);
+            } catch {
+              // Folder might not exist
+            }
+          }
+
+          // Delete sub-location _archive (BagIt) folder
+          const bagitFolder = path.join(locationFolder, `_archive-${existing.sub12}`);
+          try {
+            await fs.rm(bagitFolder, { recursive: true, force: true });
+            logger.info('SubLocationRepository', `Deleted sub-location BagIt folder: ${bagitFolder}`);
+          } catch {
+            // Folder might not exist
+          }
+        }
+
+        // 6b. Delete thumbnails/previews/posters by hash
+        if (archivePath && mediaHashes.length > 0) {
+          const mediaPathService = new MediaPathService(archivePath);
+
+          for (const { hash, type } of mediaHashes) {
+            // Thumbnails (all sizes including legacy)
+            for (const size of [400, 800, 1920, undefined] as const) {
+              const thumbPath = mediaPathService.getThumbnailPath(hash, size as 400 | 800 | 1920 | undefined);
+              await fs.unlink(thumbPath).catch(() => {});
+            }
+
+            // Previews (images/RAW only)
+            if (type === 'img') {
+              const previewPath = mediaPathService.getPreviewPath(hash);
+              await fs.unlink(previewPath).catch(() => {});
+            }
+
+            // Posters (videos only)
+            if (type === 'vid') {
+              const posterPath = mediaPathService.getPosterPath(hash);
+              await fs.unlink(posterPath).catch(() => {});
+            }
+          }
+        }
+
+        // 6c. Delete video proxies
+        for (const proxyPath of proxyPaths) {
+          await fs.unlink(proxyPath).catch(() => {});
+        }
+
+        logger.info('SubLocationRepository', `File cleanup complete for sub-location ${subid}`);
+      } catch (err) {
+        logger.warn('SubLocationRepository', `Background file cleanup error for ${subid}`, {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
+    });
+  }
+
+  /**
+   * Get archive path from settings
+   */
+  private async getArchivePath(): Promise<string | null> {
+    const result = await this.db
+      .selectFrom('settings')
+      .select('value')
+      .where('key', '=', 'archive_path')
+      .executeTakeFirst();
+
+    // Try both keys (archive_path and archive_folder)
+    if (result?.value) return result.value;
+
+    const altResult = await this.db
+      .selectFrom('settings')
+      .select('value')
+      .where('key', '=', 'archive_folder')
+      .executeTakeFirst();
+
+    return altResult?.value || null;
   }
 
   /**
