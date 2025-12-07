@@ -33,9 +33,9 @@
 <nav class="w-64 h-screen bg-braun-50 text-braun-900 flex flex-col border-r border-braun-300">
   <!-- macOS: Top padding for traffic light buttons (hiddenInset titlebar) -->
   <div class="pt-8">
-    <!-- Wordmark: Stacked layout with wide tracking (Braun style) -->
+    <!-- Wordmark: Stacked layout (Braun style) -->
     <div class="p-6 border-b border-braun-300">
-      <span class="text-[11px] font-bold tracking-wider uppercase text-braun-900 leading-tight block">
+      <span class="text-2xl font-bold tracking-tight uppercase text-braun-900 leading-tight block">
         Abandoned<br/>Archive
       </span>
     </div>
