@@ -341,53 +341,7 @@
     {/if}
   </div>
 
-  <!-- SECTION 3: Mini Map (full width, smaller) - Hidden when no GPS -->
-  <!-- Campus map shows host location + all sub-locations with GPS -->
-  <div class="px-8 mt-5">
-    {#if hasGps}
-      <div class="relative rounded overflow-hidden border border-braun-200 group" style="aspect-ratio: 2 / 1;">
-        <Map
-          locations={[mapLocation]}
-          zoom={mapZoom}
-          limitedInteraction={true}
-          allowFullZoomIn={campusSubLocations.length > 0}
-          hideAttribution={true}
-          defaultLayer="satellite-labels"
-          extraZoomOut={isHostLocation}
-          {campusSubLocations}
-          {onCampusSubLocationClick}
-        />
-
-        <!-- Expand to Atlas button -->
-        <button
-          onclick={openOnAtlas}
-          class="absolute bottom-2 right-2 z-[1000] px-2 py-1 bg-white/90 rounded shadow text-xs font-medium text-braun-900 hover:bg-white transition flex items-center gap-1 opacity-0 group-hover:opacity-100"
-          title="Open in Atlas"
-        >
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-          </svg>
-          Expand to Atlas
-        </button>
-      </div>
-    {:else}
-      <!-- No GPS - Show state-only placeholder -->
-      <div class="relative rounded overflow-hidden border border-braun-200 bg-braun-100 flex items-center justify-center" style="aspect-ratio: 2 / 1;">
-        <div class="text-center text-braun-500">
-          <svg class="w-8 h-8 mx-auto mb-2 text-braun-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-          <p class="text-sm font-medium">No GPS coordinates</p>
-          {#if location.address?.state}
-            <p class="text-xs text-braun-400 mt-1">Location in {fullStateName || location.address.state}</p>
-          {/if}
-        </div>
-      </div>
-    {/if}
-  </div>
-
-  <!-- SECTION 4: Local (DECISION-018: Horizontal dash-separated format) -->
+  <!-- SECTION 3: Local (DECISION-018: Horizontal dash-separated format) -->
   <div class="px-8 mt-5">
     <h3 class="section-title mb-2">Local</h3>
 
@@ -431,8 +385,8 @@
     {/if}
   </div>
 
-  <!-- SECTION 5: Region (DECISION-018: Horizontal dash-separated format) -->
-  <div class="px-8 mt-5 pb-6">
+  <!-- SECTION 4: Region (DECISION-018: Horizontal dash-separated format) -->
+  <div class="px-8 mt-5">
     <h3 class="section-title mb-2">Region</h3>
 
     {#if hasRegionData}
@@ -472,6 +426,52 @@
       </p>
     {:else}
       <p class="text-sm text-braun-500 italic">No region information available</p>
+    {/if}
+  </div>
+
+  <!-- SECTION 5: Mini Map (full width, smaller) - Hidden when no GPS -->
+  <!-- Campus map shows host location + all sub-locations with GPS -->
+  <div class="px-8 mt-5 pb-6">
+    {#if hasGps}
+      <div class="relative rounded overflow-hidden border border-braun-200 group" style="aspect-ratio: 2 / 1;">
+        <Map
+          locations={[mapLocation]}
+          zoom={mapZoom}
+          limitedInteraction={true}
+          allowFullZoomIn={campusSubLocations.length > 0}
+          hideAttribution={true}
+          defaultLayer="satellite-labels"
+          extraZoomOut={isHostLocation}
+          {campusSubLocations}
+          {onCampusSubLocationClick}
+        />
+
+        <!-- Expand to Atlas button -->
+        <button
+          onclick={openOnAtlas}
+          class="absolute bottom-2 right-2 z-[1000] px-2 py-1 bg-white/90 rounded shadow text-xs font-medium text-braun-900 hover:bg-white transition flex items-center gap-1 opacity-0 group-hover:opacity-100"
+          title="Open in Atlas"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+          </svg>
+          Expand to Atlas
+        </button>
+      </div>
+    {:else}
+      <!-- No GPS - Show state-only placeholder -->
+      <div class="relative rounded overflow-hidden border border-braun-200 bg-braun-100 flex items-center justify-center" style="aspect-ratio: 2 / 1;">
+        <div class="text-center text-braun-500">
+          <svg class="w-8 h-8 mx-auto mb-2 text-braun-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          <p class="text-sm font-medium">No GPS coordinates</p>
+          {#if location.address?.state}
+            <p class="text-xs text-braun-400 mt-1">Location in {fullStateName || location.address.state}</p>
+          {/if}
+        </div>
+      </div>
     {/if}
   </div>
 </div>
