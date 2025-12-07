@@ -488,6 +488,35 @@ export class JobWorkerService extends EventEmitter {
           return { paths: { sm: '', lg: '', preview: undefined } };
         }
       }
+    } else if (payload.mediaType === 'image') {
+      // OPT-088: For RAW/HEIC files, extract embedded preview first since Sharp can't decode them
+      const { PreviewExtractorService } = await import('./preview-extractor-service');
+      const { ExifToolService } = await import('./exiftool-service');
+      const exifToolService = new ExifToolService();
+      const previewExtractor = new PreviewExtractorService(mediaPathService, exifToolService);
+
+      if (previewExtractor.needsPreviewExtraction(payload.archivePath)) {
+        try {
+          const extractedPath = await previewExtractor.extractPreview(payload.archivePath, payload.hash);
+          if (extractedPath) {
+            sourceForThumbnail = extractedPath;
+            logger.info('JobWorker', 'Extracted RAW/HEIC preview for thumbnailing', {
+              hash: payload.hash.slice(0, 12),
+              format: payload.archivePath.split('.').pop()?.toUpperCase(),
+            });
+          } else {
+            logger.warn('JobWorker', 'No embedded preview found in RAW/HEIC, thumbnails will fail', {
+              hash: payload.hash.slice(0, 12),
+            });
+          }
+        } catch (error) {
+          logger.error('JobWorker', 'Failed to extract RAW/HEIC preview', undefined, {
+            hash: payload.hash.slice(0, 12),
+            error: error instanceof Error ? error.message : String(error),
+          });
+          // Continue anyway - Sharp will fail gracefully and return null paths
+        }
+      }
     }
 
     // OPT-085: Generate all three thumbnail sizes (400px, 800px, 1920px)

@@ -587,8 +587,8 @@
 
     // Set up progress listener for real-time updates
     const unsubscribeProgress = window.electronAPI.importV2.onProgress((progress) => {
-      // Update store with v2 progress
-      importStore.updateProgress(progress.filesProcessed, progress.filesTotal);
+      // OPT-088: Update store with v2 progress including weighted percent
+      importStore.updateProgress(progress.filesProcessed, progress.filesTotal, progress.percent);
 
       // Update local progress text
       const statusText = progress.status === 'scanning' ? 'Scanning files...'

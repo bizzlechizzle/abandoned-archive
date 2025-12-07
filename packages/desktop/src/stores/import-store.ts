@@ -10,6 +10,8 @@ export interface ImportJob {
   locationName: string;
   totalFiles: number;
   processedFiles: number;
+  // OPT-088: Percent from orchestrator (weighted by step, not just file count)
+  percent: number;
   // FIX 4.1: Track current filename being processed
   currentFilename?: string;
   // FIX 4.3: Track import ID for cancellation
@@ -47,6 +49,7 @@ function createImportStore() {
         locationName,
         totalFiles,
         processedFiles: 0,
+        percent: 0,  // OPT-088: Initialize at 0, will be updated by orchestrator
         status: 'running',
         startedAt: new Date(),
       };
@@ -75,10 +78,11 @@ function createImportStore() {
 
     /**
      * Update progress of active job
+     * OPT-088: Now accepts percent from orchestrator (weighted by step)
      * FIX 4.1: Now includes filename being processed
      * FIX 4.3: Now includes importId for cancellation
      */
-    updateProgress(current: number, total: number, filename?: string, importId?: string) {
+    updateProgress(current: number, total: number, percent: number, filename?: string, importId?: string) {
       update(state => {
         if (state.activeJob) {
           return {
@@ -87,6 +91,7 @@ function createImportStore() {
               ...state.activeJob,
               processedFiles: current,
               totalFiles: total,
+              percent,  // OPT-088: Use orchestrator's weighted percent
               currentFilename: filename,
               importId: importId || state.activeJob.importId,
             },
@@ -182,13 +187,11 @@ export const isImporting = derived(importStore, $store => $store.activeJob !== n
 export const importProgress = derived(importStore, $store => {
   if (!$store.activeJob) return null;
   const job = $store.activeJob;
-  const percent = job.totalFiles > 0
-    ? Math.round((job.processedFiles / job.totalFiles) * 100)
-    : 0;
+  // OPT-088: Use orchestrator's weighted percent instead of simple file count ratio
   return {
     current: job.processedFiles,
     total: job.totalFiles,
-    percent,
+    percent: job.percent,  // Pre-calculated by orchestrator with step weights
     locationName: job.locationName,
     locid: job.locid,
     // FIX 4.1: Include current filename

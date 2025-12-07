@@ -13,7 +13,7 @@ importers:
         version: 3.7.4
       prettier-plugin-svelte:
         specifier: ^3.1.2
-        version: 3.4.0(prettier@3.7.4)(svelte@5.45.5)
+        version: 3.4.0(prettier@3.7.4)(svelte@5.45.6)
       typescript:
         specifier: ^5.3.3
         version: 5.9.3
@@ -50,13 +50,13 @@ importers:
         version: 3.946.0
       '@skeletonlabs/skeleton':
         specifier: ^4.4.1
-        version: 4.7.3(tailwindcss@3.4.18)
+        version: 4.7.4(tailwindcss@3.4.18)
       '@skeletonlabs/tw-plugin':
         specifier: ^0.4.1
         version: 0.4.1(tailwindcss@3.4.18)
       '@tanstack/svelte-virtual':
         specifier: ^3.13.12
-        version: 3.13.12(svelte@5.45.5)
+        version: 3.13.12(svelte@5.45.6)
       better-sqlite3:
         specifier: ^11.0.0
         version: 11.10.0
@@ -111,7 +111,7 @@ importers:
         version: 3.7.2
       '@sveltejs/vite-plugin-svelte':
         specifier: ^4.0.0
-        version: 4.0.4(svelte@5.45.5)(vite@5.4.21(@types/node@22.19.1))
+        version: 4.0.4(svelte@5.45.6)(vite@5.4.21(@types/node@22.19.1))
       '@types/better-sqlite3':
         specifier: ^7.6.8
         version: 7.6.13
@@ -144,7 +144,7 @@ importers:
         version: 8.5.6
       svelte:
         specifier: ^5.0.0
-        version: 5.45.5
+        version: 5.45.6
       tailwindcss:
         specifier: ^3.4.0
         version: 3.4.18
@@ -808,8 +808,8 @@ packages:
     resolution: {integrity: sha512-t09vSN3MdfsyCHoFcTRCH/iUtG7OJ0CsjzB8cjAmKc/va/kIgeDI/TxsigdncE/4be734m0cvIYwNaV4i2XqAw==}
     engines: {node: '>=10'}
 
-  '@skeletonlabs/skeleton@4.7.3':
-    resolution: {integrity: sha512-yIkyOaUPT3/d6uqZKMHMMWjibv89dDUVeNjqUT+OPlpnyF/GH9BokNPToWtSKUkIPoybiZSeK2Vxmj14JCRo9Q==}
+  '@skeletonlabs/skeleton@4.7.4':
+    resolution: {integrity: sha512-C+xx9pRIvOEAlBMU/8iriLiFND325zHSOYWDNgk7gSOCVRySWNSCFx5spe1hKomTQSVCddQDESv8/k7MDjhRHw==}
     peerDependencies:
       tailwindcss: ^4.0.0
 
@@ -1339,8 +1339,8 @@ packages:
   base64-js@1.5.1:
     resolution: {integrity: sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==}
 
-  baseline-browser-mapping@2.9.3:
-    resolution: {integrity: sha512-8QdH6czo+G7uBsNo0GiUfouPN1lRzKdJTGnKXwe12gkFbnnOUaUKGN55dMkfy+mnxmvjwl9zcI4VncczcVXDhA==}
+  baseline-browser-mapping@2.9.4:
+    resolution: {integrity: sha512-ZCQ9GEWl73BVm8bu5Fts8nt7MHdbt5vY9bP6WGnUh+r3l8M7CgfyTlwsgCbMC66BNxPr6Xoce3j66Ms5YUQTNA==}
     hasBin: true
 
   basic-ftp@5.0.5:
@@ -2985,8 +2985,8 @@ packages:
     resolution: {integrity: sha512-ot0WnXS9fgdkgIcePe6RHNk1WA8+muPa6cSjeR3V8K27q9BB1rTE3R1p7Hv0z1ZyAc8s6Vvv8DIyWf681MAt0w==}
     engines: {node: '>= 0.4'}
 
-  svelte@5.45.5:
-    resolution: {integrity: sha512-2074U+vObO5Zs8/qhxtBwdi6ZXNIhEBTzNmUFjiZexLxTdt9vq96D/0pnQELl6YcpLMD7pZ2dhXKByfGS8SAdg==}
+  svelte@5.45.6:
+    resolution: {integrity: sha512-V3aVXthzPyPt1UB1wLEoXnEXpwPsvs7NHrR0xkCor8c11v71VqBj477MClqPZYyrcXrAH21sNGhOj9FJvSwXfQ==}
     engines: {node: '>=18'}
 
   tailwindcss@3.4.18:
@@ -4188,7 +4188,7 @@ snapshots:
 
   '@sindresorhus/is@4.6.0': {}
 
-  '@skeletonlabs/skeleton@4.7.3(tailwindcss@3.4.18)':
+  '@skeletonlabs/skeleton@4.7.4(tailwindcss@3.4.18)':
     dependencies:
       tailwindcss: 3.4.18
 
@@ -4538,23 +4538,23 @@ snapshots:
     dependencies:
       acorn: 8.15.0
 
-  '@sveltejs/vite-plugin-svelte-inspector@3.0.1(@sveltejs/vite-plugin-svelte@4.0.4(svelte@5.45.5)(vite@5.4.21(@types/node@22.19.1)))(svelte@5.45.5)(vite@5.4.21(@types/node@22.19.1))':
+  '@sveltejs/vite-plugin-svelte-inspector@3.0.1(@sveltejs/vite-plugin-svelte@4.0.4(svelte@5.45.6)(vite@5.4.21(@types/node@22.19.1)))(svelte@5.45.6)(vite@5.4.21(@types/node@22.19.1))':
     dependencies:
-      '@sveltejs/vite-plugin-svelte': 4.0.4(svelte@5.45.5)(vite@5.4.21(@types/node@22.19.1))
+      '@sveltejs/vite-plugin-svelte': 4.0.4(svelte@5.45.6)(vite@5.4.21(@types/node@22.19.1))
       debug: 4.4.3
-      svelte: 5.45.5
+      svelte: 5.45.6
       vite: 5.4.21(@types/node@22.19.1)
     transitivePeerDependencies:
       - supports-color
 
-  '@sveltejs/vite-plugin-svelte@4.0.4(svelte@5.45.5)(vite@5.4.21(@types/node@22.19.1))':
+  '@sveltejs/vite-plugin-svelte@4.0.4(svelte@5.45.6)(vite@5.4.21(@types/node@22.19.1))':
     dependencies:
-      '@sveltejs/vite-plugin-svelte-inspector': 3.0.1(@sveltejs/vite-plugin-svelte@4.0.4(svelte@5.45.5)(vite@5.4.21(@types/node@22.19.1)))(svelte@5.45.5)(vite@5.4.21(@types/node@22.19.1))
+      '@sveltejs/vite-plugin-svelte-inspector': 3.0.1(@sveltejs/vite-plugin-svelte@4.0.4(svelte@5.45.6)(vite@5.4.21(@types/node@22.19.1)))(svelte@5.45.6)(vite@5.4.21(@types/node@22.19.1))
       debug: 4.4.3
       deepmerge: 4.3.1
       kleur: 4.1.5
       magic-string: 0.30.21
-      svelte: 5.45.5
+      svelte: 5.45.6
       vite: 5.4.21(@types/node@22.19.1)
       vitefu: 1.1.1(vite@5.4.21(@types/node@22.19.1))
     transitivePeerDependencies:
@@ -4564,10 +4564,10 @@ snapshots:
     dependencies:
       defer-to-connect: 2.0.1
 
-  '@tanstack/svelte-virtual@3.13.12(svelte@5.45.5)':
+  '@tanstack/svelte-virtual@3.13.12(svelte@5.45.6)':
     dependencies:
       '@tanstack/virtual-core': 3.13.12
-      svelte: 5.45.5
+      svelte: 5.45.6
 
   '@tanstack/virtual-core@3.13.12': {}
 
@@ -4887,7 +4887,7 @@ snapshots:
 
   base64-js@1.5.1: {}
 
-  baseline-browser-mapping@2.9.3: {}
+  baseline-browser-mapping@2.9.4: {}
 
   basic-ftp@5.0.5: {}
 
@@ -4938,7 +4938,7 @@ snapshots:
 
   browserslist@4.28.1:
     dependencies:
-      baseline-browser-mapping: 2.9.3
+      baseline-browser-mapping: 2.9.4
       caniuse-lite: 1.0.30001759
       electron-to-chromium: 1.5.266
       node-releases: 2.0.27
@@ -6295,10 +6295,10 @@ snapshots:
       tar-fs: 2.1.4
       tunnel-agent: 0.6.0
 
-  prettier-plugin-svelte@3.4.0(prettier@3.7.4)(svelte@5.45.5):
+  prettier-plugin-svelte@3.4.0(prettier@3.7.4)(svelte@5.45.6):
     dependencies:
       prettier: 3.7.4
-      svelte: 5.45.5
+      svelte: 5.45.6
 
   prettier@3.7.4: {}
 
@@ -6708,7 +6708,7 @@ snapshots:
 
   supports-preserve-symlinks-flag@1.0.0: {}
 
-  svelte@5.45.5:
+  svelte@5.45.6:
     dependencies:
       '@jridgewell/remapping': 2.3.5
       '@jridgewell/sourcemap-codec': 1.5.5

@@ -2090,6 +2090,23 @@ function runMigrations(sqlite: Database.Database): void {
         sqlite.exec('PRAGMA foreign_keys = ON');
       }
     }
+
+    // Migration 55: Add location stats columns for location-stats job
+    // These columns cache media counts/stats computed by the background job
+    const locsColumns = sqlite.prepare('PRAGMA table_info(locs)').all() as Array<{ name: string }>;
+    if (!locsColumns.some((c) => c.name === 'img_count')) {
+      sqlite.exec(`
+        ALTER TABLE locs ADD COLUMN img_count INTEGER DEFAULT 0;
+        ALTER TABLE locs ADD COLUMN vid_count INTEGER DEFAULT 0;
+        ALTER TABLE locs ADD COLUMN doc_count INTEGER DEFAULT 0;
+        ALTER TABLE locs ADD COLUMN map_count INTEGER DEFAULT 0;
+        ALTER TABLE locs ADD COLUMN total_size_bytes INTEGER DEFAULT 0;
+        ALTER TABLE locs ADD COLUMN earliest_media_date TEXT;
+        ALTER TABLE locs ADD COLUMN latest_media_date TEXT;
+        ALTER TABLE locs ADD COLUMN stats_updated_at TEXT;
+      `);
+      console.log('Migration 55 completed: Added location stats columns (img_count, vid_count, etc.)');
+    }
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

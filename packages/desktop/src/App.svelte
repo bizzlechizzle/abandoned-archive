@@ -173,11 +173,12 @@
       });
     }
 
-    // Subscribe to import progress events from main process
-    // FIX 4.1 & 4.3: Pass filename and importId to updateProgress
+    // Subscribe to import progress events from main process (legacy import system)
+    // OPT-088: Calculate percent for legacy imports that don't provide weighted percent
     if (window.electronAPI?.media?.onImportProgress) {
       unsubscribeProgress = window.electronAPI.media.onImportProgress((progress) => {
-        importStore.updateProgress(progress.current, progress.total, progress.filename, progress.importId);
+        const percent = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
+        importStore.updateProgress(progress.current, progress.total, percent, progress.filename, progress.importId);
       });
     }
 

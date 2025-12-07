@@ -168,6 +168,16 @@ export interface LocsTable {
   // Regions
   regions: string | null;
   state: string | null;
+
+  // Media Stats (Migration 55) - Cached counts from location-stats job
+  img_count: number;
+  vid_count: number;
+  doc_count: number;
+  map_count: number;
+  total_size_bytes: number;
+  earliest_media_date: string | null;
+  latest_media_date: string | null;
+  stats_updated_at: string | null;
 }
 
 // Sub-Locations table
