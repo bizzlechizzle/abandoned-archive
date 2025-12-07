@@ -39,6 +39,8 @@
     type: string | null;
     status: string | null;
     hero_imghash: string | null;
+    hero_focal_x?: number;  // OPT-095: Hero focal point X (0-1)
+    hero_focal_y?: number;  // OPT-095: Hero focal point Y (0-1)
     is_primary: boolean;
     hero_thumb_path?: string;
     // Migration 31: Sub-location GPS (separate from host location)
@@ -173,14 +175,20 @@
   const mediaViewerList = $derived([...imageMediaList, ...videoMediaList]);
 
   // Hero image thumbnail path for LocationInfo hero box
+  // OPT-095: Search ALL images (including sublocation images) since host location hero
+  // may be set from a sublocation's image, not just campus-level media
   const heroThumbPath = $derived.by(() => {
     const heroHash = currentSubLocation?.hero_imghash || location?.hero_imghash;
     if (!heroHash) return null;
-    const heroImg = images.find(img => img.imghash === heroHash);
+    // Search allImagesForAuthors which contains ALL images regardless of subid filtering
+    const heroImg = allImagesForAuthors.find(img => img.imghash === heroHash);
     return heroImg?.thumb_path_lg || heroImg?.thumb_path || null;
   });
 
   // Handle hero image click - open MediaViewer at hero image
+  // OPT-095: Note - this only works if hero is in current view's images array.
+  // If host hero is from a sublocation, clicking won't open MediaViewer (user must navigate to sublocation).
+  // This is acceptable behavior since we at least DISPLAY the hero thumbnail now.
   function handleHeroClick() {
     const heroHash = currentSubLocation?.hero_imghash || location?.hero_imghash;
     if (!heroHash) return;
@@ -868,9 +876,11 @@
     </div>
   {:else}
     <div class="max-w-6xl mx-auto px-8 pt-8 pb-8">
-      <!-- Hero Image (full width, 2:1 aspect ratio) -->
+      <!-- Hero Image (full width, 4:1 aspect ratio) -->
       <div class="mb-6">
         {#if heroThumbPath}
+          {@const focalX = currentSubLocation?.hero_focal_x ?? location?.hero_focal_x ?? 0.5}
+          {@const focalY = currentSubLocation?.hero_focal_y ?? location?.hero_focal_y ?? 0.5}
           <button
             onclick={handleHeroClick}
             class="relative overflow-hidden w-full group cursor-pointer rounded"
@@ -881,7 +891,7 @@
               src={`media://${heroThumbPath}`}
               alt="Hero image"
               class="w-full h-full object-cover"
-              style="object-position: {((currentSubLocation?.hero_focal_x ?? location?.hero_focal_x ?? 0.5) * 100)}% {((currentSubLocation?.hero_focal_y ?? location?.hero_focal_y ?? 0.5) * 100)}%;"
+              style="object-position: {focalX * 100}% {focalY * 100}%;"
             />
             <!-- Hover overlay -->
             <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition"></div>

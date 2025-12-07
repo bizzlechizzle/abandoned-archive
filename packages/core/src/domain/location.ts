@@ -90,6 +90,8 @@ export const LocationInputSchema = z.object({
   docMapFind: z.boolean().default(false),    // Map Find documentation checkbox
   statusChangedAt: z.string().datetime().optional(),  // Track when status last changed
   hero_imghash: z.string().length(16).regex(/^[a-f0-9]+$/).optional(),
+  hero_focal_x: z.number().min(0).max(1).optional(),  // OPT-095: Hero focal point X (0-1)
+  hero_focal_y: z.number().min(0).max(1).optional(),  // OPT-095: Hero focal point Y (0-1)
   auth_imp: z.string().optional(),
   // DECISION-019: Information Box overhaul fields
   historicalName: z.string().optional(),       // Historical/original name of location

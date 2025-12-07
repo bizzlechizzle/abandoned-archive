@@ -85,6 +85,8 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
         type: z.string().nullable().optional(),
         status: z.string().nullable().optional(),
         hero_imghash: z.string().nullable().optional(),
+        hero_focal_x: z.number().min(0).max(1).optional(),  // OPT-095: Hero focal point X
+        hero_focal_y: z.number().min(0).max(1).optional(),  // OPT-095: Hero focal point Y
         is_primary: z.boolean().optional(),
         modified_by: z.string().nullable().optional(),
         // Migration 32: AKA and historical name

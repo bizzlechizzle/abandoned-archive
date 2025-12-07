@@ -46,7 +46,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
   ipcMain.handle('location:findById', async (_event, id: unknown) => {
     try {
       const validatedId = z.string().uuid().parse(id);
-      return await locationRepo.findById(validatedId);
+      const location = await locationRepo.findById(validatedId);
+      return location;
     } catch (error) {
       console.error('Error finding location:', error);
       if (error instanceof z.ZodError) {
