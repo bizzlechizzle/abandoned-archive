@@ -82,9 +82,14 @@ export class JobWorkerService extends EventEmitter {
   /**
    * Set up default queue configurations
    * v2.1: HARDWARE-SCALED concurrency based on detected tier
+   *
+   * Per-file jobs: Run for each imported file
+   * Per-location jobs: Run once per location after all files processed
    */
   private setupDefaultQueues(): void {
     const hw = this.hwProfile;
+
+    // ============ Per-File Jobs ============
 
     // ExifTool queue - scaled to hardware
     this.registerQueue(IMPORT_QUEUES.EXIFTOOL, hw.exifToolWorkers, this.handleExifToolJob.bind(this) as JobHandler);
@@ -98,24 +103,36 @@ export class JobWorkerService extends EventEmitter {
     // Video proxy queue - scaled to hardware (heavy but modern machines can handle more)
     this.registerQueue(IMPORT_QUEUES.VIDEO_PROXY, hw.videoProxyWorkers, this.handleVideoProxyJob.bind(this) as JobHandler);
 
-    // Live photo detection - scaled to hardware
+    // ============ Per-Location Jobs ============
+
+    // GPS enrichment - aggregate GPS from media → location (network-bound)
+    this.registerQueue(IMPORT_QUEUES.GPS_ENRICHMENT, hw.gpsEnrichmentWorkers, this.handleGpsEnrichmentJob.bind(this) as JobHandler);
+
+    // Live photo detection - match image/video pairs
     this.registerQueue(IMPORT_QUEUES.LIVE_PHOTO, hw.livePhotoWorkers, this.handleLivePhotoJob.bind(this) as JobHandler);
 
-    // BagIt manifest updates - scaled to hardware
-    this.registerQueue(IMPORT_QUEUES.BAGIT, hw.bagitWorkers, this.handleBagItJob.bind(this) as JobHandler);
+    // SRT telemetry - link DJI telemetry files to videos
+    this.registerQueue(IMPORT_QUEUES.SRT_TELEMETRY, hw.srtTelemetryWorkers, this.handleSrtTelemetryJob.bind(this) as JobHandler);
 
-    // Location stats - scaled to hardware
+    // Location stats - recalculate media counts, date ranges
     this.registerQueue(IMPORT_QUEUES.LOCATION_STATS, hw.locationStatsWorkers, this.handleLocationStatsJob.bind(this) as JobHandler);
+
+    // BagIt manifest updates - RFC 8493 compliance
+    this.registerQueue(IMPORT_QUEUES.BAGIT, hw.bagitWorkers, this.handleBagItJob.bind(this) as JobHandler);
 
     // Log configuration
     logger.info('JobWorker', 'Queue configuration (hardware-scaled)', {
+      // Per-file
       exifTool: hw.exifToolWorkers,
       ffprobe: hw.ffprobeWorkers,
       thumbnail: hw.thumbnailWorkers,
       videoProxy: hw.videoProxyWorkers,
+      // Per-location
+      gpsEnrichment: hw.gpsEnrichmentWorkers,
       livePhoto: hw.livePhotoWorkers,
-      bagit: hw.bagitWorkers,
+      srtTelemetry: hw.srtTelemetryWorkers,
       locationStats: hw.locationStatsWorkers,
+      bagit: hw.bagitWorkers,
     });
   }
 
@@ -206,9 +223,21 @@ export class JobWorkerService extends EventEmitter {
         }
       }
     } catch (error) {
+      // Check if we're shutting down (database closed, etc.)
+      if (!this.isRunning) {
+        return; // Silent exit during shutdown
+      }
       const errorMsg = error instanceof Error ? error.message : String(error);
-      logger.error('JobWorker', 'Poll error', undefined, { error: errorMsg });
-      metrics.incrementCounter(MetricNames.ERRORS_COUNT, 1, { source: 'job_worker_poll' });
+      // Only log if there's an actual error message (not undefined during shutdown)
+      if (errorMsg && errorMsg !== 'undefined') {
+        logger.error('JobWorker', 'Poll error', undefined, { error: errorMsg });
+        metrics.incrementCounter(MetricNames.ERRORS_COUNT, 1, { source: 'job_worker_poll' });
+      }
+    }
+
+    // Don't schedule next poll if we're stopping
+    if (!this.isRunning) {
+      return;
     }
 
     // ADAPTIVE POLLING: fast when busy, slower when idle
@@ -293,9 +322,21 @@ export class JobWorkerService extends EventEmitter {
       jobSpan.end('error', { error: errorMsg, durationMs: duration });
 
       // Mark failed (will retry or move to dead letter)
-      await this.jobQueue.fail(job.jobId, errorMsg);
+      const failResult = await this.jobQueue.fail(job.jobId, errorMsg);
 
       this.emit('job:error', { queue: queueName, jobId: job.jobId, error: errorMsg });
+
+      // Emit dead letter event if job was moved to DLQ (for UI notification)
+      if (failResult.movedToDeadLetter) {
+        this.emit('job:deadLetter', {
+          jobId: failResult.jobId,
+          queue: failResult.queue,
+          error: failResult.error,
+          attempts: failResult.attempts,
+          payload: failResult.payload,
+          timestamp: new Date().toISOString(),
+        });
+      }
     }
   }
 
@@ -383,6 +424,12 @@ export class JobWorkerService extends EventEmitter {
 
   /**
    * Thumbnail generation job
+   *
+   * OPT-085: Fixed to use generateAllSizes() for proper 400/800/1920 thumbnails
+   * Previous bug: Called deprecated generateThumbnail() which only created 256px
+   *
+   * OPT-085 Part 2: Videos need poster frame extraction first
+   * Sharp cannot process video files - must extract frame with FFmpeg first
    */
   private async handleThumbnailJob(
     payload: { hash: string; mediaType: string; archivePath: string },
@@ -400,16 +447,61 @@ export class JobWorkerService extends EventEmitter {
     const mediaPathService = new MediaPathService(archiveSetting?.value || '');
     const thumbnailService = new ThumbnailService(mediaPathService);
 
-    // Generate thumbnail (returns path to small thumbnail)
-    const thumbPath = await thumbnailService.generateThumbnail(
-      payload.archivePath,
+    // OPT-085: For videos, extract a poster frame first since Sharp can't process video files
+    let sourceForThumbnail = payload.archivePath;
+    let posterPath: string | null = null;
+
+    if (payload.mediaType === 'video') {
+      const { FFmpegService } = await import('./ffmpeg-service');
+      const ffmpegService = new FFmpegService();
+
+      // Extract poster frame at 1 second mark (or start for very short videos)
+      posterPath = mediaPathService.getPosterPath(payload.hash);
+
+      // Ensure poster bucket directory exists
+      await mediaPathService.ensureBucketDir(
+        mediaPathService.getPosterDir(),
+        payload.hash
+      );
+
+      try {
+        await ffmpegService.extractFrame(payload.archivePath, posterPath, 1, 1920);
+        sourceForThumbnail = posterPath;
+        logger.info('JobWorker', 'Extracted video poster frame', {
+          hash: payload.hash.slice(0, 12),
+          posterPath,
+        });
+      } catch (error) {
+        // If frame extraction fails, try at 0 seconds (start of video)
+        try {
+          await ffmpegService.extractFrame(payload.archivePath, posterPath, 0, 1920);
+          sourceForThumbnail = posterPath;
+          logger.warn('JobWorker', 'Extracted video poster at 0s (1s failed)', {
+            hash: payload.hash.slice(0, 12),
+          });
+        } catch (fallbackError) {
+          logger.error('JobWorker', 'Failed to extract video poster frame', undefined, {
+            hash: payload.hash.slice(0, 12),
+            error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+          });
+          // Return empty paths - thumbnails will be missing but import continues
+          return { paths: { sm: '', lg: '', preview: undefined } };
+        }
+      }
+    }
+
+    // OPT-085: Generate all three thumbnail sizes (400px, 800px, 1920px)
+    // Previously called generateThumbnail() which only created 256px legacy thumbnail
+    const thumbResult = await thumbnailService.generateAllSizes(
+      sourceForThumbnail,
       payload.hash
     );
-    // Build paths object (thumbnail service creates sm/lg variants)
+
+    // Build paths object from actual generated thumbnails
     const paths = {
-      sm: mediaPathService.getThumbnailPath(payload.hash, 400),
-      lg: mediaPathService.getThumbnailPath(payload.hash, 800),
-      preview: thumbPath ?? undefined,
+      sm: thumbResult.thumb_sm ?? mediaPathService.getThumbnailPath(payload.hash, 400),
+      lg: thumbResult.thumb_lg ?? mediaPathService.getThumbnailPath(payload.hash, 800),
+      preview: thumbResult.preview ?? undefined,
     };
 
     // Update database with thumbnail paths
@@ -417,9 +509,9 @@ export class JobWorkerService extends EventEmitter {
       await this.db
         .updateTable('imgs')
         .set({
-          thumb_path_sm: paths.sm,
-          thumb_path_lg: paths.lg,
-          preview_path: paths.preview ?? null,
+          thumb_path_sm: thumbResult.thumb_sm,
+          thumb_path_lg: thumbResult.thumb_lg,
+          preview_path: thumbResult.preview,
         })
         .where('imghash', '=', payload.hash)
         .execute();
@@ -427,10 +519,12 @@ export class JobWorkerService extends EventEmitter {
       await this.db
         .updateTable('vids')
         .set({
-          thumb_path_sm: paths.sm,
-          thumb_path_lg: paths.lg,
-          preview_path: paths.preview ?? null,
+          thumb_path_sm: thumbResult.thumb_sm,
+          thumb_path_lg: thumbResult.thumb_lg,
+          preview_path: thumbResult.preview,
           poster_extracted: 1,
+          // Also store the poster path in thumb_path for legacy compatibility
+          thumb_path: posterPath,
         })
         .where('vidhash', '=', payload.hash)
         .execute();
@@ -444,6 +538,9 @@ export class JobWorkerService extends EventEmitter {
 
   /**
    * Video proxy generation job
+   *
+   * OPT-085: Fixed to pass rotation to generateProxy() for correct aspect ratio
+   * Previous bug: Missing rotation caused portrait videos to be scaled incorrectly
    */
   private async handleVideoProxyJob(
     payload: { hash: string; archivePath: string },
@@ -459,16 +556,22 @@ export class JobWorkerService extends EventEmitter {
       .where('key', '=', 'archive_folder')
       .executeTakeFirst();
 
-    // Get video metadata for proxy generation
+    // Get video metadata for proxy generation (includes rotation)
     const ffmpegService = new FFmpegService();
     const metadata = await ffmpegService.extractMetadata(payload.archivePath);
 
+    // OPT-085: Pass rotation for correct aspect ratio on portrait videos
+    // Mobile devices record portrait as landscape pixels + rotation metadata
     const result = await generateProxy(
       this.db,
       archiveSetting?.value || '',
       payload.hash,
       payload.archivePath,
-      { width: metadata.width ?? 1920, height: metadata.height ?? 1080 }
+      {
+        width: metadata.width ?? 1920,
+        height: metadata.height ?? 1080,
+        rotation: metadata.rotation,  // OPT-085: Critical for portrait video aspect ratio
+      }
     );
     const proxyPath = result.proxyPath ?? null;
 
@@ -478,6 +581,130 @@ export class JobWorkerService extends EventEmitter {
     }
 
     return { proxyPath };
+  }
+
+  // ============ Per-Location Job Handlers ============
+
+  /**
+   * GPS Enrichment job - aggregate GPS from media and enrich location
+   *
+   * Per Import Spec v2.0:
+   * - Finds media with GPS coordinates for this location
+   * - Selects best GPS source (highest confidence)
+   * - Enriches location with GPS + address + regions
+   *
+   * Priority: map_confirmed > photo_exif > video_exif
+   */
+  private async handleGpsEnrichmentJob(
+    payload: { locid: string },
+    emit: (event: string, data: unknown) => void
+  ): Promise<{ enriched: boolean; source: string | null }> {
+    const { locid } = payload;
+
+    // Check if location already has GPS
+    const location = await this.db
+      .selectFrom('locs')
+      .select(['locid', 'gps_lat', 'gps_lng', 'gps_source'])
+      .where('locid', '=', locid)
+      .executeTakeFirst();
+
+    if (!location) {
+      logger.warn('JobWorker', 'GPS enrichment: location not found', { locid });
+      return { enriched: false, source: null };
+    }
+
+    // Skip if location already has map-confirmed GPS (highest confidence)
+    if (location.gps_source === 'user_map_click') {
+      logger.info('JobWorker', 'GPS enrichment: skipping, already map-confirmed', { locid });
+      return { enriched: false, source: 'already_confirmed' };
+    }
+
+    // Find best GPS from imported media
+    // Priority: images with GPS > videos with GPS (images typically more accurate)
+    const imagesWithGps = await this.db
+      .selectFrom('imgs')
+      .select(['imghash', 'meta_gps_lat', 'meta_gps_lng', 'meta_date_taken'])
+      .where('locid', '=', locid)
+      .where('meta_gps_lat', 'is not', null)
+      .where('meta_gps_lng', 'is not', null)
+      .orderBy('meta_date_taken', 'asc') // Earliest photo first
+      .limit(1)
+      .execute();
+
+    const videosWithGps = await this.db
+      .selectFrom('vids')
+      .select(['vidhash', 'meta_gps_lat', 'meta_gps_lng', 'meta_date_taken'])
+      .where('locid', '=', locid)
+      .where('meta_gps_lat', 'is not', null)
+      .where('meta_gps_lng', 'is not', null)
+      .orderBy('meta_date_taken', 'asc')
+      .limit(1)
+      .execute();
+
+    // Select best source (prefer images)
+    let gpsSource: { lat: number; lng: number; type: 'image' | 'video' } | null = null;
+
+    if (imagesWithGps.length > 0) {
+      const img = imagesWithGps[0];
+      gpsSource = {
+        lat: img.meta_gps_lat!,
+        lng: img.meta_gps_lng!,
+        type: 'image',
+      };
+    } else if (videosWithGps.length > 0) {
+      const vid = videosWithGps[0];
+      gpsSource = {
+        lat: vid.meta_gps_lat!,
+        lng: vid.meta_gps_lng!,
+        type: 'video',
+      };
+    }
+
+    if (!gpsSource) {
+      logger.info('JobWorker', 'GPS enrichment: no media with GPS found', { locid });
+      return { enriched: false, source: null };
+    }
+
+    // Only enrich if location has no GPS, or new source is higher confidence
+    const shouldEnrich = !location.gps_lat || !location.gps_lng ||
+      (location.gps_source !== 'media_gps' && location.gps_source !== 'user_map_click');
+
+    if (!shouldEnrich) {
+      logger.info('JobWorker', 'GPS enrichment: location already has GPS from equal/higher source', { locid });
+      return { enriched: false, source: 'already_enriched' };
+    }
+
+    // Use LocationEnrichmentService for full enrichment pipeline
+    try {
+      const { LocationEnrichmentService } = await import('./location-enrichment-service');
+      const { GeocodingService } = await import('./geocoding-service');
+
+      const geocodingService = new GeocodingService(this.db);
+      const enrichmentService = new LocationEnrichmentService(this.db, geocodingService);
+
+      const result = await enrichmentService.enrichFromGPS(locid, {
+        lat: gpsSource.lat,
+        lng: gpsSource.lng,
+        source: 'media_gps',
+      });
+
+      if (result.success) {
+        logger.info('JobWorker', 'GPS enrichment complete', {
+          locid,
+          source: gpsSource.type,
+          address: result.updated.address,
+          regions: result.updated.regions,
+        });
+        return { enriched: true, source: gpsSource.type };
+      } else {
+        logger.warn('JobWorker', 'GPS enrichment failed', { locid, error: result.error });
+        return { enriched: false, source: null };
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      logger.error('JobWorker', 'GPS enrichment error', undefined, { locid, error: errorMsg });
+      throw error; // Re-throw to trigger retry
+    }
   }
 
   /**
@@ -493,6 +720,117 @@ export class JobWorkerService extends EventEmitter {
     const linkedPairs = await this.detectLivePhotos(payload.locid);
 
     return { linkedPairs };
+  }
+
+  /**
+   * SRT Telemetry job - link DJI telemetry files to matching videos
+   *
+   * Per Import Spec v2.0:
+   * - Finds .srt files imported for this location
+   * - Parses DJI telemetry format (GPS, altitude, speed)
+   * - Links telemetry to matching video by filename
+   * - Hides .srt files after processing
+   */
+  private async handleSrtTelemetryJob(
+    payload: { locid: string },
+    emit: (event: string, data: unknown) => void
+  ): Promise<{ filesLinked: number; filesHidden: number }> {
+    const { locid } = payload;
+
+    // Import SRT telemetry service
+    const { isDjiTelemetry, parseDjiSrt, findMatchingVideoHash } = await import('./srt-telemetry-service');
+    const fs = await import('fs/promises');
+    const path = await import('path');
+
+    // Get all documents for this location that could be SRT files
+    const docs = await this.db
+      .selectFrom('docs')
+      .select(['dochash', 'docnamo', 'docloc', 'hidden'])
+      .where('locid', '=', locid)
+      .where('hidden', '=', 0)
+      .execute();
+
+    // Filter to .srt files
+    const srtDocs = docs.filter(doc =>
+      doc.docnamo.toLowerCase().endsWith('.srt')
+    );
+
+    if (srtDocs.length === 0) {
+      logger.info('JobWorker', 'SRT telemetry: no SRT files found', { locid });
+      return { filesLinked: 0, filesHidden: 0 };
+    }
+
+    // Get all videos for this location to match against
+    const videos = await this.db
+      .selectFrom('vids')
+      .select(['vidhash', 'vidnamo'])
+      .where('locid', '=', locid)
+      .execute();
+
+    let filesLinked = 0;
+    let filesHidden = 0;
+
+    for (const doc of srtDocs) {
+      try {
+        // Read and check if it's DJI telemetry
+        const content = await fs.default.readFile(doc.docloc, 'utf-8');
+
+        if (!isDjiTelemetry(content)) {
+          logger.debug('JobWorker', 'SRT file is not DJI telemetry', { file: doc.docnamo });
+          continue;
+        }
+
+        // Parse the telemetry
+        const telemetry = parseDjiSrt(content, doc.docnamo);
+
+        // Find matching video
+        const matchingVideoHash = findMatchingVideoHash(doc.docnamo, videos);
+
+        if (matchingVideoHash) {
+          // Link telemetry to video
+          await this.db
+            .updateTable('vids')
+            .set({ srt_telemetry: JSON.stringify(telemetry) })
+            .where('vidhash', '=', matchingVideoHash)
+            .execute();
+
+          filesLinked++;
+          logger.info('JobWorker', 'SRT telemetry linked to video', {
+            srt: doc.docnamo,
+            video: matchingVideoHash.slice(0, 12),
+            frames: telemetry.frames,
+          });
+        }
+
+        // Hide the SRT file (it's metadata, not user-visible content)
+        await this.db
+          .updateTable('docs')
+          .set({
+            hidden: 1,
+            hidden_reason: 'srt_telemetry',
+          })
+          .where('dochash', '=', doc.dochash)
+          .execute();
+
+        filesHidden++;
+
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        logger.warn('JobWorker', 'SRT telemetry processing failed', {
+          file: doc.docnamo,
+          error: errorMsg,
+        });
+        // Continue with other files, don't fail entire job
+      }
+    }
+
+    logger.info('JobWorker', 'SRT telemetry job complete', {
+      locid,
+      filesLinked,
+      filesHidden,
+    });
+
+    return { filesLinked, filesHidden };
   }
 
   /**
@@ -523,15 +861,137 @@ export class JobWorkerService extends EventEmitter {
 
   /**
    * Location stats recalculation job
+   *
+   * Per Import Spec v2.0:
+   * - Recalculates media counts (images, videos, documents, maps)
+   * - Calculates date range from media metadata
+   * - Updates location record with aggregated stats
+   *
+   * This ensures accurate counts after import, even if individual file
+   * operations failed or were retried.
    */
   private async handleLocationStatsJob(
     payload: { locid: string },
     emit: (event: string, data: unknown) => void
-  ): Promise<{ stats: unknown }> {
-    // Recalculate location statistics (media counts, date range, etc.)
-    // This is a placeholder - actual implementation would aggregate from media tables
+  ): Promise<{
+    stats: {
+      imgCount: number;
+      vidCount: number;
+      docCount: number;
+      mapCount: number;
+      earliestDate: string | null;
+      latestDate: string | null;
+      totalSizeBytes: number;
+    };
+  }> {
+    const { locid } = payload;
 
-    return { stats: {} };
+    // Count images (excluding hidden)
+    const imgResult = await this.db
+      .selectFrom('imgs')
+      .select([
+        eb => eb.fn.count<number>('imghash').as('count'),
+        eb => eb.fn.sum<number>('file_size_bytes').as('totalSize'),
+        eb => eb.fn.min<string>('meta_date_taken').as('earliestDate'),
+        eb => eb.fn.max<string>('meta_date_taken').as('latestDate'),
+      ])
+      .where('locid', '=', locid)
+      .where('hidden', '=', 0)
+      .executeTakeFirst();
+
+    // Count videos (excluding hidden)
+    const vidResult = await this.db
+      .selectFrom('vids')
+      .select([
+        eb => eb.fn.count<number>('vidhash').as('count'),
+        eb => eb.fn.sum<number>('file_size_bytes').as('totalSize'),
+        eb => eb.fn.min<string>('meta_date_taken').as('earliestDate'),
+        eb => eb.fn.max<string>('meta_date_taken').as('latestDate'),
+      ])
+      .where('locid', '=', locid)
+      .where('hidden', '=', 0)
+      .executeTakeFirst();
+
+    // Count documents (excluding hidden)
+    const docResult = await this.db
+      .selectFrom('docs')
+      .select([
+        eb => eb.fn.count<number>('dochash').as('count'),
+        eb => eb.fn.sum<number>('file_size_bytes').as('totalSize'),
+      ])
+      .where('locid', '=', locid)
+      .where('hidden', '=', 0)
+      .executeTakeFirst();
+
+    // Count maps
+    const mapResult = await this.db
+      .selectFrom('maps')
+      .select([
+        eb => eb.fn.count<number>('maphash').as('count'),
+        eb => eb.fn.sum<number>('file_size_bytes').as('totalSize'),
+      ])
+      .where('locid', '=', locid)
+      .executeTakeFirst();
+
+    // Calculate aggregated stats
+    const imgCount = Number(imgResult?.count ?? 0);
+    const vidCount = Number(vidResult?.count ?? 0);
+    const docCount = Number(docResult?.count ?? 0);
+    const mapCount = Number(mapResult?.count ?? 0);
+
+    const totalSizeBytes =
+      Number(imgResult?.totalSize ?? 0) +
+      Number(vidResult?.totalSize ?? 0) +
+      Number(docResult?.totalSize ?? 0) +
+      Number(mapResult?.totalSize ?? 0);
+
+    // Calculate date range across all media types
+    const allDates = [
+      imgResult?.earliestDate,
+      imgResult?.latestDate,
+      vidResult?.earliestDate,
+      vidResult?.latestDate,
+    ].filter((d): d is string => d !== null && d !== undefined);
+
+    const earliestDate = allDates.length > 0
+      ? allDates.reduce((a, b) => (a < b ? a : b))
+      : null;
+    const latestDate = allDates.length > 0
+      ? allDates.reduce((a, b) => (a > b ? a : b))
+      : null;
+
+    // Update location record with stats
+    await this.db
+      .updateTable('locs')
+      .set({
+        img_count: imgCount,
+        vid_count: vidCount,
+        doc_count: docCount,
+        map_count: mapCount,
+        total_size_bytes: totalSizeBytes,
+        earliest_media_date: earliestDate,
+        latest_media_date: latestDate,
+        stats_updated_at: new Date().toISOString(),
+      })
+      .where('locid', '=', locid)
+      .execute();
+
+    const stats = {
+      imgCount,
+      vidCount,
+      docCount,
+      mapCount,
+      earliestDate,
+      latestDate,
+      totalSizeBytes,
+    };
+
+    logger.info('JobWorker', 'Location stats recalculated', {
+      locid,
+      ...stats,
+    });
+
+    return { stats };
   }
 
   // ============ Helper Methods ============
