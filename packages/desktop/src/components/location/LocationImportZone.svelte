@@ -6,6 +6,15 @@
   import type { GpsWarning, FailedFile } from './types';
   import { importProgress as storeProgress, isImporting as storeIsImporting, importStore } from '../../stores/import-store';
 
+  // OPT-091: Derive step name from percent (matches orchestrator STEP_WEIGHTS)
+  function getStepName(percent: number): string {
+    if (percent < 5) return 'Scanning';
+    if (percent < 40) return 'Hashing';
+    if (percent < 80) return 'Copying';
+    if (percent < 95) return 'Validating';
+    return 'Finalizing';
+  }
+
   interface Props {
     isImporting: boolean;
     isDragging: boolean;
@@ -113,14 +122,19 @@
             Cancel
           </button>
         </div>
-        <div class="flex items-center gap-3">
-          <div class="flex-1 bg-braun-200 rounded h-2">
-            <div
-              class="bg-braun-900 h-2 rounded transition-all duration-300"
-              style="width: {$storeProgress.percent}%"
-            ></div>
+        <!-- OPT-091: Progress bar with centered status text -->
+        <div class="relative h-6 bg-braun-200 rounded overflow-hidden">
+          <!-- Fill -->
+          <div
+            class="absolute inset-y-0 left-0 bg-braun-900 transition-[width] duration-150 ease-out"
+            style="width: {$storeProgress.percent}%"
+          ></div>
+          <!-- Centered text overlay: Step · Filename · Percent -->
+          <div class="absolute inset-0 flex items-center justify-center">
+            <span class="text-xs font-medium text-white mix-blend-difference truncate px-2">
+              {getStepName($storeProgress.percent)} · {$storeProgress.currentFilename || '...'} · {$storeProgress.percent}%
+            </span>
           </div>
-          <span class="text-xs text-braun-500 w-8 text-right">{$storeProgress.percent}%</span>
         </div>
       </div>
     {:else}

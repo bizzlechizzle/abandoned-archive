@@ -188,12 +188,14 @@ export const importProgress = derived(importStore, $store => {
   if (!$store.activeJob) return null;
   const job = $store.activeJob;
   // OPT-088: Use orchestrator's weighted percent instead of simple file count ratio
+  // OPT-091: Expose currentFilename for activity indicator
   return {
     current: job.processedFiles,
     total: job.totalFiles,
     percent: Math.round(job.percent),  // Round to whole number for UI display
     locationName: job.locationName,
     locid: job.locid,
+    currentFilename: job.currentFilename,
   };
 });
 

@@ -776,11 +776,22 @@
 
         <!-- Progress bar + percentage -->
         <div class="flex items-center gap-3">
-          <div class="flex-1 bg-braun-200 rounded h-2">
+          <div class="flex-1 h-2 relative">
+            <!-- Track background -->
+            <div class="absolute inset-0 bg-braun-200 rounded"></div>
+            <!-- Filled progress -->
             <div
-              class="bg-braun-900 h-2 rounded transition-all duration-300"
+              class="absolute top-0 left-0 h-full bg-braun-900 rounded-l transition-[width] duration-150 ease-out"
               style="width: {$storeImportProgress.percent}%"
             ></div>
+            <!-- OPT-091: Braun-compliant activity indicator -->
+            <!-- Subtle moving line shows work is happening when progress appears stalled -->
+            {#if $storeImportProgress.percent < 100}
+              <div
+                class="absolute top-0 h-full w-3 bg-braun-500 rounded-sm opacity-60"
+                style="left: {$storeImportProgress.percent}%; animation: braun-slide 1.2s ease-in-out infinite;"
+              ></div>
+            {/if}
           </div>
           <span class="text-xs text-braun-500 w-8 text-right">{$storeImportProgress.percent}%</span>
         </div>

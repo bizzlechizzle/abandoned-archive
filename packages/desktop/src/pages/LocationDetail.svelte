@@ -599,8 +599,9 @@
     // Set up progress listener for real-time updates
     const unsubscribeProgress = window.electronAPI.importV2.onProgress((progress) => {
       // OPT-088: Update store with v2 progress including weighted percent
+      // OPT-091: Pass currentFile for activity indicator display
       // Progress display handled by store + LocationImportZone clean progress bar
-      importStore.updateProgress(progress.filesProcessed, progress.filesTotal, progress.percent);
+      importStore.updateProgress(progress.filesProcessed, progress.filesTotal, progress.percent, progress.currentFile, progress.sessionId);
     });
 
     try {
