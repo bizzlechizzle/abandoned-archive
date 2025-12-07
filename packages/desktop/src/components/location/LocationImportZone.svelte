@@ -129,10 +129,12 @@
             class="absolute inset-y-0 left-0 bg-braun-900 transition-[width] duration-150 ease-out"
             style="width: {$storeProgress.percent}%"
           ></div>
-          <!-- Centered text overlay: Step · Location · Percent -->
+          <!-- Centered text overlay: Step · Filename · Percent -->
           <div class="absolute inset-0 flex items-center justify-center px-2">
+            {@const filename = $storeProgress.currentFilename?.split('/').pop()?.split('\\').pop() || '...'}
+            {@const truncated = filename.length > 25 ? filename.slice(0, 22) + '...' : filename}
             <span class="text-xs font-medium text-white mix-blend-difference whitespace-nowrap overflow-hidden text-ellipsis max-w-full">
-              {getStepName($storeProgress.percent)} · {$storeProgress.locationName || 'Importing'} · {$storeProgress.percent}%
+              {getStepName($storeProgress.percent)} · {truncated} · {$storeProgress.percent}%
             </span>
           </div>
         </div>
