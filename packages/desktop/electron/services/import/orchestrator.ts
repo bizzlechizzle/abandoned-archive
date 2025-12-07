@@ -23,6 +23,7 @@ import { Finalizer, type FinalizationResult, type FinalizerOptions } from './fin
 import { getLogger } from '../logger-service';
 import { getMetricsCollector, MetricNames } from '../monitoring/metrics-collector';
 import { getTracer, OperationNames } from '../monitoring/tracer';
+import { acquireLocationLock, releaseLocationLock } from './location-lock';
 
 const logger = getLogger();
 const metrics = getMetricsCollector();
@@ -158,20 +159,45 @@ export class ImportOrchestrator {
     this.currentSessionId = sessionId;
     this.abortController = new AbortController();
 
+    // Acquire location lock to prevent concurrent imports to same location
+    // This serializes imports to the same location, preventing race conditions
+    const locid = options.location.locid;
+    try {
+      await acquireLocationLock(locid, sessionId, {
+        waitIfLocked: false,
+        user: options.user?.username,
+      });
+    } catch (lockError) {
+      // Lock acquisition failed - location is already being imported to
+      logger.warn('ImportOrchestrator', 'Failed to acquire location lock', {
+        sessionId,
+        locationId: locid,
+        error: lockError instanceof Error ? lockError.message : String(lockError),
+      });
+      return {
+        sessionId,
+        status: 'failed',
+        error: lockError instanceof Error ? lockError.message : 'Location is currently being imported to',
+        startedAt: startedAt.toISOString(),
+        completedAt: new Date().toISOString(),
+        totalDurationMs: Date.now() - startedAt.getTime(),
+      };
+    }
+
     // Start import session trace
     const importSpan = tracer.startSpan(OperationNames.IMPORT_SESSION, {
       sessionId,
-      locationId: options.location.locid,
+      locationId: locid,
       pathCount: paths.length,
     });
 
     // Record import started
     logger.info('ImportOrchestrator', 'Import started', {
       sessionId,
-      locationId: options.location.locid,
+      locationId: locid,
       pathCount: paths.length,
     });
-    metrics.incrementCounter(MetricNames.IMPORT_STARTED, 1, { locationId: options.location.locid });
+    metrics.incrementCounter(MetricNames.IMPORT_STARTED, 1, { locationId: locid });
 
     // Merge signals
     const signal = options.signal
@@ -445,6 +471,10 @@ export class ImportOrchestrator {
 
       emitProgress();
       await this.saveSessionState(sessionId, this.currentStatus, progress.step, options.location.locid, paths, error);
+    } finally {
+      // Always release the location lock when import completes (success, error, or cancel)
+      releaseLocationLock(locid, sessionId);
+      logger.debug('ImportOrchestrator', 'Location lock released', { sessionId, locid });
     }
 
     const completedAt = new Date();
@@ -573,6 +603,24 @@ export class ImportOrchestrator {
     const startedAt = new Date();
     this.currentSessionId = sessionId;
     this.abortController = new AbortController();
+    const locid = options.location.locid;
+
+    // Acquire location lock for resumed import
+    try {
+      await acquireLocationLock(locid, sessionId, {
+        waitIfLocked: false,
+        user: options.user?.username,
+      });
+    } catch (lockError) {
+      return {
+        sessionId,
+        status: 'failed',
+        error: lockError instanceof Error ? lockError.message : 'Location is currently being imported to',
+        startedAt: startedAt.toISOString(),
+        completedAt: new Date().toISOString(),
+        totalDurationMs: Date.now() - startedAt.getTime(),
+      };
+    }
 
     const signal = options.signal
       ? this.mergeAbortSignals(options.signal, this.abortController.signal)
@@ -604,7 +652,7 @@ export class ImportOrchestrator {
         },
       });
 
-      await this.saveSessionStateWithResults(sessionId, 'hashing', 2, options.location.locid, scanResult, hashResult);
+      await this.saveSessionStateWithResults(sessionId, 'hashing', 2, locid, scanResult, hashResult);
 
       // Continue with remaining steps...
       ({ copyResult, validationResult, finalizationResult } = await this.executeCopyValidateFinalize(
@@ -614,7 +662,9 @@ export class ImportOrchestrator {
     } catch (err) {
       error = this.handleError(err, signal, progress);
       emitProgress();
-      await this.saveSessionState(sessionId, this.currentStatus, progress.step, options.location.locid, [], error);
+      await this.saveSessionState(sessionId, this.currentStatus, progress.step, locid, [], error);
+    } finally {
+      releaseLocationLock(locid, sessionId);
     }
 
     return this.buildResult(sessionId, startedAt, scanResult, hashResult, copyResult, validationResult, finalizationResult, error);
@@ -632,6 +682,24 @@ export class ImportOrchestrator {
     const startedAt = new Date();
     this.currentSessionId = sessionId;
     this.abortController = new AbortController();
+    const locid = options.location.locid;
+
+    // Acquire location lock for resumed import
+    try {
+      await acquireLocationLock(locid, sessionId, {
+        waitIfLocked: false,
+        user: options.user?.username,
+      });
+    } catch (lockError) {
+      return {
+        sessionId,
+        status: 'failed',
+        error: lockError instanceof Error ? lockError.message : 'Location is currently being imported to',
+        startedAt: startedAt.toISOString(),
+        completedAt: new Date().toISOString(),
+        totalDurationMs: Date.now() - startedAt.getTime(),
+      };
+    }
 
     const signal = options.signal
       ? this.mergeAbortSignals(options.signal, this.abortController.signal)
@@ -655,7 +723,9 @@ export class ImportOrchestrator {
     } catch (err) {
       error = this.handleError(err, signal, progress);
       emitProgress();
-      await this.saveSessionState(sessionId, this.currentStatus, progress.step, options.location.locid, [], error);
+      await this.saveSessionState(sessionId, this.currentStatus, progress.step, locid, [], error);
+    } finally {
+      releaseLocationLock(locid, sessionId);
     }
 
     return this.buildResult(sessionId, startedAt, scanResult, hashResult, copyResult, validationResult, finalizationResult, error);
@@ -674,6 +744,24 @@ export class ImportOrchestrator {
     const startedAt = new Date();
     this.currentSessionId = sessionId;
     this.abortController = new AbortController();
+    const locid = options.location.locid;
+
+    // Acquire location lock for resumed import
+    try {
+      await acquireLocationLock(locid, sessionId, {
+        waitIfLocked: false,
+        user: options.user?.username,
+      });
+    } catch (lockError) {
+      return {
+        sessionId,
+        status: 'failed',
+        error: lockError instanceof Error ? lockError.message : 'Location is currently being imported to',
+        startedAt: startedAt.toISOString(),
+        completedAt: new Date().toISOString(),
+        totalDurationMs: Date.now() - startedAt.getTime(),
+      };
+    }
 
     const signal = options.signal
       ? this.mergeAbortSignals(options.signal, this.abortController.signal)
@@ -706,7 +794,7 @@ export class ImportOrchestrator {
         },
       });
 
-      await this.saveSessionStateWithResults(sessionId, 'validating', 4, options.location.locid, scanResult, hashResult, copyResult, validationResult);
+      await this.saveSessionStateWithResults(sessionId, 'validating', 4, locid, scanResult, hashResult, copyResult, validationResult);
 
       // Step 5: Finalize
       finalizationResult = await this.executeFinalize(sessionId, scanResult, validationResult, options, progress, emitProgress, signal);
@@ -714,7 +802,9 @@ export class ImportOrchestrator {
     } catch (err) {
       error = this.handleError(err, signal, progress);
       emitProgress();
-      await this.saveSessionState(sessionId, this.currentStatus, progress.step, options.location.locid, [], error);
+      await this.saveSessionState(sessionId, this.currentStatus, progress.step, locid, [], error);
+    } finally {
+      releaseLocationLock(locid, sessionId);
     }
 
     return this.buildResult(sessionId, startedAt, scanResult, hashResult, copyResult, validationResult, finalizationResult, error);
@@ -734,6 +824,24 @@ export class ImportOrchestrator {
     const startedAt = new Date();
     this.currentSessionId = sessionId;
     this.abortController = new AbortController();
+    const locid = options.location.locid;
+
+    // Acquire location lock for resumed import
+    try {
+      await acquireLocationLock(locid, sessionId, {
+        waitIfLocked: false,
+        user: options.user?.username,
+      });
+    } catch (lockError) {
+      return {
+        sessionId,
+        status: 'failed',
+        error: lockError instanceof Error ? lockError.message : 'Location is currently being imported to',
+        startedAt: startedAt.toISOString(),
+        completedAt: new Date().toISOString(),
+        totalDurationMs: Date.now() - startedAt.getTime(),
+      };
+    }
 
     const signal = options.signal
       ? this.mergeAbortSignals(options.signal, this.abortController.signal)
@@ -752,7 +860,9 @@ export class ImportOrchestrator {
     } catch (err) {
       error = this.handleError(err, signal, progress);
       emitProgress();
-      await this.saveSessionState(sessionId, this.currentStatus, progress.step, options.location.locid, [], error);
+      await this.saveSessionState(sessionId, this.currentStatus, progress.step, locid, [], error);
+    } finally {
+      releaseLocationLock(locid, sessionId);
     }
 
     return this.buildResult(sessionId, startedAt, scanResult, hashResult, copyResult, validationResult, finalizationResult, error);

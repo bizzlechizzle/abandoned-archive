@@ -8,10 +8,19 @@
    * - Recent Locations / Recent Imports (2-col)
    * - Top Type / Top State (2-col, no thumbnails)
    */
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { router } from '../stores/router';
   import { isImporting, importProgress, recentImports as storeRecentImports } from '../stores/import-store';
   import { thumbnailCache } from '../stores/thumbnail-cache-store';
+
+  // OPT-087: Handle asset-ready events for hero thumbnail refresh
+  function handleAssetReady(event: CustomEvent<{ type: string; hash: string; paths?: { sm?: string; lg?: string } }>) {
+    const { type } = event.detail;
+    // When thumbnails are ready, bust the cache to refresh hero images
+    if (type === 'thumbnail') {
+      thumbnailCache.bust();
+    }
+  }
   import SkeletonLoader from '../components/SkeletonLoader.svelte';
 
   interface ImportRecord {
@@ -74,6 +83,9 @@
   const cacheVersion = $derived($thumbnailCache);
 
   onMount(async () => {
+    // OPT-087: Listen for asset-ready events to refresh hero thumbnails
+    window.addEventListener('asset-ready', handleAssetReady as EventListener);
+
     if (!window.electronAPI?.locations) {
       console.error('Electron API not available');
       loading = false;
@@ -150,6 +162,11 @@
       .slice(0, 4);
 
     loading = false;
+  });
+
+  // OPT-087: Cleanup asset-ready event listener
+  onDestroy(() => {
+    window.removeEventListener('asset-ready', handleAssetReady as EventListener);
   });
 
   function formatDate(isoDate: string): string {

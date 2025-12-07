@@ -29,6 +29,7 @@ export interface JobInput<T = unknown> {
   priority?: number;          // Higher = more important (default: 10)
   dependsOn?: string;         // job_id this job depends on
   maxAttempts?: number;       // Max retries (default: 3)
+  jobId?: string;             // OPT-087: Pre-generated job ID for dependency synchronization
 }
 
 export interface Job<T = unknown> {
@@ -119,13 +120,15 @@ export class JobQueue {
 
   /**
    * Add multiple jobs to the queue in a single transaction
+   * OPT-087: Accepts optional pre-generated job IDs for dependency synchronization
    */
   async addBulk<T>(inputs: JobInput<T>[]): Promise<string[]> {
     const jobIds: string[] = [];
     const now = new Date().toISOString();
 
     const values = inputs.map(input => {
-      const jobId = randomUUID();
+      // OPT-087: Use pre-generated jobId if provided, otherwise generate new one
+      const jobId = input.jobId || randomUUID();
       jobIds.push(jobId);
       return {
         job_id: jobId,

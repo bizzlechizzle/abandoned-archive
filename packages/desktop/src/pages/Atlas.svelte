@@ -61,13 +61,37 @@
     routeQuery = route.query || {};
   });
 
+  // OPT-087: Handle gps-enriched events to update map markers
+  function handleAssetReady(event: CustomEvent<{ type: string; locid?: string; lat?: number; lng?: number }>) {
+    const { type, locid, lat, lng } = event.detail;
+    if (type === 'gps-enriched' && locid && lat != null && lng != null) {
+      // Find existing location and update its GPS, or reload bounds to show new pin
+      const idx = locations.findIndex(loc => loc.locid === locid);
+      if (idx >= 0) {
+        // Update existing location's GPS
+        locations[idx] = {
+          ...locations[idx],
+          gps_lat: lat,
+          gps_lng: lng,
+          gps_source: 'media_gps',
+        };
+        locations = [...locations]; // Trigger reactivity
+      } else if (currentBounds) {
+        // Location wasn't in view, reload bounds to potentially show new pin
+        loadLocationsInBounds(currentBounds);
+      }
+    }
+  }
+
   // OPT-016: Clean up router subscription on component destroy
   // OPT-037: Clean up bounds debounce timer
+  // OPT-087: Clean up asset-ready event listener
   onDestroy(() => {
     unsubscribeRouter();
     if (boundsDebounceTimer) {
       clearTimeout(boundsDebounceTimer);
     }
+    window.removeEventListener('asset-ready', handleAssetReady as EventListener);
   });
 
   const highlightLocid = $derived(routeQuery.locid || null);
@@ -417,6 +441,9 @@
     // Close context menu on click outside
     const handleClickOutside = () => closeContextMenu();
     document.addEventListener('click', handleClickOutside);
+
+    // OPT-087: Listen for GPS enrichment events to update map markers
+    window.addEventListener('asset-ready', handleAssetReady as EventListener);
 
     return () => {
       document.removeEventListener('click', handleClickOutside);

@@ -456,6 +456,11 @@ export function initializeJobWorker(db: Kysely<Database>): void {
     sendToRenderer('jobs:progress', data);
   });
 
+  // Forward dead letter queue events to renderer for UI notification
+  workerService.on('job:deadLetter', (data) => {
+    sendToRenderer('jobs:deadLetter', data);
+  });
+
   console.log('[JobWorker] Background job processor initialized');
 }
 

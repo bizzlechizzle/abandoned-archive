@@ -6,7 +6,7 @@
    * Per AAA: Import shows results immediately
    * DECISION-014: Removed auto-geocoding from onMount (GPS from EXIF/user action only)
    */
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { router } from '../stores/router';
   import { importStore, isImporting } from '../stores/import-store';
   import { toasts } from '../stores/toast-store';
@@ -740,7 +740,42 @@
 
   function handleOpenBookmark(url: string) { window.electronAPI?.shell?.openExternal(url); }
 
+  // OPT-087: Handle asset-ready events for surgical thumbnail refresh
+  function handleAssetReady(event: CustomEvent<{ type: string; hash: string; paths?: { sm?: string; lg?: string; preview?: string } }>) {
+    const { type, hash, paths } = event.detail;
+
+    if (type === 'thumbnail' && paths) {
+      // Update image thumbnail paths
+      const imgIndex = images.findIndex(img => img.imghash === hash);
+      if (imgIndex >= 0) {
+        images[imgIndex] = {
+          ...images[imgIndex],
+          thumb_path_sm: paths.sm || images[imgIndex].thumb_path_sm,
+          thumb_path_lg: paths.lg || images[imgIndex].thumb_path_lg,
+          preview_path: paths.preview || images[imgIndex].preview_path,
+        };
+        images = [...images]; // Trigger reactivity
+        return;
+      }
+
+      // Update video thumbnail paths
+      const vidIndex = videos.findIndex(vid => vid.vidhash === hash);
+      if (vidIndex >= 0) {
+        videos[vidIndex] = {
+          ...videos[vidIndex],
+          thumb_path_sm: paths.sm || videos[vidIndex].thumb_path_sm,
+          thumb_path_lg: paths.lg || videos[vidIndex].thumb_path_lg,
+          preview_path: paths.preview || videos[vidIndex].preview_path,
+        };
+        videos = [...videos]; // Trigger reactivity
+      }
+    }
+  }
+
   onMount(async () => {
+    // OPT-087: Listen for asset-ready events from App.svelte
+    window.addEventListener('asset-ready', handleAssetReady as EventListener);
+
     await loadLocation();
     loadBookmarks();
     // DECISION-014: Removed ensureGpsFromAddress() - GPS should only come from EXIF or user action
@@ -774,6 +809,11 @@
       // Clear the query param to prevent re-triggering on refresh
       router.navigate(`/location/${locationId}`);
     }
+  });
+
+  // OPT-087: Cleanup asset-ready event listener to prevent memory leaks
+  onDestroy(() => {
+    window.removeEventListener('asset-ready', handleAssetReady as EventListener);
   });
 </script>
 

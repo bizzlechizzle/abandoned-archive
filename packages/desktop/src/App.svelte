@@ -53,6 +53,8 @@
   let unsubscribeStarted: (() => void) | null = null;
   // FIX 5.4: Backup status listener
   let unsubscribeBackup: (() => void) | null = null;
+  // OPT-087: Asset ready listener for surgical cache invalidation
+  let unsubscribeAssetReady: (() => void) | null = null;
 
   /**
    * Check if login is required based on user setting
@@ -197,6 +199,16 @@
         // Non-fatal - don't show error to user
       });
     }
+
+    // OPT-087: Subscribe to asset ready events for surgical cache invalidation
+    // This enables thumbnails to "pop in" after background jobs complete
+    if (window.electronAPI?.jobs?.onAssetReady) {
+      unsubscribeAssetReady = window.electronAPI.jobs.onAssetReady((event) => {
+        // Dispatch a custom event that components can listen to
+        // This allows LocationDetail, Dashboard, etc. to refresh specific assets
+        window.dispatchEvent(new CustomEvent('asset-ready', { detail: event }));
+      });
+    }
   });
 
   onDestroy(() => {
@@ -209,6 +221,10 @@
     // FIX 5.4: Cleanup backup listener
     if (unsubscribeBackup) {
       unsubscribeBackup();
+    }
+    // OPT-087: Cleanup asset ready listener
+    if (unsubscribeAssetReady) {
+      unsubscribeAssetReady();
     }
   });
 

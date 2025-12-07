@@ -695,6 +695,13 @@ export class JobWorkerService extends EventEmitter {
           address: result.updated.address,
           regions: result.updated.regions,
         });
+        // OPT-087: Emit gps-enriched event so frontend (map) can update
+        emit('location:gps-enriched', {
+          locid,
+          lat: gpsSource.lat,
+          lng: gpsSource.lng,
+          source: gpsSource.type,
+        });
         return { enriched: true, source: gpsSource.type };
       } else {
         logger.warn('JobWorker', 'GPS enrichment failed', { locid, error: result.error });
@@ -998,9 +1005,20 @@ export class JobWorkerService extends EventEmitter {
 
   /**
    * Update media metadata in database
+   * OPT-087: Fixed GPS extraction to use correct nested path from ExifToolService
    */
   private async updateMediaMetadata(hash: string, mediaType: string, metadata: unknown): Promise<void> {
-    const meta = metadata as Record<string, unknown>;
+    // OPT-087: ExifToolService returns { gps: { lat, lng, altitude? } | null }
+    // Previously used GPSLatitude/GPSLongitude which don't exist in the returned object
+    const meta = metadata as {
+      width?: number;
+      height?: number;
+      dateTaken?: string;
+      cameraMake?: string;
+      cameraModel?: string;
+      gps?: { lat: number; lng: number; altitude?: number } | null;
+      rawExif?: string;
+    };
     const metaJson = JSON.stringify(metadata);
 
     switch (mediaType) {
@@ -1009,13 +1027,14 @@ export class JobWorkerService extends EventEmitter {
           .updateTable('imgs')
           .set({
             meta_exiftool: metaJson,
-            meta_width: meta.ImageWidth as number ?? null,
-            meta_height: meta.ImageHeight as number ?? null,
-            meta_date_taken: meta.DateTimeOriginal as string ?? null,
-            meta_camera_make: meta.Make as string ?? null,
-            meta_camera_model: meta.Model as string ?? null,
-            meta_gps_lat: meta.GPSLatitude as number ?? null,
-            meta_gps_lng: meta.GPSLongitude as number ?? null,
+            meta_width: meta.width ?? null,
+            meta_height: meta.height ?? null,
+            meta_date_taken: meta.dateTaken ?? null,
+            meta_camera_make: meta.cameraMake ?? null,
+            meta_camera_model: meta.cameraModel ?? null,
+            // OPT-087: Fixed GPS path - use nested gps object
+            meta_gps_lat: meta.gps?.lat ?? null,
+            meta_gps_lng: meta.gps?.lng ?? null,
           })
           .where('imghash', '=', hash)
           .execute();
@@ -1026,9 +1045,10 @@ export class JobWorkerService extends EventEmitter {
           .updateTable('vids')
           .set({
             meta_exiftool: metaJson,
-            meta_date_taken: meta.DateTimeOriginal as string ?? meta.CreateDate as string ?? null,
-            meta_gps_lat: meta.GPSLatitude as number ?? null,
-            meta_gps_lng: meta.GPSLongitude as number ?? null,
+            meta_date_taken: meta.dateTaken ?? null,
+            // OPT-087: Fixed GPS path - use nested gps object
+            meta_gps_lat: meta.gps?.lat ?? null,
+            meta_gps_lng: meta.gps?.lng ?? null,
           })
           .where('vidhash', '=', hash)
           .execute();

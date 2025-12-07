@@ -209,7 +209,8 @@ export class Finalizer {
     options?.onProgress?.(98, 'Queueing background jobs');
 
     // Queue background jobs for each successfully imported file
-    const jobs = this.buildJobList(results.filter(f => f.dbRecordId));
+    const successfulFiles = results.filter(f => f.dbRecordId);
+    const jobs = this.buildJobList(successfulFiles, location.locid);
     if (jobs.length > 0) {
       await this.jobQueue.addBulk(jobs);
       jobsQueued = jobs.length;
@@ -714,9 +715,20 @@ export class Finalizer {
 
   /**
    * Build job list for background processing
+   *
+   * Per Import Spec v2.0:
+   * - Per-file jobs: ExifTool, FFprobe, Thumbnail, Video Proxy
+   * - Per-location jobs: GPS Enrichment, Live Photo, SRT Telemetry, Location Stats, BagIt
+   *
+   * Location-level jobs run after all file-level jobs complete.
    */
-  private buildJobList(files: FinalizedFile[]): JobInput[] {
+  private buildJobList(files: FinalizedFile[], locid: string): JobInput[] {
     const jobs: JobInput[] = [];
+
+    // Track last per-file job ID for dependencies
+    let lastExifJobId: string | null = null;
+
+    // ============ Per-File Jobs ============
 
     for (const file of files) {
       if (!file.dbRecordId || !file.archivePath) continue;
@@ -728,20 +740,25 @@ export class Finalizer {
       };
 
       // ExifTool job for all media types
+      // OPT-087: Pass pre-generated jobId to ensure dependency chain works
       const exifJobId = randomUUID();
       jobs.push({
         queue: IMPORT_QUEUES.EXIFTOOL,
         priority: JOB_PRIORITY.HIGH,
-        payload: { ...basePayload, jobId: exifJobId },
+        jobId: exifJobId,  // OPT-087: Use this as actual job_id in database
+        payload: { ...basePayload },
       });
+      lastExifJobId = exifJobId;
 
       // FFprobe job for videos (depends on ExifTool)
+      // OPT-087: Pass pre-generated jobId for dependency chain
       if (file.mediaType === 'video') {
         const ffprobeJobId = randomUUID();
         jobs.push({
           queue: IMPORT_QUEUES.FFPROBE,
           priority: JOB_PRIORITY.HIGH,
-          payload: { ...basePayload, jobId: ffprobeJobId },
+          jobId: ffprobeJobId,  // OPT-087: Use this as actual job_id
+          payload: { ...basePayload },
           dependsOn: exifJobId,
         });
       }
@@ -756,7 +773,7 @@ export class Finalizer {
         });
       }
 
-      // Video proxy job (depends on FFprobe for codec detection)
+      // Video proxy job (no dependency - can run in parallel)
       if (file.mediaType === 'video') {
         jobs.push({
           queue: IMPORT_QUEUES.VIDEO_PROXY,
@@ -765,6 +782,67 @@ export class Finalizer {
         });
       }
     }
+
+    // ============ Per-Location Jobs ============
+    // These run after all file-level ExifTool jobs complete
+    // Only queue if we have files to process
+
+    if (files.length === 0) {
+      return jobs;
+    }
+
+    const locationPayload = { locid };
+
+    // GPS Enrichment - aggregate GPS from media to location
+    // Depends on last ExifTool job (ensures all metadata extracted first)
+    // OPT-087: Pass pre-generated jobId for dependency chain
+    const gpsEnrichmentJobId = randomUUID();
+    jobs.push({
+      queue: IMPORT_QUEUES.GPS_ENRICHMENT,
+      priority: JOB_PRIORITY.NORMAL,
+      jobId: gpsEnrichmentJobId,  // OPT-087: Use this as actual job_id
+      payload: locationPayload,
+      dependsOn: lastExifJobId ?? undefined,
+    });
+
+    // Live Photo Detection - match image/video pairs by ContentIdentifier
+    // Depends on ExifTool (needs ContentIdentifier from metadata)
+    jobs.push({
+      queue: IMPORT_QUEUES.LIVE_PHOTO,
+      priority: JOB_PRIORITY.NORMAL,
+      payload: locationPayload,
+      dependsOn: lastExifJobId ?? undefined,
+    });
+
+    // SRT Telemetry - link DJI telemetry to videos
+    // Only queue if we imported any documents (SRT files are imported as documents)
+    const hasDocuments = files.some(f => f.mediaType === 'document');
+    if (hasDocuments) {
+      jobs.push({
+        queue: IMPORT_QUEUES.SRT_TELEMETRY,
+        priority: JOB_PRIORITY.NORMAL,
+        payload: locationPayload,
+        dependsOn: lastExifJobId ?? undefined,
+      });
+    }
+
+    // Location Stats - recalculate media counts and date range
+    // Depends on GPS Enrichment (for complete location state)
+    jobs.push({
+      queue: IMPORT_QUEUES.LOCATION_STATS,
+      priority: JOB_PRIORITY.BACKGROUND,
+      payload: locationPayload,
+      dependsOn: gpsEnrichmentJobId,
+    });
+
+    // BagIt Manifest - update RFC 8493 archive manifest
+    // Runs last (needs all files + thumbnails + metadata to be complete)
+    jobs.push({
+      queue: IMPORT_QUEUES.BAGIT,
+      priority: JOB_PRIORITY.BACKGROUND,
+      payload: locationPayload,
+      dependsOn: gpsEnrichmentJobId, // After enrichment
+    });
 
     return jobs;
   }

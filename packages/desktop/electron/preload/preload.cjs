@@ -603,18 +603,28 @@ const api = {
       ipcRenderer.on("jobs:progress", listener);
       return () => ipcRenderer.removeListener("jobs:progress", listener);
     },
-    // Listen for asset events (thumbnail ready, metadata complete, proxy ready)
+    // Listen for dead letter queue events (jobs that permanently failed)
+    onDeadLetter: (callback) => {
+      const listener = (_event, data) => callback(data);
+      ipcRenderer.on("jobs:deadLetter", listener);
+      return () => ipcRenderer.removeListener("jobs:deadLetter", listener);
+    },
+    // Listen for asset events (thumbnail ready, metadata complete, proxy ready, gps enriched)
     onAssetReady: (callback) => {
       const thumbnailListener = (_event, data) => callback({ type: 'thumbnail', ...data });
       const metadataListener = (_event, data) => callback({ type: 'metadata', ...data });
       const proxyListener = (_event, data) => callback({ type: 'proxy', ...data });
+      // OPT-087: GPS enrichment event for map updates
+      const gpsListener = (_event, data) => callback({ type: 'gps-enriched', ...data });
       ipcRenderer.on("asset:thumbnail-ready", thumbnailListener);
       ipcRenderer.on("asset:metadata-complete", metadataListener);
       ipcRenderer.on("asset:proxy-ready", proxyListener);
+      ipcRenderer.on("location:gps-enriched", gpsListener);
       return () => {
         ipcRenderer.removeListener("asset:thumbnail-ready", thumbnailListener);
         ipcRenderer.removeListener("asset:metadata-complete", metadataListener);
         ipcRenderer.removeListener("asset:proxy-ready", proxyListener);
+        ipcRenderer.removeListener("location:gps-enriched", gpsListener);
       };
     },
   },

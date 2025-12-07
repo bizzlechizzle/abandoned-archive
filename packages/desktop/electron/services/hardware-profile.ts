@@ -20,7 +20,7 @@ export interface HardwareProfile {
   isAppleSilicon: boolean;
   tier: 'beast' | 'high' | 'medium' | 'low';
 
-  // Scaled worker allocation
+  // Scaled worker allocation - Per-file jobs
   hashWorkers: number;
   copyWorkers: number;
   copyWorkersNetwork: number;
@@ -28,9 +28,13 @@ export interface HardwareProfile {
   ffprobeWorkers: number;
   thumbnailWorkers: number;
   videoProxyWorkers: number;
+
+  // Scaled worker allocation - Per-location jobs
+  gpsEnrichmentWorkers: number;
   livePhotoWorkers: number;
-  bagitWorkers: number;
+  srtTelemetryWorkers: number;
   locationStatsWorkers: number;
+  bagitWorkers: number;
 
   // Queue settings
   pollIntervalMs: number;
@@ -62,6 +66,7 @@ export function detectHardwareProfile(): HardwareProfile {
   const profiles: Record<typeof tier, Omit<HardwareProfile, 'cpuCores' | 'totalMemoryGB' | 'isAppleSilicon' | 'tier'>> = {
     beast: {
       // M2 Ultra (24 cores, 64GB+): GO NUCLEAR
+      // Per-file jobs
       hashWorkers: cpuCores - 2,                    // 22 workers
       copyWorkers: 24,                               // Saturate local I/O
       copyWorkersNetwork: 16,                        // Slightly less for SMB
@@ -69,14 +74,18 @@ export function detectHardwareProfile(): HardwareProfile {
       ffprobeWorkers: Math.floor(cpuCores * 0.25),  // 6 workers
       thumbnailWorkers: Math.floor(cpuCores * 0.5), // 12 workers
       videoProxyWorkers: 4,                          // CPU-heavy but we can handle it
-      livePhotoWorkers: 8,
-      bagitWorkers: 4,
-      locationStatsWorkers: 8,
+      // Per-location jobs (lighter, run after file jobs)
+      gpsEnrichmentWorkers: 4,                       // Network-bound (geocoding)
+      livePhotoWorkers: 8,                           // DB + metadata comparison
+      srtTelemetryWorkers: 4,                        // File parsing + DB update
+      locationStatsWorkers: 8,                       // DB aggregation
+      bagitWorkers: 4,                               // File I/O for manifests
       pollIntervalMs: 25,                            // FAST
       pollIntervalIdleMs: 100,
     },
     high: {
       // M1/M2 Pro/Max (10-12 cores, 16-32GB): Still aggressive
+      // Per-file jobs
       hashWorkers: cpuCores - 2,
       copyWorkers: 16,
       copyWorkersNetwork: 12,
@@ -84,14 +93,18 @@ export function detectHardwareProfile(): HardwareProfile {
       ffprobeWorkers: Math.floor(cpuCores * 0.2),
       thumbnailWorkers: Math.floor(cpuCores * 0.4),
       videoProxyWorkers: 2,
+      // Per-location jobs
+      gpsEnrichmentWorkers: 2,
       livePhotoWorkers: 4,
-      bagitWorkers: 2,
+      srtTelemetryWorkers: 2,
       locationStatsWorkers: 4,
+      bagitWorkers: 2,
       pollIntervalMs: 50,
       pollIntervalIdleMs: 150,
     },
     medium: {
       // Base M1/M2, older Intel (4-8 cores, 8-16GB): Moderate
+      // Per-file jobs
       hashWorkers: Math.max(2, cpuCores - 2),
       copyWorkers: 8,
       copyWorkersNetwork: 6,
@@ -99,14 +112,18 @@ export function detectHardwareProfile(): HardwareProfile {
       ffprobeWorkers: 2,
       thumbnailWorkers: Math.max(2, Math.floor(cpuCores * 0.3)),
       videoProxyWorkers: 1,
+      // Per-location jobs
+      gpsEnrichmentWorkers: 1,
       livePhotoWorkers: 2,
-      bagitWorkers: 1,
+      srtTelemetryWorkers: 1,
       locationStatsWorkers: 2,
+      bagitWorkers: 1,
       pollIntervalMs: 100,
       pollIntervalIdleMs: 300,
     },
     low: {
       // Potato mode: Be gentle
+      // Per-file jobs
       hashWorkers: Math.max(1, cpuCores - 1),
       copyWorkers: 4,
       copyWorkersNetwork: 3,
@@ -114,9 +131,12 @@ export function detectHardwareProfile(): HardwareProfile {
       ffprobeWorkers: 1,
       thumbnailWorkers: 2,
       videoProxyWorkers: 1,
+      // Per-location jobs
+      gpsEnrichmentWorkers: 1,
       livePhotoWorkers: 1,
-      bagitWorkers: 1,
+      srtTelemetryWorkers: 1,
       locationStatsWorkers: 1,
+      bagitWorkers: 1,
       pollIntervalMs: 200,
       pollIntervalIdleMs: 500,
     },
