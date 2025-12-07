@@ -102,6 +102,23 @@
   let sublocTaglineEl = $state<HTMLElement | null>(null);
   let sublocTaglineWraps = $state(false);
 
+  // OPT-090: Debounced notifications for background job completion
+  const lastRefreshNotification = { images: 0, videos: 0, gps: 0 };
+  const REFRESH_DEBOUNCE_MS = 2000;
+
+  function notifyRefresh(type: 'images' | 'videos' | 'gps') {
+    const now = Date.now();
+    if (now - lastRefreshNotification[type] > REFRESH_DEBOUNCE_MS) {
+      const messages = {
+        images: 'Images updated',
+        videos: 'Videos updated',
+        gps: 'GPS location updated',
+      };
+      toasts.info(messages[type], type === 'gps' ? 4000 : 3000);
+      lastRefreshNotification[type] = now;
+    }
+  }
+
   // Derived: Combined media list for MediaViewer (images first, then videos)
   const imageMediaList = $derived(images.map(img => ({
     hash: img.imghash, path: img.imgloc,
@@ -717,11 +734,27 @@
 
   function handleOpenBookmark(url: string) { window.electronAPI?.shell?.openExternal(url); }
 
-  // OPT-087: Handle asset-ready events for surgical thumbnail refresh
-  function handleAssetReady(event: CustomEvent<{ type: string; hash: string; paths?: { sm?: string; lg?: string; preview?: string } }>) {
-    const { type, hash, paths } = event.detail;
+  // OPT-087 + OPT-090: Handle asset-ready events for surgical refresh + notifications
+  function handleAssetReady(event: CustomEvent<{
+    type: string;
+    hash?: string;
+    locid?: string;
+    lat?: number;
+    lng?: number;
+    paths?: { sm?: string; lg?: string; preview?: string };
+    proxyPath?: string;
+  }>) {
+    const { type, hash, paths, locid, lat, lng } = event.detail;
 
-    if (type === 'thumbnail' && paths) {
+    // OPT-090: Handle GPS enrichment for current location
+    if (type === 'gps-enriched' && locid === locationId && lat != null && lng != null) {
+      loadLocation();
+      notifyRefresh('gps');
+      return;
+    }
+
+    // Handle thumbnail ready (images and videos)
+    if (type === 'thumbnail' && paths && hash) {
       // Update image thumbnail paths
       const imgIndex = images.findIndex(img => img.imghash === hash);
       if (imgIndex >= 0) {
@@ -732,6 +765,7 @@
           preview_path: paths.preview || images[imgIndex].preview_path,
         };
         images = [...images]; // Trigger reactivity
+        notifyRefresh('images'); // OPT-090
         return;
       }
 
@@ -745,6 +779,16 @@
           preview_path: paths.preview || videos[vidIndex].preview_path,
         };
         videos = [...videos]; // Trigger reactivity
+        notifyRefresh('videos'); // OPT-090
+        return;
+      }
+    }
+
+    // OPT-090: Handle video proxy ready
+    if (type === 'proxy' && hash) {
+      const vidIndex = videos.findIndex(vid => vid.vidhash === hash);
+      if (vidIndex >= 0) {
+        notifyRefresh('videos');
       }
     }
   }
