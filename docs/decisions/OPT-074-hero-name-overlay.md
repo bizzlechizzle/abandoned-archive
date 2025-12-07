@@ -177,7 +177,7 @@ Changes made to `packages/desktop/src/pages/LocationDetail.svelte`:
 1. **Location name moved inside hero image** — Bottom-right position with `#FAFAF8` color
 2. **Removed redundant title** — No longer displayed above the image
 3. **Removed box/border** — Clean edge-to-edge hero with `rounded` (4px) corners only
-4. **Aspect ratio changed** — From 2:1 to 3:1 (ultra-wide cinematic)
+4. **Aspect ratio changed** — From 2:1 to 4:1 (ultra-wide cinematic)
 5. **Sub-location breadcrumb relocated** — Moved to top-left of hero image
 6. **Building tagline relocated** — Moved to top-left of hero image (for host locations)
 
@@ -223,3 +223,26 @@ The focal point editor was incorrectly removed in ADR-071. This update restores 
 - Default is 0.5, 0.5 (center)
 - Applied via CSS `object-position: X% Y%` on hero images
 - Stored per-location and per-sub-location
+
+---
+
+## Update: Bug Fixes (OPT-074c)
+
+**Date:** 2025-12-06
+
+### Issues Fixed
+
+1. **TypeError: Cannot read properties of undefined (reading 'update')**
+   - **Cause:** Used `window.electronAPI.location.update` (singular) instead of `window.electronAPI.locations.update` (plural)
+   - **Fix:** Corrected API calls in LocationDetail.svelte lines 1008 and 1013
+
+2. **Weird gradient/transparent overlay in focal point editor**
+   - **Cause:** MediaViewer.svelte had a white overlay div (`bg-white/60`) in the focal point preview
+   - **Fix:** Removed the unnecessary overlay div (line 1294)
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `LocationDetail.svelte` | Fixed `locations.update` API calls (was `location.update`) |
+| `MediaViewer.svelte` | Removed white overlay from focal point editor preview |

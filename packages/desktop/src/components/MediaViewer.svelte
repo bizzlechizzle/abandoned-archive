@@ -1290,8 +1290,6 @@
               class="absolute inset-0 w-full h-full object-cover"
               style="object-position: {pendingFocalX * 100}% {pendingFocalY * 100}%;"
             />
-            <!-- Solid overlay for preview - no gradients per Braun -->
-            <div class="absolute bottom-0 left-0 right-0 h-16 pointer-events-none bg-white/60"></div>
             <!-- Draggable focal point pin -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div

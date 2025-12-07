@@ -1005,12 +1005,12 @@
             await loadLocation();
           }
         : async (imghash, focalX, focalY) => {
-            await window.electronAPI.location.update(locationId, { hero_imghash: imghash, hero_focal_x: focalX, hero_focal_y: focalY });
+            await window.electronAPI.locations.update(locationId, { hero_imghash: imghash, hero_focal_x: focalX, hero_focal_y: focalY });
             await loadLocation();
           }}
       onSetHostHeroImage={currentSubLocation
         ? async (imghash, focalX, focalY) => {
-            await window.electronAPI.location.update(locationId, { hero_imghash: imghash, hero_focal_x: focalX, hero_focal_y: focalY });
+            await window.electronAPI.locations.update(locationId, { hero_imghash: imghash, hero_focal_x: focalX, hero_focal_y: focalY });
             await loadLocation();
           }
         : undefined}
