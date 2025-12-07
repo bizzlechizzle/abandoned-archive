@@ -97,9 +97,10 @@ export class WorkerPool {
     this.queue = new PQueue({ concurrency: this.concurrency });
 
     // Resolve worker path relative to this module
-    // In production: dist-electron/services/worker-pool.js
-    // Worker: dist-electron/workers/hash.worker.js
-    this.workerPath = path.join(__dirname, '..', 'workers', 'hash.worker.js');
+    // In production: dist-electron/main/*.js (bundled)
+    // Worker: dist-electron/workers/hash.worker.cjs
+    // NOTE: .cjs extension required because package.json has "type": "module"
+    this.workerPath = path.join(__dirname, '..', 'workers', 'hash.worker.cjs');
 
     console.log(`[WorkerPool] Initializing with ${this.concurrency} workers`);
     console.log(`[WorkerPool] Worker path: ${this.workerPath}`);

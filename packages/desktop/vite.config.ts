@@ -85,6 +85,8 @@ export default defineConfig({
         },
       },
       // Worker thread for parallel BLAKE3 hashing
+      // IMPORTANT: Output as .cjs because package.json has "type": "module"
+      // which makes .js files be treated as ESM. Workers need CommonJS.
       {
         entry: 'electron/workers/hash.worker.ts',
         vite: {
@@ -93,7 +95,7 @@ export default defineConfig({
             lib: {
               entry: 'electron/workers/hash.worker.ts',
               formats: ['cjs'],
-              fileName: () => 'hash.worker.js',
+              fileName: () => 'hash.worker.cjs',
             },
             rollupOptions: {
               external: [
