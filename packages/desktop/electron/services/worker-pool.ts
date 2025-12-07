@@ -288,6 +288,7 @@ export class WorkerPool {
         };
 
         // Send task to worker
+        console.log(`[WorkerPool] Sending hash request ${taskId} to worker ${worker.id} for: ${filePath.substring(0, 60)}...`);
         worker.worker.postMessage({
           type: 'hash',
           id: taskId,

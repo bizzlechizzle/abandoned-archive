@@ -139,14 +139,18 @@ if (parentPort) {
   // Handle incoming messages
   parentPort.on('message', async (message: HashRequest) => {
     if (message.type === 'hash') {
+      console.log(`[HashWorker] Received hash request: ${message.id} for ${message.filePath.substring(0, 50)}...`);
       const response: HashResponse = {
         type: 'hash',
         id: message.id,
       };
 
       try {
+        const startTime = Date.now();
         response.hash = await calculateHash(message.filePath);
+        console.log(`[HashWorker] Completed ${message.id} in ${Date.now() - startTime}ms: ${response.hash}`);
       } catch (error) {
+        console.error(`[HashWorker] Error hashing ${message.id}:`, error);
         response.error = error instanceof Error ? error.message : String(error);
       }
 

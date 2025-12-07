@@ -3,6 +3,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import electron from 'vite-plugin-electron';
 import path from 'path';
 import fs from 'fs';
+import { build } from 'esbuild';
 
 /**
  * Custom plugin to copy preload script WITHOUT any bundling/transformation.
@@ -52,12 +53,79 @@ function copyPreloadPlugin(): Plugin {
   };
 }
 
+/**
+ * Custom plugin to build hash worker using esbuild with proper CommonJS output.
+ *
+ * WHY THIS EXISTS:
+ * vite-plugin-electron ignores lib.formats and always outputs ESM syntax
+ * even when we request CJS format. This breaks worker threads which need
+ * pure CommonJS when package.json has "type": "module".
+ *
+ * SOLUTION:
+ * Use esbuild directly to compile the worker to CommonJS format.
+ */
+function buildHashWorkerPlugin(): Plugin {
+  const srcPath = path.resolve(__dirname, 'electron/workers/hash.worker.ts');
+  const destDir = path.resolve(__dirname, 'dist-electron/workers');
+  const destPath = path.join(destDir, 'hash.worker.cjs');
+
+  async function buildWorker() {
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
+    }
+
+    await build({
+      entryPoints: [srcPath],
+      outfile: destPath,
+      bundle: true,
+      platform: 'node',
+      target: 'node20',
+      format: 'cjs', // CRITICAL: Must be CommonJS for worker threads
+      external: [
+        'blake3',       // Native module with WASM fallback
+        'worker_threads',
+        'fs',
+        'child_process',
+        'util',
+        'crypto',
+      ],
+      logLevel: 'info',
+    });
+
+    console.log('[hash-worker] Built hash.worker.cjs with CommonJS format');
+  }
+
+  return {
+    name: 'build-hash-worker',
+    // Build on startup
+    async buildStart() {
+      await buildWorker();
+    },
+    // Watch for changes in dev mode
+    configureServer(server) {
+      // Initial build
+      buildWorker().catch(console.error);
+      // Watch for changes
+      server.watcher.add(srcPath);
+      server.watcher.on('change', async (changedPath) => {
+        if (changedPath === srcPath) {
+          await buildWorker();
+          server.ws.send({ type: 'full-reload' });
+        }
+      });
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     svelte(),
     // Copy preload FIRST, before electron plugin runs
     copyPreloadPlugin(),
-    // Only configure main process - NO preload entry
+    // Build hash worker with esbuild (proper CommonJS output)
+    buildHashWorkerPlugin(),
+    // Only configure main process - NO preload or worker entries
+    // Workers and preload are handled by custom plugins above
     electron([
       {
         entry: 'electron/main/index.ts',
@@ -84,31 +152,7 @@ export default defineConfig({
           },
         },
       },
-      // Worker thread for parallel BLAKE3 hashing
-      // IMPORTANT: Output as .cjs because package.json has "type": "module"
-      // which makes .js files be treated as ESM. Workers need CommonJS.
-      {
-        entry: 'electron/workers/hash.worker.ts',
-        vite: {
-          build: {
-            outDir: 'dist-electron/workers',
-            lib: {
-              entry: 'electron/workers/hash.worker.ts',
-              formats: ['cjs'],
-              fileName: () => 'hash.worker.cjs',
-            },
-            rollupOptions: {
-              external: [
-                'blake3',
-                'worker_threads',
-                'fs',
-                'child_process',
-                'util',
-              ],
-            },
-          },
-        },
-      },
+      // REMOVED: worker entry - handled by buildHashWorkerPlugin instead
       // REMOVED: preload entry - handled by copyPreloadPlugin instead
     ]),
   ],
