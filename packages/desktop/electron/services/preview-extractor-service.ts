@@ -235,6 +235,17 @@ export class PreviewExtractorService {
         return previewPath;
       }
 
+      // No embedded preview found - try LibRaw as last resort (OPT-099)
+      if (this.libRawService.isAvailable() && this.libRawService.canProcess(sourcePath)) {
+        console.log(`[PreviewExtractor] No embedded preview, trying LibRaw render`);
+        const libRawSuccess = await this.libRawService.renderPreview(sourcePath, previewPath);
+
+        if (libRawSuccess) {
+          console.log(`[PreviewExtractor] LibRaw render successful: ${previewPath}`);
+          return previewPath;
+        }
+      }
+
       // No preview found
       console.log(`[PreviewExtractor] No embedded preview found in ${sourcePath}`);
       return null;

@@ -585,7 +585,7 @@
   <!-- Close button -->
   <button
     onclick={onClose}
-    class="absolute top-4 right-4 text-foreground hover:text-braun-600 transition z-10"
+    class="absolute top-2 right-2 p-3 text-foreground hover:text-braun-600 transition z-10"
     aria-label="Close viewer"
   >
     <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
