@@ -158,12 +158,14 @@ describe('Copier', () => {
 
       expect(onFileComplete).toHaveBeenCalledTimes(3);
       // Verify call signature: (file, index, total)
-      expect(onFileComplete).toHaveBeenNthCalledWith(
-        1,
-        expect.objectContaining({ archivePath: expect.any(String) }),
-        0,
-        3
-      );
+      // Note: Parallel processing means files may complete in any order,
+      // so we verify each call has valid structure but don't assert order
+      onFileComplete.mock.calls.forEach((call) => {
+        expect(call[0]).toMatchObject({ archivePath: expect.any(String) });
+        expect(call[1]).toBeGreaterThanOrEqual(0);
+        expect(call[1]).toBeLessThan(3);
+        expect(call[2]).toBe(3);
+      });
     });
 
     it('should await async onFileComplete callback', async () => {

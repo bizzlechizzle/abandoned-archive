@@ -6,7 +6,14 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['electron/**/*.test.ts', 'electron/**/*.spec.ts'],
-    exclude: ['**/node_modules/**', '**/dist/**', '**/dist-electron/**'],
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/dist-electron/**',
+      // Integration tests require Electron context with native modules (better-sqlite3)
+      // Run separately with: pnpm test:integration (requires electron-rebuild first)
+      'electron/__tests__/integration/**',
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

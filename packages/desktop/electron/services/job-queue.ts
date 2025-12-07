@@ -75,6 +75,13 @@ export class JobQueue {
   }
 
   /**
+   * Get the worker ID for this queue instance
+   */
+  getWorkerId(): string {
+    return this.workerId;
+  }
+
+  /**
    * Add a single job to the queue
    */
   async addJob<T>(input: JobInput<T>): Promise<string> {
@@ -346,8 +353,16 @@ export class JobQueue {
   /**
    * Mark a job as failed
    * If max attempts reached, move to dead letter queue
+   * @returns Info about the failure, including whether it moved to DLQ
    */
-  async fail(jobId: string, error: string): Promise<void> {
+  async fail(jobId: string, error: string): Promise<{
+    movedToDeadLetter: boolean;
+    jobId: string;
+    queue: string;
+    error: string;
+    attempts: number;
+    payload?: unknown;
+  }> {
     const now = new Date().toISOString();
 
     // Get current job state
@@ -358,7 +373,13 @@ export class JobQueue {
       .executeTakeFirst();
 
     if (!job) {
-      return;
+      return {
+        movedToDeadLetter: false,
+        jobId,
+        queue: 'unknown',
+        error,
+        attempts: 0,
+      };
     }
 
     const isMaxAttempts = job.attempts >= job.max_attempts;
@@ -400,6 +421,16 @@ export class JobQueue {
       // Record dead letter metric
       metrics.incrementCounter(MetricNames.JOBS_DEAD, 1, { queue: job.queue });
       logger.warn('JobQueue', 'Job moved to dead letter queue', { jobId, queue: job.queue, attempts: job.attempts, error });
+
+      // Return DLQ info for event emission
+      return {
+        movedToDeadLetter: true,
+        jobId: job.job_id,
+        queue: job.queue,
+        error,
+        attempts: job.attempts,
+        payload: JSON.parse(job.payload),
+      };
     } else {
       // Schedule for retry with exponential backoff
       // Delay formula: baseDelay * 2^attempts = 1s, 2s, 4s, 8s, 16s, 32s, max 60s
@@ -432,6 +463,14 @@ export class JobQueue {
 
       // Record retry metric
       metrics.incrementCounter(MetricNames.JOBS_RETRIED, 1, { queue: job.queue });
+
+      return {
+        movedToDeadLetter: false,
+        jobId: job.job_id,
+        queue: job.queue,
+        error,
+        attempts: job.attempts,
+      };
     }
   }
 
@@ -631,15 +670,26 @@ export class JobQueue {
 
 /**
  * Queue names for import system
+ *
+ * Per-file jobs: Run for each imported file
+ * - EXIFTOOL, FFPROBE, THUMBNAIL, VIDEO_PROXY
+ *
+ * Per-location jobs: Run once per location after all files processed
+ * - GPS_ENRICHMENT, LIVE_PHOTO, SRT_TELEMETRY, LOCATION_STATS, BAGIT
  */
 export const IMPORT_QUEUES = {
+  // Per-file jobs
   EXIFTOOL: 'exiftool',
   FFPROBE: 'ffprobe',
   THUMBNAIL: 'thumbnail',
   VIDEO_PROXY: 'video-proxy',
+
+  // Per-location jobs (run after all file jobs complete)
+  GPS_ENRICHMENT: 'gps-enrichment',
   LIVE_PHOTO: 'live-photo',
-  BAGIT: 'bagit',
+  SRT_TELEMETRY: 'srt-telemetry',
   LOCATION_STATS: 'location-stats',
+  BAGIT: 'bagit',
 } as const;
 
 /**

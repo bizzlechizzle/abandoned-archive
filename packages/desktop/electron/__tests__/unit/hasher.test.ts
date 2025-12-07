@@ -6,14 +6,65 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { Hasher, type HasherOptions, type HashedFile } from '../../services/import/hasher';
 import type { ScannedFile } from '../../services/import/scanner';
-import Database from 'better-sqlite3';
-import { Kysely, SqliteDialect } from 'kysely';
-import type { Database as DbType } from '../../main/database.types';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+
+// Store for mock database
+const mockImgHashes = new Set<string>();
+const mockVidHashes = new Set<string>();
+const mockDocHashes = new Set<string>();
+const mockMapHashes = new Set<string>();
+
+// Mock better-sqlite3 before any imports that use it
+vi.mock('better-sqlite3', () => {
+  return {
+    default: vi.fn().mockImplementation(() => ({
+      pragma: vi.fn(),
+      exec: vi.fn().mockImplementation((sql: string) => {
+        // Parse INSERT statements
+        const insertMatch = sql.match(/INSERT INTO (\w+) \(\w+\) VALUES \('([^']+)'\)/);
+        if (insertMatch) {
+          const [, table, hash] = insertMatch;
+          if (table === 'imgs') mockImgHashes.add(hash);
+          if (table === 'vids') mockVidHashes.add(hash);
+          if (table === 'docs') mockDocHashes.add(hash);
+          if (table === 'maps') mockMapHashes.add(hash);
+        }
+      }),
+      prepare: vi.fn().mockReturnValue({
+        get: vi.fn(),
+        run: vi.fn(),
+        all: vi.fn().mockReturnValue([]),
+      }),
+      close: vi.fn(),
+    })),
+  };
+});
+
+// Mock Kysely
+vi.mock('kysely', () => ({
+  Kysely: vi.fn().mockImplementation(() => ({
+    selectFrom: vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          executeTakeFirst: vi.fn().mockImplementation(async () => {
+            // Check mock databases for duplicates
+            const hash = 'a7f3b2c1e9d4f086';
+            if (mockImgHashes.has(hash)) return { imghash: hash };
+            if (mockVidHashes.has(hash)) return { vidhash: hash };
+            if (mockDocHashes.has(hash)) return { dochash: hash };
+            if (mockMapHashes.has(hash)) return { maphash: hash };
+            return null;
+          }),
+        }),
+      }),
+    }),
+    destroy: vi.fn(),
+  })),
+  SqliteDialect: vi.fn(),
+}));
 
 // Mock the worker pool since we're unit testing
 vi.mock('../../services/worker-pool', () => ({
@@ -30,34 +81,47 @@ vi.mock('../../services/worker-pool', () => ({
   }),
 }));
 
+// Import after mocks are set up
+import { Hasher, type HasherOptions, type HashedFile } from '../../services/import/hasher';
+
 describe('Hasher', () => {
-  let sqlite: Database.Database;
-  let db: Kysely<DbType>;
   let hasher: Hasher;
   let tempDir: string;
+  let mockDb: any;
 
   beforeEach(() => {
-    // Create in-memory database
-    sqlite = new Database(':memory:');
+    // Clear mock hash stores
+    mockImgHashes.clear();
+    mockVidHashes.clear();
+    mockDocHashes.clear();
+    mockMapHashes.clear();
 
-    // Create media tables for duplicate detection
-    sqlite.exec(`
-      CREATE TABLE imgs (imghash TEXT PRIMARY KEY);
-      CREATE TABLE vids (vidhash TEXT PRIMARY KEY);
-      CREATE TABLE docs (dochash TEXT PRIMARY KEY);
-      CREATE TABLE maps (maphash TEXT PRIMARY KEY);
-    `);
+    // Create mock db with full chain support
+    mockDb = {
+      selectFrom: vi.fn().mockImplementation((table: string) => ({
+        select: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            execute: vi.fn().mockImplementation(async () => {
+              // Return empty array by default (no duplicates)
+              return [];
+            }),
+            executeTakeFirst: vi.fn().mockImplementation(async () => null),
+          }),
+        }),
+        selectAll: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            execute: vi.fn().mockResolvedValue([]),
+            executeTakeFirst: vi.fn().mockResolvedValue(null),
+          }),
+        }),
+      })),
+    };
 
-    db = new Kysely<DbType>({
-      dialect: new SqliteDialect({ database: sqlite }),
-    });
-
-    hasher = new Hasher(db);
+    hasher = new Hasher(mockDb);
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hasher-test-'));
   });
 
   afterEach(() => {
-    sqlite.close();
     if (fs.existsSync(tempDir)) {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
@@ -65,18 +129,22 @@ describe('Hasher', () => {
   });
 
   function createScannedFile(overrides: Partial<ScannedFile> = {}): ScannedFile {
-    const testPath = path.join(tempDir, 'test.jpg');
+    const filename = overrides.filename || 'test.jpg';
+    const testPath = path.join(tempDir, filename);
     fs.writeFileSync(testPath, 'test content');
 
     return {
       id: 'test-id',
       originalPath: testPath,
-      filename: 'test.jpg',
+      filename,
       extension: '.jpg',
       size: 100,
       mediaType: 'image',
+      isSidecar: false,
+      isRaw: false,
       shouldSkip: false,
       shouldHide: false,
+      baseName: 'test',
       ...overrides,
     };
   }
@@ -108,8 +176,16 @@ describe('Hasher', () => {
     });
 
     it('should detect duplicates from database', async () => {
-      // Insert existing hash into database
-      sqlite.exec(`INSERT INTO imgs (imghash) VALUES ('a7f3b2c1e9d4f086')`);
+      // Update mock to return existing hash (simulate duplicate)
+      mockDb.selectFrom = vi.fn().mockImplementation((table: string) => ({
+        select: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            execute: vi.fn().mockResolvedValue([{ imghash: 'a7f3b2c1e9d4f086' }]),
+            executeTakeFirst: vi.fn().mockResolvedValue({ imghash: 'a7f3b2c1e9d4f086' }),
+          }),
+        }),
+      }));
+      hasher = new Hasher(mockDb);
 
       const files: ScannedFile[] = [
         createScannedFile({ mediaType: 'image' }),
@@ -123,7 +199,20 @@ describe('Hasher', () => {
     });
 
     it('should detect video duplicates', async () => {
-      sqlite.exec(`INSERT INTO vids (vidhash) VALUES ('a7f3b2c1e9d4f086')`);
+      // Update mock to return existing hash (simulate video duplicate)
+      mockDb.selectFrom = vi.fn().mockImplementation((table: string) => ({
+        select: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            execute: vi.fn().mockImplementation(async () => {
+              // Return video hash for vids table
+              if (table === 'vids') return [{ vidhash: 'a7f3b2c1e9d4f086' }];
+              return [];
+            }),
+            executeTakeFirst: vi.fn().mockResolvedValue(null),
+          }),
+        }),
+      }));
+      hasher = new Hasher(mockDb);
 
       const files: ScannedFile[] = [
         createScannedFile({ mediaType: 'video', extension: '.mp4' }),
