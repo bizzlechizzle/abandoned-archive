@@ -130,9 +130,9 @@
             style="width: {$storeProgress.percent}%"
           ></div>
           <!-- Centered text overlay: Step · Filename · Percent -->
-          <div class="absolute inset-0 flex items-center justify-center">
-            <span class="text-xs font-medium text-white mix-blend-difference truncate px-2">
-              {getStepName($storeProgress.percent)} · {$storeProgress.currentFilename || '...'} · {$storeProgress.percent}%
+          <div class="absolute inset-0 flex items-center justify-center px-2">
+            <span class="text-xs font-medium text-white mix-blend-difference whitespace-nowrap overflow-hidden text-ellipsis max-w-full">
+              {getStepName($storeProgress.percent)} · {#if $storeProgress.currentFilename}{$storeProgress.currentFilename.length > 20 ? $storeProgress.currentFilename.slice(0, 17) + '...' : $storeProgress.currentFilename}{:else}...{/if} · {$storeProgress.percent}%
             </span>
           </div>
         </div>

@@ -461,6 +461,11 @@ export function initializeJobWorker(db: Kysely<Database>): void {
     sendToRenderer('jobs:deadLetter', data);
   });
 
+  // OPT-092: Forward GPS enrichment events to renderer
+  workerService.on('location:gps-enriched', (data) => {
+    sendToRenderer('location:gps-enriched', data);
+  });
+
   console.log('[JobWorker] Background job processor initialized');
 }
 

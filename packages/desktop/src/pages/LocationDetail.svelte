@@ -102,21 +102,33 @@
   let sublocTaglineEl = $state<HTMLElement | null>(null);
   let sublocTaglineWraps = $state(false);
 
-  // OPT-090: Debounced notifications for background job completion
-  const lastRefreshNotification = { images: 0, videos: 0, gps: 0 };
-  const REFRESH_DEBOUNCE_MS = 2000;
+  // OPT-092: Trailing debounce for background job notifications
+  // Accumulate events, show ONE toast per category after 3s of quiet
+  const pendingNotifications = { images: false, videos: false, gps: false };
+  let notificationTimer: ReturnType<typeof setTimeout> | null = null;
+  const NOTIFICATION_DELAY_MS = 3000;
 
   function notifyRefresh(type: 'images' | 'videos' | 'gps') {
-    const now = Date.now();
-    if (now - lastRefreshNotification[type] > REFRESH_DEBOUNCE_MS) {
-      const messages = {
-        images: 'Images updated',
-        videos: 'Videos updated',
-        gps: 'GPS location updated',
-      };
-      toasts.info(messages[type], type === 'gps' ? 4000 : 3000);
-      lastRefreshNotification[type] = now;
-    }
+    pendingNotifications[type] = true;
+
+    // Reset timer on each event (trailing debounce)
+    if (notificationTimer) clearTimeout(notificationTimer);
+
+    notificationTimer = setTimeout(() => {
+      if (pendingNotifications.images) {
+        toasts.info('Images updated', 3000);
+        pendingNotifications.images = false;
+      }
+      if (pendingNotifications.videos) {
+        toasts.info('Videos updated', 3000);
+        pendingNotifications.videos = false;
+      }
+      if (pendingNotifications.gps) {
+        toasts.info('GPS location updated', 4000);
+        pendingNotifications.gps = false;
+      }
+      notificationTimer = null;
+    }, NOTIFICATION_DELAY_MS);
   }
 
   // Derived: Combined media list for MediaViewer (images first, then videos)
@@ -834,8 +846,10 @@
   });
 
   // OPT-087: Cleanup asset-ready event listener to prevent memory leaks
+  // OPT-092: Also cleanup notification timer
   onDestroy(() => {
     window.removeEventListener('asset-ready', handleAssetReady as EventListener);
+    if (notificationTimer) clearTimeout(notificationTimer);
   });
 </script>
 
