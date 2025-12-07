@@ -1783,10 +1783,11 @@ function runMigrations(sqlite: Database.Database): void {
       `);
 
       // Import sessions table for tracking and resumption
+      // NOTE: locid has ON DELETE CASCADE - see Migration 54 for fix applied to existing DBs
       sqlite.exec(`
         CREATE TABLE import_sessions (
           session_id TEXT PRIMARY KEY,
-          locid TEXT NOT NULL REFERENCES locs(locid),
+          locid TEXT NOT NULL REFERENCES locs(locid) ON DELETE CASCADE,
           status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'scanning', 'hashing', 'copying', 'validating', 'finalizing', 'completed', 'cancelled', 'failed')),
           source_paths TEXT NOT NULL,
           copy_strategy TEXT,
@@ -2021,6 +2022,73 @@ function runMigrations(sqlite: Database.Database): void {
       }
 
       console.log(`Migration 53 completed: Deleted ${deletedFiles} proxy files, ${oldProxies.count} DB records. Proxies will regenerate on playback.`);
+    }
+
+    // Migration 54: Fix import_sessions FK constraint (OPT-084)
+    // Migration 49 created import_sessions with locid REFERENCES locs(locid) but
+    // MISSING "ON DELETE CASCADE". This causes FOREIGN KEY constraint failures
+    // when deleting locations that have import session records.
+    // SQLite requires table rebuild to modify foreign key constraints.
+    const importSessionsFkCheck = sqlite.prepare(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='import_sessions'"
+    ).get() as { sql: string } | undefined;
+    const needsImportSessionsCascadeFix = importSessionsFkCheck?.sql &&
+      !importSessionsFkCheck.sql.includes('ON DELETE CASCADE');
+
+    if (needsImportSessionsCascadeFix) {
+      console.log('Running migration 54: Adding ON DELETE CASCADE to import_sessions (OPT-084)');
+
+      // Disable FK checks during table rebuild
+      sqlite.exec('PRAGMA foreign_keys = OFF');
+
+      try {
+        // Get current columns
+        const sessionCols = sqlite.prepare('PRAGMA table_info(import_sessions)').all() as Array<{
+          name: string; type: string; notnull: number; dflt_value: string | null; pk: number
+        }>;
+        const sessionColNames = sessionCols.map(c => c.name).join(', ');
+
+        // Rebuild table with proper CASCADE
+        sqlite.exec(`
+          CREATE TABLE import_sessions_new (
+            session_id TEXT PRIMARY KEY,
+            locid TEXT NOT NULL REFERENCES locs(locid) ON DELETE CASCADE,
+            status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'scanning', 'hashing', 'copying', 'validating', 'finalizing', 'completed', 'cancelled', 'failed')),
+            source_paths TEXT NOT NULL,
+            copy_strategy TEXT,
+            total_files INTEGER DEFAULT 0,
+            processed_files INTEGER DEFAULT 0,
+            duplicate_files INTEGER DEFAULT 0,
+            error_files INTEGER DEFAULT 0,
+            total_bytes INTEGER DEFAULT 0,
+            processed_bytes INTEGER DEFAULT 0,
+            started_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            completed_at TEXT,
+            error TEXT,
+            can_resume INTEGER DEFAULT 1,
+            last_step INTEGER DEFAULT 0,
+            scan_result TEXT,
+            hash_results TEXT,
+            copy_results TEXT,
+            validation_results TEXT
+          )
+        `);
+
+        sqlite.exec(`INSERT INTO import_sessions_new (${sessionColNames}) SELECT ${sessionColNames} FROM import_sessions`);
+        sqlite.exec('DROP TABLE import_sessions');
+        sqlite.exec('ALTER TABLE import_sessions_new RENAME TO import_sessions');
+
+        // Recreate indexes
+        sqlite.exec(`
+          CREATE INDEX IF NOT EXISTS idx_import_sessions_status ON import_sessions(status) WHERE status NOT IN ('completed', 'cancelled');
+          CREATE INDEX IF NOT EXISTS idx_import_sessions_locid ON import_sessions(locid)
+        `);
+
+        console.log('Migration 54 completed: import_sessions now has ON DELETE CASCADE');
+      } finally {
+        // Re-enable FK checks
+        sqlite.exec('PRAGMA foreign_keys = ON');
+      }
     }
   } catch (error) {
     console.error('Error running migrations:', error);
