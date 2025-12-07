@@ -296,7 +296,7 @@
   </div>
 
   <!-- SECTION 2: Address (stacked second, single line) -->
-  <div class="px-8 mt-5">
+  <div class="px-8 mt-4">
     <h3 class="section-title mb-2">Address</h3>
 
     {#if hasAddress}
@@ -342,7 +342,7 @@
   </div>
 
   <!-- SECTION 3: Local (DECISION-018: Horizontal dash-separated format) -->
-  <div class="px-8 mt-5">
+  <div class="px-8 mt-4">
     <h3 class="section-title mb-2">Local</h3>
 
     {#if hasLocalData}
@@ -386,7 +386,7 @@
   </div>
 
   <!-- SECTION 4: Region (DECISION-018: Horizontal dash-separated format) -->
-  <div class="px-8 mt-5">
+  <div class="px-8 mt-4">
     <h3 class="section-title mb-2">Region</h3>
 
     {#if hasRegionData}
@@ -431,7 +431,7 @@
 
   <!-- SECTION 5: Mini Map (full width, smaller) - Hidden when no GPS -->
   <!-- Campus map shows host location + all sub-locations with GPS -->
-  <div class="px-8 mt-5 pb-6">
+  <div class="px-8 mt-4 pb-6">
     {#if hasGps}
       <div class="relative rounded overflow-hidden border border-braun-200 group" style="aspect-ratio: 2 / 1;">
         <Map

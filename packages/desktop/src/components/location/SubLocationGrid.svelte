@@ -80,10 +80,10 @@
             {/if}
 
             <!-- Permanent dark overlay for text legibility -->
-            <div class="absolute inset-0 pointer-events-none" style="background: rgba(69,69,69,0.25);"></div>
+            <div class="absolute inset-0 pointer-events-none bg-braun-900/25"></div>
 
             <!-- Subtle hover overlay -->
-            <div class="hover-overlay absolute inset-0 opacity-0 transition-opacity duration-300 pointer-events-none" style="background: rgba(28,28,26,0.15);"></div>
+            <div class="hover-overlay absolute inset-0 opacity-0 transition-opacity duration-300 pointer-events-none bg-braun-900/15"></div>
 
             <!-- Cinematic centered title -->
             <div class="absolute inset-0 flex items-center justify-center">
