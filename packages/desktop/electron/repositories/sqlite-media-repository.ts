@@ -1,6 +1,16 @@
 import { Kysely } from 'kysely';
 import type { Database, ImgsTable, VidsTable, DocsTable } from '../main/database.types';
 
+/**
+ * OPT-094: Options for filtering media queries by sub-location
+ * - undefined: Return all media (backward compatible)
+ * - null: Return only host location media (subid IS NULL)
+ * - string: Return only that sub-location's media (subid = value)
+ */
+export interface MediaQueryOptions {
+  subid?: string | null;
+}
+
 export interface MediaImage {
   imghash: string;
   imgnam: string;
@@ -132,39 +142,64 @@ export class SQLiteMediaRepository {
     return row;
   }
 
-  async findImagesByLocation(locid: string): Promise<MediaImage[]> {
-    const rows = await this.db
+  /**
+   * OPT-094: Find images by location with optional sub-location filtering
+   * @param locid - Location ID
+   * @param options - Optional filtering: undefined=all, null=host only, string=specific sub-location
+   */
+  async findImagesByLocation(locid: string, options?: MediaQueryOptions): Promise<MediaImage[]> {
+    let query = this.db
       .selectFrom('imgs')
       .selectAll()
-      .where('locid', '=', locid)
-      .orderBy('imgadd', 'desc')
-      .execute();
+      .where('locid', '=', locid);
+
+    // OPT-094: Apply subid filtering
+    if (options?.subid === null) {
+      // Host location: only media with no sub-location
+      query = query.where('subid', 'is', null);
+    } else if (options?.subid !== undefined) {
+      // Specific sub-location
+      query = query.where('subid', '=', options.subid);
+    }
+    // If options.subid is undefined, return all (backward compatible)
+
+    const rows = await query.orderBy('imgadd', 'desc').execute();
     return rows;
   }
 
   /**
    * OPT-037: Find images by location with pagination
+   * OPT-094: Added subid filtering support
    * For infinite scroll / lazy loading in galleries
    */
-  async findImagesByLocationPaginated(locid: string, limit: number, offset: number): Promise<{
+  async findImagesByLocationPaginated(locid: string, limit: number, offset: number, options?: MediaQueryOptions): Promise<{
     images: MediaImage[];
     total: number;
     hasMore: boolean;
   }> {
+    // Build base queries
+    let dataQuery = this.db
+      .selectFrom('imgs')
+      .selectAll()
+      .where('locid', '=', locid);
+
+    let countQuery = this.db
+      .selectFrom('imgs')
+      .select((eb) => eb.fn.countAll().as('count'))
+      .where('locid', '=', locid);
+
+    // OPT-094: Apply subid filtering to both queries
+    if (options?.subid === null) {
+      dataQuery = dataQuery.where('subid', 'is', null);
+      countQuery = countQuery.where('subid', 'is', null);
+    } else if (options?.subid !== undefined) {
+      dataQuery = dataQuery.where('subid', '=', options.subid);
+      countQuery = countQuery.where('subid', '=', options.subid);
+    }
+
     const [rows, countResult] = await Promise.all([
-      this.db
-        .selectFrom('imgs')
-        .selectAll()
-        .where('locid', '=', locid)
-        .orderBy('imgadd', 'desc')
-        .limit(limit)
-        .offset(offset)
-        .execute(),
-      this.db
-        .selectFrom('imgs')
-        .select((eb) => eb.fn.countAll().as('count'))
-        .where('locid', '=', locid)
-        .executeTakeFirst(),
+      dataQuery.orderBy('imgadd', 'desc').limit(limit).offset(offset).execute(),
+      countQuery.executeTakeFirst(),
     ]);
 
     const total = Number(countResult?.count || 0);
@@ -204,13 +239,23 @@ export class SQLiteMediaRepository {
     return row;
   }
 
-  async findVideosByLocation(locid: string): Promise<MediaVideo[]> {
-    const rows = await this.db
+  /**
+   * OPT-094: Find videos by location with optional sub-location filtering
+   */
+  async findVideosByLocation(locid: string, options?: MediaQueryOptions): Promise<MediaVideo[]> {
+    let query = this.db
       .selectFrom('vids')
       .selectAll()
-      .where('locid', '=', locid)
-      .orderBy('vidadd', 'desc')
-      .execute();
+      .where('locid', '=', locid);
+
+    // OPT-094: Apply subid filtering
+    if (options?.subid === null) {
+      query = query.where('subid', 'is', null);
+    } else if (options?.subid !== undefined) {
+      query = query.where('subid', '=', options.subid);
+    }
+
+    const rows = await query.orderBy('vidadd', 'desc').execute();
     return rows;
   }
 
@@ -243,13 +288,23 @@ export class SQLiteMediaRepository {
     return row;
   }
 
-  async findDocumentsByLocation(locid: string): Promise<MediaDocument[]> {
-    const rows = await this.db
+  /**
+   * OPT-094: Find documents by location with optional sub-location filtering
+   */
+  async findDocumentsByLocation(locid: string, options?: MediaQueryOptions): Promise<MediaDocument[]> {
+    let query = this.db
       .selectFrom('docs')
       .selectAll()
-      .where('locid', '=', locid)
-      .orderBy('docadd', 'desc')
-      .execute();
+      .where('locid', '=', locid);
+
+    // OPT-094: Apply subid filtering
+    if (options?.subid === null) {
+      query = query.where('subid', 'is', null);
+    } else if (options?.subid !== undefined) {
+      query = query.where('subid', '=', options.subid);
+    }
+
+    const rows = await query.orderBy('docadd', 'desc').execute();
     return rows;
   }
 
@@ -264,15 +319,20 @@ export class SQLiteMediaRepository {
 
   // ==================== GENERAL ====================
 
-  async findAllMediaByLocation(locid: string): Promise<{
+  /**
+   * OPT-094: Find all media by location with optional sub-location filtering
+   * @param locid - Location ID
+   * @param options - Optional filtering: undefined=all, null=host only, string=specific sub-location
+   */
+  async findAllMediaByLocation(locid: string, options?: MediaQueryOptions): Promise<{
     images: MediaImage[];
     videos: MediaVideo[];
     documents: MediaDocument[];
   }> {
     const [images, videos, documents] = await Promise.all([
-      this.findImagesByLocation(locid),
-      this.findVideosByLocation(locid),
-      this.findDocumentsByLocation(locid),
+      this.findImagesByLocation(locid, options),
+      this.findVideosByLocation(locid, options),
+      this.findDocumentsByLocation(locid, options),
     ]);
 
     return { images, videos, documents };
@@ -307,13 +367,22 @@ export class SQLiteMediaRepository {
 
   /**
    * Get images for a specific location (for location-specific fixes)
+   * OPT-094: Added subid filtering support
    */
-  async getImagesByLocation(locid: string): Promise<Array<{ imghash: string; imgloc: string; preview_path: string | null }>> {
-    const rows = await this.db
+  async getImagesByLocation(locid: string, options?: MediaQueryOptions): Promise<Array<{ imghash: string; imgloc: string; preview_path: string | null }>> {
+    let query = this.db
       .selectFrom('imgs')
       .select(['imghash', 'imgloc', 'preview_path'])
-      .where('locid', '=', locid)
-      .execute();
+      .where('locid', '=', locid);
+
+    // OPT-094: Apply subid filtering
+    if (options?.subid === null) {
+      query = query.where('subid', 'is', null);
+    } else if (options?.subid !== undefined) {
+      query = query.where('subid', '=', options.subid);
+    }
+
+    const rows = await query.execute();
     return rows;
   }
 
@@ -447,13 +516,22 @@ export class SQLiteMediaRepository {
 
   /**
    * Get videos for a specific location (for location-specific fixes)
+   * OPT-094: Added subid filtering support
    */
-  async getVideosByLocation(locid: string): Promise<Array<{ vidhash: string; vidloc: string }>> {
-    const rows = await this.db
+  async getVideosByLocation(locid: string, options?: MediaQueryOptions): Promise<Array<{ vidhash: string; vidloc: string }>> {
+    let query = this.db
       .selectFrom('vids')
       .select(['vidhash', 'vidloc'])
-      .where('locid', '=', locid)
-      .execute();
+      .where('locid', '=', locid);
+
+    // OPT-094: Apply subid filtering
+    if (options?.subid === null) {
+      query = query.where('subid', 'is', null);
+    } else if (options?.subid !== undefined) {
+      query = query.where('subid', '=', options.subid);
+    }
+
+    const rows = await query.execute();
     return rows;
   }
 
@@ -550,25 +628,43 @@ export class SQLiteMediaRepository {
 
   /**
    * Get all images by location with their original filenames (for Live Photo matching)
+   * OPT-094: Added subid filtering support
    */
-  async getImageFilenamesByLocation(locid: string): Promise<Array<{ imghash: string; imgnamo: string }>> {
-    const rows = await this.db
+  async getImageFilenamesByLocation(locid: string, options?: MediaQueryOptions): Promise<Array<{ imghash: string; imgnamo: string }>> {
+    let query = this.db
       .selectFrom('imgs')
       .select(['imghash', 'imgnamo'])
-      .where('locid', '=', locid)
-      .execute();
+      .where('locid', '=', locid);
+
+    // OPT-094: Apply subid filtering
+    if (options?.subid === null) {
+      query = query.where('subid', 'is', null);
+    } else if (options?.subid !== undefined) {
+      query = query.where('subid', '=', options.subid);
+    }
+
+    const rows = await query.execute();
     return rows;
   }
 
   /**
    * Get all videos by location with their original filenames (for Live Photo matching)
+   * OPT-094: Added subid filtering support
    */
-  async getVideoFilenamesByLocation(locid: string): Promise<Array<{ vidhash: string; vidnamo: string }>> {
-    const rows = await this.db
+  async getVideoFilenamesByLocation(locid: string, options?: MediaQueryOptions): Promise<Array<{ vidhash: string; vidnamo: string }>> {
+    let query = this.db
       .selectFrom('vids')
       .select(['vidhash', 'vidnamo'])
-      .where('locid', '=', locid)
-      .execute();
+      .where('locid', '=', locid);
+
+    // OPT-094: Apply subid filtering
+    if (options?.subid === null) {
+      query = query.where('subid', 'is', null);
+    } else if (options?.subid !== undefined) {
+      query = query.where('subid', '=', options.subid);
+    }
+
+    const rows = await query.execute();
     return rows;
   }
 

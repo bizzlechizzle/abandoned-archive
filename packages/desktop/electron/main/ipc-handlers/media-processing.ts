@@ -37,10 +37,35 @@ export function registerMediaProcessingHandlers(
     return result.value;
   };
 
-  ipcMain.handle('media:findByLocation', async (_event, locid: unknown) => {
+  /**
+   * OPT-094: Find media by location with optional sub-location filtering
+   * Supports both old API (string locid) and new API (object with subid)
+   * - Old: media:findByLocation(locid) - returns all media (backward compatible)
+   * - New: media:findByLocation({ locid, subid: null }) - returns host media only
+   * - New: media:findByLocation({ locid, subid: 'uuid' }) - returns sub-location media only
+   */
+  ipcMain.handle('media:findByLocation', async (_event, params: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(locid);
-      return await mediaRepo.findAllMediaByLocation(validatedId);
+      let locid: string;
+      let subid: string | null | undefined;
+
+      // Support both old (string) and new (object) call signatures
+      if (typeof params === 'string') {
+        // Backward compatible: media:findByLocation(locid)
+        locid = z.string().uuid().parse(params);
+        subid = undefined; // Return all media
+      } else {
+        // New API: media:findByLocation({ locid, subid })
+        const schema = z.object({
+          locid: z.string().uuid(),
+          subid: z.string().uuid().nullable().optional(),
+        });
+        const validated = schema.parse(params);
+        locid = validated.locid;
+        subid = validated.subid;
+      }
+
+      return await mediaRepo.findAllMediaByLocation(locid, { subid });
     } catch (error) {
       console.error('Error finding media by location:', error);
       if (error instanceof z.ZodError) {
@@ -53,6 +78,7 @@ export function registerMediaProcessingHandlers(
 
   /**
    * OPT-039: Paginated image loading for locations with many images
+   * OPT-094: Added subid filtering support
    * Returns a chunk of images plus total count and hasMore flag
    */
   ipcMain.handle('media:findImagesPaginated', async (_event, params: unknown) => {
@@ -61,9 +87,10 @@ export function registerMediaProcessingHandlers(
         locid: z.string().uuid(),
         limit: z.number().min(1).max(500).default(50),
         offset: z.number().min(0).default(0),
+        subid: z.string().uuid().nullable().optional(), // OPT-094
       });
-      const { locid, limit, offset } = schema.parse(params);
-      return await mediaRepo.findImagesByLocationPaginated(locid, limit, offset);
+      const { locid, limit, offset, subid } = schema.parse(params);
+      return await mediaRepo.findImagesByLocationPaginated(locid, limit, offset, { subid });
     } catch (error) {
       console.error('Error finding paginated images:', error);
       if (error instanceof z.ZodError) {

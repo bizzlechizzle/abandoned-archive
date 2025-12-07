@@ -326,13 +326,21 @@ export interface ElectronAPI {
     }) => void) => () => void;
     onImportProgress: (callback: (progress: { current: number; total: number; filename?: string; importId?: string }) => void) => () => void;
     cancelImport: (importId: string) => Promise<{ success: boolean; message: string }>;
-    findByLocation: (locid: string) => Promise<{
+    /**
+     * OPT-094: Find media by location with optional sub-location filtering
+     * @param params - Either locid string (backward compat) or object with locid and optional subid
+     * - subid undefined: return all media (backward compatible)
+     * - subid null: return only host location media
+     * - subid string: return only that sub-location's media
+     */
+    findByLocation: (params: string | { locid: string; subid?: string | null }) => Promise<{
       images: unknown[];
       videos: unknown[];
       documents: unknown[];
     }>;
     // OPT-039: Paginated image loading for scale
-    findImagesPaginated: (params: { locid: string; limit?: number; offset?: number }) => Promise<{
+    // OPT-094: Added subid filtering support
+    findImagesPaginated: (params: { locid: string; limit?: number; offset?: number; subid?: string | null }) => Promise<{
       images: unknown[];
       total: number;
       hasMore: boolean;

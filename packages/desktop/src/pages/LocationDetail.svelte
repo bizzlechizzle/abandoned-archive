@@ -218,8 +218,18 @@
   async function loadLocation() {
     try {
       loading = true; error = null;
-      const [loc, media, sublocs] = await Promise.all([
+
+      // OPT-094: Server-side filtering for sub-location media
+      // - subId provided (viewing sub-location): pass subid to get that sub's media
+      // - subId null (viewing host/regular): pass null to get host-level media (subid IS NULL)
+      // This works for both host locations (returns campus-level) and regular locations (all media has subid=null)
+      const querySubid = subId || null;
+
+      const [loc, media, allMedia, sublocs] = await Promise.all([
         window.electronAPI.locations.findById(locationId),
+        // Filtered media for display (server-side filtering)
+        window.electronAPI.media.findByLocation({ locid: locationId, subid: querySubid }),
+        // All media for author extraction (Issue 3 - needs ALL media including sub-location)
         window.electronAPI.media.findByLocation(locationId),
         window.electronAPI.sublocations.findWithHeroImages(locationId),
       ]);
@@ -240,28 +250,21 @@
         currentSubLocation = null;
       }
 
-      if (media) {
-        // Issue 3: Store all media for author extraction (used by LocationInfo)
-        allImagesForAuthors = (media.images as MediaImage[]) || [];
-        allVideosForAuthors = (media.videos as MediaVideo[]) || [];
-        allDocumentsForAuthors = (media.documents as MediaDocument[]) || [];
+      // Issue 3: Store all media for author extraction (used by LocationInfo)
+      if (allMedia) {
+        allImagesForAuthors = (allMedia.images as MediaImage[]) || [];
+        allVideosForAuthors = (allMedia.videos as MediaVideo[]) || [];
+        allDocumentsForAuthors = (allMedia.documents as MediaDocument[]) || [];
+      }
 
-        if (subId) {
-          // Viewing a sub-location: filter to only media linked to this sub-location
-          images = ((media.images as MediaImage[]) || []).filter(img => img.subid === subId);
-          videos = ((media.videos as MediaVideo[]) || []).filter(vid => vid.subid === subId);
-          documents = ((media.documents as MediaDocument[]) || []).filter(doc => doc.subid === subId);
-        } else if (sublocations.length > 0) {
-          // Host location: only show media NOT linked to sub-locations (campus-level)
-          images = ((media.images as MediaImage[]) || []).filter(img => !img.subid);
-          videos = ((media.videos as MediaVideo[]) || []).filter(vid => !vid.subid);
-          documents = ((media.documents as MediaDocument[]) || []).filter(doc => !doc.subid);
-        } else {
-          // Regular location: show all media
-          images = (media.images as MediaImage[]) || [];
-          videos = (media.videos as MediaVideo[]) || [];
-          documents = (media.documents as MediaDocument[]) || [];
-        }
+      // OPT-094: Server-side filtering - no client-side filtering needed
+      // Server returns exact data based on subid parameter:
+      // - subid = 'uuid' → returns only that sub-location's media
+      // - subid = null → returns only host-level media (subid IS NULL in DB)
+      if (media) {
+        images = (media.images as MediaImage[]) || [];
+        videos = (media.videos as MediaVideo[]) || [];
+        documents = (media.documents as MediaDocument[]) || [];
       }
     } catch (err) {
       console.error('Error loading location:', err);

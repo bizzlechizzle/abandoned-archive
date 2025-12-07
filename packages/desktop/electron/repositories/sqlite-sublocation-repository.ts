@@ -4,7 +4,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { Database, SlocsTable } from '../main/database.types';
 import { MediaPathService } from '../services/media-path-service';
-import { getLogger } from '../services/logger';
+import { getLogger } from '../services/logger-service';
 
 /**
  * SubLocation entity for application use
