@@ -4,7 +4,7 @@
  * 5-step pipeline for file import:
  * 1. Scanner - File discovery and analysis
  * 2. Hasher - Parallel BLAKE3 hashing
- * 3. Copier - Atomic file copy (hardlink/reflink/copy)
+ * 3. Copier - Atomic file copy (OPT-082: pure copy only)
  * 4. Validator - Post-copy integrity verification
  * 5. Finalizer - Database commit and job queue population
  *

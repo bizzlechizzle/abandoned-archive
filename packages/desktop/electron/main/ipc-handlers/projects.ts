@@ -26,7 +26,8 @@ export function registerProjectsHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -39,7 +40,8 @@ export function registerProjectsHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -52,7 +54,8 @@ export function registerProjectsHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -61,7 +64,8 @@ export function registerProjectsHandlers(db: Kysely<Database>) {
       return await projectsRepo.findAll();
     } catch (error) {
       console.error('Error finding all projects:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -71,7 +75,8 @@ export function registerProjectsHandlers(db: Kysely<Database>) {
       return await projectsRepo.findRecent(validatedLimit);
     } catch (error) {
       console.error('Error finding recent projects:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -81,7 +86,8 @@ export function registerProjectsHandlers(db: Kysely<Database>) {
       return await projectsRepo.findTopByLocationCount(validatedLimit);
     } catch (error) {
       console.error('Error finding top projects:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -94,7 +100,8 @@ export function registerProjectsHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -112,7 +119,8 @@ export function registerProjectsHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -125,7 +133,8 @@ export function registerProjectsHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -139,7 +148,8 @@ export function registerProjectsHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -153,7 +163,8 @@ export function registerProjectsHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -167,7 +178,8 @@ export function registerProjectsHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 }

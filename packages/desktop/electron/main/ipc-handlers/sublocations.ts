@@ -29,7 +29,8 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -42,7 +43,8 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -55,7 +57,8 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -68,7 +71,8 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -94,7 +98,8 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -107,7 +112,8 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -121,7 +127,8 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -136,7 +143,8 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -149,7 +157,8 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -170,7 +179,8 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -183,7 +193,8 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -196,7 +207,8 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -209,7 +221,8 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 

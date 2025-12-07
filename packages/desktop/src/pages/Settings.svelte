@@ -12,7 +12,6 @@
   }
 
   let archivePath = $state('');
-  let deleteOriginals = $state(false);
   let currentUserId = $state<string | null>(null);
   let currentUsername = $state('default');
   let importMap = $state(true);
@@ -87,13 +86,10 @@
 
   // PIN verification modal state
   let showPinModal = $state(false);
-  let pinAction = $state<'archive' | 'deleteOnImport' | 'startupPin' | null>(null);
+  let pinAction = $state<'archive' | 'startupPin' | null>(null);
   let pinInput = $state('');
   let pinError = $state('');
   let pinVerifying = $state(false);
-
-  // Delete warning modal state
-  let showDeleteWarning = $state(false);
 
   // Location picker modal state
   interface LocationBasic {
@@ -246,7 +242,6 @@
       const settings = await window.electronAPI.settings.getAll();
 
       archivePath = settings.archive_folder || '';
-      deleteOriginals = settings.delete_on_import === 'true';
       currentUserId = settings.current_user_id || null;
       currentUsername = settings.current_user || 'default';
       appMode = (settings.app_mode as 'single' | 'multi') || 'single';
@@ -1214,35 +1209,12 @@
     }
   }
 
-  function executePinAction(action: 'archive' | 'deleteOnImport' | 'startupPin') {
+  function executePinAction(action: 'archive' | 'startupPin') {
     if (action === 'archive') {
       selectArchiveFolder();
-    } else if (action === 'deleteOnImport') {
-      // If turning ON delete on import, show warning first
-      if (!deleteOriginals) {
-        showDeleteWarning = true;
-      } else {
-        // Turning off, no warning needed
-        toggleDeleteOnImport();
-      }
     } else if (action === 'startupPin') {
       toggleRequireLogin();
     }
-  }
-
-  async function toggleDeleteOnImport() {
-    deleteOriginals = !deleteOriginals;
-    showDeleteWarning = false;
-    // Auto-save the setting
-    if (window.electronAPI?.settings) {
-      await window.electronAPI.settings.set('delete_on_import', deleteOriginals.toString());
-      saveMessage = deleteOriginals ? 'Files will be deleted after import' : 'Original files will be preserved';
-      setTimeout(() => saveMessage = '', 3000);
-    }
-  }
-
-  function cancelDeleteWarning() {
-    showDeleteWarning = false;
   }
 
   // Location picker modal helpers
@@ -2098,17 +2070,6 @@
             </button>
           </div>
 
-          <!-- Delete on Import Row -->
-          <div class="flex items-center justify-between py-2 border-b border-braun-100">
-            <span class="text-sm font-medium text-braun-700">Delete Original Files on Import</span>
-            <button
-              onclick={() => requestPinForAction('deleteOnImport')}
-              class="text-sm text-braun-900 hover:underline"
-            >
-              edit
-            </button>
-          </div>
-
           <!-- Startup PIN Row -->
           <div class="flex items-center justify-between py-2 border-b border-braun-100">
             <span class="text-sm font-medium text-braun-700">Startup PIN Required</span>
@@ -2827,49 +2788,6 @@
           class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
         >
           {pinVerifying ? 'Verifying...' : 'Confirm'}
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
-
-<!-- Delete Warning Modal -->
-{#if showDeleteWarning}
-  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-white rounded border border-braun-300 max-w-md w-full mx-4">
-      <!-- Header -->
-      <div class="p-4 border-b flex items-center gap-3">
-        <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-          <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-        </div>
-        <h2 class="text-lg font-semibold text-foreground">Permanent File Deletion</h2>
-      </div>
-
-      <!-- Content -->
-      <div class="p-4">
-        <p class="text-sm text-braun-700 mb-3">
-          Enabling this setting will <strong class="text-red-600">permanently delete original files</strong> after they are imported into the archive.
-        </p>
-        <div class="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-700">
-          <strong>Warning:</strong> There is no way to recover deleted files from this software. Make sure you have backups before enabling this feature.
-        </div>
-      </div>
-
-      <!-- Footer -->
-      <div class="p-4 border-t bg-braun-50 rounded-b flex justify-end gap-2">
-        <button
-          onclick={cancelDeleteWarning}
-          class="px-4 py-2 bg-braun-100 text-braun-700 rounded hover:bg-braun-200 transition"
-        >
-          Cancel
-        </button>
-        <button
-          onclick={toggleDeleteOnImport}
-          class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition"
-        >
-          Enable Deletion
         </button>
       </div>
     </div>

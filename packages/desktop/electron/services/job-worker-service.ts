@@ -72,16 +72,17 @@ export class JobWorkerService extends EventEmitter {
 
   /**
    * Set up default queue configurations
+   * Per Import Spec v2.0 concurrency targets
    */
   private setupDefaultQueues(): void {
-    // ExifTool queue - moderate concurrency (stay-open mode handles multiple)
+    // ExifTool queue - 4 workers (spec: stay-open mode handles multiple)
     this.registerQueue(IMPORT_QUEUES.EXIFTOOL, 4, this.handleExifToolJob.bind(this) as JobHandler);
 
-    // FFprobe queue - moderate concurrency
-    this.registerQueue(IMPORT_QUEUES.FFPROBE, 4, this.handleFFprobeJob.bind(this) as JobHandler);
+    // FFprobe queue - 2 workers (spec: FFprobe is heavier than ExifTool)
+    this.registerQueue(IMPORT_QUEUES.FFPROBE, 2, this.handleFFprobeJob.bind(this) as JobHandler);
 
-    // Thumbnail queue - CPU-bound, limit concurrency
-    this.registerQueue(IMPORT_QUEUES.THUMBNAIL, 2, this.handleThumbnailJob.bind(this) as JobHandler);
+    // Thumbnail queue - 4 workers for photos, 2 for videos (spec)
+    this.registerQueue(IMPORT_QUEUES.THUMBNAIL, 4, this.handleThumbnailJob.bind(this) as JobHandler);
 
     // Video proxy queue - heavy, low concurrency
     this.registerQueue(IMPORT_QUEUES.VIDEO_PROXY, 1, this.handleVideoProxyJob.bind(this) as JobHandler);

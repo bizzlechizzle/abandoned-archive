@@ -44,9 +44,49 @@ function getMainWindow(): BrowserWindow | null {
  * Send event to renderer
  */
 function sendToRenderer(channel: string, data: unknown): void {
+  console.log('[TRACE sendToRenderer] channel:', channel);
   const window = getMainWindow();
   if (window && !window.isDestroyed()) {
-    window.webContents.send(channel, data);
+    console.log('[TRACE sendToRenderer] About to safeSerialize for channel:', channel);
+    try {
+      const serialized = safeSerialize(data);
+      console.log('[TRACE sendToRenderer] safeSerialize OK, calling webContents.send...');
+      window.webContents.send(channel, serialized);
+      console.log('[TRACE sendToRenderer] webContents.send completed for channel:', channel);
+    } catch (err) {
+      console.error('[TRACE sendToRenderer] FAILED for channel:', channel, err);
+      throw err;
+    }
+  } else {
+    console.log('[TRACE sendToRenderer] No window available for channel:', channel);
+  }
+}
+
+/**
+ * OPT-080: NUCLEAR OPTION - Force JSON serialization to prevent structured clone errors
+ * This ensures only plain objects/arrays/primitives cross the IPC boundary.
+ * If this fails, it will show EXACTLY which field can't be serialized.
+ */
+function safeSerialize<T>(data: T): T {
+  try {
+    return JSON.parse(JSON.stringify(data));
+  } catch (error) {
+    console.error('[IPC] Serialization failed:', error);
+    console.error('[IPC] Problematic data type:', typeof data);
+    console.error('[IPC] Data constructor:', data?.constructor?.name);
+
+    // Try to find the problematic field
+    if (data && typeof data === 'object') {
+      for (const [key, value] of Object.entries(data)) {
+        try {
+          JSON.stringify(value);
+        } catch {
+          console.error(`[IPC] Non-serializable field: "${key}" (type: ${typeof value}, constructor: ${value?.constructor?.name})`);
+        }
+      }
+    }
+
+    throw error;
   }
 }
 
@@ -62,6 +102,11 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
     address_state: z.string().nullable(),
     type: z.string().nullable(),
     slocnam: z.string().nullable(),
+    // Extended fields for full UI integration
+    subid: z.string().uuid().nullable().optional(),
+    auth_imp: z.string().nullable().optional(),
+    is_contributed: z.number().optional().default(0),
+    contribution_source: z.string().nullable().optional(),
   });
 
   const JobRetrySchema = z.object({
@@ -72,10 +117,14 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
    * Start a new import using v2 pipeline
    */
   ipcMain.handle('import:v2:start', async (_event, input: unknown) => {
+    console.log('[TRACE import:v2:start] Handler entered');
     try {
+      console.log('[TRACE import:v2:start] Parsing input...');
       const validated = ImportStartSchema.parse(input);
+      console.log('[TRACE import:v2:start] Input validated OK');
 
       // Get archive path from settings
+      console.log('[TRACE import:v2:start] Getting archive path...');
       const archiveSetting = await db
         .selectFrom('settings')
         .select('value')
@@ -87,12 +136,16 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
       }
 
       const archivePath = archiveSetting.value;
+      console.log('[TRACE import:v2:start] Archive path:', archivePath);
 
       // Get current user for activity tracking
+      console.log('[TRACE import:v2:start] Getting current user...');
       const currentUser = await getCurrentUser(db);
+      console.log('[TRACE import:v2:start] Current user:', currentUser?.username ?? 'none');
 
       // Create orchestrator if not exists
       if (!orchestrator) {
+        console.log('[TRACE import:v2:start] Creating orchestrator...');
         orchestrator = createImportOrchestrator(db, archivePath);
       }
 
@@ -101,11 +154,14 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
 
       // Progress callback sends events to renderer
       const onProgress = (progress: ImportProgress) => {
+        console.log('[TRACE import:v2:start] Progress callback - about to sendToRenderer');
         sendToRenderer('import:v2:progress', progress);
+        console.log('[TRACE import:v2:start] Progress callback - sendToRenderer completed');
         activeImports.set(progress.sessionId, abortController);
       };
 
       // Start import
+      console.log('[TRACE import:v2:start] Starting orchestrator.import...');
       const result = await orchestrator.import(validated.paths, {
         location: {
           locid: validated.locid,
@@ -122,11 +178,14 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
         onProgress,
         signal: abortController.signal,
       });
+      console.log('[TRACE import:v2:start] orchestrator.import completed');
+      console.log('[TRACE import:v2:start] Result status:', result.status);
 
       // Clean up
       activeImports.delete(result.sessionId);
 
       // Send completion event
+      console.log('[TRACE import:v2:start] Sending completion event...');
       sendToRenderer('import:v2:complete', {
         sessionId: result.sessionId,
         status: result.status,
@@ -136,12 +195,27 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
         totalDurationMs: result.totalDurationMs,
         jobsQueued: result.finalizationResult?.jobsQueued ?? 0,
       });
+      console.log('[TRACE import:v2:start] Completion event sent');
 
-      return result;
+      // OPT-080: Force serialization to prevent structured clone errors
+      console.log('[TRACE import:v2:start] About to safeSerialize result...');
+      const serialized = safeSerialize(result);
+      console.log('[TRACE import:v2:start] safeSerialize completed, returning...');
+      return serialized;
 
     } catch (error) {
-      console.error('[import:v2:start] Error:', error);
-      throw error;
+      console.error('[TRACE import:v2:start] CAUGHT ERROR:', error);
+      console.error('[TRACE import:v2:start] Error type:', typeof error);
+      console.error('[TRACE import:v2:start] Error constructor:', error?.constructor?.name);
+      if (error instanceof Error) {
+        console.error('[TRACE import:v2:start] Error.message:', error.message);
+        console.error('[TRACE import:v2:start] Error.stack:', error.stack);
+      }
+      // OPT-080: Serialize error to prevent structured clone failure in IPC
+      // Complex error objects (Kysely, etc.) may have non-serializable properties
+      const message = error instanceof Error ? error.message : String(error);
+      console.log('[TRACE import:v2:start] Throwing new Error with message:', message);
+      throw new Error(message);
     }
   });
 
@@ -172,15 +246,70 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
     if (!orchestrator) {
       return { sessionId: null, status: 'idle' };
     }
-    return orchestrator.getStatus();
+    return safeSerialize(orchestrator.getStatus());
   });
 
   /**
    * Get resumable import sessions
    */
   ipcMain.handle('import:v2:resumable', async () => {
-    if (!orchestrator) {
-      // Create temporary orchestrator to query DB
+    try {
+      if (!orchestrator) {
+        // Create temporary orchestrator to query DB
+        const archiveSetting = await db
+          .selectFrom('settings')
+          .select('value')
+          .where('key', '=', 'archive_folder')
+          .executeTakeFirst();
+
+        if (!archiveSetting?.value) {
+          return [];
+        }
+
+        const tempOrchestrator = createImportOrchestrator(db, archiveSetting.value);
+        return safeSerialize(await tempOrchestrator.getResumableSessions());
+      }
+
+      return safeSerialize(await orchestrator.getResumableSessions());
+    } catch (error) {
+      console.error('[import:v2:resumable] Error:', error);
+      // OPT-080: Serialize error to prevent structured clone failure in IPC
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
+    }
+  });
+
+  /**
+   * Resume an incomplete import
+   */
+  ipcMain.handle('import:v2:resume', async (_event, sessionId: string) => {
+    try {
+      if (!orchestrator) {
+        throw new Error('Import system not initialized');
+      }
+
+      // Get session info to rebuild location
+      const session = await db
+        .selectFrom('import_sessions')
+        .selectAll()
+        .where('session_id', '=', sessionId)
+        .executeTakeFirst();
+
+      if (!session) {
+        throw new Error('Session not found');
+      }
+
+      // Get location info
+      const location = await db
+        .selectFrom('locs')
+        .select(['locid', 'loc12', 'address_state', 'type', 'slocnam'])
+        .where('locid', '=', session.locid)
+        .executeTakeFirst();
+
+      if (!location) {
+        throw new Error('Location not found');
+      }
+
       const archiveSetting = await db
         .selectFrom('settings')
         .select('value')
@@ -188,127 +317,117 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
         .executeTakeFirst();
 
       if (!archiveSetting?.value) {
-        return [];
+        throw new Error('Archive folder not configured');
       }
 
-      const tempOrchestrator = createImportOrchestrator(db, archiveSetting.value);
-      return tempOrchestrator.getResumableSessions();
+      const currentUser = await getCurrentUser(db);
+
+      const abortController = new AbortController();
+      const onProgress = (progress: ImportProgress) => {
+        sendToRenderer('import:v2:progress', progress);
+        activeImports.set(progress.sessionId, abortController);
+      };
+
+      const result = await orchestrator.resume(sessionId, {
+        location: {
+          locid: location.locid,
+          loc12: location.loc12,
+          address_state: location.address_state,
+          type: location.type,
+          slocnam: location.slocnam,
+        },
+        archivePath: archiveSetting.value,
+        user: currentUser ? {
+          userId: currentUser.userId,
+          username: currentUser.username,
+        } : undefined,
+        onProgress,
+        signal: abortController.signal,
+      });
+
+      // OPT-080: Force serialization to prevent structured clone errors
+      return safeSerialize(result);
+    } catch (error) {
+      console.error('[import:v2:resume] Error:', error);
+      // OPT-080: Serialize error to prevent structured clone failure in IPC
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
-
-    return orchestrator.getResumableSessions();
-  });
-
-  /**
-   * Resume an incomplete import
-   */
-  ipcMain.handle('import:v2:resume', async (_event, sessionId: string) => {
-    if (!orchestrator) {
-      throw new Error('Import system not initialized');
-    }
-
-    // Get session info to rebuild location
-    const session = await db
-      .selectFrom('import_sessions')
-      .selectAll()
-      .where('session_id', '=', sessionId)
-      .executeTakeFirst();
-
-    if (!session) {
-      throw new Error('Session not found');
-    }
-
-    // Get location info
-    const location = await db
-      .selectFrom('locs')
-      .select(['locid', 'loc12', 'address_state', 'type', 'slocnam'])
-      .where('locid', '=', session.locid)
-      .executeTakeFirst();
-
-    if (!location) {
-      throw new Error('Location not found');
-    }
-
-    const archiveSetting = await db
-      .selectFrom('settings')
-      .select('value')
-      .where('key', '=', 'archive_folder')
-      .executeTakeFirst();
-
-    if (!archiveSetting?.value) {
-      throw new Error('Archive folder not configured');
-    }
-
-    const currentUser = await getCurrentUser(db);
-
-    const abortController = new AbortController();
-    const onProgress = (progress: ImportProgress) => {
-      sendToRenderer('import:v2:progress', progress);
-      activeImports.set(progress.sessionId, abortController);
-    };
-
-    const result = await orchestrator.resume(sessionId, {
-      location: {
-        locid: location.locid,
-        loc12: location.loc12,
-        address_state: location.address_state,
-        type: location.type,
-        slocnam: location.slocnam,
-      },
-      archivePath: archiveSetting.value,
-      user: currentUser ? {
-        userId: currentUser.userId,
-        username: currentUser.username,
-      } : undefined,
-      onProgress,
-      signal: abortController.signal,
-    });
-
-    return result;
   });
 
   /**
    * Get job queue statistics
    */
   ipcMain.handle('jobs:status', async () => {
-    const workerService = getJobWorkerService(db);
-    return workerService.getStats();
+    try {
+      const workerService = getJobWorkerService(db);
+      return safeSerialize(await workerService.getStats());
+    } catch (error) {
+      console.error('[jobs:status] Error:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
+    }
   });
 
   /**
    * Get dead letter queue entries
    */
   ipcMain.handle('jobs:deadLetter', async (_event, queue?: string) => {
-    const jobQueue = new JobQueue(db);
-    return jobQueue.getDeadLetterQueue(queue);
+    try {
+      const jobQueue = new JobQueue(db);
+      return safeSerialize(await jobQueue.getDeadLetterQueue(queue));
+    } catch (error) {
+      console.error('[jobs:deadLetter] Error:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
+    }
   });
 
   /**
    * Retry a job from dead letter queue
    */
   ipcMain.handle('jobs:retry', async (_event, input: unknown) => {
-    const validated = JobRetrySchema.parse(input);
-    const jobQueue = new JobQueue(db);
+    try {
+      const validated = JobRetrySchema.parse(input);
+      const jobQueue = new JobQueue(db);
 
-    const newJobId = await jobQueue.retryDeadLetter(validated.deadLetterId);
-    return { success: newJobId !== null, newJobId };
+      const newJobId = await jobQueue.retryDeadLetter(validated.deadLetterId);
+      return { success: newJobId !== null, newJobId };
+    } catch (error) {
+      console.error('[jobs:retry] Error:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
+    }
   });
 
   /**
    * Acknowledge (dismiss) dead letter entries
    */
   ipcMain.handle('jobs:acknowledge', async (_event, ids: number[]) => {
-    const jobQueue = new JobQueue(db);
-    await jobQueue.acknowledgeDeadLetter(ids);
-    return { acknowledged: ids.length };
+    try {
+      const jobQueue = new JobQueue(db);
+      await jobQueue.acknowledgeDeadLetter(ids);
+      return { acknowledged: ids.length };
+    } catch (error) {
+      console.error('[jobs:acknowledge] Error:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
+    }
   });
 
   /**
    * Clear old completed jobs
    */
   ipcMain.handle('jobs:clearCompleted', async (_event, olderThanMs?: number) => {
-    const jobQueue = new JobQueue(db);
-    const cleared = await jobQueue.clearCompleted(olderThanMs);
-    return { cleared };
+    try {
+      const jobQueue = new JobQueue(db);
+      const cleared = await jobQueue.clearCompleted(olderThanMs);
+      return { cleared };
+    } catch (error) {
+      console.error('[jobs:clearCompleted] Error:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
+    }
   });
 
   console.log('[IPC] Import v2.0 handlers registered');

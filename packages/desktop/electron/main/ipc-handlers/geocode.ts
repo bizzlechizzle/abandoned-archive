@@ -45,7 +45,8 @@ export function registerGeocodeHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -71,7 +72,8 @@ export function registerGeocodeHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -138,7 +140,8 @@ export function registerGeocodeHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -149,7 +152,8 @@ export function registerGeocodeHandlers(db: Kysely<Database>) {
       return { deleted };
     } catch (error) {
       console.error('Error clearing geocode cache:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 

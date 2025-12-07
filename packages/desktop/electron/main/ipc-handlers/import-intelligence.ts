@@ -47,7 +47,8 @@ export function registerImportIntelligenceHandlers(db: Kysely<Database>) {
         return result;
       } catch (error) {
         console.error('[Import Intelligence] Scan error:', error);
-        throw error;
+        const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
       }
     }
   );
@@ -71,7 +72,8 @@ export function registerImportIntelligenceHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map((e) => e.message).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -97,7 +99,8 @@ export function registerImportIntelligenceHandlers(db: Kysely<Database>) {
       };
     } catch (error) {
       console.error('[Import Intelligence] hasNearby error:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 

@@ -73,8 +73,8 @@ export interface ImportResult {
   validationResult?: ValidationResult;
   finalizationResult?: FinalizationResult;
   error?: string;
-  startedAt: Date;
-  completedAt?: Date;
+  startedAt: string;  // ISO string for IPC serialization
+  completedAt?: string;  // ISO string for IPC serialization
   totalDurationMs: number;
 }
 
@@ -468,8 +468,8 @@ export class ImportOrchestrator {
       validationResult,
       finalizationResult,
       error,
-      startedAt,
-      completedAt,
+      startedAt: startedAt.toISOString(),  // OPT-080: Convert to string for IPC serialization
+      completedAt: completedAt.toISOString(),  // OPT-080: Convert to string for IPC serialization
       totalDurationMs,
     };
   }
@@ -914,8 +914,8 @@ export class ImportOrchestrator {
       validationResult,
       finalizationResult,
       error,
-      startedAt,
-      completedAt,
+      startedAt: startedAt.toISOString(),  // Convert to string for IPC
+      completedAt: completedAt.toISOString(),  // Convert to string for IPC
       totalDurationMs: completedAt.getTime() - startedAt.getTime(),
     };
   }
@@ -928,7 +928,7 @@ export class ImportOrchestrator {
     locid: string;
     status: ImportStatus;
     lastStep: number;
-    startedAt: Date;
+    startedAt: string;  // ISO string for IPC serialization
     totalFiles: number;
     processedFiles: number;
   }>> {
@@ -953,7 +953,7 @@ export class ImportOrchestrator {
       locid: s.locid,
       status: s.status as ImportStatus,
       lastStep: s.last_step,
-      startedAt: new Date(s.started_at),
+      startedAt: new Date(s.started_at).toISOString(),  // Convert to string for IPC
       totalFiles: s.total_files,
       processedFiles: s.processed_files,
     }));

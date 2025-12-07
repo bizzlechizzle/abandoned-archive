@@ -56,13 +56,23 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 // Crash handlers - log errors before exiting
+// OPT-080: Enhanced error logging for structured clone debugging
 process.on('uncaughtException', (error: Error) => {
+  console.error('=== UNCAUGHT EXCEPTION ===');
+  console.error('Message:', error.message);
+  console.error('Name:', error.name);
+  console.error('Stack:', error.stack);
+  try {
+    console.error('Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+  } catch (e) {
+    console.error('Could not stringify error:', e);
+  }
+
   try {
     getLogger().error('Main', 'Uncaught exception', error);
   } catch {
     // Logger might not be initialized yet
   }
-  console.error('Uncaught exception:', error);
 
   dialog.showErrorBox(
     'Application Error',
@@ -73,13 +83,25 @@ process.on('uncaughtException', (error: Error) => {
 });
 
 process.on('unhandledRejection', (reason: unknown) => {
+  console.error('=== UNHANDLED REJECTION ===');
+  console.error('Reason:', reason);
+  if (reason instanceof Error) {
+    console.error('Message:', reason.message);
+    console.error('Name:', reason.name);
+    console.error('Stack:', reason.stack);
+    try {
+      console.error('Full error:', JSON.stringify(reason, Object.getOwnPropertyNames(reason), 2));
+    } catch (e) {
+      console.error('Could not stringify error:', e);
+    }
+  }
+
   const error = reason instanceof Error ? reason : new Error(String(reason));
   try {
     getLogger().error('Main', 'Unhandled promise rejection', error);
   } catch {
     // Logger might not be initialized yet
   }
-  console.error('Unhandled rejection:', reason);
 
   dialog.showErrorBox(
     'Application Error',

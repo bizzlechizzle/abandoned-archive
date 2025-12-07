@@ -32,7 +32,8 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -47,7 +48,8 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
       return { success: true };
     } catch (error) {
       console.error('Error removing author:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -60,7 +62,8 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
       return await authorsRepo.findByLocation(validatedLocid);
     } catch (error) {
       console.error('Error finding authors by location:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -73,7 +76,8 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
       return await authorsRepo.findByUser(validatedUserId);
     } catch (error) {
       console.error('Error finding locations by user:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -86,7 +90,8 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
       return await authorsRepo.findCreator(validatedLocid);
     } catch (error) {
       console.error('Error finding creator:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -99,7 +104,8 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
       return await authorsRepo.countByUserAndRole(validatedUserId);
     } catch (error) {
       console.error('Error counting by user and role:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -112,7 +118,8 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
       return await authorsRepo.countByLocation(validatedLocid);
     } catch (error) {
       console.error('Error counting by location:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -133,7 +140,8 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
       return { success: true };
     } catch (error) {
       console.error('Error tracking contribution:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 

@@ -356,7 +356,6 @@ const api = {
       locid: string;
       subid?: string | null;
       auth_imp: string | null;
-      deleteOriginals: boolean;
     }): Promise<unknown> =>
       ipcRenderer.invoke('media:import', input),
     // Phase-based import (whereswaldo11.md spec): LOG IT -> SERIALIZE IT -> COPY & NAME IT -> DUMP
@@ -365,8 +364,6 @@ const api = {
       locid: string;
       subid?: string | null;
       auth_imp: string | null;
-      deleteOriginals?: boolean;
-      useHardlinks?: boolean;
       verifyChecksums?: boolean;
     }): Promise<{
       success: boolean;

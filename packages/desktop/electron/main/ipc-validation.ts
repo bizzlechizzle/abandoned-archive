@@ -62,7 +62,6 @@ export const SettingKeySchema = z.enum([
   'archive_folder',
   'current_user',
   'current_user_id',
-  'delete_on_import',
   'setup_complete',
   'app_mode',
   'require_login',

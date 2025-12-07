@@ -233,7 +233,8 @@ export function registerStorageHandlers() {
       };
     } catch (error) {
       console.error('Error getting storage stats:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -373,7 +374,8 @@ export function registerStorageHandlers() {
       return results;
     } catch (error) {
       console.error('Error verifying storage integrity:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 }

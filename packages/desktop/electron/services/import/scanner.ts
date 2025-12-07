@@ -559,17 +559,15 @@ export class Scanner {
 
   /**
    * Estimate import duration based on file count, size, and copy strategy
+   * OPT-078: Simplified - always estimate as copy speed (no hardlinks)
    */
-  private estimateDuration(fileCount: number, totalBytes: number, sameDevice: boolean): number {
+  private estimateDuration(fileCount: number, totalBytes: number, _sameDevice: boolean): number {
     // Base time per file (metadata, DB operations): ~50ms
     const baseTimePerFile = 50;
 
-    // Copy speed estimates
-    const hardlinkSpeedBps = 100_000_000_000; // ~100 GB/s (nearly instant)
-    const copySpeedBps = 200_000_000;         // ~200 MB/s (SSD to SSD)
-
-    const copySpeed = sameDevice ? hardlinkSpeedBps : copySpeedBps;
-    const copyTimeMs = (totalBytes / copySpeed) * 1000;
+    // Copy speed estimate: ~200 MB/s (SSD to SSD)
+    const copySpeedBps = 200_000_000;
+    const copyTimeMs = (totalBytes / copySpeedBps) * 1000;
 
     // Total estimate
     const totalMs = (fileCount * baseTimePerFile) + copyTimeMs;

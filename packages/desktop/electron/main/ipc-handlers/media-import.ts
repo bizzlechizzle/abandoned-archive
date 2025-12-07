@@ -33,6 +33,33 @@ import type { MediaFile } from '../../services/bagit-service';
 const activeImports: Map<string, AbortController> = new Map();
 
 /**
+ * OPT-080: Force JSON serialization to prevent structured clone errors
+ * This ensures only plain objects/arrays/primitives cross the IPC boundary.
+ */
+function safeSerialize<T>(data: T): T {
+  try {
+    return JSON.parse(JSON.stringify(data));
+  } catch (error) {
+    console.error('[media-import] Serialization failed:', error);
+    console.error('[media-import] Problematic data type:', typeof data);
+    console.error('[media-import] Data constructor:', data?.constructor?.name);
+
+    // Try to find the problematic field
+    if (data && typeof data === 'object') {
+      for (const [key, value] of Object.entries(data)) {
+        try {
+          JSON.stringify(value);
+        } catch {
+          console.error(`[media-import] Non-serializable field: "${key}" (type: ${typeof value}, constructor: ${value?.constructor?.name})`);
+        }
+      }
+    }
+
+    throw error;
+  }
+}
+
+/**
  * Helper to get media files for BagIt manifest update
  */
 async function getMediaFilesForBagIt(
@@ -256,7 +283,9 @@ export function registerMediaImportHandlers(
       return result.filePaths;
     } catch (error) {
       console.error('Error selecting files:', error);
-      throw error;
+      // OPT-080: Serialize error to prevent structured clone failure in IPC
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -312,7 +341,6 @@ export function registerMediaImportHandlers(
         locid: z.string().uuid(),
         subid: z.string().uuid().nullable().optional(),
         auth_imp: z.string().nullable(),
-        deleteOriginals: z.boolean().default(false),
         // Migration 26: Contributor tracking
         is_contributed: z.number().default(0),
         contribution_source: z.string().nullable().optional(),
@@ -362,7 +390,7 @@ export function registerMediaImportHandlers(
       let result;
       try {
         result = await fileImportService.importFiles(
-          filesForImport, validatedInput.deleteOriginals,
+          filesForImport,
           (current, total, filename) => {
             try {
               if (_event.sender && !_event.sender.isDestroyed()) {
@@ -423,13 +451,16 @@ export function registerMediaImportHandlers(
       }
 
       // FIX: Return importId immediately so cancel can work before progress events arrive
-      return { ...result, importId };
+      // OPT-080: Force serialization to prevent structured clone errors
+      return safeSerialize({ ...result, importId });
     } catch (error) {
       console.error('Error importing media:', error);
+      // OPT-080: Serialize error to prevent structured clone failure in IPC
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -440,8 +471,6 @@ export function registerMediaImportHandlers(
         locid: z.string().uuid(),
         subid: z.string().uuid().nullable().optional(),
         auth_imp: z.string().nullable(),
-        deleteOriginals: z.boolean().default(false),
-        useHardlinks: z.boolean().default(false),
         verifyChecksums: z.boolean().default(true),
       });
 
@@ -477,7 +506,7 @@ export function registerMediaImportHandlers(
       try {
         result = await phaseImportService.importFiles(
           filesForImport,
-          { deleteOriginals: validatedInput.deleteOriginals, useHardlinks: validatedInput.useHardlinks, verifyChecksums: validatedInput.verifyChecksums },
+          { verifyChecksums: validatedInput.verifyChecksums },
           (progress) => {
             try {
               if (_event.sender && !_event.sender.isDestroyed()) {
@@ -537,13 +566,16 @@ export function registerMediaImportHandlers(
         } catch (e) { console.warn('[media:phaseImport] Failed to update BagIt manifest (non-fatal):', e); }
       }
 
-      return result;
+      // OPT-080: Force serialization to prevent structured clone errors
+      return safeSerialize(result);
     } catch (error) {
       console.error('Error in phase import:', error);
+      // OPT-080: Serialize error to prevent structured clone failure in IPC
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -558,7 +590,9 @@ export function registerMediaImportHandlers(
       return { success: false, message: 'No active import found with that ID' };
     } catch (error) {
       console.error('Error cancelling import:', error);
-      throw error;
+      // OPT-080: Serialize error to prevent structured clone failure in IPC
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 

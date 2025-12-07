@@ -215,6 +215,12 @@ export class Finalizer {
       jobsQueued = jobs.length;
     }
 
+    // Auto-set hero image if location has no hero and we imported images
+    // This ensures dashboard thumbnails appear immediately after first import
+    if (totalFinalized > 0) {
+      await this.autoSetHeroImage(location.locid, results);
+    }
+
     // Add non-imported files to results (duplicates, errors)
     for (const file of files) {
       if (!file.isValid || !file.archivePath) {
@@ -761,6 +767,44 @@ export class Finalizer {
     }
 
     return jobs;
+  }
+
+  /**
+   * Auto-set hero image for location and sub-location
+   * Per Import Spec v2.0: Sets first successfully imported image as hero
+   * Non-fatal: failures are logged but don't fail the import
+   */
+  private async autoSetHeroImage(
+    locid: string,
+    results: FinalizedFile[]
+  ): Promise<void> {
+    try {
+      // Check if location needs a hero image
+      const location = await this.db
+        .selectFrom('locs')
+        .select(['locid', 'hero_imghash'])
+        .where('locid', '=', locid)
+        .executeTakeFirst();
+
+      if (location && !location.hero_imghash) {
+        // Find the first successfully imported image (not hidden)
+        const firstImage = results.find(
+          f => f.mediaType === 'image' && f.dbRecordId && !f.shouldHide
+        );
+
+        if (firstImage && firstImage.hash) {
+          await this.db
+            .updateTable('locs')
+            .set({ hero_imghash: firstImage.hash })
+            .where('locid', '=', locid)
+            .execute();
+          console.log(`[Finalizer] Auto-set hero image: ${firstImage.hash.slice(0, 12)}...`);
+        }
+      }
+    } catch (error) {
+      // Non-fatal - don't fail import if auto-hero fails
+      console.warn('[Finalizer] Auto-hero failed (non-fatal):', error);
+    }
   }
 }
 

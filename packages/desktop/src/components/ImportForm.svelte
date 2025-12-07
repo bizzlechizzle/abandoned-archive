@@ -8,14 +8,12 @@
   interface Props {
     locations: Location[];
     selectedLocation: string;
-    deleteOriginals: boolean;
     isImporting: boolean;
     isDragging: boolean;
     importProgress: string;
     progressCurrent: number;
     progressTotal: number;
     onLocationChange: (locid: string) => void;
-    onDeleteOriginalsChange: (value: boolean) => void;
     onBrowse: () => void;
     onDragOver: (event: DragEvent) => void;
     onDragLeave: () => void;
@@ -30,14 +28,12 @@
   let {
     locations,
     selectedLocation,
-    deleteOriginals,
     isImporting,
     isDragging,
     importProgress,
     progressCurrent,
     progressTotal,
     onLocationChange,
-    onDeleteOriginalsChange,
     onBrowse,
     onDragOver,
     onDragLeave,
@@ -389,20 +385,6 @@
             </p>
           </div>
         {/if}
-
-        <div class="flex items-center">
-          <input
-            type="checkbox"
-            id="delete-originals"
-            checked={deleteOriginals}
-            onchange={(e) => onDeleteOriginalsChange((e.target as HTMLInputElement).checked)}
-            disabled={isImporting}
-            class="mr-2"
-          />
-          <label for="delete-originals" class="text-sm text-braun-700">
-            Delete original files after import
-          </label>
-        </div>
       </div>
     {:else}
       <!-- COMPREHENSIVE New Location Form -->

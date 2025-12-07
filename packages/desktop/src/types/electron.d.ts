@@ -261,7 +261,6 @@ export interface ElectronAPI {
       locid: string;
       subid?: string | null;
       auth_imp: string | null;
-      deleteOriginals?: boolean;
       // Migration 26: Contributor tracking
       is_contributed?: number;
       contribution_source?: string | null;
@@ -300,8 +299,6 @@ export interface ElectronAPI {
       locid: string;
       subid?: string | null;
       auth_imp: string | null;
-      deleteOriginals?: boolean;
-      useHardlinks?: boolean;
       verifyChecksums?: boolean;
     }) => Promise<{
       success: boolean;
@@ -1019,6 +1016,11 @@ export interface ImportV2Input {
   address_state: string | null;
   type: string | null;
   slocnam: string | null;
+  // Extended fields for full UI integration
+  subid?: string | null;
+  auth_imp?: string | null;
+  is_contributed?: number;
+  contribution_source?: string | null;
 }
 
 export interface ImportV2Progress {
@@ -1081,7 +1083,7 @@ export interface ResumableSession {
   locid: string;
   status: ImportV2Status;
   lastStep: number;
-  startedAt: Date;
+  startedAt: string;  // ISO string for IPC serialization
   totalFiles: number;
   processedFiles: number;
 }

@@ -1,27 +1,27 @@
 /**
- * Copier - Atomic file copy with hardlink/reflink support (Step 3)
+ * Copier - Atomic file copy (Step 3)
  *
- * Per Import Spec v2.0:
- * - Strategy detection (same device check)
- * - Hardlink operation (fs.link)
- * - Reflink operation (APFS copy-on-write)
- * - Copy fallback (fs.copyFile)
+ * OPT-082: Pure copy strategy
+ * - fs.copyFile() for all copies
  * - Atomic temp-file-then-rename
  * - Archive path builder
  * - Progress reporting (40-80%)
  *
+ * We are an archive app. We copy files. That's it.
+ *
  * @module services/import/copier
  */
 
-import { promises as fs, constants } from 'fs';
+import { promises as fs } from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import type { HashedFile } from './hasher';
 
 /**
- * Copy strategy types
+ * Copy strategy type
+ * OPT-082: Pure copy only
  */
-export type CopyStrategy = 'hardlink' | 'reflink' | 'copy';
+export type CopyStrategy = 'copy';
 
 /**
  * Copy result for a single file
@@ -167,53 +167,31 @@ export class Copier {
   }
 
   /**
-   * Detect the best copy strategy for the given files
+   * Detect the copy strategy for the given files
+   * OPT-082: Pure copy only
    */
-  async detectStrategy(files: HashedFile[], location: LocationInfo): Promise<CopyStrategy> {
-    if (files.length === 0) {
-      return 'copy';
-    }
-
-    // Get the destination path
-    const destPath = this.buildLocationPath(location);
-
+  async detectStrategy(_files: HashedFile[], location: LocationInfo): Promise<CopyStrategy> {
     // Ensure destination directory exists
+    const destPath = this.buildLocationPath(location);
     await fs.mkdir(destPath, { recursive: true });
 
-    // Check if source and destination are on the same device
-    const sourcePath = files[0].originalPath;
-
-    try {
-      const [sourceStat, destStat] = await Promise.all([
-        fs.stat(sourcePath),
-        fs.stat(destPath),
-      ]);
-
-      if (sourceStat.dev === destStat.dev) {
-        // Same device - try hardlink first
-        return 'hardlink';
-      }
-    } catch {
-      // If stat fails, fall back to copy
-    }
-
-    // Different devices - use regular copy
     return 'copy';
   }
 
   /**
-   * Copy a single file using the specified strategy
+   * Copy a single file
+   * OPT-082: Pure copy, no strategy variants
    */
   private async copyFile(
     file: HashedFile,
     location: LocationInfo,
-    strategy: CopyStrategy
+    _strategy: CopyStrategy
   ): Promise<CopiedFile> {
     const result: CopiedFile = {
       ...file,
       archivePath: null,
       copyError: null,
-      copyStrategy: strategy,
+      copyStrategy: 'copy',
       bytesCopied: 0,
     };
 
@@ -229,14 +207,8 @@ export class Copier {
       const tempPath = `${destPath}.${randomUUID().slice(0, 8)}.tmp`;
 
       try {
-        // Try the selected strategy
-        if (strategy === 'hardlink') {
-          await this.tryHardlink(file.originalPath, tempPath);
-        } else if (strategy === 'reflink') {
-          await this.tryReflink(file.originalPath, tempPath);
-        } else {
-          await this.tryCopy(file.originalPath, tempPath);
-        }
+        // OPT-082: Pure copy
+        await fs.copyFile(file.originalPath, tempPath);
 
         // Atomic rename from temp to final
         await fs.rename(tempPath, destPath);
@@ -256,39 +228,9 @@ export class Copier {
 
     } catch (error) {
       result.copyError = error instanceof Error ? error.message : String(error);
-
-      // If hardlink failed, retry with copy
-      if (strategy === 'hardlink') {
-        console.warn(`[Copier] Hardlink failed for ${file.filename}, retrying with copy`);
-        const retryResult = await this.copyFile(file, location, 'copy');
-        return retryResult;
-      }
     }
 
     return result;
-  }
-
-  /**
-   * Try to create a hardlink
-   */
-  private async tryHardlink(source: string, dest: string): Promise<void> {
-    await fs.link(source, dest);
-  }
-
-  /**
-   * Try to create a reflink (copy-on-write clone)
-   * Note: Node.js 18+ supports COPYFILE_FICLONE flag for CoW copies on APFS/Btrfs
-   */
-  private async tryReflink(source: string, dest: string): Promise<void> {
-    // COPYFILE_FICLONE = Use copy-on-write if available
-    await fs.copyFile(source, dest, constants.COPYFILE_FICLONE);
-  }
-
-  /**
-   * Regular file copy
-   */
-  private async tryCopy(source: string, dest: string): Promise<void> {
-    await fs.copyFile(source, dest);
   }
 
   /**

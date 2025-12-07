@@ -28,7 +28,8 @@ export function registerStatsHandlers(db: Kysely<Database>) {
       return result;
     } catch (error) {
       console.error('Error getting top states:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -46,7 +47,8 @@ export function registerStatsHandlers(db: Kysely<Database>) {
       return result;
     } catch (error) {
       console.error('Error getting top types:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -99,7 +101,8 @@ export function registerStatsHandlers(db: Kysely<Database>) {
       return results;
     } catch (error) {
       console.error('Error getting top types with hero:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -152,7 +155,8 @@ export function registerStatsHandlers(db: Kysely<Database>) {
       return results;
     } catch (error) {
       console.error('Error getting top states with hero:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -197,7 +201,8 @@ export function registerStatsHandlers(db: Kysely<Database>) {
       };
     } catch (error) {
       console.error('Error getting user contributions:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -282,7 +287,8 @@ export function registerStatsHandlers(db: Kysely<Database>) {
       };
     } catch (error) {
       console.error('Error getting top contributors:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -336,7 +342,8 @@ export function registerStatsHandlers(db: Kysely<Database>) {
       return userStats;
     } catch (error) {
       console.error('Error getting all user stats:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 }
@@ -356,7 +363,8 @@ export function registerSettingsHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -372,7 +380,8 @@ export function registerSettingsHandlers(db: Kysely<Database>) {
       }, {} as Record<string, string>);
     } catch (error) {
       console.error('Error getting all settings:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -390,7 +399,8 @@ export function registerSettingsHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 }
@@ -414,7 +424,8 @@ export function registerLibpostalHandlers() {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => e.message).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 }

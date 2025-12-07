@@ -34,7 +34,7 @@
 2. App prompts for destination folder
 3. Exports:
    - SQLite database file (copy)
-   - Media directory (full copy or hardlink)
+   - Media directory (full copy)
    - Backup manifest (timestamp, file list, checksums)
 4. Verify integrity — Re-hash random sample, compare against stored SHAs
 5. Log backup to `backup_log` table (timestamp, destination, status)
@@ -45,7 +45,7 @@
 2. App prompts for backup folder
 3. Verify backup integrity — Check manifest, compare checksums
 4. Restore database — Copy SQLite file to userData location
-5. Restore media — Copy or hardlink media directory
+5. Restore media — Copy media directory to archive location
 6. Verify imports — Check that existing SHA records prevent duplicates
 7. Restart app to load restored database
 

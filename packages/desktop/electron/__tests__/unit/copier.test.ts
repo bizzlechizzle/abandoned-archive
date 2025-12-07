@@ -1,6 +1,7 @@
 /**
  * Copier Unit Tests
- * Tests for atomic copy, hardlink strategy, and streaming callbacks
+ * Tests for atomic copy and streaming callbacks
+ * OPT-082: Pure copy only
  *
  * @module __tests__/unit/copier.test
  */
@@ -192,22 +193,12 @@ describe('Copier', () => {
   });
 
   describe('copy strategy', () => {
-    it('should detect copy strategy', async () => {
+    it('should always use copy strategy', async () => {
       const files: HashedFile[] = [createHashedFile()];
 
       const result = await copier.copy(files, testLocation, {});
 
-      // Strategy should be one of: 'hardlink', 'reflink', 'copy'
-      expect(['hardlink', 'reflink', 'copy']).toContain(result.strategy);
-    });
-
-    it('should allow forcing copy strategy', async () => {
-      const files: HashedFile[] = [createHashedFile()];
-
-      const result = await copier.copy(files, testLocation, {
-        forceStrategy: 'copy',
-      });
-
+      // OPT-082: Pure copy only
       expect(result.strategy).toBe('copy');
       expect(result.files[0].copyStrategy).toBe('copy');
     });

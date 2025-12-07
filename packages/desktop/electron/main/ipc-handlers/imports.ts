@@ -31,7 +31,8 @@ export function registerImportsHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -41,7 +42,8 @@ export function registerImportsHandlers(db: Kysely<Database>) {
       return await importRepo.findRecent(validatedLimit);
     } catch (error) {
       console.error('Error finding recent imports:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -54,7 +56,8 @@ export function registerImportsHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -63,7 +66,8 @@ export function registerImportsHandlers(db: Kysely<Database>) {
       return await importRepo.findAll();
     } catch (error) {
       console.error('Error finding all imports:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -72,7 +76,8 @@ export function registerImportsHandlers(db: Kysely<Database>) {
       return await importRepo.getTotalMediaCount();
     } catch (error) {
       console.error('Error getting total media count:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 

@@ -568,18 +568,15 @@
     contributionSource = '';
   }
 
-  // OPT-034b: Chunked import configuration for memory-bounded processing
-  const IMPORT_CHUNK_SIZE = 50;    // Files per IPC call (prevents timeout and OOM)
-  const IMPORT_CHUNK_DELAY = 100;  // ms between chunks (GC breathing room)
-
+  /**
+   * Import files using v2 pipeline
+   * Per Import Spec v2.0: 5-step pipeline with background jobs
+   * - No chunking needed (v2 handles streaming internally)
+   * - Progress via IPC events
+   * - Background jobs for thumbnails/metadata
+   */
   async function importFilePaths(filePaths: string[], author: string, contributed: number = 0, source: string = '') {
     if (!location || $isImporting) return;
-
-    // OPT-034b: Chunk files for memory-bounded processing
-    const chunks: string[][] = [];
-    for (let i = 0; i < filePaths.length; i += IMPORT_CHUNK_SIZE) {
-      chunks.push(filePaths.slice(i, i + IMPORT_CHUNK_SIZE));
-    }
 
     // Import job label varies based on whether viewing sub-location
     const jobLabel = currentSubLocation
@@ -588,105 +585,62 @@
     importStore.startJob(location.locid, jobLabel, filePaths.length);
     importProgress = 'Import started';
 
-    // Aggregate results across all chunks
-    let totalImported = 0;
-    let totalDuplicates = 0;
-    let totalErrors = 0;
-    let processedFiles = 0;
-    let allFailedFiles: typeof failedFiles = [];
-    let allGpsWarnings: typeof gpsWarnings = [];
+    // Set up progress listener for real-time updates
+    const unsubscribeProgress = window.electronAPI.importV2.onProgress((progress) => {
+      // Update store with v2 progress
+      importStore.updateProgress(progress.filesProcessed, progress.filesTotal);
+
+      // Update local progress text
+      const statusText = progress.status === 'scanning' ? 'Scanning files...'
+        : progress.status === 'hashing' ? 'Computing hashes...'
+        : progress.status === 'copying' ? 'Copying files...'
+        : progress.status === 'validating' ? 'Validating integrity...'
+        : progress.status === 'finalizing' ? 'Finalizing...'
+        : `${progress.percent}%`;
+      importProgress = `${statusText} (${progress.filesProcessed}/${progress.filesTotal})`;
+    });
 
     try {
-      // Process chunks sequentially to bound memory usage
-      for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
-        const chunk = chunks[chunkIdx];
+      // Use v2 import - no chunking needed, handles streaming internally
+      const result = await window.electronAPI.importV2.start({
+        paths: filePaths,
+        locid: location.locid,
+        loc12: location.loc12,
+        address_state: location.address?.state || null,
+        type: location.type || null,
+        slocnam: currentSubLocation?.subnam || null,
+        subid: subId || null,
+        auth_imp: author,
+        is_contributed: contributed,
+        contribution_source: source || null,
+      });
 
-        const filesForImport = chunk.map(fp => ({
-          filePath: fp,
-          originalName: fp.split(/[\\/]/).pop()!,
-        }));
+      // Extract results
+      const totalImported = result.finalizationResult?.totalFinalized ?? 0;
+      const totalDuplicates = result.hashResult?.totalDuplicates ?? 0;
+      const totalErrors = result.finalizationResult?.totalErrors ?? 0;
+      const jobsQueued = result.finalizationResult?.jobsQueued ?? 0;
 
-        try {
-          const result = await window.electronAPI.media.import({
-            files: filesForImport,
-            locid: location.locid,
-            subid: subId || null,
-            auth_imp: author,
-            deleteOriginals: false,
-            is_contributed: contributed,
-            contribution_source: source || null,
-            // OPT-058: Unified progress across chunks
-            chunkOffset: chunkIdx * IMPORT_CHUNK_SIZE,
-            totalOverall: filePaths.length,
-          });
-
-          // Aggregate chunk results
-          totalImported += result.imported;
-          totalDuplicates += result.duplicates;
-          totalErrors += result.errors;
-          processedFiles += chunk.length;
-
-          // OPT-058: Real-time IPC events now report global progress, no need to update store here
-
-          // Collect warnings and failures from this chunk
-          if (result.results) {
-            const chunkFailed = result.results
-              .map((r: any, i: number) => ({
-                filePath: filesForImport[i]?.filePath || '',
-                originalName: filesForImport[i]?.originalName || '',
-                error: r.error || 'Unknown',
-                success: r.success,
-              }))
-              .filter((f: any) => !f.success && f.filePath);
-            allFailedFiles = [...allFailedFiles, ...chunkFailed];
-
-            const chunkGpsWarnings = result.results
-              .filter((r: any) => r.gpsWarning)
-              .map((r: any, i: number) => ({
-                filename: filesForImport[i]?.originalName || 'Unknown',
-                message: r.gpsWarning.message,
-                distance: r.gpsWarning.distance,
-                severity: r.gpsWarning.severity,
-                mediaGPS: r.gpsWarning.mediaGPS,
-              }));
-            allGpsWarnings = [...allGpsWarnings, ...chunkGpsWarnings];
-          }
-
-        } catch (chunkError) {
-          console.error(`[Import] Chunk ${chunkIdx + 1} failed:`, chunkError);
-          // Count all files in failed chunk as errors, continue with next chunk
-          totalErrors += chunk.length;
-          processedFiles += chunk.length;
-          // OPT-058: Must update manually here since backend didn't send progress for failed chunk
-          importStore.updateProgress(processedFiles, filePaths.length);
-        }
-
-        // Brief pause between chunks for GC and UI responsiveness
-        if (chunkIdx < chunks.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, IMPORT_CHUNK_DELAY));
-        }
-      }
-
-      // Apply collected warnings and failures
-      if (allFailedFiles.length > 0) failedFiles = allFailedFiles;
-      if (allGpsWarnings.length > 0) {
-        gpsWarnings = [...gpsWarnings, ...allGpsWarnings];
-        toasts.warning(`${allGpsWarnings.length} file(s) have GPS mismatch`);
-      }
-
-      // Final status based on aggregated results
-      if (totalImported === 0 && totalErrors > 0) {
-        const errorMsg = `Import failed: ${totalErrors} files could not be imported`;
+      // Handle result status
+      if (result.status === 'failed' && result.error) {
+        const errorMsg = `Import failed: ${result.error}`;
         importStore.completeJob(undefined, errorMsg);
         importProgress = errorMsg;
         toasts.error(errorMsg);
+      } else if (result.status === 'cancelled') {
+        importStore.completeJob(undefined, 'Import cancelled');
+        importProgress = 'Import cancelled';
+        toasts.info('Import was cancelled');
       } else {
+        // Success or partial success
         importStore.completeJob({ imported: totalImported, duplicates: totalDuplicates, errors: totalErrors });
+
         if (totalErrors > 0) {
           importProgress = `Imported ${totalImported} files (${totalErrors} failed)`;
           toasts.warning(`Imported ${totalImported} files. ${totalErrors} failed.`);
         } else if (totalImported > 0) {
-          importProgress = `Imported ${totalImported} files successfully`;
+          const bgMsg = jobsQueued > 0 ? ` (${jobsQueued} background jobs queued)` : '';
+          importProgress = `Imported ${totalImported} files successfully${bgMsg}`;
           toasts.success(`Successfully imported ${totalImported} files`);
           failedFiles = [];
         } else if (totalDuplicates > 0) {
@@ -706,6 +660,9 @@
       importStore.completeJob(undefined, msg);
       importProgress = `Import error: ${msg}`;
       toasts.error(`Import error: ${msg}`);
+    } finally {
+      // Clean up progress listener
+      unsubscribeProgress();
     }
 
     setTimeout(() => importProgress = '', 8000);
@@ -845,11 +802,7 @@
               style="object-position: {((currentSubLocation?.hero_focal_x ?? location?.hero_focal_x ?? 0.5) * 100)}% {((currentSubLocation?.hero_focal_y ?? location?.hero_focal_y ?? 0.5) * 100)}%;"
             />
             <!-- Hover overlay -->
-            <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition flex items-center justify-center">
-              <span class="opacity-0 group-hover:opacity-100 text-white text-sm font-medium transition">
-                View
-              </span>
-            </div>
+            <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition"></div>
             <!-- Location name overlay - bottom right -->
             <div class="absolute bottom-0 right-0 p-4 pointer-events-none">
               <span

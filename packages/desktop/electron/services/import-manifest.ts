@@ -56,7 +56,6 @@ export interface ManifestFileEntry {
 
   // Phase 4: Database results
   database_id?: string;
-  original_deleted?: boolean;
 }
 
 export interface ManifestLocation {
@@ -77,8 +76,6 @@ export interface ManifestLocation {
 }
 
 export interface ManifestOptions {
-  delete_originals: boolean;
-  use_hardlinks: boolean;
   verify_checksums: boolean;
 }
 
@@ -154,8 +151,6 @@ export class ImportManifest {
         type: null,
       },
       options: {
-        delete_originals: false,
-        use_hardlinks: false,
         verify_checksums: true,
       },
       files: [],
@@ -179,8 +174,6 @@ export class ImportManifest {
 
     this.data.location = location;
     this.data.options = {
-      delete_originals: options.delete_originals ?? false,
-      use_hardlinks: options.use_hardlinks ?? false,
       verify_checksums: options.verify_checksums ?? true,
     };
 
@@ -307,7 +300,6 @@ export class ImportManifest {
     index: number,
     updates: {
       database_id?: string;
-      original_deleted?: boolean;
       status?: FileStatus;
     }
   ): void {
@@ -315,7 +307,6 @@ export class ImportManifest {
     if (!file) return;
 
     if (updates.database_id !== undefined) file.database_id = updates.database_id;
-    if (updates.original_deleted !== undefined) file.original_deleted = updates.original_deleted;
     if (updates.status !== undefined) file.status = updates.status;
 
     this.data.updated_at = new Date().toISOString();

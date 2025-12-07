@@ -28,7 +28,8 @@ export function registerUsersHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -37,7 +38,8 @@ export function registerUsersHandlers(db: Kysely<Database>) {
       return await usersRepo.findAll();
     } catch (error) {
       console.error('Error finding users:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -47,7 +49,8 @@ export function registerUsersHandlers(db: Kysely<Database>) {
       return await usersRepo.findById(validatedId);
     } catch (error) {
       console.error('Error finding user by id:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -57,7 +60,8 @@ export function registerUsersHandlers(db: Kysely<Database>) {
       return await usersRepo.findByUsername(validatedUsername);
     } catch (error) {
       console.error('Error finding user by username:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -75,7 +79,8 @@ export function registerUsersHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -88,7 +93,8 @@ export function registerUsersHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -123,7 +129,8 @@ export function registerUsersHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error('PIN must be 4-6 digits');
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -134,7 +141,8 @@ export function registerUsersHandlers(db: Kysely<Database>) {
       return { success: true };
     } catch (error) {
       console.error('Error clearing PIN:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -144,7 +152,8 @@ export function registerUsersHandlers(db: Kysely<Database>) {
       return await usersRepo.hasPin(validatedId);
     } catch (error) {
       console.error('Error checking PIN:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -153,7 +162,8 @@ export function registerUsersHandlers(db: Kysely<Database>) {
       return await usersRepo.anyUserHasPin();
     } catch (error) {
       console.error('Error checking if any user has PIN:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -164,7 +174,8 @@ export function registerUsersHandlers(db: Kysely<Database>) {
       return { success: true };
     } catch (error) {
       console.error('Error updating last login:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 }

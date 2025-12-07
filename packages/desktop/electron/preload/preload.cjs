@@ -121,6 +121,16 @@ function invokeAuto(channel) {
 }
 
 /**
+ * Create a wrapped IPC invoke function with very long timeout
+ * Used for import operations that may take several minutes
+ * @param {string} channel - The IPC channel
+ * @returns {Function} - Wrapped invoke function
+ */
+function invokeLong(channel) {
+  return invoke(channel, VERY_LONG_IPC_TIMEOUT);
+}
+
+/**
  * Calculate dynamic timeout for import operations based on file count
  * OPT-034b: Scales timeout with file count to prevent large import timeouts
  * Formula: BASE + (fileCount * PER_FILE), clamped to [MIN, MAX]
@@ -524,7 +534,19 @@ const api = {
   // Import System v2.0 - 5-step pipeline with background jobs
   importV2: {
     // Start a new import with paths and location info
-    start: (input) => invokeLong("import:v2:start")(input),
+    start: (input) => {
+      console.log("[PRELOAD import:v2:start] Calling invokeLong...");
+      return invokeLong("import:v2:start")(input)
+        .then(result => {
+          console.log("[PRELOAD import:v2:start] Success, result status:", result?.status);
+          return result;
+        })
+        .catch(err => {
+          console.error("[PRELOAD import:v2:start] CAUGHT ERROR:", err);
+          console.error("[PRELOAD import:v2:start] Error message:", err?.message);
+          throw err;
+        });
+    },
     // Cancel running import
     cancel: (sessionId) => invokeAuto("import:v2:cancel")(sessionId),
     // Get current import status
@@ -535,13 +557,29 @@ const api = {
     resume: (sessionId) => invokeLong("import:v2:resume")(sessionId),
     // Listen for import progress events
     onProgress: (callback) => {
-      const listener = (_event, progress) => callback(progress);
+      const listener = (_event, progress) => {
+        console.log("[PRELOAD onProgress] Received progress event:", progress?.status);
+        try {
+          callback(progress);
+          console.log("[PRELOAD onProgress] Callback completed OK");
+        } catch (err) {
+          console.error("[PRELOAD onProgress] Callback FAILED:", err);
+        }
+      };
       ipcRenderer.on("import:v2:progress", listener);
       return () => ipcRenderer.removeListener("import:v2:progress", listener);
     },
     // Listen for import completion events
     onComplete: (callback) => {
-      const listener = (_event, result) => callback(result);
+      const listener = (_event, result) => {
+        console.log("[PRELOAD onComplete] Received complete event:", result?.status);
+        try {
+          callback(result);
+          console.log("[PRELOAD onComplete] Callback completed OK");
+        } catch (err) {
+          console.error("[PRELOAD onComplete] Callback FAILED:", err);
+        }
+      };
       ipcRenderer.on("import:v2:complete", listener);
       return () => ipcRenderer.removeListener("import:v2:complete", listener);
     },

@@ -75,11 +75,13 @@ export interface ImportResult {
   // OPT-059: Video proxy data for post-transaction generation (fixes SQLite deadlock)
   // Proxy generation moved outside transaction because it writes to video_proxies table
   // using main db connection, which would deadlock waiting for transaction to release write lock
+  // OPT-077: Added rotation for aspect ratio correction
   _videoProxyData?: {
     vidhash: string;
     archivePath: string;
     width: number;
     height: number;
+    rotation?: number | null;
   } | null;
 }
 
@@ -274,7 +276,7 @@ export class FileImportService {
    * Example migration:
    * ```typescript
    * // Old:
-   * const result = await fileImportService.importFiles(files, deleteOriginals, onProgress, abortSignal);
+   * const result = await fileImportService.importFiles(files, onProgress, abortSignal);
    *
    * // New:
    * const orchestrator = new ImportOrchestrator(db, archivePath);
@@ -287,7 +289,6 @@ export class FileImportService {
    */
   async importFiles(
     files: ImportFileInput[],
-    deleteOriginals: boolean = false,
     // FIX 4.1: Progress callback now includes filename
     onProgress?: (current: number, total: number, filename?: string) => void,
     // FIX 4.3: Abort signal for cancellation
@@ -347,7 +348,7 @@ export class FileImportService {
         // FIX 2.2: Each file gets its own transaction - committed on success, rolled back on failure
         // FIX 11: Pass pre-fetched location to avoid DB calls inside transaction (prevents deadlock)
         const result = await this.db.transaction().execute(async (trx) => {
-          return await this.importSingleFile(file, deleteOriginals, trx, location);
+          return await this.importSingleFile(file, trx, location);
         });
         results.push(result);
 
@@ -386,6 +387,7 @@ export class FileImportService {
         // OPT-059: Generate video proxy fire-and-forget AFTER progress fires
         // CRITICAL: This runs OUTSIDE the transaction to avoid SQLite deadlock
         // The proxy generation writes to video_proxies table using main db connection
+        // OPT-077: Pass rotation for aspect ratio correction
         if (result.success && !result.duplicate && result._videoProxyData) {
           const proxyData = result._videoProxyData;
           console.log('[FileImport] Step 7b: Generating video proxy (post-transaction, non-blocking)...');
@@ -394,7 +396,7 @@ export class FileImportService {
             this.archivePath,
             proxyData.vidhash,
             proxyData.archivePath,
-            { width: proxyData.width, height: proxyData.height }
+            { width: proxyData.width, height: proxyData.height, rotation: proxyData.rotation }
           ).then(proxyResult => {
             if (proxyResult.success) {
               console.log(`[FileImport] Video proxy generated: ${proxyResult.proxyPath}`);
@@ -758,7 +760,6 @@ export class FileImportService {
    */
   private async importSingleFile(
     file: ImportFileInput,
-    deleteOriginal: boolean,
     trx: any, // Transaction context
     location: any // FIX 11: Pre-fetched location from importFiles() - do NOT fetch again inside transaction!
   ): Promise<ImportResult> {
@@ -1037,6 +1038,7 @@ export class FileImportService {
     // The deadlock occurred because generateVideoProxy writes to video_proxies table
     // using the main db connection while the transaction holds the write lock
     // Now we return metadata and generate proxy fire-and-forget after progress fires
+    // OPT-077: Added rotation for aspect ratio correction
     let videoProxyData: ImportResult['_videoProxyData'] = null;
     if (type === 'video' && metadata?.width && metadata?.height) {
       videoProxyData = {
@@ -1044,6 +1046,7 @@ export class FileImportService {
         archivePath: archivePath,
         width: metadata.width,
         height: metadata.height,
+        rotation: metadata.rotation ?? null,
       };
       console.log('[FileImport] Step 7b: Video proxy data prepared for post-transaction generation');
     }
@@ -1051,18 +1054,6 @@ export class FileImportService {
     // FIX-PROGRESS: Steps 8a-8b (GPS enrichment, geocoding) moved to importFiles()
     // These run AFTER progress fires so UI updates immediately on DB insert
     // See docs/workflows/import.md: "Background job for metadata extraction (doesn't block)"
-
-    // 9. Delete original if requested (after DB success, before progress reports)
-    if (deleteOriginal) {
-      console.log('[FileImport] Step 9: Deleting original file...');
-      try {
-        await fs.unlink(file.filePath);
-        console.log('[FileImport] Step 9 complete - original deleted');
-      } catch (error) {
-        console.warn('[FileImport] Failed to delete original file:', error);
-        // Don't fail import if deletion fails
-      }
-    }
 
     console.log('[FileImport] File import COMPLETE:', file.originalName);
     return {

@@ -17,7 +17,8 @@ export function registerHealthHandlers() {
       return await healthMonitor.getDashboardData();
     } catch (error) {
       console.error('Error getting health dashboard:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -27,7 +28,8 @@ export function registerHealthHandlers() {
       return await healthMonitor.getHealthStatus();
     } catch (error) {
       console.error('Error getting health status:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -37,7 +39,8 @@ export function registerHealthHandlers() {
       return await healthMonitor.runHealthCheck();
     } catch (error) {
       console.error('Error running health check:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -48,7 +51,8 @@ export function registerHealthHandlers() {
       return result;
     } catch (error) {
       console.error('Error creating backup:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -58,7 +62,8 @@ export function registerHealthHandlers() {
       return await backupScheduler.getBackupStats();
     } catch (error) {
       console.error('Error getting backup stats:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -68,7 +73,8 @@ export function registerHealthHandlers() {
       return await diskSpaceMonitor.checkDiskSpace();
     } catch (error) {
       console.error('Error checking disk space:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -78,7 +84,8 @@ export function registerHealthHandlers() {
       return await integrityChecker.runFullCheck();
     } catch (error) {
       console.error('Error checking database integrity:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -94,7 +101,8 @@ export function registerHealthHandlers() {
       return await integrityChecker.checkLocationDataIntegrity();
     } catch (error) {
       console.error('Error checking location data integrity:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -104,7 +112,8 @@ export function registerHealthHandlers() {
       return await maintenanceScheduler.runFullMaintenance('manual');
     } catch (error) {
       console.error('Error running maintenance:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -114,7 +123,8 @@ export function registerHealthHandlers() {
       return maintenanceScheduler.getSchedule();
     } catch (error) {
       console.error('Error getting maintenance schedule:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -124,7 +134,8 @@ export function registerHealthHandlers() {
       return recoverySystem.getState();
     } catch (error) {
       console.error('Error getting recovery state:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -134,7 +145,8 @@ export function registerHealthHandlers() {
       return await recoverySystem.attemptRecovery();
     } catch (error) {
       console.error('Error attempting recovery:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 }

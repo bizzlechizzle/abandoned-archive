@@ -19,7 +19,8 @@ export function registerShellHandlers() {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 }
@@ -40,7 +41,8 @@ export function registerDialogHandlers() {
       return result.filePaths[0];
     } catch (error) {
       console.error('Error selecting folder:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 }

@@ -38,8 +38,6 @@ export interface PhaseImportInput {
 }
 
 export interface PhaseImportOptions {
-  deleteOriginals?: boolean;
-  useHardlinks?: boolean;
   verifyChecksums?: boolean;
 }
 
@@ -171,8 +169,6 @@ export class PhaseImportService {
         manifestLocation,
         files.map(f => ({ filePath: f.filePath, originalName: f.originalName })),
         {
-          delete_originals: options.deleteOriginals ?? false,
-          use_hardlinks: options.useHardlinks ?? false,
           verify_checksums: options.verifyChecksums ?? true,
         }
       );
@@ -215,7 +211,7 @@ export class PhaseImportService {
       console.log('[PhaseImport] ====== PHASE 4: DUMP ======');
       await manifest.transitionToPhase4();
 
-      await this.executePhase4(manifest, files, options.deleteOriginals ?? false, onProgress);
+      await this.executePhase4(manifest, files, onProgress);
 
       // ====== COMPLETE ======
       await manifest.complete();
@@ -434,7 +430,6 @@ export class PhaseImportService {
   private async executePhase4(
     manifest: ImportManifest,
     files: PhaseImportInput[],
-    deleteOriginals: boolean,
     onProgress?: (progress: PhaseImportProgress) => void
   ): Promise<void> {
     const data = manifest.getData();
@@ -504,29 +499,6 @@ export class PhaseImportService {
         })
         .execute();
     });
-
-    onProgress?.({
-      phase: 'dump',
-      phaseProgress: 80,
-      filesProcessed: verifiedFiles.length,
-      totalFiles: verifiedFiles.length,
-    });
-
-    // Delete originals if requested (after DB commit)
-    if (deleteOriginals) {
-      console.log('[PhaseImport] Deleting original files...');
-      for (const file of verifiedFiles) {
-        const fileIndex = data.files.findIndex(f => f.original_path === file.original_path);
-        if (file.status === 'complete') {
-          try {
-            await fs.unlink(file.original_path);
-            manifest.updateFileDump(fileIndex, { original_deleted: true });
-          } catch (error) {
-            console.warn('[PhaseImport] Failed to delete original:', file.original_path);
-          }
-        }
-      }
-    }
 
     onProgress?.({
       phase: 'dump',
@@ -851,7 +823,7 @@ export class PhaseImportService {
         await manifest.transitionToPhase4();
         // Fall through to phase 4
       case 'phase_4_dump':
-        await this.executePhase4(manifest, files, data.options.delete_originals, onProgress);
+        await this.executePhase4(manifest, files, onProgress);
         await manifest.complete();
         break;
       default:

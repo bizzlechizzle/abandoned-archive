@@ -46,7 +46,8 @@ export function registerMediaProcessingHandlers(
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -68,7 +69,8 @@ export function registerMediaProcessingHandlers(
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -82,7 +84,8 @@ export function registerMediaProcessingHandlers(
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -107,7 +110,8 @@ export function registerMediaProcessingHandlers(
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -133,7 +137,8 @@ export function registerMediaProcessingHandlers(
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -196,7 +201,8 @@ export function registerMediaProcessingHandlers(
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -298,7 +304,8 @@ export function registerMediaProcessingHandlers(
       return { success: true };
     } catch (error) {
       console.error('Error writing XMP:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -409,7 +416,8 @@ export function registerMediaProcessingHandlers(
       };
     } catch (error) {
       console.error('Error regenerating thumbnails:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -477,7 +485,8 @@ export function registerMediaProcessingHandlers(
       return { generated, failed, total: videos.length };
     } catch (error) {
       console.error('Error regenerating video thumbnails:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -570,7 +579,8 @@ export function registerMediaProcessingHandlers(
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -643,7 +653,8 @@ export function registerMediaProcessingHandlers(
       return { success: true, livePhotosHidden, sdrHidden };
     } catch (error) {
       console.error('Error detecting Live Photos/SDR:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -691,7 +702,8 @@ export function registerMediaProcessingHandlers(
       return { success: true, rendered, failed, total: dngFiles.length };
     } catch (error) {
       console.error('Error regenerating DNG previews:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -833,7 +845,8 @@ export function registerMediaProcessingHandlers(
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => e.message).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -943,7 +956,8 @@ export function registerMediaProcessingHandlers(
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => e.message).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -1090,7 +1104,8 @@ export function registerMediaProcessingHandlers(
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -1120,7 +1135,8 @@ export function registerMediaProcessingHandlers(
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 

@@ -16,7 +16,8 @@ import type { Kysely } from 'kysely';
 import type { Database } from '../main/database.types';
 
 // Current proxy encoding version - increment when changing encoding settings
-export const PROXY_VERSION = 1;
+// OPT-077: Bumped to v2 for aspect ratio fix (rotation-aware dimensions)
+export const PROXY_VERSION = 2;
 
 export interface ProxyResult {
   success: boolean;
@@ -29,6 +30,31 @@ export interface ProxyResult {
 interface VideoMetadata {
   width: number;
   height: number;
+  // OPT-077: Rotation for aspect ratio correction
+  rotation?: number | null;
+}
+
+/**
+ * OPT-077: Get display dimensions after applying rotation metadata.
+ * Mobile devices record portrait video as landscape pixels + rotation metadata.
+ * 90° or 270° rotation means width/height are swapped in the encoded file.
+ *
+ * @param width - Encoded width from ffprobe
+ * @param height - Encoded height from ffprobe
+ * @param rotation - Rotation in degrees (0, 90, 180, 270) or null
+ * @returns Display dimensions (width/height swapped if 90° or 270°)
+ */
+function getOrientedDimensions(
+  width: number,
+  height: number,
+  rotation: number | null | undefined
+): { width: number; height: number } {
+  const rot = Math.abs(rotation ?? 0) % 360;
+  // 90° or 270° rotation swaps width and height
+  if (rot === 90 || rot === 270) {
+    return { width: height, height: width };
+  }
+  return { width, height };
 }
 
 /**
@@ -114,9 +140,14 @@ export async function generateProxy(
     // Directory likely exists
   }
 
+  // OPT-077: Apply rotation to get display dimensions before calculating proxy size
+  // Mobile devices record portrait as landscape + rotation metadata
+  // FFmpeg autorotate will apply the rotation, so we need to calculate proxy size
+  // based on the DISPLAYED dimensions, not the encoded dimensions
+  const oriented = getOrientedDimensions(metadata.width, metadata.height, metadata.rotation);
   const { width: targetWidth, height: targetHeight } = calculateProxySize(
-    metadata.width,
-    metadata.height
+    oriented.width,
+    oriented.height
   );
 
   // Build FFmpeg scale filter - always scale to calculated dimensions
@@ -124,7 +155,8 @@ export async function generateProxy(
 
   console.log(`[VideoProxy] Generating 720p proxy for ${vidhash.slice(0, 12)}...`);
   console.log(`[VideoProxy]   Input: ${sourcePath}`);
-  console.log(`[VideoProxy]   Size: ${metadata.width}x${metadata.height} -> ${targetWidth}x${targetHeight}`);
+  console.log(`[VideoProxy]   Encoded: ${metadata.width}x${metadata.height}, rotation: ${metadata.rotation ?? 'none'}`);
+  console.log(`[VideoProxy]   Display: ${oriented.width}x${oriented.height} -> Proxy: ${targetWidth}x${targetHeight}`);
   console.log(`[VideoProxy]   Output: ${proxyPath}`);
 
   return new Promise((resolve) => {

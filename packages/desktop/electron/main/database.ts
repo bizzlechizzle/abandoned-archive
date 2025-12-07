@@ -1968,8 +1968,8 @@ function runMigrations(sqlite: Database.Database): void {
 
     // Migration 52: Restore hero_focal_x/y columns for image centering (OPT-074)
     const locColumns52 = sqlite.prepare(`PRAGMA table_info(locs)`).all() as Array<{ name: string }>;
-    const hasHeroFocalX = locColumns52.some(col => col.name === 'hero_focal_x');
-    if (!hasHeroFocalX) {
+    const hasHeroFocalX52 = locColumns52.some(col => col.name === 'hero_focal_x');
+    if (!hasHeroFocalX52) {
       sqlite.exec(`
         ALTER TABLE locs ADD COLUMN hero_focal_x REAL DEFAULT 0.5;
         ALTER TABLE locs ADD COLUMN hero_focal_y REAL DEFAULT 0.5;
@@ -1986,6 +1986,41 @@ function runMigrations(sqlite: Database.Database): void {
         ALTER TABLE slocs ADD COLUMN hero_focal_y REAL DEFAULT 0.5;
       `);
       console.log('Migration 52b completed: hero_focal_x/y columns added to slocs');
+    }
+
+    // Migration 53: OPT-077 Video proxy aspect ratio fix
+    // Delete old proxies (proxy_version < 2) so they regenerate with correct rotation handling
+    // This is a one-time cleanup - affected videos will regenerate proxies on next playback
+    const oldProxies = sqlite.prepare(
+      `SELECT COUNT(*) as count FROM video_proxies WHERE proxy_version < 2`
+    ).get() as { count: number };
+
+    if (oldProxies.count > 0) {
+      console.log(`Migration 53: Clearing ${oldProxies.count} old video proxies for OPT-077 aspect ratio fix`);
+
+      // Get paths of old proxy files to delete
+      const proxyPaths = sqlite.prepare(
+        `SELECT proxy_path FROM video_proxies WHERE proxy_version < 2`
+      ).all() as Array<{ proxy_path: string }>;
+
+      // Delete DB records
+      sqlite.exec(`DELETE FROM video_proxies WHERE proxy_version < 2`);
+
+      // Delete physical files (non-blocking, don't fail migration if files missing)
+      const fs = require('fs');
+      let deletedFiles = 0;
+      for (const { proxy_path } of proxyPaths) {
+        try {
+          if (fs.existsSync(proxy_path)) {
+            fs.unlinkSync(proxy_path);
+            deletedFiles++;
+          }
+        } catch {
+          // File may be locked or already deleted - continue
+        }
+      }
+
+      console.log(`Migration 53 completed: Deleted ${deletedFiles} proxy files, ${oldProxies.count} DB records. Proxies will regenerate on playback.`);
     }
   } catch (error) {
     console.error('Error running migrations:', error);

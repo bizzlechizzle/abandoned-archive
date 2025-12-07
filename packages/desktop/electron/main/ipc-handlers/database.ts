@@ -37,7 +37,8 @@ export function registerDatabaseHandlers() {
       return { success: true, path: result.filePath };
     } catch (error) {
       console.error('Error backing up database:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -91,7 +92,8 @@ export function registerDatabaseHandlers() {
       };
     } catch (error) {
       console.error('Error restoring database:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -105,7 +107,8 @@ export function registerDatabaseHandlers() {
       return { currentPath, defaultPath, customPath, isCustom };
     } catch (error) {
       console.error('Error getting database location:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -164,7 +167,8 @@ export function registerDatabaseHandlers() {
       };
     } catch (error) {
       console.error('Error changing database location:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -206,7 +210,8 @@ export function registerDatabaseHandlers() {
       };
     } catch (error) {
       console.error('Error resetting database location:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -263,7 +268,8 @@ export function registerDatabaseHandlers() {
       return { success: true, path: result.filePath };
     } catch (error) {
       console.error('Error exporting database:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -326,7 +332,8 @@ export function registerDatabaseHandlers() {
       };
     } catch (error) {
       console.error('Error restoring from internal backup:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -361,7 +368,8 @@ export function registerDatabaseHandlers() {
       }
     } catch (error) {
       console.error('Error exporting database to archive:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 

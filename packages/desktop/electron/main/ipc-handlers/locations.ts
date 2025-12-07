@@ -38,7 +38,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.findAll(filters);
     } catch (error) {
       console.error('Error finding locations:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -51,7 +52,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -119,7 +121,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -186,7 +189,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -199,7 +203,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -208,7 +213,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.count(filters);
     } catch (error) {
       console.error('Error counting locations:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -231,7 +237,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -277,7 +284,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -296,7 +304,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.countInBounds(validatedBounds);
     } catch (error) {
       console.error('Error counting locations in bounds:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -314,7 +323,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.findNearby(lat, lng, radiusKm);
     } catch (error) {
       console.error('Error finding nearby locations:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -336,7 +346,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.findById(result.locid);
     } catch (error) {
       console.error('Error getting random location:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -345,7 +356,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.findAll({ documented: false });
     } catch (error) {
       console.error('Error getting undocumented locations:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -354,7 +366,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.findAll({ historic: true });
     } catch (error) {
       console.error('Error getting historical locations:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -363,7 +376,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.findAll({ favorite: true });
     } catch (error) {
       console.error('Error getting favorite locations:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -393,7 +407,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -447,7 +462,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -464,7 +480,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return result;
     } catch (error) {
       console.error('Error backfilling regions:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -512,7 +529,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -531,7 +549,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return types.map(r => r.type).filter(Boolean) as string[];
     } catch (error) {
       console.error('Error getting distinct types:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -545,7 +564,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.getFilterOptions();
     } catch (error) {
       console.error('Error getting filter options:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -564,7 +584,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return stypes.map(r => r.stype).filter(Boolean) as string[];
     } catch (error) {
       console.error('Error getting distinct sub-types:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -590,7 +611,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -606,7 +628,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -622,7 +645,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -634,7 +658,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.findRecentlyViewed(limit ?? 5);
     } catch (error) {
       console.error('Error finding recently viewed locations:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -646,7 +671,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.findProjects(limit ?? 5);
     } catch (error) {
       console.error('Error finding project locations:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -676,7 +702,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => e.message).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -700,7 +727,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => e.message).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -712,7 +740,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await exclusionsRepo.count();
     } catch (error) {
       console.error('Error getting exclusion count:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 

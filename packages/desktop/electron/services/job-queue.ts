@@ -42,9 +42,9 @@ export interface Job<T = unknown> {
   maxAttempts: number;
   error: string | null;
   result: unknown | null;
-  createdAt: Date;
-  startedAt: Date | null;
-  completedAt: Date | null;
+  createdAt: string;  // ISO string for IPC serialization
+  startedAt: string | null;  // ISO string for IPC serialization
+  completedAt: string | null;  // ISO string for IPC serialization
 }
 
 export interface JobQueueStats {
@@ -433,7 +433,7 @@ export class JobQueue {
     payload: unknown;
     error: string | null;
     attempts: number;
-    failedAt: Date;
+    failedAt: string;  // ISO string for IPC serialization
     acknowledged: boolean;
   }[]> {
     let query = this.db
@@ -455,7 +455,7 @@ export class JobQueue {
       payload: JSON.parse(row.payload),
       error: row.error,
       attempts: row.attempts,
-      failedAt: new Date(row.failed_at),
+      failedAt: row.failed_at,  // Already ISO string from DB
       acknowledged: row.acknowledged === 1,
     }));
   }
@@ -530,9 +530,9 @@ export class JobQueue {
       maxAttempts: row.max_attempts,
       error: row.error,
       result: row.result ? JSON.parse(row.result) : null,
-      createdAt: new Date(row.created_at),
-      startedAt: row.started_at ? new Date(row.started_at) : null,
-      completedAt: row.completed_at ? new Date(row.completed_at) : null,
+      createdAt: row.created_at,  // Already ISO string from DB
+      startedAt: row.started_at ?? null,  // Already ISO string from DB
+      completedAt: row.completed_at ?? null,  // Already ISO string from DB
     };
   }
 }

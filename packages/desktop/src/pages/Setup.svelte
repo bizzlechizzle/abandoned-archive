@@ -20,7 +20,6 @@
   let pin = $state('');
   let confirmPin = $state('');
   let archivePath = $state('');
-  let deleteOriginals = $state(false);
   let isProcessing = $state(false);
   let pinError = $state('');
 
@@ -105,7 +104,6 @@
         window.electronAPI.settings.set('current_user', username.trim()),
         window.electronAPI.settings.set('current_user_id', user.user_id),
         window.electronAPI.settings.set('archive_folder', archivePath),
-        window.electronAPI.settings.set('delete_on_import', deleteOriginals.toString()),
         window.electronAPI.settings.set('setup_complete', 'true'),
       ]);
 
@@ -276,18 +274,6 @@
                 <p class="text-xs text-braun-500 mt-1">
                   Where your media files will be stored.
                 </p>
-              </div>
-
-              <div class="mt-3 flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  bind:checked={deleteOriginals}
-                  id="deleteOriginals"
-                  class="mt-0.5"
-                />
-                <label for="deleteOriginals" class="text-xs text-braun-700 cursor-pointer">
-                  Delete original files after import
-                </label>
               </div>
             </div>
           </div>

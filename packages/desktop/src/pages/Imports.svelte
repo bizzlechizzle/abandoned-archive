@@ -44,7 +44,6 @@
   let importResult = $state<ImportSessionResult | null>(null);
   let recentImports = $state<ImportRecord[]>([]);
   let currentUser = $state('default');
-  let deleteOriginals = $state(false);
   let loading = $state(true);
   let progressCurrent = $state(0);
   let progressTotal = $state(0);
@@ -74,7 +73,6 @@
       locations = locs;
       recentImports = imports;
       currentUser = settings.current_user || 'default';
-      deleteOriginals = settings.delete_on_import === 'true';
 
       // Check if archive folder is configured
       archiveFolder = settings.archive_folder || '';
@@ -85,16 +83,35 @@
         users = await window.electronAPI.users.findAll();
       }
 
-      // Set up progress listener
-      const unsubscribe = window.electronAPI.media.onImportProgress((progress) => {
-        progressCurrent = progress.current;
-        progressTotal = progress.total;
-        importProgress = 'Importing...';
+      // Set up v2 progress listener for real-time import updates
+      const unsubscribeProgress = window.electronAPI.importV2.onProgress((progress) => {
+        progressCurrent = progress.filesProcessed;
+        progressTotal = progress.filesTotal;
+        // Display human-readable status based on v2 pipeline step
+        switch (progress.status) {
+          case 'scanning':
+            importProgress = 'Scanning files...';
+            break;
+          case 'hashing':
+            importProgress = 'Hashing files...';
+            break;
+          case 'copying':
+            importProgress = 'Copying to archive...';
+            break;
+          case 'validating':
+            importProgress = 'Validating integrity...';
+            break;
+          case 'finalizing':
+            importProgress = 'Finalizing import...';
+            break;
+          default:
+            importProgress = 'Importing...';
+        }
       });
 
       // Clean up listener on unmount
       return () => {
-        unsubscribe();
+        unsubscribeProgress();
       };
     } catch (error) {
       console.error('Error loading imports page:', error);
@@ -209,143 +226,67 @@
     contributionSource = '';
   }
 
-  async function importFiles(files: File[]) {
-    if (!selectedLocation) {
-      importProgress = 'Please select a location first';
-      return;
-    }
-    if (!window.electronAPI?.media) return;
-
-    try {
-      isImporting = true;
-      importProgress = `Preparing to import ${files.length} file(s)...`;
-
-      // Note: This function is called with File objects from file input, not drag-drop
-      // For file input, we need paths. Since File objects lose native backing through contextBridge,
-      // this path should only be used from file dialog (which returns paths directly from main process)
-      const filesForImport = files.map((file) => ({
-        filePath: '', // File objects from input don't have paths in sandbox mode - use selectFiles dialog instead
-        originalName: file.name,
-      }));
-
-      importProgress = 'Importing files...';
-      const result = (await window.electronAPI.media.import({
-        files: filesForImport,
-        locid: selectedLocation,
-        auth_imp: currentUser,
-        deleteOriginals,
-      })) as ImportSessionResult;
-
-      importResult = result;
-      importProgress = `Import complete! ${result.imported} imported, ${result.duplicates} duplicates, ${result.errors} errors`;
-
-      // Refresh recent imports
-      const imports = (await window.electronAPI.imports.findRecent(10)) as ImportRecord[];
-      recentImports = imports;
-
-      // Clear result after 5 seconds
-      setTimeout(() => {
-        importResult = null;
-        importProgress = '';
-        progressCurrent = 0;
-        progressTotal = 0;
-      }, 5000);
-    } catch (error) {
-      console.error('Error importing files:', error);
-      importProgress = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
-      progressCurrent = 0;
-      progressTotal = 0;
-    } finally {
-      isImporting = false;
-    }
-  }
-
-  // OPT-034b: Chunked import configuration for memory-bounded processing
-  const IMPORT_CHUNK_SIZE = 50;    // Files per IPC call (prevents timeout and OOM)
-  const IMPORT_CHUNK_DELAY = 100;  // ms between chunks (GC breathing room)
-
+  // Import v2.0: Uses v2 pipeline with streaming progress
   async function importFilePaths(filePaths: string[], author: string, contributed: number = 0, source: string = '') {
     if (!selectedLocation) {
       importProgress = 'Please select a location first';
       return;
     }
-    if (!window.electronAPI?.media) return;
+    if (!window.electronAPI?.importV2) {
+      importProgress = 'Import v2 API not available';
+      return;
+    }
+
+    // Get full location object from locations array (v2 requires loc12 and other fields)
+    const location = locations.find(loc => loc.locid === selectedLocation);
+    if (!location) {
+      importProgress = 'Selected location not found';
+      return;
+    }
 
     try {
       isImporting = true;
+      importProgress = 'Starting import...';
 
-      // OPT-034b: Chunk files for memory-bounded processing
-      const chunks: string[][] = [];
-      for (let i = 0; i < filePaths.length; i += IMPORT_CHUNK_SIZE) {
-        chunks.push(filePaths.slice(i, i + IMPORT_CHUNK_SIZE));
-      }
+      // Call v2 import pipeline - no chunking needed, v2 handles it internally
+      const result = await window.electronAPI.importV2.start({
+        paths: filePaths,
+        locid: location.locid,
+        loc12: location.loc12,
+        address_state: location.address_state || null,
+        type: location.type || null,
+        slocnam: location.slocnam || null,
+        subid: null, // Imports page doesn't support sub-location selection
+        auth_imp: author,
+        is_contributed: contributed,
+        contribution_source: source || null,
+      });
 
-      // Aggregate results across all chunks
-      let totalImported = 0;
-      let totalDuplicates = 0;
-      let totalErrors = 0;
-      let processedFiles = 0;
+      // Extract counts from v2 result structure
+      const totalImported = result.finalizationResult?.totalFinalized ?? 0;
+      const totalDuplicates = result.hashResult?.totalDuplicates ?? 0;
+      const totalErrors = (result.hashResult?.totalErrors ?? 0) +
+                          (result.copyResult?.totalErrors ?? 0) +
+                          (result.validationResult?.totalInvalid ?? 0) +
+                          (result.finalizationResult?.totalErrors ?? 0);
+      const jobsQueued = result.finalizationResult?.jobsQueued ?? 0;
 
-      // Process chunks sequentially to bound memory usage
-      for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
-        const chunk = chunks[chunkIdx];
-
-        // Update progress message (chunk details hidden from user per OPT-035)
-        importProgress = 'Importing...';
-
-        const filesForImport = chunk.map((filePath) => {
-          const parts = filePath.split(/[\\/]/);
-          return { filePath, originalName: parts[parts.length - 1] };
-        });
-
-        try {
-          const result = (await window.electronAPI.media.import({
-            files: filesForImport,
-            locid: selectedLocation,
-            auth_imp: author,
-            deleteOriginals,
-            is_contributed: contributed,
-            contribution_source: source || null,
-            // OPT-058: Unified progress across chunks
-            chunkOffset: chunkIdx * IMPORT_CHUNK_SIZE,
-            totalOverall: filePaths.length,
-          })) as ImportSessionResult;
-
-          // Aggregate chunk results
-          totalImported += result.imported;
-          totalDuplicates += result.duplicates;
-          totalErrors += result.errors;
-          processedFiles += chunk.length;
-
-          // OPT-058: Real-time IPC events now report global progress
-          // Keep local tracking for final status but don't need to update mid-import
-          progressCurrent = processedFiles;
-          progressTotal = filePaths.length;
-
-        } catch (chunkError) {
-          console.error(`[Import] Chunk ${chunkIdx + 1} failed:`, chunkError);
-          // Count all files in failed chunk as errors, continue with next chunk
-          totalErrors += chunk.length;
-          processedFiles += chunk.length;
-        }
-
-        // Brief pause between chunks for GC and UI responsiveness
-        if (chunkIdx < chunks.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, IMPORT_CHUNK_DELAY));
-        }
-      }
-
-      // Build final aggregated result
+      // Build result for UI display
       importResult = {
-        total: filePaths.length,
+        total: result.scanResult?.totalFiles ?? filePaths.length,
         imported: totalImported,
         duplicates: totalDuplicates,
         errors: totalErrors,
-        results: [], // Don't accumulate detailed results in memory for large imports
-        importId: `chunked-${Date.now()}`,
+        results: [], // v2 doesn't return per-file results to avoid memory issues
+        importId: result.sessionId,
       };
 
-      importProgress = `Import complete! ${totalImported} imported, ${totalDuplicates} duplicates, ${totalErrors} errors`;
+      // Success message includes background job count
+      if (jobsQueued > 0) {
+        importProgress = `Import complete! ${totalImported} imported, ${totalDuplicates} duplicates, ${totalErrors} errors. ${jobsQueued} background jobs queued.`;
+      } else {
+        importProgress = `Import complete! ${totalImported} imported, ${totalDuplicates} duplicates, ${totalErrors} errors`;
+      }
 
       // Refresh recent imports list
       const imports = (await window.electronAPI.imports.findRecent(10)) as ImportRecord[];
@@ -407,14 +348,12 @@
     <ImportForm
       {locations}
       {selectedLocation}
-      {deleteOriginals}
       {isImporting}
       {isDragging}
       {importProgress}
       {progressCurrent}
       {progressTotal}
       onLocationChange={(locid) => (selectedLocation = locid)}
-      onDeleteOriginalsChange={(value) => (deleteOriginals = value)}
       onBrowse={handleBrowse}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

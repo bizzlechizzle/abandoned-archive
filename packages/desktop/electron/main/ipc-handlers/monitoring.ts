@@ -41,7 +41,8 @@ export function registerMonitoringHandlers(db: Kysely<Database>) {
       return metrics.getSummary();
     } catch (error) {
       logger.error('MonitoringHandlers', 'Failed to get metrics summary', error as Error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -53,7 +54,8 @@ export function registerMonitoringHandlers(db: Kysely<Database>) {
       return metrics.getHistogramStats(name, tags ?? {});
     } catch (error) {
       logger.error('MonitoringHandlers', 'Failed to get histogram stats', error as Error, { name });
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -90,7 +92,8 @@ export function registerMonitoringHandlers(db: Kysely<Database>) {
       return await query.execute();
     } catch (error) {
       logger.error('MonitoringHandlers', 'Failed to get metrics history', error as Error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -106,7 +109,8 @@ export function registerMonitoringHandlers(db: Kysely<Database>) {
       return tracer.getActiveSpans();
     } catch (error) {
       logger.error('MonitoringHandlers', 'Failed to get active spans', error as Error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -118,7 +122,8 @@ export function registerMonitoringHandlers(db: Kysely<Database>) {
       return tracer.getTraceSpans(traceId);
     } catch (error) {
       logger.error('MonitoringHandlers', 'Failed to get trace spans', error as Error, { traceId });
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -163,7 +168,8 @@ export function registerMonitoringHandlers(db: Kysely<Database>) {
       return await query.execute();
     } catch (error) {
       logger.error('MonitoringHandlers', 'Failed to get traces history', error as Error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -179,7 +185,8 @@ export function registerMonitoringHandlers(db: Kysely<Database>) {
       return alertManager.getAlertHistory(limit);
     } catch (error) {
       logger.error('MonitoringHandlers', 'Failed to get alert history', error as Error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -191,7 +198,8 @@ export function registerMonitoringHandlers(db: Kysely<Database>) {
       return alertManager.getRules();
     } catch (error) {
       logger.error('MonitoringHandlers', 'Failed to get alert rules', error as Error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -205,7 +213,8 @@ export function registerMonitoringHandlers(db: Kysely<Database>) {
       return { success: true };
     } catch (error) {
       logger.error('MonitoringHandlers', 'Failed to set alert rule enabled', error as Error, { ruleId, enabled });
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -228,7 +237,8 @@ export function registerMonitoringHandlers(db: Kysely<Database>) {
       return { success: true };
     } catch (error) {
       logger.error('MonitoringHandlers', 'Failed to acknowledge alert', error as Error, { alertId });
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -246,7 +256,8 @@ export function registerMonitoringHandlers(db: Kysely<Database>) {
         .execute();
     } catch (error) {
       logger.error('MonitoringHandlers', 'Failed to get unacknowledged alerts', error as Error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -299,7 +310,8 @@ export function registerMonitoringHandlers(db: Kysely<Database>) {
       return await query.execute();
     } catch (error) {
       logger.error('MonitoringHandlers', 'Failed to get job audit log', error as Error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -336,7 +348,8 @@ export function registerMonitoringHandlers(db: Kysely<Database>) {
       return await query.execute();
     } catch (error) {
       logger.error('MonitoringHandlers', 'Failed to get job performance stats', error as Error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -357,7 +370,8 @@ export function registerMonitoringHandlers(db: Kysely<Database>) {
         .execute();
     } catch (error) {
       logger.error('MonitoringHandlers', 'Failed to get import audit log', error as Error, { sessionId });
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -394,7 +408,8 @@ export function registerMonitoringHandlers(db: Kysely<Database>) {
       return await query.execute();
     } catch (error) {
       logger.error('MonitoringHandlers', 'Failed to get health snapshots', error as Error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -466,7 +481,8 @@ export function registerMonitoringHandlers(db: Kysely<Database>) {
       return { success: true };
     } catch (error) {
       logger.error('MonitoringHandlers', 'Failed to start monitoring', error as Error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -495,7 +511,8 @@ export function registerMonitoringHandlers(db: Kysely<Database>) {
       return { success: true };
     } catch (error) {
       logger.error('MonitoringHandlers', 'Failed to stop monitoring', error as Error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -576,7 +593,8 @@ export function registerMonitoringHandlers(db: Kysely<Database>) {
       };
     } catch (error) {
       logger.error('MonitoringHandlers', 'Failed to cleanup monitoring data', error as Error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 

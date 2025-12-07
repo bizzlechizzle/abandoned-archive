@@ -596,7 +596,7 @@ export interface ImportSessionsTable {
   locid: string;
   status: 'pending' | 'scanning' | 'hashing' | 'copying' | 'validating' | 'finalizing' | 'completed' | 'cancelled' | 'failed';
   source_paths: string;        // JSON array of source paths
-  copy_strategy: string | null; // 'hardlink' | 'reflink' | 'copy'
+  copy_strategy: string | null; // 'copy' only (OPT-082: pure copy)
   total_files: number;
   processed_files: number;
   duplicate_files: number;
