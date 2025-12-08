@@ -450,6 +450,7 @@ export class JobWorkerService extends EventEmitter {
     // OPT-085: For videos, extract a poster frame first since Sharp can't process video files
     let sourceForThumbnail = payload.archivePath;
     let posterPath: string | null = null;
+    let extractedRawPreviewPath: string | null = null; // OPT-105: Track extracted RAW preview separately
 
     if (payload.mediaType === 'video') {
       const { FFmpegService } = await import('./ffmpeg-service');
@@ -500,9 +501,11 @@ export class JobWorkerService extends EventEmitter {
           const extractedPath = await previewExtractor.extractPreview(payload.archivePath, payload.hash);
           if (extractedPath) {
             sourceForThumbnail = extractedPath;
+            extractedRawPreviewPath = extractedPath; // OPT-105: Store for database update
             logger.info('JobWorker', 'Extracted RAW/HEIC preview for thumbnailing', {
               hash: payload.hash.slice(0, 12),
               format: payload.archivePath.split('.').pop()?.toUpperCase(),
+              previewPath: extractedPath,
             });
           } else {
             logger.warn('JobWorker', 'No embedded preview found in RAW/HEIC, thumbnails will fail', {
@@ -534,13 +537,19 @@ export class JobWorkerService extends EventEmitter {
     };
 
     // Update database with thumbnail paths
+    // OPT-105: For RAW/HEIC files, preview_path should be the extracted preview (full camera resolution)
+    // For standard images, preview_path is the 1920px generated thumbnail
+    // Fallback chain for display: extracted preview -> 1920px thumb -> 800px thumb -> original
     if (payload.mediaType === 'image') {
       await this.db
         .updateTable('imgs')
         .set({
           thumb_path_sm: thumbResult.thumb_sm,
           thumb_path_lg: thumbResult.thumb_lg,
-          preview_path: thumbResult.preview,
+          // OPT-105: Prefer extracted RAW preview over generated 1920px thumbnail
+          // RAW previews are camera-processed JPEGs with proper color/tone, often higher res than 1920px
+          preview_path: extractedRawPreviewPath || thumbResult.preview,
+          preview_extracted: extractedRawPreviewPath ? 1 : 0,
         })
         .where('imghash', '=', payload.hash)
         .execute();

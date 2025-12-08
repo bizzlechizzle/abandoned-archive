@@ -291,6 +291,8 @@ const api = {
     regenerateSingleFile: (hash, filePath) => invokeAuto("media:regenerateSingleFile")(hash, filePath),
     // Migration 30: Regenerate DNG previews using LibRaw for full quality
     regenerateDngPreviews: () => invokeAuto("media:regenerateDngPreviews")(),
+    // OPT-105: Backfill RAW preview paths from existing .previews/ directory
+    backfillRawPreviews: () => invokeAuto("media:backfillRawPreviews")(),
     // Hidden/Live Photo operations (Migration 23)
     setHidden: (input) => invokeAuto("media:setHidden")(input),
     detectLivePhotosAndSDR: (locid) => invokeAuto("media:detectLivePhotosAndSDR")(locid),

@@ -16,6 +16,7 @@
       hash: string;
       path: string;
       thumbPath?: string | null;
+      thumbPathLg?: string | null; // OPT-105: 800px thumbnail for fallback chain
       previewPath?: string | null;
       type: 'image' | 'video' | 'document';
       name?: string;
@@ -115,12 +116,17 @@
 
   // Get the best available image source
   // Uses custom media:// protocol registered in main process to bypass file:// restrictions
+  // OPT-105: Full fallback chain for RAW files where browser can't display original
   const imageSrc = $derived(() => {
     if (!currentMedia) return '';
-    // Priority: preview (for RAW) -> original path
+    // Priority: preview (extracted RAW/HEIC preview or 1920px thumb) -> 800px thumb -> original path
     // Append cache version to force reload after regeneration
     if (currentMedia.previewPath) {
       return `media://${currentMedia.previewPath}?v=${cacheVersion}`;
+    }
+    // OPT-105: Fallback to 800px thumbnail for RAW files without extracted preview
+    if (currentMedia.thumbPathLg) {
+      return `media://${currentMedia.thumbPathLg}?v=${cacheVersion}`;
     }
     return `media://${currentMedia.path}?v=${cacheVersion}`;
   });

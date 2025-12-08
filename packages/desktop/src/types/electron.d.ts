@@ -369,6 +369,8 @@ export interface ElectronAPI {
     regenerateAllThumbnails: (options?: { force?: boolean }) => Promise<{ generated: number; failed: number; total: number; rawTotal?: number; previewsExtracted?: number; previewsFailed?: number }>;
     regenerateVideoThumbnails: (options?: { force?: boolean }) => Promise<{ generated: number; failed: number; total: number }>;
     regenerateDngPreviews: () => Promise<{ success: boolean; rendered: number; failed: number; total: number }>;
+    // OPT-105: Backfill RAW preview paths from existing .previews/ directory
+    backfillRawPreviews: () => Promise<{ fixed: number; notFound: number; total: number }>;
 
     // Location-specific media fixes
     fixLocationImages: (locid: string) => Promise<{ fixed: number; errors: number; total: number }>;

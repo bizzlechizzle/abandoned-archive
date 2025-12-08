@@ -1167,4 +1167,63 @@ export function registerMediaProcessingHandlers(
     }
   });
 
+  // OPT-105: Backfill RAW preview paths from existing .previews/ directory
+  // Fixes ARW/NEF/CR3/etc files where preview was extracted but path wasn't stored in DB
+  ipcMain.handle('media:backfillRawPreviews', async (_event) => {
+    try {
+      const archivePath = await getArchivePath();
+      const mediaPathService = new MediaPathService(archivePath);
+
+      // Find all RAW images with missing preview_path but have thumb_path_sm (thumbnail was generated from preview)
+      const rawPattern = /\.(nef|cr2|cr3|arw|srf|sr2|orf|pef|dng|rw2|raf|raw|rwl|3fr|fff|iiq|mrw|x3f|erf|mef|mos|kdc|dcr|heic|heif)$/i;
+
+      // Get all images with null preview_path
+      const allImages = await db
+        .selectFrom('imgs')
+        .select(['imghash', 'imgloc', 'preview_path', 'thumb_path_sm'])
+        .where('preview_path', 'is', null)
+        .execute();
+
+      // Filter to RAW files that have thumbnails (meaning preview was extracted)
+      const rawImages = allImages.filter(img =>
+        rawPattern.test(img.imgloc) && img.thumb_path_sm !== null
+      );
+
+      console.log(`[OPT-105] Found ${rawImages.length} RAW images with missing preview_path`);
+
+      let fixed = 0;
+      let notFound = 0;
+
+      for (const img of rawImages) {
+        // Check if preview file exists on disk
+        const expectedPreviewPath = mediaPathService.getPreviewPath(img.imghash);
+
+        try {
+          await fs.access(expectedPreviewPath);
+          // Preview exists on disk, update DB
+          await db
+            .updateTable('imgs')
+            .set({
+              preview_path: expectedPreviewPath,
+              preview_extracted: 1,
+            })
+            .where('imghash', '=', img.imghash)
+            .execute();
+          fixed++;
+          console.log(`[OPT-105] Fixed preview_path for ${img.imghash.slice(0, 12)}`);
+        } catch {
+          // Preview doesn't exist on disk
+          notFound++;
+        }
+      }
+
+      console.log(`[OPT-105] Backfill complete: ${fixed} fixed, ${notFound} previews not found on disk`);
+      return { fixed, notFound, total: rawImages.length };
+    } catch (error) {
+      console.error('Error backfilling RAW previews:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
+    }
+  });
+
 }

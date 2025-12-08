@@ -134,9 +134,11 @@
   }
 
   // Derived: Combined media list for MediaViewer (images first, then videos)
+  // OPT-105: Added thumbPathLg for fallback chain (RAW files without extracted preview)
   const imageMediaList = $derived(images.map(img => ({
     hash: img.imghash, path: img.imgloc,
     thumbPath: img.thumb_path_sm || img.thumb_path || null,
+    thumbPathLg: img.thumb_path_lg || null,
     previewPath: img.preview_path || null, type: 'image' as const,
     name: img.imgnam, width: img.meta_width, height: img.meta_height,
     dateTaken: img.meta_date_taken, cameraMake: img.meta_camera_make || null,
@@ -156,6 +158,7 @@
   const videoMediaList = $derived(videos.map(vid => ({
     hash: vid.vidhash, path: vid.vidloc,
     thumbPath: vid.thumb_path_sm || vid.thumb_path || null,
+    thumbPathLg: vid.thumb_path_lg || null,
     previewPath: vid.preview_path || null, type: 'video' as const,
     name: vid.vidnam, width: vid.meta_width, height: vid.meta_height,
     dateTaken: null, cameraMake: null, cameraModel: null,
