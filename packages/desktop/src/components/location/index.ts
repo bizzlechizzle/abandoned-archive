@@ -6,7 +6,6 @@
 
 export { default as LocationHeader } from './LocationHeader.svelte';
 export { default as LocationInfo } from './LocationInfo.svelte';
-export { default as LocationAddress } from './LocationAddress.svelte';
 export { default as LocationMapSection } from './LocationMapSection.svelte';
 export { default as LocationGallery } from './LocationGallery.svelte';
 export { default as LocationVideos } from './LocationVideos.svelte';

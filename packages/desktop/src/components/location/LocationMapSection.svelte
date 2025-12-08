@@ -303,26 +303,12 @@
               title="View on Atlas"
             >{location.address.street}</button>{displayCity || location.address?.state || location.address?.zipcode ? ', ' : ''}
           {/if}
-          {#if displayCity}
+          {#if displayCity || location.address?.state}
             <button
-              onclick={() => onNavigateFilter('city', displayCity)}
+              onclick={() => onNavigateFilter('city', displayCity || '', location.address?.state ? { state: location.address.state } : undefined)}
               class="text-braun-900 hover:underline"
-              title="View all locations in {displayCity}"
-            >{displayCity}</button>{location.address?.state || location.address?.zipcode ? ', ' : ''}
-          {/if}
-          {#if location.address?.state}
-            <button
-              onclick={() => onNavigateFilter('state', location.address!.state!)}
-              class="text-braun-900 hover:underline"
-              title="View all locations in {location.address.state}"
-            >{location.address.state}</button>{' '}
-          {/if}
-          {#if location.address?.zipcode}
-            <button
-              onclick={() => onNavigateFilter('zipcode', location.address!.zipcode!)}
-              class="text-braun-900 hover:underline"
-              title="View all locations with zipcode {location.address.zipcode}"
-            >{location.address.zipcode}</button>
+              title="View all locations in {displayCity}{location.address?.state ? `, ${location.address.state}` : ''}"
+            >{[displayCity, location.address?.state, location.address?.zipcode].filter(Boolean).join(', ').replace(/, ([^ ]+)$/, ' $1')}</button>
           {/if}
         </p>
         {#if copiedAddress}
