@@ -268,40 +268,33 @@
   </div>
 
   <!-- SECTION 1: GPS (stacked first) - Migration 31: Shows sub-location GPS when viewing building -->
-  <div class="px-8">
-    <h3 class="section-title mb-2">
-      GPS
-      {#if subLocation}
-        <span class="text-xs font-normal text-braun-400 ml-1">(Building)</span>
-      {/if}
-    </h3>
-
-    {#if hasGps}
+  <!-- OPT-101: Label removed - coordinates are self-evident -->
+  <!-- OPT-101-fix: Added mt-2 for breathing room, text-base for larger mono -->
+  {#if hasGps}
+    <div class="px-8 mt-2">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="relative" onmouseup={handleGpsSelection} oncontextmenu={handleGpsContextMenu}>
+      <div class="relative leading-relaxed" onmouseup={handleGpsSelection} oncontextmenu={handleGpsContextMenu}>
         <button
           onclick={openOnAtlas}
-          class="text-braun-900 hover:underline font-mono text-sm text-left"
+          class="text-braun-900 hover:underline font-mono text-base text-left"
           title="View on Atlas"
         >
           {effectiveGpsLat!.toFixed(6)}, {effectiveGpsLng!.toFixed(6)}
         </button>
         {#if copiedGps}
-          <span class="absolute -right-2 top-0 text-xs text-gps-verified font-medium">Copied!</span>
+          <span class="absolute right-0 top-0 text-xs text-gps-verified font-medium">Copied!</span>
         {/if}
       </div>
-    {:else}
-      <p class="text-sm text-braun-500 italic">No coordinates available</p>
-    {/if}
-  </div>
+    </div>
+  {/if}
 
   <!-- SECTION 2: Address (stacked second, single line) -->
-  <div class="px-8 mt-4">
-    <h3 class="section-title mb-2">Address</h3>
-
-    {#if hasAddress}
+  <!-- OPT-101: Label removed - address format is self-evident -->
+  <!-- OPT-101-fix: text-[15px] for body standard, leading-relaxed -->
+  {#if hasAddress}
+    <div class="px-8 mt-6">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="text-base text-braun-900 relative" onmouseup={handleAddressSelection} oncontextmenu={handleAddressContextMenu}>
+      <div class="text-[15px] text-braun-900 relative leading-relaxed" onmouseup={handleAddressSelection} oncontextmenu={handleAddressContextMenu}>
         <p>
           {#if location.address?.street}
             <button
@@ -333,24 +326,22 @@
           {/if}
         </p>
         {#if copiedAddress}
-          <span class="absolute -right-2 top-0 text-xs text-gps-verified font-medium">Copied!</span>
+          <span class="absolute right-0 top-0 text-xs text-gps-verified font-medium">Copied!</span>
         {/if}
       </div>
-    {:else}
-      <p class="text-sm text-braun-500 italic">No address set</p>
-    {/if}
-  </div>
+    </div>
+  {/if}
 
   <!-- SECTION 3: Local (DECISION-018: Horizontal dash-separated format) -->
-  <div class="px-8 mt-4">
-    <h3 class="section-title mb-2">Local</h3>
-
-    {#if hasLocalData}
-      <p class="text-sm">
+  <!-- OPT-101: Label removed - geographic hierarchy is self-evident -->
+  <!-- OPT-101-fix: text-braun-600 to differentiate from Region, leading-relaxed -->
+  {#if hasLocalData}
+    <div class="px-8 mt-6">
+      <p class="text-sm text-braun-600 leading-relaxed">
         {#if location.address?.county}
           <button
             onclick={() => onNavigateFilter('county', location.address!.county!, location.address?.state ? { state: location.address.state } : undefined)}
-            class="text-braun-900 hover:underline"
+            class="text-braun-600 hover:text-braun-900 hover:underline"
             title="View all locations in {location.address.county} County"
           >{location.address.county} County</button>
         {/if}
@@ -358,7 +349,7 @@
           {#if location.address?.county}<span class="text-braun-400"> - </span>{/if}
           <button
             onclick={() => onNavigateFilter('culturalRegion', culturalRegion)}
-            class="text-braun-900 hover:underline"
+            class="text-braun-600 hover:text-braun-900 hover:underline"
             title="View all locations in {culturalRegion}"
           >{culturalRegion}</button>
           {#if localCulturalRegionVerified}<span class="text-gps-verified ml-1 text-xs" title="Verified">(verified)</span>{/if}
@@ -367,7 +358,7 @@
           {#if location.address?.county || culturalRegion}<span class="text-braun-400"> - </span>{/if}
           <button
             onclick={() => onNavigateFilter('stateDirection', stateDirection)}
-            class="text-braun-900 hover:underline"
+            class="text-braun-600 hover:text-braun-900 hover:underline"
             title="View all locations in {stateDirection}"
           >{directionOnly}</button>
         {/if}
@@ -375,26 +366,24 @@
           {#if location.address?.county || culturalRegion || directionOnly}<span class="text-braun-400"> - </span>{/if}
           <button
             onclick={() => onNavigateFilter('state', location.address!.state!)}
-            class="text-braun-900 hover:underline"
+            class="text-braun-600 hover:text-braun-900 hover:underline"
             title="View all locations in {fullStateName}"
           >{fullStateName}</button>
         {/if}
       </p>
-    {:else}
-      <p class="text-sm text-braun-500 italic">No local information available</p>
-    {/if}
-  </div>
+    </div>
+  {/if}
 
   <!-- SECTION 4: Region (DECISION-018: Horizontal dash-separated format) -->
-  <div class="px-8 mt-4">
-    <h3 class="section-title mb-2">Region</h3>
-
-    {#if hasRegionData}
-      <p class="text-sm">
+  <!-- OPT-101: Label removed - geographic hierarchy is self-evident -->
+  <!-- OPT-101-fix: text-braun-500 (lighter than Local) to show hierarchy, leading-relaxed -->
+  {#if hasRegionData}
+    <div class="px-8 mt-6">
+      <p class="text-sm text-braun-500 leading-relaxed">
         {#if countryCulturalRegion}
           <button
             onclick={() => onNavigateFilter('countryCulturalRegion', countryCulturalRegion)}
-            class="text-braun-900 hover:underline"
+            class="text-braun-500 hover:text-braun-900 hover:underline"
             title="View all locations in {countryCulturalRegion}"
           >{countryCulturalRegion}</button>
           {#if countryCulturalRegionVerified}<span class="text-gps-verified ml-1 text-xs" title="Verified">(verified)</span>{/if}
@@ -403,7 +392,7 @@
           {#if countryCulturalRegion}<span class="text-braun-400"> - </span>{/if}
           <button
             onclick={() => onNavigateFilter('censusRegion', censusRegion)}
-            class="text-braun-900 hover:underline"
+            class="text-braun-500 hover:text-braun-900 hover:underline"
             title="View all locations in {censusRegion}"
           >{censusRegion}</button>
         {/if}
@@ -411,7 +400,7 @@
           {#if countryCulturalRegion || censusRegion}<span class="text-braun-400"> - </span>{/if}
           <button
             onclick={() => onNavigateFilter('country', country)}
-            class="text-braun-900 hover:underline"
+            class="text-braun-500 hover:text-braun-900 hover:underline"
             title="View all locations in {country}"
           >{country}</button>
         {/if}
@@ -419,19 +408,18 @@
           {#if countryCulturalRegion || censusRegion || country}<span class="text-braun-400"> - </span>{/if}
           <button
             onclick={() => onNavigateFilter('continent', continent)}
-            class="text-braun-900 hover:underline"
+            class="text-braun-500 hover:text-braun-900 hover:underline"
             title="View all locations in {continent}"
           >{continent}</button>
         {/if}
       </p>
-    {:else}
-      <p class="text-sm text-braun-500 italic">No region information available</p>
-    {/if}
-  </div>
+    </div>
+  {/if}
 
   <!-- SECTION 5: Mini Map (full width, smaller) - Hidden when no GPS -->
   <!-- Campus map shows host location + all sub-locations with GPS -->
-  <div class="px-8 mt-4 pb-6">
+  <!-- OPT-101: Increased spacing from mt-4 to mt-6 -->
+  <div class="px-8 mt-6 pb-6">
     {#if hasGps}
       <div class="relative rounded overflow-hidden border border-braun-200 group" style="aspect-ratio: 2 / 1;">
         <Map
@@ -498,17 +486,6 @@
 {/if}
 
 <style>
-  /* Braun: No pulse animation - static text only */
-
-  /* DECISION-011: Section titles - Braun design system */
-  .section-title {
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: #8A8A86; /* braun-500 */
-    line-height: 1.25;
-  }
-
+  /* OPT-101: Section title class removed - labels eliminated for minimalism */
   /* DECISION-014: Removed verification label styles - checkmarks removed per user request */
 </style>
