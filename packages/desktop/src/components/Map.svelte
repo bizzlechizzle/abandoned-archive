@@ -1413,11 +1413,12 @@
       }
 
       // OPT-041: Cache the reference map icon - all ref points share the same icon
+      // OPT-102: Smaller size (10px vs 16px) differentiates from location pins per Braun principles
       const refIcon = getCachedIcon(L.default, 'ref-map-icon', () => L.default.divIcon({
         html: `<div class="ref-map-marker"></div>`,
         className: 'ref-map-icon',
-        iconSize: [12, 12],
-        iconAnchor: [6, 6],
+        iconSize: [10, 10],
+        iconAnchor: [5, 5],
       }));
 
       // Create markers for each reference point
@@ -1538,10 +1539,10 @@
   }
 
   :global(.ref-map-marker) {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
-    background-color: #5A7A94; /* Muted steel blue - reference points */
+    background-color: #1C1C1A; /* braun-900 - neutral black, smaller than location pins */
     border: 2px solid white;
   }
 

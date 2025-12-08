@@ -146,3 +146,48 @@
 .leaflet-container {
   isolation: isolate;
 }
+
+/* OPT-102: Leaflet layer control - Braun design overrides */
+/* Removes browser default blue accent, applies neutral palette */
+.leaflet-control-layers {
+  background: #FFFFFF;
+  border: 1px solid #E2E1DE;
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.leaflet-control-layers-expanded {
+  padding: 8px 12px;
+}
+
+.leaflet-control-layers-list {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: #1C1C1A;
+}
+
+.leaflet-control-layers-separator {
+  border-top: 1px solid #E2E1DE;
+  margin: 8px 0;
+}
+
+/* Radio buttons and checkboxes - braun-900 accent */
+.leaflet-control-layers input[type="radio"],
+.leaflet-control-layers input[type="checkbox"] {
+  accent-color: #1C1C1A;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.leaflet-control-layers label {
+  display: flex;
+  align-items: center;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.leaflet-control-layers label span {
+  color: #1C1C1A;
+}
