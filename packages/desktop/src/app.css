@@ -191,3 +191,13 @@
 .leaflet-control-layers label span {
   color: #1C1C1A;
 }
+
+/* OPT-104: Pulsing dot for import progress indicator */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}

@@ -184,15 +184,73 @@ export const importStore = createImportStore();
 // Derived store for quick checks
 export const isImporting = derived(importStore, $store => $store.activeJob !== null);
 
-export const importProgress = derived(importStore, $store => {
+/**
+ * OPT-104: Sandbagged progress display
+ *
+ * Problem: Backend emits chunky progress (step-weighted percent, filesProcessed stays 0 until end)
+ * Solution: Interpolate display values for smooth, premium feel
+ *
+ * Rules:
+ * - displayPercent increments by exactly 1 at a time (no jumps, shows every number 0-100)
+ * - Creeps toward targetPercent (real + small buffer) at steady pace
+ * - displayCurrent = interpolated from displayPercent
+ */
+interface SandbaggingState {
+  targetPercent: number;    // Where we're heading (real percent from backend)
+  displayPercent: number;   // What we show (increments by 1, never jumps)
+  intervalId: ReturnType<typeof setInterval> | null;
+}
+
+const sandbagging: SandbaggingState = {
+  targetPercent: 0,
+  displayPercent: 0,
+  intervalId: null,
+};
+
+// Writable store to trigger UI updates from interval
+const sandbaggingTrigger = writable(0);
+
+// Start/stop sandbagging interval based on import state
+importStore.subscribe($store => {
+  if ($store.activeJob && !sandbagging.intervalId) {
+    // Start sandbagging at 0
+    sandbagging.targetPercent = 0;
+    sandbagging.displayPercent = 0;
+    sandbagging.intervalId = setInterval(() => {
+      // Calculate target: real percent + 2% buffer (but cap at 99 until truly done)
+      const realPercent = Math.round($store.activeJob?.percent ?? 0);
+      sandbagging.targetPercent = Math.min(realPercent + 2, 99);
+
+      // Increment display by exactly 1 toward target (no jumps)
+      if (sandbagging.displayPercent < sandbagging.targetPercent) {
+        sandbagging.displayPercent += 1;
+        sandbaggingTrigger.update(n => n + 1);
+      }
+    }, 150); // Update every 150ms = ~6-7 seconds to go 0→100 if unthrottled
+  } else if (!$store.activeJob && sandbagging.intervalId) {
+    // Stop sandbagging interval
+    clearInterval(sandbagging.intervalId);
+    sandbagging.intervalId = null;
+    sandbagging.targetPercent = 0;
+    sandbagging.displayPercent = 0;
+  }
+});
+
+export const importProgress = derived([importStore, sandbaggingTrigger], ([$store]) => {
   if (!$store.activeJob) return null;
   const job = $store.activeJob;
-  // OPT-088: Use orchestrator's weighted percent instead of simple file count ratio
-  // OPT-091: Expose currentFilename for activity indicator
+
+  // If job completed (100%), snap to 100
+  const realPercent = Math.round(job.percent);
+  const displayPercent = realPercent >= 100 ? 100 : sandbagging.displayPercent;
+
+  // Interpolate current from display percent
+  const displayCurrent = Math.round((displayPercent / 100) * job.totalFiles);
+
   return {
-    current: job.processedFiles,
+    current: displayCurrent,
     total: job.totalFiles,
-    percent: Math.round(job.percent),  // Round to whole number for UI display
+    percent: displayPercent,
     locationName: job.locationName,
     locid: job.locid,
     currentFilename: job.currentFilename,
