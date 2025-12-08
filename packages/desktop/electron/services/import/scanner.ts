@@ -24,24 +24,98 @@ import { realpath, lstat } from 'fs/promises';
 export const SUPPORTED_EXTENSIONS = {
   image: new Set([
     // Standard formats
-    '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.tif', '.heic', '.heif', '.avif',
-    // RAW formats
-    '.raw', '.cr2', '.cr3', '.nef', '.arw', '.orf', '.rw2', '.pef', '.dng', '.srw', '.raf',
-    '.3fr', '.dcr', '.kdc', '.mrw', '.nrw', '.rwl', '.sr2', '.srf', '.x3f', '.erf', '.mef', '.mos',
-    // Other
-    '.ico', '.svg', '.psd',
+    '.jpg', '.jpeg', '.jpe', '.jfif', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp',
+    '.jp2', '.jpx', '.j2k', '.j2c',    // JPEG 2000
+    '.jxl',                            // JPEG XL
+    '.heic', '.heif', '.hif',          // Apple HEIF/HEVC
+    '.avif',                           // AV1 Image
+    '.ai', '.eps', '.epsf',            // Adobe Illustrator/PostScript
+    '.svg', '.svgz',                   // Vector
+    '.ico', '.cur',                    // Icons
+    '.pcx', '.dcx',                    // PC Paintbrush
+    '.ppm', '.pgm', '.pbm', '.pnm',    // Netpbm
+    '.tga', '.icb', '.vda', '.vst',    // Targa
+    '.dds',                            // DirectDraw Surface
+    '.exr',                            // OpenEXR
+    '.hdr',                            // Radiance HDR
+    '.dpx', '.cin',                    // Digital Picture Exchange
+    '.fits', '.fit', '.fts',           // Flexible Image Transport
+    // RAW camera formats (comprehensive list from ExifTool)
+    '.raw',                            // Generic RAW
+    '.nef', '.nrw',                    // Nikon
+    '.cr2', '.cr3', '.crw', '.ciff',   // Canon
+    '.arw', '.arq', '.srf', '.sr2',    // Sony
+    '.dng',                            // Adobe DNG (universal)
+    '.orf', '.ori',                    // Olympus
+    '.raf',                            // Fujifilm
+    '.rw2', '.rwl',                    // Panasonic/Leica
+    '.pef', '.ptx',                    // Pentax
+    '.srw',                            // Samsung
+    '.x3f',                            // Sigma
+    '.3fr', '.fff',                    // Hasselblad
+    '.dcr', '.k25', '.kdc',            // Kodak
+    '.mef', '.mos',                    // Mamiya/Leaf
+    '.mrw',                            // Minolta
+    '.erf',                            // Epson
+    '.iiq',                            // Phase One
+    '.rwz',                            // Rawzor
+    '.gpr',                            // GoPro RAW
   ]),
   video: new Set([
-    '.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v', '.wmv', '.flv', '.mpg', '.mpeg',
-    '.3gp', '.3g2', '.mts', '.m2ts', '.ts', '.vob', '.ogv', '.rm', '.rmvb', '.asf',
-    '.divx', '.f4v', '.swf', '.dv', '.insv', '.lrv',
+    '.mp4', '.m4v', '.m4p',            // MPEG-4
+    '.mov', '.qt',                     // QuickTime
+    '.avi', '.divx',                   // AVI
+    '.mkv', '.mka', '.mks', '.mk3d',   // Matroska
+    '.webm',                           // WebM
+    '.wmv', '.wma', '.asf',            // Windows Media
+    '.flv', '.f4v', '.f4p', '.f4a', '.f4b', // Flash Video
+    '.mpg', '.mpeg', '.mpe', '.mpv', '.m2v', // MPEG
+    '.ts', '.mts', '.m2ts', '.tsv', '.tsa', // MPEG Transport Stream
+    '.vob', '.ifo',                    // DVD Video
+    '.3gp', '.3g2',                    // 3GPP
+    '.ogv', '.ogg', '.ogm', '.oga', '.ogx', '.spx', '.opus', // Ogg/Vorbis
+    '.rm', '.rmvb', '.rv',             // RealMedia
+    '.dv', '.dif',                     // DV Video
+    '.mxf',                            // Material eXchange Format
+    '.gxf',                            // General eXchange Format
+    '.nut',                            // NUT
+    '.roq',                            // id RoQ
+    '.nsv',                            // Nullsoft
+    '.amv',                            // AMV
+    '.swf',                            // Flash
+    '.yuv', '.y4m',                    // Raw YUV
+    '.bik', '.bk2',                    // Bink
+    '.smk',                            // Smacker
+    '.dpg',                            // Nintendo DS
+    '.pva',                            // TechnoTrend PVA
+    '.insv', '.lrv',                   // Insta360/GoPro low-res
   ]),
   document: new Set([
-    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.rtf', '.odt', '.ods', '.odp',
-    '.epub', '.mobi', '.djvu', '.pages', '.numbers', '.key', '.md', '.csv',
+    '.pdf',                            // Portable Document Format
+    '.doc', '.docx', '.docm',          // Microsoft Word
+    '.xls', '.xlsx', '.xlsm', '.xlsb', // Microsoft Excel
+    '.ppt', '.pptx', '.pptm',          // Microsoft PowerPoint
+    '.odt', '.ods', '.odp', '.odg',    // OpenDocument
+    '.rtf',                            // Rich Text Format
+    '.txt', '.text', '.log', '.md',    // Plain text
+    '.csv', '.tsv',                    // Data files
+    '.epub', '.mobi', '.azw', '.azw3', // E-books
+    '.djvu', '.djv',                   // DjVu
+    '.xps', '.oxps',                   // XML Paper Specification
+    '.pages', '.numbers', '.key',      // Apple iWork
+    // Archive formats (stored as-is, not extracted)
+    '.zip', '.rar', '.7z', '.tar', '.gz', '.tgz', '.bz2', '.xz',
   ]),
   map: new Set([
-    '.gpx', '.kml', '.kmz', '.geojson', '.shp', '.geotiff', '.tif',
+    '.geotiff', '.gtiff',              // GeoTIFF
+    '.gpx',                            // GPS Exchange Format
+    '.kml', '.kmz',                    // Google Earth
+    '.shp', '.shx', '.dbf', '.prj',    // Shapefile components
+    '.geojson', '.topojson',           // GeoJSON
+    '.osm',                            // OpenStreetMap
+    '.mbtiles',                        // MapBox Tiles
+    '.sid', '.ecw',                    // MrSID, ECW compressed imagery
+    '.tif',                            // Can be GeoTIFF
   ]),
 } as const;
 
