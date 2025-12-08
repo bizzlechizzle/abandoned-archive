@@ -96,6 +96,22 @@
 
   const highlightLocid = $derived(routeQuery.locid || null);
 
+  // OPT-107: Parse URL parameters for center/zoom from mini-map expand
+  const urlLat = $derived(routeQuery.lat ? parseFloat(routeQuery.lat) : null);
+  const urlLng = $derived(routeQuery.lng ? parseFloat(routeQuery.lng) : null);
+  const urlZoom = $derived(routeQuery.zoom ? parseInt(routeQuery.zoom, 10) : null);
+
+  // Build center object if both lat/lng are valid numbers
+  const urlCenter = $derived(
+    urlLat !== null && urlLng !== null && !isNaN(urlLat) && !isNaN(urlLng)
+      ? { lat: urlLat, lng: urlLng }
+      : null
+  );
+
+  // OPT-107: Only fitBounds when NO explicit view is provided via URL
+  // When expanding from mini-map, we want to center on the specific location
+  const shouldFitBounds = $derived(!urlCenter);
+
   const urlLayer = $derived.by(() => {
     const layer = routeQuery.layer;
     const validLayers = ['satellite', 'street', 'topo', 'light', 'dark', 'satellite-labels'];
@@ -575,6 +591,7 @@
     {/if}
 
     <!-- ALWAYS show the map - it's an atlas, not a placeholder -->
+    <!-- OPT-107: Pass center/zoom from URL params for mini-map expand navigation -->
     <Map
       locations={filteredLocations()}
       onLocationClick={handleLocationClick}
@@ -582,13 +599,15 @@
       onMapRightClick={handleMapRightClick}
       popupMode="minimal"
       defaultLayer={urlLayer ?? 'satellite-labels'}
+      center={urlCenter}
+      zoom={urlZoom}
       refMapPoints={refMapPoints}
       showRefMapLayer={showRefMapLayer}
       onCreateFromRefPoint={handleCreateFromRefPoint}
       onLinkRefPoint={handleLinkRefPoint}
       onDeleteRefPoint={handleDeleteRefPoint}
       hideAttribution={true}
-      fitBounds={true}
+      fitBounds={shouldFitBounds}
       onBoundsChange={handleBoundsChange}
     />
     {#if loading && mapReady}
