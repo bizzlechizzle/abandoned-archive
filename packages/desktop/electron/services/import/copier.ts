@@ -156,6 +156,8 @@ export class Copier {
    * Stream copy with inline BLAKE3 hash computation
    * Single read from source, hash computed while streaming, written to dest
    * Returns computed hash - eliminates double-read for network sources
+   *
+   * SMB optimization: 1MB buffer reduces round-trips significantly
    */
   private async copyFileStreaming(
     sourcePath: string,
@@ -164,8 +166,12 @@ export class Copier {
     const hasher = createBlake3Hash();
     let bytesCopied = 0;
 
-    const source = createReadStream(sourcePath);
-    const dest = createWriteStream(tempPath);
+    // 1MB buffer for SMB efficiency - reduces round-trips
+    // Default Node.js buffer is 64KB which creates too many SMB operations
+    const BUFFER_SIZE = 1024 * 1024; // 1MB
+
+    const source = createReadStream(sourcePath, { highWaterMark: BUFFER_SIZE });
+    const dest = createWriteStream(tempPath, { highWaterMark: BUFFER_SIZE });
 
     // Hash bytes as they stream through
     source.on('data', (chunk: Buffer) => {
@@ -282,7 +288,12 @@ export class Copier {
 
     const results: CopiedFile[] = [];
 
-    console.log(`[Copier] Starting parallel copy: ${filesToCopy.length} files, ${(totalBytes / 1024 / 1024).toFixed(1)} MB, ${this.concurrency} workers`);
+    // SMB STABILITY: Delay between files to prevent connection overwhelm
+    // macOS Sequoia has known bugs with multiple concurrent SMB operations
+    const SMB_DELAY_MS = (this.isNetworkDest || this.isNetworkSource) ? 100 : 0;
+
+    const modeLabel = this.concurrency === 1 ? 'SEQUENTIAL' : `${this.concurrency} workers`;
+    console.log(`[Copier] Starting copy: ${filesToCopy.length} files, ${(totalBytes / 1024 / 1024).toFixed(1)} MB, ${modeLabel}${SMB_DELAY_MS > 0 ? ` (${SMB_DELAY_MS}ms delay)` : ''}`);
 
     // Override queue concurrency if specified in options
     if (options?.concurrency) {
@@ -302,12 +313,17 @@ export class Copier {
       }, 500);
     }
 
-    // Queue ALL files for PARALLEL copy
+    // Queue ALL files for copy (sequential for SMB, parallel for local)
     const copyPromises = filesToCopy.map((file, index) =>
       this.copyQueue.add(async () => {
         // Check cancellation
         if (options?.signal?.aborted) {
           throw new Error('Copy cancelled');
+        }
+
+        // SMB breathing room: small delay between operations
+        if (SMB_DELAY_MS > 0 && index > 0) {
+          await new Promise(resolve => setTimeout(resolve, SMB_DELAY_MS));
         }
 
         // Copy the file
