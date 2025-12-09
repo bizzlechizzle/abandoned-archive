@@ -82,9 +82,11 @@ const longOperationChannels = [
   "media:regenerateVideoThumbnails",
   "media:regenerateDngPreviews",
   "media:generateProxiesForLocation",
+  "refMaps:selectFile",  // ADR-048: File dialogs can take a while
   "refMaps:import",
   "refMaps:importFromPath",
   "refMaps:importWithOptions",
+  "refMaps:importBatch",  // ADR-048: Batch import
   "refMaps:deduplicate",
   "health:checkIntegrity",
   "health:runMaintenance",
@@ -550,7 +552,10 @@ const api = {
   },
 
   refMaps: {
+    // ADR-048: selectFile now returns string[] (multi-select)
     selectFile: () => invokeAuto("refMaps:selectFile")(),
+    // ADR-048: Batch import for multiple files
+    importBatch: (filePaths, importedBy) => invokeAuto("refMaps:importBatch")(filePaths, importedBy),
     import: (importedBy) => invokeAuto("refMaps:import")(importedBy),
     importFromPath: (filePath, importedBy) => invokeAuto("refMaps:importFromPath")(filePath, importedBy),
     findAll: () => invokeAuto("refMaps:findAll")(),

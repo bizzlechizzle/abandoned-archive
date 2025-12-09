@@ -647,7 +647,24 @@ export interface ElectronAPI {
 
   // Reference Maps - imported KML, GPX, GeoJSON, CSV files
   refMaps: {
-    selectFile: () => Promise<string | null>;
+    // ADR-048: Now returns string[] (multi-select)
+    selectFile: () => Promise<string[]>;
+    // ADR-048: Batch import for multiple files
+    importBatch: (filePaths: string[], importedBy?: string) => Promise<{
+      success: boolean;
+      results: Array<{
+        filePath: string;
+        fileName: string;
+        success: boolean;
+        error?: string;
+        mapId?: string;
+        pointCount?: number;
+      }>;
+      totalPoints: number;
+      successCount: number;
+      skippedCount: number;
+      failedCount: number;
+    }>;
     import: (importedBy?: string) => Promise<{
       success: boolean;
       canceled?: boolean;

@@ -29,28 +29,29 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
   const enrichmentService = new LocationEnrichmentService(db, geocodingService);
 
   /**
-   * Select a map file (dialog only, no import)
+   * Select map files (dialog only, no import)
+   * ADR-048: Now supports multi-selection
    * Used for preview flow before actual import
    */
   ipcMain.handle('refMaps:selectFile', async () => {
     try {
       const result = await dialog.showOpenDialog({
-        title: 'Import Reference Map',
+        title: 'Select Reference Maps',
         filters: [
           { name: 'Map Files', extensions: ['kml', 'kmz', 'gpx', 'geojson', 'json', 'csv'] },
           { name: 'All Files', extensions: ['*'] }
         ],
-        properties: ['openFile']
+        properties: ['openFile', 'multiSelections']
       });
 
       if (result.canceled || result.filePaths.length === 0) {
-        return null;
+        return [];
       }
 
-      return result.filePaths[0];
+      return result.filePaths;
     } catch (error) {
-      console.error('Error selecting map file:', error);
-      return null;
+      console.error('Error selecting map files:', error);
+      return [];
     }
   });
 
@@ -200,6 +201,107 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
         error: error instanceof Error ? error.message : 'Unknown error importing map'
       };
     }
+  });
+
+  /**
+   * ADR-048: Batch import multiple map files
+   * Used by onboarding Page 4 and Settings multi-select
+   * Auto-skips duplicates when importing multiple files
+   */
+  ipcMain.handle('refMaps:importBatch', async (_event, filePaths: string[], importedBy?: string) => {
+    const results: Array<{
+      filePath: string;
+      fileName: string;
+      success: boolean;
+      error?: string;
+      mapId?: string;
+      pointCount?: number;
+    }> = [];
+
+    for (const filePath of filePaths) {
+      const fileName = path.basename(filePath);
+
+      try {
+        // Verify file exists
+        if (!fs.existsSync(filePath)) {
+          results.push({ filePath, fileName, success: false, error: 'File not found' });
+          continue;
+        }
+
+        // Verify it's a supported file
+        if (!isSupportedMapFile(filePath)) {
+          results.push({ filePath, fileName, success: false, error: 'Unsupported file type' });
+          continue;
+        }
+
+        // Parse the file
+        const parseResult = await parseMapFile(filePath);
+
+        if (!parseResult.success) {
+          results.push({ filePath, fileName, success: false, error: parseResult.error || 'Failed to parse' });
+          continue;
+        }
+
+        if (parseResult.points.length === 0) {
+          results.push({ filePath, fileName, success: false, error: 'No points found' });
+          continue;
+        }
+
+        // Run dedup check and filter duplicates
+        const dedupResult = await dedupService.checkForDuplicates(parseResult.points);
+        const pointsToImport = dedupResult.newPoints;
+
+        if (pointsToImport.length === 0) {
+          results.push({
+            filePath,
+            fileName,
+            success: true,
+            pointCount: 0,
+            error: 'All points were duplicates'
+          });
+          continue;
+        }
+
+        // Create the map record with filtered points
+        const mapName = path.basename(filePath, path.extname(filePath));
+        const refMap = await repository.create({
+          mapName,
+          filePath,
+          fileType: parseResult.fileType,
+          importedBy,
+          points: pointsToImport
+        });
+
+        results.push({
+          filePath,
+          fileName,
+          success: true,
+          mapId: refMap.mapId,
+          pointCount: pointsToImport.length
+        });
+      } catch (error) {
+        results.push({
+          filePath,
+          fileName,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+
+    const successCount = results.filter(r => r.success && (r.pointCount ?? 0) > 0).length;
+    const totalPoints = results.reduce((sum, r) => sum + (r.pointCount || 0), 0);
+    const skippedCount = results.filter(r => r.success && r.pointCount === 0).length;
+    const failedCount = results.filter(r => !r.success).length;
+
+    return {
+      success: failedCount === 0,
+      results,
+      totalPoints,
+      successCount,
+      skippedCount,
+      failedCount
+    };
   });
 
   /**

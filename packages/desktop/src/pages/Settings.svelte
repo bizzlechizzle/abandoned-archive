@@ -943,7 +943,10 @@
   }
 
   /**
-   * Import a new reference map file (with preview dialog)
+   * Import reference map file(s)
+   * ADR-048: Now supports multi-select
+   * - 1 file → existing preview/dedup flow
+   * - Multiple files → batch import with auto-skip duplicates
    */
   async function importRefMap() {
     if (!window.electronAPI?.refMaps) {
@@ -953,16 +956,41 @@
 
     try {
       importingRefMap = true;
-      refMapMessage = 'Selecting file...';
+      refMapMessage = 'Selecting files...';
 
-      // Open file dialog
-      const result = await window.electronAPI.refMaps.selectFile();
+      // Open file dialog (now returns string[])
+      const files = await window.electronAPI.refMaps.selectFile();
 
-      if (!result) {
+      if (!files || files.length === 0) {
         refMapMessage = '';
         importingRefMap = false;
         return;
       }
+
+      // ADR-048: Multiple files → batch import
+      if (files.length > 1) {
+        refMapMessage = `Importing ${files.length} maps...`;
+        const batchResult = await window.electronAPI.refMaps.importBatch(files, currentUserId || undefined);
+
+        if (batchResult.totalPoints > 0) {
+          refMapMessage = `Imported ${batchResult.totalPoints} points from ${batchResult.successCount} map${batchResult.successCount > 1 ? 's' : ''}`;
+          if (batchResult.skippedCount > 0) {
+            refMapMessage += ` (${batchResult.skippedCount} skipped as duplicates)`;
+          }
+        } else if (batchResult.skippedCount > 0) {
+          refMapMessage = `All ${batchResult.skippedCount} maps were duplicates`;
+        } else {
+          refMapMessage = 'No points imported';
+        }
+
+        await loadRefMaps();
+        importingRefMap = false;
+        setTimeout(() => { refMapMessage = ''; }, 5000);
+        return;
+      }
+
+      // Single file → existing preview flow
+      const result = files[0];
 
       // Show preview with deduplication check
       previewLoading = true;

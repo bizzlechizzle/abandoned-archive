@@ -2,6 +2,7 @@
   /**
    * Setup.svelte - First-run setup wizard
    * ADR-047: 3 pages with educational rules
+   * ADR-048: Page 4 for reference maps import
    */
 
   interface Props {
@@ -11,7 +12,7 @@
   let { onComplete }: Props = $props();
 
   let currentStep = $state(1);
-  const totalSteps = 3;
+  const totalSteps = 4;
 
   // Form state
   let username = $state('');
@@ -20,6 +21,10 @@
   let archivePath = $state('');
   let isProcessing = $state(false);
   let pinError = $state('');
+
+  // ADR-048: Reference maps state
+  let selectedMapFiles = $state<string[]>([]);
+  let mapImportMessage = $state('');
 
   async function selectFolder() {
     try {
@@ -30,6 +35,32 @@
     } catch (error) {
       console.error('Error selecting folder:', error);
     }
+  }
+
+  // ADR-048: Select reference map files
+  async function selectMapFiles() {
+    try {
+      const files = await window.electronAPI.refMaps.selectFile();
+      if (files && files.length > 0) {
+        // Add to existing selection (no duplicates)
+        const existingPaths = new Set(selectedMapFiles);
+        for (const file of files) {
+          if (!existingPaths.has(file)) {
+            selectedMapFiles = [...selectedMapFiles, file];
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error selecting map files:', error);
+    }
+  }
+
+  function removeMapFile(index: number) {
+    selectedMapFiles = selectedMapFiles.filter((_, i) => i !== index);
+  }
+
+  function getFileName(path: string): string {
+    return path.split('/').pop() || path.split('\\').pop() || path;
   }
 
   function nextStep() {
@@ -81,6 +112,9 @@
         if (!/^\d+$/.test(pin)) return false;
         if (pin !== confirmPin) return false;
         return true;
+      case 4:
+        // ADR-048: Reference maps optional - always can proceed
+        return true;
       default:
         return false;
     }
@@ -88,17 +122,19 @@
 
   async function completeSetup() {
     if (!canProceed()) return;
-    if (!validatePin()) return;
 
     try {
       isProcessing = true;
 
-      // Create user record in database
-      const user = await window.electronAPI.users.create({
-        username: username.trim(),
-        display_name: null,
-        pin: pin,
-      });
+      // Create user record in database (or reuse existing if retry)
+      let user = await window.electronAPI.users.findByUsername(username.trim()) as { user_id: string } | null;
+      if (!user) {
+        user = await window.electronAPI.users.create({
+          username: username.trim(),
+          display_name: null,
+          pin: pin,
+        }) as { user_id: string };
+      }
 
       // Save all settings (single user mode)
       await Promise.all([
@@ -108,6 +144,16 @@
         window.electronAPI.settings.set('archive_folder', archivePath),
         window.electronAPI.settings.set('setup_complete', 'true'),
       ]);
+
+      // ADR-048: Import selected reference maps
+      // Note: Convert reactive array to plain array for IPC (avoids "object could not be cloned" error)
+      if (selectedMapFiles.length > 0) {
+        mapImportMessage = `Importing ${selectedMapFiles.length} map${selectedMapFiles.length > 1 ? 's' : ''}...`;
+        const result = await window.electronAPI.refMaps.importBatch([...selectedMapFiles], user.user_id);
+        if (result.totalPoints > 0) {
+          mapImportMessage = `Imported ${result.totalPoints} points from ${result.successCount} map${result.successCount > 1 ? 's' : ''}`;
+        }
+      }
 
       // Notify parent that setup is complete
       onComplete(user.user_id, username.trim());
@@ -239,6 +285,58 @@
             <div class="bg-braun-100 border border-braun-300 rounded p-3 mt-6">
               <div class="text-xs font-semibold uppercase tracking-wider text-braun-500">
                 Authentic Information
+              </div>
+            </div>
+          </div>
+        </div>
+      {/if}
+
+      <!-- Step 4: Reference Maps (ADR-048) -->
+      {#if currentStep === 4}
+        <div>
+          <h2 class="text-2xl font-semibold text-braun-900 mb-4">Reference Maps</h2>
+
+          <div class="space-y-4">
+            <!-- File list -->
+            <div class="border border-braun-300 rounded p-3 min-h-[120px] max-h-[200px] overflow-y-auto bg-braun-50">
+              {#if selectedMapFiles.length === 0}
+                <p class="text-sm text-braun-500 text-center py-4">
+                  No maps selected (optional)
+                </p>
+              {:else}
+                <ul class="space-y-2">
+                  {#each selectedMapFiles as file, index}
+                    <li class="flex items-center justify-between text-sm">
+                      <span class="text-braun-700 truncate flex-1">{getFileName(file)}</span>
+                      <button
+                        type="button"
+                        onclick={() => removeMapFile(index)}
+                        class="ml-2 text-braun-400 hover:text-braun-600"
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            </div>
+
+            <button
+              type="button"
+              onclick={selectMapFiles}
+              class="w-full px-4 py-2 border border-braun-300 rounded text-braun-700 hover:bg-braun-100 transition font-medium text-sm"
+            >
+              Add Maps
+            </button>
+
+            {#if mapImportMessage}
+              <p class="text-sm text-braun-600">{mapImportMessage}</p>
+            {/if}
+
+            <!-- Rule #4: Share Responsibly -->
+            <div class="bg-braun-100 border border-braun-300 rounded p-3 mt-6">
+              <div class="text-xs font-semibold uppercase tracking-wider text-braun-500">
+                Share Responsibly
               </div>
             </div>
           </div>
