@@ -288,9 +288,10 @@ export class Copier {
 
     const results: CopiedFile[] = [];
 
-    // SMB STABILITY: Delay between files to prevent connection overwhelm
+    // SMB STABILITY: Small delay between files to prevent connection overwhelm
     // macOS Sequoia has known bugs with multiple concurrent SMB operations
-    const SMB_DELAY_MS = (this.isNetworkDest || this.isNetworkSource) ? 100 : 0;
+    // 50ms is enough breathing room without killing throughput
+    const SMB_DELAY_MS = (this.isNetworkDest || this.isNetworkSource) ? 50 : 0;
 
     const modeLabel = this.concurrency === 1 ? 'SEQUENTIAL' : `${this.concurrency} workers`;
     console.log(`[Copier] Starting copy: ${filesToCopy.length} files, ${(totalBytes / 1024 / 1024).toFixed(1)} MB, ${modeLabel}${SMB_DELAY_MS > 0 ? ` (${SMB_DELAY_MS}ms delay)` : ''}`);
@@ -339,6 +340,14 @@ export class Copier {
 
         results.push(result);
         completedCount++;
+
+        // Log progress every 10 files or on errors
+        if (completedCount % 10 === 0 || result.copyError) {
+          const pct = ((bytesCopied / totalBytes) * 100).toFixed(1);
+          const mbDone = (bytesCopied / 1024 / 1024).toFixed(0);
+          const mbTotal = (totalBytes / 1024 / 1024).toFixed(0);
+          console.log(`[Copier] Progress: ${completedCount}/${filesToCopy.length} files (${pct}%) ${mbDone}/${mbTotal} MB${result.copyError ? ` ERROR: ${result.copyError}` : ''}`);
+        }
 
         // Progress callback (40-80% range) - on file completion
         if (options?.onProgress) {
