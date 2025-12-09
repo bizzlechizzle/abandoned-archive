@@ -44,21 +44,10 @@ function getMainWindow(): BrowserWindow | null {
  * Send event to renderer
  */
 function sendToRenderer(channel: string, data: unknown): void {
-  console.log('[TRACE sendToRenderer] channel:', channel);
   const window = getMainWindow();
   if (window && !window.isDestroyed()) {
-    console.log('[TRACE sendToRenderer] About to safeSerialize for channel:', channel);
-    try {
-      const serialized = safeSerialize(data);
-      console.log('[TRACE sendToRenderer] safeSerialize OK, calling webContents.send...');
-      window.webContents.send(channel, serialized);
-      console.log('[TRACE sendToRenderer] webContents.send completed for channel:', channel);
-    } catch (err) {
-      console.error('[TRACE sendToRenderer] FAILED for channel:', channel, err);
-      throw err;
-    }
-  } else {
-    console.log('[TRACE sendToRenderer] No window available for channel:', channel);
+    const serialized = safeSerialize(data);
+    window.webContents.send(channel, serialized);
   }
 }
 
@@ -117,14 +106,10 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
    * Start a new import using v2 pipeline
    */
   ipcMain.handle('import:v2:start', async (_event, input: unknown) => {
-    console.log('[TRACE import:v2:start] Handler entered');
     try {
-      console.log('[TRACE import:v2:start] Parsing input...');
       const validated = ImportStartSchema.parse(input);
-      console.log('[TRACE import:v2:start] Input validated OK');
 
       // Get archive path from settings
-      console.log('[TRACE import:v2:start] Getting archive path...');
       const archiveSetting = await db
         .selectFrom('settings')
         .select('value')
@@ -136,16 +121,12 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
       }
 
       const archivePath = archiveSetting.value;
-      console.log('[TRACE import:v2:start] Archive path:', archivePath);
 
       // Get current user for activity tracking
-      console.log('[TRACE import:v2:start] Getting current user...');
       const currentUser = await getCurrentUser(db);
-      console.log('[TRACE import:v2:start] Current user:', currentUser?.username ?? 'none');
 
       // Create orchestrator if not exists
       if (!orchestrator) {
-        console.log('[TRACE import:v2:start] Creating orchestrator...');
         orchestrator = createImportOrchestrator(db, archivePath);
       }
 
@@ -154,15 +135,12 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
 
       // Progress callback sends events to renderer
       const onProgress = (progress: ImportProgress) => {
-        console.log('[TRACE import:v2:start] Progress callback - about to sendToRenderer');
         sendToRenderer('import:v2:progress', progress);
-        console.log('[TRACE import:v2:start] Progress callback - sendToRenderer completed');
         activeImports.set(progress.sessionId, abortController);
       };
 
       // Start import
       // OPT-093: Pass subid for sub-location media assignment
-      console.log('[TRACE import:v2:start] Starting orchestrator.import...');
       const result = await orchestrator.import(validated.paths, {
         location: {
           locid: validated.locid,
@@ -180,14 +158,11 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
         onProgress,
         signal: abortController.signal,
       });
-      console.log('[TRACE import:v2:start] orchestrator.import completed');
-      console.log('[TRACE import:v2:start] Result status:', result.status);
 
       // Clean up
       activeImports.delete(result.sessionId);
 
       // Send completion event
-      console.log('[TRACE import:v2:start] Sending completion event...');
       sendToRenderer('import:v2:complete', {
         sessionId: result.sessionId,
         status: result.status,
@@ -197,26 +172,15 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
         totalDurationMs: result.totalDurationMs,
         jobsQueued: result.finalizationResult?.jobsQueued ?? 0,
       });
-      console.log('[TRACE import:v2:start] Completion event sent');
 
       // OPT-080: Force serialization to prevent structured clone errors
-      console.log('[TRACE import:v2:start] About to safeSerialize result...');
-      const serialized = safeSerialize(result);
-      console.log('[TRACE import:v2:start] safeSerialize completed, returning...');
-      return serialized;
+      return safeSerialize(result);
 
     } catch (error) {
-      console.error('[TRACE import:v2:start] CAUGHT ERROR:', error);
-      console.error('[TRACE import:v2:start] Error type:', typeof error);
-      console.error('[TRACE import:v2:start] Error constructor:', error?.constructor?.name);
-      if (error instanceof Error) {
-        console.error('[TRACE import:v2:start] Error.message:', error.message);
-        console.error('[TRACE import:v2:start] Error.stack:', error.stack);
-      }
+      console.error('[import:v2:start] Error:', error);
       // OPT-080: Serialize error to prevent structured clone failure in IPC
       // Complex error objects (Kysely, etc.) may have non-serializable properties
       const message = error instanceof Error ? error.message : String(error);
-      console.log('[TRACE import:v2:start] Throwing new Error with message:', message);
       throw new Error(message);
     }
   });
@@ -435,7 +399,6 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
     }
   });
 
-  console.log('[IPC] Import v2.0 handlers registered');
 }
 
 /**
@@ -471,7 +434,6 @@ export function initializeJobWorker(db: Kysely<Database>): void {
     sendToRenderer('location:gps-enriched', data);
   });
 
-  console.log('[JobWorker] Background job processor initialized');
 }
 
 /**
@@ -479,5 +441,4 @@ export function initializeJobWorker(db: Kysely<Database>): void {
  */
 export async function shutdownJobWorker(): Promise<void> {
   await stopJobWorker();
-  console.log('[JobWorker] Shutdown complete');
 }

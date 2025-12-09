@@ -2187,8 +2187,9 @@ export function getDatabase(): Kysely<DatabaseSchema> {
   const dbPath = getDatabasePath();
   const fileExists = fs.existsSync(dbPath);
 
+  // OPT-108: SQL logging opt-in via DEBUG_SQL=1 (was flooding console with job worker queries)
   const sqlite = new Database(dbPath, {
-    verbose: process.env.NODE_ENV === 'development' ? console.log : undefined,
+    verbose: process.env.DEBUG_SQL === '1' ? console.log : undefined,
   });
 
   sqlite.pragma('journal_mode = WAL');

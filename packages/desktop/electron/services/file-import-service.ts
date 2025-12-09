@@ -5,6 +5,7 @@ import { ExifToolService } from './exiftool-service';
 import { FFmpegService } from './ffmpeg-service';
 import { PathValidator } from './path-validator';
 import { GPSValidator } from './gps-validator';
+import { getLogger } from './logger-service';
 // FIX 3.3: Import geocoding for #import_address
 import { GeocodingService } from './geocoding-service';
 // FIX 3.4: Import GPX/KML parser for map files
@@ -307,7 +308,8 @@ export class FileImportService {
       }
     }
 
-    console.log('[FileImport] Starting batch import of', files.length, 'files');
+    const logger = getLogger();
+    const startTime = Date.now();
 
     // FIX 11: PRE-FETCH location ONCE before starting any file imports
     // All files in one import go to the same location, so we only need to fetch it once
@@ -318,12 +320,12 @@ export class FileImportService {
       throw new Error('No location ID provided');
     }
 
-    console.log('[FileImport] Pre-fetching location data for locid:', locid);
     const location = await this.locationRepo.findById(locid);
     if (!location) {
       throw new Error(`Location not found: ${locid}`);
     }
-    console.log('[FileImport] Location pre-fetched:', location.locnam);
+
+    logger.info('FileImport', `Starting batch import of ${files.length} files to ${location.locnam}`);
 
     // FIX 2.2: Per-file transactions instead of wrapping all files in one transaction
     const results: ImportResult[] = [];
@@ -338,11 +340,9 @@ export class FileImportService {
 
       // FIX 4.3: Check for cancellation before each file
       if (abortSignal?.aborted) {
-        console.log('[FileImport] Import cancelled by user after', i, 'files');
+        logger.info('FileImport', `Import cancelled by user after ${i} files`);
         break;
       }
-
-      console.log('[FileImport] Processing file', i + 1, 'of', files.length, ':', file.originalName);
 
       try {
         // FIX 2.2: Each file gets its own transaction - committed on success, rolled back on failure
@@ -355,20 +355,15 @@ export class FileImportService {
         if (result.success) {
           if (result.skipped) {
             skipped++;
-            console.log('[FileImport] File', i + 1, 'SKIPPED (excluded extension)');
           } else if (result.sidecarOnly) {
             sidecarOnly++;
-            console.log('[FileImport] File', i + 1, 'SIDECAR ONLY (XML metadata imported, no media)');
           } else if (result.duplicate) {
             duplicates++;
-            console.log('[FileImport] File', i + 1, 'was duplicate');
           } else {
             imported++;
-            console.log('[FileImport] File', i + 1, 'imported successfully');
           }
         } else {
           errors++;
-          console.log('[FileImport] File', i + 1, 'failed');
         }
 
         // FIX 1.2 & 4.1: Report progress AFTER work completes with filename
@@ -380,7 +375,7 @@ export class FileImportService {
         // Per docs/workflows/import.md: "Background job for metadata extraction (doesn't block)"
         if (result.success && !result.duplicate && result._gpsForEnrichment && result._locid) {
           this.runPostImportEnrichment(result._locid, result._gpsForEnrichment, location).catch(err => {
-            console.warn('[FileImport] Post-import enrichment failed (non-blocking):', err);
+            logger.warn('FileImport', 'Post-import enrichment failed (non-blocking)', { error: String(err) });
           });
         }
 
@@ -390,7 +385,6 @@ export class FileImportService {
         // OPT-077: Pass rotation for aspect ratio correction
         if (result.success && !result.duplicate && result._videoProxyData) {
           const proxyData = result._videoProxyData;
-          console.log('[FileImport] Step 7b: Generating video proxy (post-transaction, non-blocking)...');
           generateVideoProxy(
             this.db,
             this.archivePath,
@@ -398,17 +392,15 @@ export class FileImportService {
             proxyData.archivePath,
             { width: proxyData.width, height: proxyData.height, rotation: proxyData.rotation }
           ).then(proxyResult => {
-            if (proxyResult.success) {
-              console.log(`[FileImport] Video proxy generated: ${proxyResult.proxyPath}`);
-            } else {
-              console.warn('[FileImport] Video proxy generation failed (non-fatal):', proxyResult.error);
+            if (!proxyResult.success) {
+              logger.warn('FileImport', 'Video proxy generation failed (non-fatal)', { error: proxyResult.error });
             }
           }).catch(err => {
-            console.warn('[FileImport] Video proxy generation error (non-fatal):', err);
+            logger.warn('FileImport', 'Video proxy generation error (non-fatal)', { error: String(err) });
           });
         }
       } catch (error) {
-        console.error('[FileImport] Error importing file', file.originalName, ':', error);
+        logger.error('FileImport', `Error importing file ${file.originalName}`, error instanceof Error ? error : undefined);
         // FIX 1.1: Use 'document' instead of 'unknown' (valid type union value)
         results.push({
           success: false,
@@ -428,7 +420,9 @@ export class FileImportService {
       // FIX 2.1: Yield to event loop between files to prevent UI freeze
       await new Promise(resolve => setImmediate(resolve));
     }
-    console.log('[FileImport] Batch processing complete:', imported, 'imported,', duplicates, 'duplicates,', skipped, 'skipped,', sidecarOnly, 'sidecar-only,', errors, 'errors');
+
+    const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
+    logger.info('FileImport', `Batch complete: ${imported} imported, ${duplicates} duplicates, ${skipped} skipped, ${errors} errors (${durationSec}s)`);
 
     // Create import record in separate transaction (after all files processed)
     // NOTE: locid already pre-fetched at line 204, use auth_imp from first file
@@ -763,21 +757,17 @@ export class FileImportService {
     trx: any, // Transaction context
     location: any // FIX 11: Pre-fetched location from importFiles() - do NOT fetch again inside transaction!
   ): Promise<ImportResult> {
-    console.log('[FileImport] === Starting import for:', file.originalName, '===');
+    const logger = getLogger();
 
     // FIX 11: Location is now pre-fetched in importFiles() and passed as parameter
     // This prevents SQLite deadlock that occurred when fetching inside a transaction
-    console.log('[FileImport] Using pre-fetched location:', location.locnam);
 
     // 1. Validate file path security
-    console.log('[FileImport] Step 1: Validating file path...');
     const sanitizedName = PathValidator.sanitizeFilename(file.originalName);
-    console.log('[FileImport] Step 1 complete, sanitized name:', sanitizedName);
 
     // 1b. Check for skipped extensions (e.g., .aae, .psd)
     const fileExt = path.extname(sanitizedName).toLowerCase();
     if (this.shouldSkipFile(fileExt)) {
-      console.log('[FileImport] SKIPPING file with excluded extension:', fileExt, '-', file.originalName);
       return {
         success: true,
         hash: '',
@@ -790,31 +780,22 @@ export class FileImportService {
     // 1c. Check for XML sidecar - if found, import metadata only (no media file)
     const xmlSidecar = await this.findXmlSidecar(file.filePath);
     if (xmlSidecar) {
-      console.log('[FileImport] XML sidecar detected for:', file.originalName, '- importing metadata only');
       const mediaType = this.getFileType(fileExt);
       return await this.importSidecarOnly(trx, file, xmlSidecar, mediaType);
     }
 
     // 2. Calculate SHA256 hash (only once)
-    console.log('[FileImport] Step 2: Calculating SHA256 hash...');
-    const hashStart = Date.now();
     const hash = await this.cryptoService.calculateSHA256(file.filePath);
-    console.log('[FileImport] Step 2 complete in', Date.now() - hashStart, 'ms, hash:', hash.substring(0, 16) + '...');
 
     // 3. Determine file type (image -> video -> map -> document)
     // We accept ALL files - unknown extensions default to 'document'
     const ext = path.extname(sanitizedName).toLowerCase();
     const type = this.getFileType(ext);
-    console.log('[FileImport] Step 3: File type determined:', type, 'extension:', ext);
 
     // 4. Check for duplicates
-    console.log('[FileImport] Step 4: Checking for duplicates...');
-    const dupStart = Date.now();
     const isDuplicate = await this.checkDuplicateInTransaction(trx, hash, type);
-    console.log('[FileImport] Step 4 complete in', Date.now() - dupStart, 'ms, duplicate:', isDuplicate);
 
     if (isDuplicate) {
-      console.log('[FileImport] File is duplicate, skipping:', file.originalName);
       return {
         success: true,
         hash,
@@ -829,23 +810,16 @@ export class FileImportService {
     // OPT-012: Track non-fatal warnings during import
     const warnings: string[] = [];
 
-    console.log('[FileImport] Step 5: Extracting metadata for', file.originalName, 'type:', type);
-
     try {
       // FIX 3.1 & 3.2: Extract metadata from ALL file types using ExifTool
       // ExifTool works on images, videos (GPS from dashcams), documents (PDF metadata), and maps
-      console.log('[FileImport] Calling ExifTool for', type, '...');
-      const exifStart = Date.now();
       const exifData = await this.exifToolService.extractMetadata(file.filePath);
-      console.log('[FileImport] ExifTool completed in', Date.now() - exifStart, 'ms');
 
       if (type === 'image') {
         metadata = exifData;
       } else if (type === 'video') {
         // For videos, also get FFmpeg data for duration, codec, etc.
-        console.log('[FileImport] Calling FFmpeg for video details...');
         const ffmpegData = await this.ffmpegService.extractMetadata(file.filePath);
-        console.log('[FileImport] FFmpeg completed');
 
         // Merge: FFmpeg data + GPS from ExifTool
         metadata = {
@@ -1350,30 +1324,20 @@ export class FileImportService {
       mediaFolder
     );
     const targetPath = path.join(targetDir, `${hash}${ext}`);
-    console.log('[organizeFile] Target path:', targetPath);
 
     // CRITICAL: Validate target path doesn't escape archive
     if (!PathValidator.validateArchivePath(targetPath, this.archivePath)) {
       throw new Error(`Security: Target path escapes archive directory: ${targetPath}`);
     }
-    console.log('[organizeFile] Path validated');
 
     // Ensure directory exists
-    console.log('[organizeFile] Creating directory:', targetDir);
     await fs.mkdir(targetDir, { recursive: true });
-    console.log('[organizeFile] Directory created');
 
     // Copy file
-    console.log('[organizeFile] Copying file (this may take a while for large files)...');
-    const copyStart = Date.now();
     await fs.copyFile(file.filePath, targetPath);
-    console.log('[organizeFile] File copied in', Date.now() - copyStart, 'ms');
 
     // Verify integrity after copy
-    console.log('[organizeFile] Verifying integrity...');
-    const verifyStart = Date.now();
     const verifyHash = await this.cryptoService.calculateSHA256(targetPath);
-    console.log('[organizeFile] Verification complete in', Date.now() - verifyStart, 'ms');
 
     if (verifyHash !== hash) {
       // Delete corrupted file
@@ -1386,7 +1350,6 @@ export class FileImportService {
     const fileStats = await fs.stat(targetPath);
     const fileSizeBytes = fileStats.size;
 
-    console.log('[organizeFile] COMPLETE for:', file.originalName, 'size:', fileSizeBytes, 'bytes');
     return { path: targetPath, fileSizeBytes };
   }
 

@@ -3,13 +3,11 @@
 // This file is NOT processed by Vite - it's used directly by Electron
 // IMPORTANT: Keep in sync with electron/preload/index.ts
 // OPT-034: Added IPC timeout wrapper for all invoke calls
+// OPT-108: Debug logging guarded by DEBUG_PRELOAD env var
 
-// DEBUG: Check what electron exports
+const DEBUG = process.env.DEBUG_PRELOAD === "1";
+
 const electronModule = require("electron");
-const keys = Object.keys(electronModule);
-console.log("[Preload] Electron module keys:", keys.join(", "));
-console.log("[Preload] Electron version:", process.versions.electron);
-console.log("[Preload] webUtils in keys:", keys.includes("webUtils"));
 
 // Try different ways to access webUtils
 let webUtils = electronModule.webUtils;
@@ -18,16 +16,23 @@ if (!webUtils) {
   try {
     const { webUtils: wu } = require("electron");
     webUtils = wu;
-    console.log("[Preload] webUtils via destructure:", !!webUtils);
   } catch (e) {
-    console.log("[Preload] webUtils destructure failed:", e.message);
+    if (DEBUG) console.log("[Preload] webUtils destructure failed:", e.message);
   }
 }
 
 const { contextBridge, ipcRenderer } = electronModule;
-console.log("[Preload] contextBridge available:", !!contextBridge);
-console.log("[Preload] ipcRenderer available:", !!ipcRenderer);
-console.log("[Preload] webUtils final:", !!webUtils);
+
+// Debug diagnostics (only when DEBUG_PRELOAD=1)
+if (DEBUG) {
+  const keys = Object.keys(electronModule);
+  console.log("[Preload] Electron module keys:", keys.join(", "));
+  console.log("[Preload] Electron version:", process.versions.electron);
+  console.log("[Preload] webUtils in keys:", keys.includes("webUtils"));
+  console.log("[Preload] contextBridge available:", !!contextBridge);
+  console.log("[Preload] ipcRenderer available:", !!ipcRenderer);
+  console.log("[Preload] webUtils final:", !!webUtils);
+}
 
 // OPT-034: IPC timeout wrapper to prevent hanging operations
 const DEFAULT_IPC_TIMEOUT = 30000; // 30 seconds for most operations
@@ -536,19 +541,7 @@ const api = {
   // Import System v2.0 - 5-step pipeline with background jobs
   importV2: {
     // Start a new import with paths and location info
-    start: (input) => {
-      console.log("[PRELOAD import:v2:start] Calling invokeLong...");
-      return invokeLong("import:v2:start")(input)
-        .then(result => {
-          console.log("[PRELOAD import:v2:start] Success, result status:", result?.status);
-          return result;
-        })
-        .catch(err => {
-          console.error("[PRELOAD import:v2:start] CAUGHT ERROR:", err);
-          console.error("[PRELOAD import:v2:start] Error message:", err?.message);
-          throw err;
-        });
-    },
+    start: (input) => invokeLong("import:v2:start")(input),
     // Cancel running import
     cancel: (sessionId) => invokeAuto("import:v2:cancel")(sessionId),
     // Get current import status
@@ -559,29 +552,13 @@ const api = {
     resume: (sessionId) => invokeLong("import:v2:resume")(sessionId),
     // Listen for import progress events
     onProgress: (callback) => {
-      const listener = (_event, progress) => {
-        console.log("[PRELOAD onProgress] Received progress event:", progress?.status);
-        try {
-          callback(progress);
-          console.log("[PRELOAD onProgress] Callback completed OK");
-        } catch (err) {
-          console.error("[PRELOAD onProgress] Callback FAILED:", err);
-        }
-      };
+      const listener = (_event, progress) => callback(progress);
       ipcRenderer.on("import:v2:progress", listener);
       return () => ipcRenderer.removeListener("import:v2:progress", listener);
     },
     // Listen for import completion events
     onComplete: (callback) => {
-      const listener = (_event, result) => {
-        console.log("[PRELOAD onComplete] Received complete event:", result?.status);
-        try {
-          callback(result);
-          console.log("[PRELOAD onComplete] Callback completed OK");
-        } catch (err) {
-          console.error("[PRELOAD onComplete] Callback FAILED:", err);
-        }
-      };
+      const listener = (_event, result) => callback(result);
       ipcRenderer.on("import:v2:complete", listener);
       return () => ipcRenderer.removeListener("import:v2:complete", listener);
     },
@@ -681,15 +658,11 @@ let lastDroppedPaths = [];
 
 const setupDropListener = () => {
   document.addEventListener("drop", (event) => {
-    console.log("[Preload] Drop event captured");
     lastDroppedPaths = [];
 
     if (!event.dataTransfer?.files || event.dataTransfer.files.length === 0) {
-      console.log("[Preload] No files in drop event");
       return;
     }
-
-    console.log("[Preload] Processing", event.dataTransfer.files.length, "dropped files");
 
     for (const file of Array.from(event.dataTransfer.files)) {
       try {
@@ -697,12 +670,10 @@ const setupDropListener = () => {
         let filePath = null;
         if (webUtils && typeof webUtils.getPathForFile === 'function') {
           filePath = webUtils.getPathForFile(file);
-          console.log("[Preload] Got path via webUtils:", filePath);
         } else if (file.path) {
           // Fallback: deprecated file.path still works in Electron 28
           filePath = file.path;
-          console.log("[Preload] Got path via file.path (fallback):", filePath);
-        } else {
+        } else if (DEBUG) {
           console.warn("[Preload] Neither webUtils nor file.path available for:", file.name);
         }
 
@@ -714,7 +685,9 @@ const setupDropListener = () => {
       }
     }
 
-    console.log("[Preload] Total paths extracted:", lastDroppedPaths.length);
+    if (DEBUG) {
+      console.log("[Preload] Extracted", lastDroppedPaths.length, "paths from drop");
+    }
   }, { capture: true });
 };
 
@@ -725,12 +698,9 @@ if (document.readyState === "loading") {
 }
 
 contextBridge.exposeInMainWorld("getDroppedFilePaths", () => {
-  const paths = [...lastDroppedPaths];
-  console.log("[Preload] getDroppedFilePaths called, returning", paths.length, "paths");
-  return paths;
+  return [...lastDroppedPaths];
 });
 
 contextBridge.exposeInMainWorld("extractFilePaths", (_files) => {
-  console.log("[Preload] extractFilePaths called");
   return [...lastDroppedPaths];
 });

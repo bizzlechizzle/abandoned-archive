@@ -102,8 +102,7 @@ export class WorkerPool {
     // NOTE: .cjs extension required because package.json has "type": "module"
     this.workerPath = path.join(__dirname, '..', 'workers', 'hash.worker.cjs');
 
-    console.log(`[WorkerPool] Initializing with ${this.concurrency} workers (${hw.tier} tier)`);
-    console.log(`[WorkerPool] Worker path: ${this.workerPath}`);
+    // Lifecycle logging only - per-hash logging removed in OPT-108
   }
 
   /**
@@ -111,8 +110,6 @@ export class WorkerPool {
    * Creates worker threads and waits for them to be ready
    */
   async start(): Promise<void> {
-    console.log(`[WorkerPool] Starting ${this.concurrency} hash workers...`);
-
     const startPromises: Promise<void>[] = [];
 
     for (let i = 0; i < this.concurrency; i++) {
@@ -120,9 +117,6 @@ export class WorkerPool {
     }
 
     await Promise.all(startPromises);
-
-    const nativeCount = this.workers.filter(w => w.hasNativeB3sum).length;
-    console.log(`[WorkerPool] ${this.workers.length} workers ready (${nativeCount} with native b3sum)`);
   }
 
   /**
@@ -151,7 +145,6 @@ export class WorkerPool {
             state.isReady = true;
             state.hasNativeB3sum = message.hasNativeB3sum ?? false;
             this.workers.push(state);
-            console.log(`[WorkerPool] Worker ${workerId} ready (native b3sum: ${state.hasNativeB3sum})`);
             resolve();
           }
         };
@@ -206,14 +199,11 @@ export class WorkerPool {
             if (index > -1) {
               this.workers.splice(index, 1);
             }
-            console.log(`[WorkerPool] Restarting crashed worker ${workerId}...`);
             this.createWorker().catch(console.error);
           }
         });
 
         worker.on('exit', (code) => {
-          console.log(`[WorkerPool] Worker ${workerId} exited with code ${code}`);
-
           // Remove from workers list
           const index = this.workers.indexOf(state);
           if (index > -1) {
@@ -222,7 +212,6 @@ export class WorkerPool {
 
           // Restart if not shutting down and exit was unexpected
           if (code !== 0 && this.restartOnCrash && !this.isShuttingDown) {
-            console.log(`[WorkerPool] Restarting worker ${workerId}...`);
             this.createWorker().catch(console.error);
           }
         });
@@ -288,7 +277,6 @@ export class WorkerPool {
         };
 
         // Send task to worker
-        console.log(`[WorkerPool] Sending hash request ${taskId} to worker ${worker.id} for: ${filePath.substring(0, 60)}...`);
         worker.worker.postMessage({
           type: 'hash',
           id: taskId,
@@ -362,7 +350,6 @@ export class WorkerPool {
    * Waits for pending tasks to complete
    */
   async shutdown(): Promise<void> {
-    console.log('[WorkerPool] Shutting down...');
     this.isShuttingDown = true;
 
     // Wait for queue to drain
@@ -380,8 +367,6 @@ export class WorkerPool {
 
     this.workers = [];
     this.pendingTasks.clear();
-
-    console.log('[WorkerPool] Shutdown complete');
   }
 }
 
