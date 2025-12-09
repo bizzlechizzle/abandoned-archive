@@ -66,13 +66,16 @@ async function calculateHashNative(filePath: string): Promise<string> {
 
 /**
  * Calculate BLAKE3 hash using WASM fallback (blake3 npm package)
+ * Uses 1MB buffer for SMB/network efficiency (vs 64KB default)
  * @param filePath - Absolute path to the file
  * @returns Promise resolving to 16-char lowercase hex hash
  */
 async function calculateHashWasm(filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hasher = createHash();
-    const stream = createReadStream(filePath);
+    // 1MB buffer for network efficiency - reduces SMB round-trips
+    const BUFFER_SIZE = 1024 * 1024;
+    const stream = createReadStream(filePath, { highWaterMark: BUFFER_SIZE });
 
     stream.on('data', (chunk: Buffer) => {
       hasher.update(chunk);

@@ -197,6 +197,12 @@ export class Validator {
         results.push(validatedFile);
         validatedCount++;
 
+        // Log progress every 10 files or on errors (matches Copier pattern)
+        if (validatedCount % 10 === 0 || validatedFile.validationError) {
+          const pct = ((validatedCount / totalFiles) * 100).toFixed(1);
+          console.log(`[Validator] Progress: ${validatedCount}/${totalFiles} files (${pct}%)${validatedFile.validationError ? ` ERROR: ${validatedFile.validationError}` : ''}`);
+        }
+
         // Report progress (80-95% range)
         if (options?.onProgress && totalFiles > 0) {
           const percent = 80 + ((validatedCount / totalFiles) * 15);

@@ -66,11 +66,14 @@ async function calculateHashNative(filePath: string): Promise<string> {
 
 /**
  * Calculate hash using WASM fallback
+ * Uses 1MB buffer for SMB/network efficiency (vs 64KB default)
  */
 async function calculateHashWasm(filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hasher = createHash();
-    const stream = createReadStream(filePath);
+    // 1MB buffer for network efficiency - reduces SMB round-trips
+    const BUFFER_SIZE = 1024 * 1024;
+    const stream = createReadStream(filePath, { highWaterMark: BUFFER_SIZE });
 
     stream.on('data', (chunk: Buffer | string) => {
       hasher.update(chunk);
