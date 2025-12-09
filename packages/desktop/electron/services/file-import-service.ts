@@ -1285,7 +1285,8 @@ export class FileImportService {
 
   /**
    * Organize file to archive folder with path validation
-   * Archive structure per spec: [archivePath]/locations/[STATE]-[TYPE]/[SLOCNAM]-[LOC12]/org-[type]-[LOC12]/[SHA256].[ext]
+   * ADR-046: Archive structure: [archivePath]/locations/[STATE]/[LOCID]/data/org-[type]/[HASH].[ext]
+   * Sub-location structure: [archivePath]/locations/[STATE]/[LOCID]/data/sloc-[SUBID]/org-[type]/[HASH].[ext]
    *
    * IMPORTANT: This version accepts pre-fetched location to avoid DB calls inside transaction
    */
@@ -1294,35 +1295,49 @@ export class FileImportService {
     hash: string,
     ext: string,
     type: 'image' | 'video' | 'map' | 'document',
-    location: any // Pre-fetched location from Step 0
+    location: any, // Pre-fetched location from Step 0
+    subid?: string | null // Optional sub-location ID
   ): Promise<{ path: string; fileSizeBytes: number }> {
     console.log('[organizeFile] Starting for:', file.originalName);
     console.log('[organizeFile] Using pre-fetched location:', location.locnam);
 
-    // Build spec-compliant folder structure
-    // [STATE]-[TYPE] folder (use "XX" for unknown state, "Unknown" for unknown type)
-    const state = location.address?.state?.toUpperCase() || 'XX';
-    const locType = location.type || 'Unknown';
-    const stateTypeFolder = `${state}-${this.sanitizeFolderName(locType)}`;
+    // ADR-046: Build new folder structure
+    // [STATE] folder (use "XX" for unknown state)
+    const state = (location.address?.state || location.address_state || 'XX').toUpperCase();
 
-    // [SLOCNAM]-[LOC12] folder
-    const slocnam = location.slocnam || LocationEntity.generateShortName(location.locnam);
-    const loc12 = location.loc12;
-    const locationFolder = `${this.sanitizeFolderName(slocnam)}-${loc12}`;
+    // [LOCID] folder (16-char BLAKE3 hash)
+    const locid = location.locid;
 
-    // org-[type]-[LOC12] folder
+    // org-[type] folder (no loc12 suffix anymore)
     const typePrefixMap: Record<string, string> = { image: 'img', video: 'vid', map: 'map', document: 'doc' };
     const typePrefix = typePrefixMap[type] || 'doc';
-    const mediaFolder = `org-${typePrefix}-${loc12}`;
+    const mediaFolder = `org-${typePrefix}`;
 
-    // Build full path
-    const targetDir = path.join(
-      this.archivePath,
-      'locations',
-      stateTypeFolder,
-      locationFolder,
-      mediaFolder
-    );
+    // Build path based on whether we have a sub-location
+    let targetDir: string;
+    if (subid) {
+      // Sub-location: [archive]/locations/[STATE]/[LOCID]/data/sloc-[SUBID]/org-[type]/
+      targetDir = path.join(
+        this.archivePath,
+        'locations',
+        state,
+        locid,
+        'data',
+        `sloc-${subid}`,
+        mediaFolder
+      );
+    } else {
+      // Main location: [archive]/locations/[STATE]/[LOCID]/data/org-[type]/
+      targetDir = path.join(
+        this.archivePath,
+        'locations',
+        state,
+        locid,
+        'data',
+        mediaFolder
+      );
+    }
+
     const targetPath = path.join(targetDir, `${hash}${ext}`);
 
     // CRITICAL: Validate target path doesn't escape archive

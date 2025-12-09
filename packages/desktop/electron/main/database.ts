@@ -17,10 +17,10 @@ const SCHEMA_SQL = `
 -- SQLite database for local-first abandoned location archive
 
 -- Locations table (primary entity)
+-- ADR-046: locid is BLAKE3 16-char hash (not UUID, no separate loc12)
 CREATE TABLE IF NOT EXISTS locs (
-  -- Identity
-  locid TEXT PRIMARY KEY,
-  loc12 TEXT UNIQUE NOT NULL,
+  -- Identity (BLAKE3 16-char hash)
+  locid TEXT PRIMARY KEY CHECK(length(locid) = 16),
 
   -- Basic Info
   locnam TEXT NOT NULL,
@@ -59,7 +59,6 @@ CREATE TABLE IF NOT EXISTS locs (
 
   -- Relationships
   sublocs TEXT,
-  sub12 TEXT,
 
   -- Metadata
   locadd TEXT,
@@ -74,7 +73,6 @@ CREATE TABLE IF NOT EXISTS locs (
 CREATE INDEX IF NOT EXISTS idx_locs_state ON locs(address_state);
 CREATE INDEX IF NOT EXISTS idx_locs_type ON locs(type);
 CREATE INDEX IF NOT EXISTS idx_locs_gps ON locs(gps_lat, gps_lng) WHERE gps_lat IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_locs_loc12 ON locs(loc12);
 CREATE INDEX IF NOT EXISTS idx_locs_favorite ON locs(favorite) WHERE favorite = 1;
 -- OPT-043: Covering index for ultra-fast Atlas map queries
 -- Includes all columns needed by findInBoundsForMap to avoid table lookups
@@ -82,9 +80,9 @@ CREATE INDEX IF NOT EXISTS idx_locs_map_bounds ON locs(gps_lat, gps_lng, locid, 
   WHERE gps_lat IS NOT NULL AND gps_lng IS NOT NULL;
 
 -- Sub-Locations table
+-- ADR-046: subid is BLAKE3 16-char hash (not UUID, no separate sub12)
 CREATE TABLE IF NOT EXISTS slocs (
-  subid TEXT PRIMARY KEY,
-  sub12 TEXT UNIQUE NOT NULL,
+  subid TEXT PRIMARY KEY CHECK(length(subid) = 16),
   locid TEXT NOT NULL REFERENCES locs(locid) ON DELETE CASCADE,
 
   subnam TEXT NOT NULL,

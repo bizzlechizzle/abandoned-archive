@@ -15,14 +15,13 @@ import os from 'os';
 // Mock the worker pool
 vi.mock('../../services/worker-pool', () => ({
   getWorkerPool: vi.fn().mockResolvedValue({
-    hashBatch: vi.fn().mockImplementation((paths: string[]) => {
-      // By default, return matching hashes (valid files)
-      return Promise.resolve(
-        paths.map(() => ({
-          hash: 'a7f3b2c1e9d4f086',
-          error: null,
-        }))
-      );
+    // The validator uses pool.hash(filePath), not hashBatch
+    hash: vi.fn().mockImplementation((_path: string) => {
+      // By default, return matching hash (valid file)
+      return Promise.resolve({
+        hash: 'a7f3b2c1e9d4f086',
+        error: null,
+      });
     }),
   }),
 }));
@@ -95,9 +94,7 @@ describe('Validator', () => {
       // Override mock to return different hash
       const { getWorkerPool } = await import('../../services/worker-pool');
       vi.mocked(getWorkerPool).mockResolvedValueOnce({
-        hashBatch: vi.fn().mockResolvedValue([
-          { hash: 'different_hash_12', error: null },
-        ]),
+        hash: vi.fn().mockResolvedValue({ hash: 'different_hash_12', error: null }),
       } as any);
 
       const validator2 = new Validator();
@@ -114,9 +111,7 @@ describe('Validator', () => {
       // Override mock to return different hash
       const { getWorkerPool } = await import('../../services/worker-pool');
       vi.mocked(getWorkerPool).mockResolvedValueOnce({
-        hashBatch: vi.fn().mockResolvedValue([
-          { hash: 'different_hash_12', error: null },
-        ]),
+        hash: vi.fn().mockResolvedValue({ hash: 'different_hash_12', error: null }),
       } as any);
 
       const file = createCopiedFile();
@@ -134,9 +129,7 @@ describe('Validator', () => {
       // Override mock to return different hash
       const { getWorkerPool } = await import('../../services/worker-pool');
       vi.mocked(getWorkerPool).mockResolvedValueOnce({
-        hashBatch: vi.fn().mockResolvedValue([
-          { hash: 'different_hash_12', error: null },
-        ]),
+        hash: vi.fn().mockResolvedValue({ hash: 'different_hash_12', error: null }),
       } as any);
 
       const file = createCopiedFile();
@@ -250,9 +243,7 @@ describe('Validator', () => {
       // Override mock to return error
       const { getWorkerPool } = await import('../../services/worker-pool');
       vi.mocked(getWorkerPool).mockResolvedValueOnce({
-        hashBatch: vi.fn().mockResolvedValue([
-          { hash: null, error: 'File read error' },
-        ]),
+        hash: vi.fn().mockResolvedValue({ hash: null, error: 'File read error' }),
       } as any);
 
       const file = createCopiedFile();

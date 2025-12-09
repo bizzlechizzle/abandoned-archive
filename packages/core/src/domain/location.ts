@@ -110,13 +110,12 @@ export const LocationInputSchema = z.object({
 export type LocationInput = z.infer<typeof LocationInputSchema>;
 
 // Full Location Schema (from database)
+// ADR-046: locid is now BLAKE3 16-char hash (not UUID)
 export const LocationSchema = LocationInputSchema.extend({
-  locid: z.string().uuid(),
-  loc12: z.string().length(12),
+  locid: z.string().length(16).regex(/^[a-f0-9]+$/),
   locadd: z.string().datetime(),
   locup: z.string().datetime().optional(),
   sublocs: z.array(z.string()).default([]),
-  sub12: z.string().optional(),
   regions: z.array(z.string()).default([]),
   state: z.string().optional(),
   // DECISION-010: Location-level verification (set when BOTH address AND GPS verified)
@@ -180,10 +179,8 @@ export class LocationEntity {
     return compact.substring(0, 12);
   }
 
-  // Generate 12-character unique ID
-  static generateLoc12(uuid: string): string {
-    return uuid.replace(/-/g, '').substring(0, 12);
-  }
+  // ADR-046: generateLoc12 removed - locid is now BLAKE3 16-char hash
+  // Use generateLocationId() from crypto-service.ts instead
 
   // Get GPS confidence level
   getGPSConfidence(): GPSConfidence {

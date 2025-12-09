@@ -517,10 +517,10 @@ export class WebSourceOrchestrator extends EventEmitter {
     let archivePath: string;
 
     if (source.locid) {
-      // OPT-110: Look up location data for proper folder naming per CLAUDE.md
+      // ADR-046: Look up location data for folder naming
       const location = await this.db
         .selectFrom('locs')
-        .select(['loc12', 'locnam', 'slocnam', 'type', 'address_state'])
+        .select(['locid', 'locnam', 'type', 'address_state'])
         .where('locid', '=', source.locid)
         .executeTakeFirst();
 
@@ -528,16 +528,10 @@ export class WebSourceOrchestrator extends EventEmitter {
         throw new Error(`Location not found: ${source.locid}`);
       }
 
-      // Build proper folder path per CLAUDE.md:
-      // [base]/locations/[STATE]-[TYPE]/[SLOCNAM]-[LOC12]/org-doc-[LOC12]/_websources/[domain]-[source_id]/
-      const state = location.address_state?.toUpperCase() || 'XX';
-      const locType = location.type || 'Unknown';
-      const stateTypeFolder = `${state}-${this.sanitizeFolderName(locType)}`;
-
-      const slocnam = location.slocnam || this.generateShortName(location.locnam);
-      const locationFolder = `${this.sanitizeFolderName(slocnam)}-${location.loc12}`;
-
-      const docFolder = `org-doc-${location.loc12}`;
+      // ADR-046: New folder path format
+      // [base]/locations/[STATE]/[LOCID]/data/org-doc/_websources/[domain]-[source_id]/
+      const state = (location.address_state || 'XX').toUpperCase();
+      const locid = source.locid;
 
       // Extract domain for human-readable folder naming
       const domain = this.extractDomain(source.url);
@@ -545,9 +539,10 @@ export class WebSourceOrchestrator extends EventEmitter {
       archivePath = path.join(
         this.archiveBasePath,
         'locations',
-        stateTypeFolder,
-        locationFolder,
-        docFolder,
+        state,
+        locid,
+        'data',
+        'org-doc',
         '_websources',
         `${domain}-${source.source_id}`
       );

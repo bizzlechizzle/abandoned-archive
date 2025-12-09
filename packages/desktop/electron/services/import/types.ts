@@ -10,6 +10,10 @@
 /**
  * Location context for import operations
  *
+ * ADR-046: Simplified folder structure
+ * - New format: [archive]/locations/[STATE]/[LOCID]/data/org-[type]/
+ * - Sub-location: [archive]/locations/[STATE]/[LOCID]/data/sloc-[SUBID]/org-[type]/
+ *
  * Contains all information needed to:
  * - Build archive folder paths
  * - Assign media to correct location/sub-location
@@ -18,32 +22,18 @@
  * Single source of truth - used by copier, finalizer, orchestrator
  */
 export interface LocationInfo {
-  /** UUID of the host location */
+  /** BLAKE3 16-char hex ID of the host location (ADR-046) */
   locid: string;
-
-  /** 12-character short ID for folder naming */
-  loc12: string;
 
   /** Two-letter state code (e.g., "NY") for folder hierarchy */
   address_state: string | null;
 
-  /** Location type (e.g., "Hospital", "Factory") for folder hierarchy */
-  type: string | null;
-
-  /** Short location name for folder naming */
-  slocnam: string | null;
-
   /**
-   * Sub-location UUID (null if importing to host location)
+   * Sub-location BLAKE3 16-char hex ID (null if importing to host location)
    * When provided, media records will have this subid set
+   * Creates folder: sloc-[SUBID]/
    */
   subid: string | null;
-
-  /**
-   * Sub-location 12-character short ID for folder naming
-   * Optional - derived from subid if not provided
-   */
-  sub12?: string | null;
 }
 
 /**

@@ -58,11 +58,13 @@ export interface ManifestFileEntry {
   database_id?: string;
 }
 
+/**
+ * Location metadata for import manifests
+ * ADR-046: Removed loc12/slocnam - folder paths now use locid directly
+ */
 export interface ManifestLocation {
   locid: string;
   locnam: string;
-  slocnam: string | null;
-  loc12: string;
   state: string | null;
   type: string | null;
   gps?: { lat: number; lng: number } | null;

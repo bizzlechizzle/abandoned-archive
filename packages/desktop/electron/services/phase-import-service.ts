@@ -137,11 +137,10 @@ export class PhaseImportService {
       const location = await this.locationRepo.findById(locid);
       if (!location) throw new Error(`Location not found: ${locid}`);
 
+      // ADR-046: ManifestLocation no longer needs loc12/slocnam for folder paths
       const manifestLocation: ManifestLocation = {
         locid: location.locid,
         locnam: location.locnam,
-        slocnam: location.slocnam || null,
-        loc12: location.loc12,
         state: location.address_state || null,
         type: location.type || null,
         gps: location.gps_lat && location.gps_lng
@@ -619,6 +618,8 @@ export class PhaseImportService {
 
   /**
    * Copy file to archive with proper folder structure
+   * ADR-046: New format: [archive]/locations/[STATE]/[LOCID]/data/org-[type]/
+   * Sub-location: [archive]/locations/[STATE]/[LOCID]/data/sloc-[SUBID]/org-[type]/
    */
   private async copyFileToArchive(
     sourcePath: string,
@@ -628,13 +629,9 @@ export class PhaseImportService {
     location: ManifestLocation,
     subid: string | null
   ): Promise<string> {
-    // Build folder path per spec: [STATE]-[TYPE]/[SLOCNAM]-[LOC12]/org-[type]-[LOC12]/
-    const state = location.state?.toUpperCase() || 'XX';
-    const locType = location.type || 'Unknown';
-    const stateTypeFolder = `${state}-${this.sanitizeFolderName(locType)}`;
-
-    const slocnam = location.slocnam || this.generateSlocnam(location.locnam);
-    const locationFolder = `${this.sanitizeFolderName(slocnam)}-${location.loc12}`;
+    // ADR-046: Build new folder structure
+    const state = (location.state || 'XX').toUpperCase();
+    const locid = location.locid;
 
     const typePrefixMap: Record<FileType, string> = {
       image: 'img',
@@ -643,20 +640,32 @@ export class PhaseImportService {
       document: 'doc',
     };
     const typePrefix = typePrefixMap[type];
+    const mediaFolder = `org-${typePrefix}`;
 
-    // Handle sub-location folder naming
-    let mediaFolder = `org-${typePrefix}-${location.loc12}`;
+    // Build path based on whether we have a sub-location
+    let targetDir: string;
     if (subid) {
-      mediaFolder = `org-${typePrefix}-${location.loc12}-${subid.substring(0, 12)}`;
+      // Sub-location: [archive]/locations/[STATE]/[LOCID]/data/sloc-[SUBID]/org-[type]/
+      targetDir = path.join(
+        this.archivePath,
+        'locations',
+        state,
+        locid,
+        'data',
+        `sloc-${subid}`,
+        mediaFolder
+      );
+    } else {
+      // Main location: [archive]/locations/[STATE]/[LOCID]/data/org-[type]/
+      targetDir = path.join(
+        this.archivePath,
+        'locations',
+        state,
+        locid,
+        'data',
+        mediaFolder
+      );
     }
-
-    const targetDir = path.join(
-      this.archivePath,
-      'locations',
-      stateTypeFolder,
-      locationFolder,
-      mediaFolder
-    );
 
     const targetPath = path.join(targetDir, `${hash}${ext}`);
 

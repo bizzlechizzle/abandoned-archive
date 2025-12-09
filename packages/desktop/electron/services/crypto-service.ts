@@ -3,6 +3,7 @@ import { createReadStream } from 'fs';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { existsSync } from 'fs';
+import { randomBytes } from 'crypto';
 
 const execFileAsync = promisify(execFile);
 
@@ -147,6 +148,32 @@ export function hasNativeB3sum(): boolean {
 }
 
 /**
+ * Generate a unique location ID using BLAKE3 hash of random bytes.
+ * ADR-046: Replaces UUID + loc12 with single BLAKE3 16-char ID
+ * @returns 16-character lowercase hex string
+ * @example
+ * const locid = generateLocationId();
+ * // Returns: "a7f3b2c1e9d4f086"
+ */
+export function generateLocationId(): string {
+  const bytes = randomBytes(32);
+  return calculateHashBuffer(bytes);
+}
+
+/**
+ * Generate a unique sub-location ID using BLAKE3 hash of random bytes.
+ * ADR-046: Replaces UUID + sub12 with single BLAKE3 16-char ID
+ * @returns 16-character lowercase hex string
+ * @example
+ * const subid = generateSubLocationId();
+ * // Returns: "b8f4c3d2e0a5f197"
+ */
+export function generateSubLocationId(): string {
+  const bytes = randomBytes(32);
+  return calculateHashBuffer(bytes);
+}
+
+/**
  * CryptoService class wrapper for backward compatibility
  * Wraps the function-based API in a class interface
  */
@@ -200,5 +227,21 @@ export class CryptoService {
    */
   hasNativeB3sum(): boolean {
     return hasNativeB3sum();
+  }
+
+  /**
+   * Generate a unique location ID
+   * ADR-046: BLAKE3 16-char hash
+   */
+  generateLocationId(): string {
+    return generateLocationId();
+  }
+
+  /**
+   * Generate a unique sub-location ID
+   * ADR-046: BLAKE3 16-char hash
+   */
+  generateSubLocationId(): string {
+    return generateSubLocationId();
   }
 }

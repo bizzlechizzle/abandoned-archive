@@ -2,28 +2,29 @@
 
 ## Import Spine
 
-Watcher scans drop zone, hashes every file, copies into archive folder, and links to locations via SHA primary keys **before metadata extraction**.
+Watcher scans drop zone, hashes every file (BLAKE3), copies into archive folder, and links to locations via hash primary keys **before metadata extraction**.
 
 ## Import Sequence
 
 1. **User selects files/folders** — Renderer sends absolute paths through preload
 2. **Main process validates** — Check permissions, available disk space
-3. **Hash service computes SHA256** — Stream file, compute hash, assign organized name `<sha>.<ext>`
+3. **Hash service computes BLAKE3** — Stream file, compute 16-char hex hash, assign organized name `<hash>.<ext>`
 4. **File copied to archive folder** — Organized by location structure
 5. **Metadata extraction runs** — ExifTool/FFmpeg/sharp extract metadata in background
-6. **Repository upserts** — Media record keyed by SHA, linked to location/sub-location (if provided)
+6. **Repository upserts** — Media record keyed by BLAKE3 hash, linked to location/sub-location (if provided)
 7. **Import queue updates** — Status: pending → processing → complete/error
 8. **Post-import processing** — Live Photo detection, SDR duplicate hiding
 9. **Auto-hero selection** — If location has no hero image and images were imported, first image becomes hero
 
-## Folder Organization
+## Folder Organization (ADR-046)
 
-User-selected base folder → `locations/[STATE]-[TYPE]/[SLOCNAM]-[LOC12]/`
+User-selected base folder → `locations/[STATE]/[LOCID]/`
 
 Subfolders:
-- `org-img-[LOC12]/` — Images
-- `org-vid-[LOC12]/` — Videos
-- `org-doc-[LOC12]/` — Documents
+- `data/org-img/` — Images
+- `data/org-vid/` — Videos
+- `data/org-doc/` — Documents
+- `archive/` — BagIt package (RFC 8493)
 
 ## Idempotency
 
@@ -39,7 +40,7 @@ Import queue stores status for UI progress bars:
 
 ## Error Handling
 
-- **SHA256 mismatch** — File corrupted, reject import
+- **Hash mismatch** — File corrupted, reject import
 - **Permission denied** — Show error, suggest folder permissions fix
 - **Disk space** — Check before import, warn user if insufficient
 - **Duplicate file** — Prompt: skip or overwrite
@@ -56,7 +57,7 @@ Every import captures:
 - Importer username
 - Timestamps (import_date)
 - Source paths (original_name)
-- SHA256 hash (organized_name)
+- BLAKE3 hash (organized_name)
 
 ## Auto-Hero Selection
 

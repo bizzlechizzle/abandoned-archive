@@ -2,6 +2,7 @@
  * Copier Unit Tests
  * Tests for atomic copy and streaming callbacks
  * OPT-082: Pure copy only
+ * ADR-046: BLAKE3 16-char hex IDs, simplified folder structure
  *
  * @module __tests__/unit/copier.test
  */
@@ -19,12 +20,10 @@ describe('Copier', () => {
   let archiveDir: string;
   let sourceDir: string;
 
+  // ADR-046: Simplified LocationInfo - BLAKE3 16-char hex IDs
   const testLocation: LocationInfo = {
-    locid: 'test-loc-id',
-    loc12: 'ABC123',
+    locid: 'a1b2c3d4e5f67890', // BLAKE3 16-char hex
     address_state: 'NY',
-    type: 'Factory',
-    slocnam: 'old-factory',
     subid: null,
   };
 
@@ -84,11 +83,12 @@ describe('Copier', () => {
       const result = await copier.copy(files, testLocation, {});
 
       const archivePath = result.files[0].archivePath!;
-      // Path should include: locations/NY-factory/old-factory-ABC123/org-img-ABC123/
+      // ADR-046: Path should include: locations/NY/a1b2c3d4e5f67890/data/org-img/
       expect(archivePath).toContain('locations');
-      expect(archivePath).toContain('NY-factory');
-      expect(archivePath).toContain('old-factory-ABC123');
-      expect(archivePath).toContain('org-img-ABC123');
+      expect(archivePath).toContain('/NY/');
+      expect(archivePath).toContain('a1b2c3d4e5f67890'); // locid
+      expect(archivePath).toContain('/data/');
+      expect(archivePath).toContain('org-img');
       expect(archivePath).toContain('a7f3b2c1e9d4f086.jpg');
     });
 
@@ -139,9 +139,15 @@ describe('Copier', () => {
 
       const result = await copier.copy([imageFile, videoFile, docFile], testLocation, {});
 
-      expect(result.files[0].archivePath).toContain('org-img-');
-      expect(result.files[1].archivePath).toContain('org-vid-');
-      expect(result.files[2].archivePath).toContain('org-doc-');
+      // ADR-046: Simplified folder names (no loc12 suffix)
+      // Note: Files may complete in any order due to parallel processing
+      const imgPath = result.files.find(f => f.mediaType === 'image')?.archivePath;
+      const vidPath = result.files.find(f => f.mediaType === 'video')?.archivePath;
+      const docPath = result.files.find(f => f.mediaType === 'document')?.archivePath;
+
+      expect(imgPath).toContain('/org-img/');
+      expect(vidPath).toContain('/org-vid/');
+      expect(docPath).toContain('/org-doc/');
     });
   });
 

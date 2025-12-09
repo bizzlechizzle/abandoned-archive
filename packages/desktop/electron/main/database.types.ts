@@ -40,9 +40,8 @@ export interface Database {
 
 // Locations table
 export interface LocsTable {
-  // Identity
+  // Identity (BLAKE3 16-char hash - ADR-046)
   locid: string;
-  loc12: string;
 
   // Basic Info
   locnam: string;
@@ -144,7 +143,6 @@ export interface LocsTable {
 
   // Relationships
   sublocs: string | null;
-  sub12: string | null;
   is_host_only: number;  // 0/1 - Location is a host/campus expecting sub-locations (OPT-062)
 
   // Metadata
@@ -185,8 +183,8 @@ export interface LocsTable {
 
 // Sub-Locations table
 export interface SlocsTable {
+  // Identity (BLAKE3 16-char hash - ADR-046)
   subid: string;
-  sub12: string;
   locid: string;
 
   subnam: string;

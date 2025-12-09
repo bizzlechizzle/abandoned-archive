@@ -159,12 +159,10 @@ export class BagItIntegrityService {
           // Get media files for this location
           const mediaFiles = await this.getMediaFilesForLocation(loc.locid);
 
-          // Convert DB row to BagLocation
+          // ADR-046: Convert DB row to BagLocation (removed loc12/slocnam)
           const bagLocation: BagLocation = {
             locid: loc.locid,
-            loc12: loc.loc12,
             locnam: loc.locnam,
-            slocnam: loc.slocnam,
             type: loc.type,
             access: loc.access,
             address_state: loc.address_state,
@@ -293,12 +291,10 @@ export class BagItIntegrityService {
     // Get media files
     const mediaFiles = await this.getMediaFilesForLocation(locid);
 
-    // Convert to BagLocation
+    // ADR-046: Convert to BagLocation (removed loc12/slocnam)
     const bagLocation: BagLocation = {
       locid: loc.locid,
-      loc12: loc.loc12,
       locnam: loc.locnam,
-      slocnam: loc.slocnam,
       type: loc.type,
       access: loc.access,
       address_state: loc.address_state,
@@ -328,14 +324,14 @@ export class BagItIntegrityService {
 
   /**
    * OPT-093: Validate a single sub-location's BagIt package (full validation)
+   * ADR-046: Removed sub12/loc12/slocnam references
    */
   async validateSubLocationBag(subid: string): Promise<BagValidationResult> {
-    // Get sub-location with parent info
+    // Get sub-location with parent info (ADR-046: removed sub12)
     const subloc = await this.db
       .selectFrom('slocs')
       .select([
         'subid',
-        'sub12',
         'subnam',
         'ssubname',
         'type',
@@ -356,10 +352,10 @@ export class BagItIntegrityService {
       throw new Error(`Sub-location not found: ${subid}`);
     }
 
-    // Get parent location info for path construction
+    // Get parent location info for path construction (ADR-046: removed loc12/slocnam)
     const parentLoc = await this.db
       .selectFrom('locs')
-      .select(['locid', 'loc12', 'locnam', 'slocnam', 'type', 'address_state'])
+      .select(['locid', 'locnam', 'type', 'address_state'])
       .where('locid', '=', subloc.locid)
       .executeTakeFirst();
 
@@ -370,10 +366,9 @@ export class BagItIntegrityService {
     // Get media files for this sub-location
     const mediaFiles = await this.getMediaFilesForSubLocation(subid);
 
-    // Convert to BagSubLocation
+    // ADR-046: Convert to BagSubLocation (removed sub12/parentLoc12/parentSlocnam)
     const bagSubLocation: BagSubLocation = {
       subid: subloc.subid,
-      sub12: subloc.sub12,
       subnam: subloc.subnam,
       ssubname: subloc.ssubname,
       type: subloc.type,
@@ -386,9 +381,7 @@ export class BagItIntegrityService {
       created_date: subloc.created_date,
       modified_date: subloc.modified_date,
       parentLocid: parentLoc.locid,
-      parentLoc12: parentLoc.loc12,
       parentLocnam: parentLoc.locnam,
-      parentSlocnam: parentLoc.slocnam,
       parentType: parentLoc.type,
       parentState: parentLoc.address_state,
     };
@@ -404,14 +397,14 @@ export class BagItIntegrityService {
 
   /**
    * OPT-093: Update a sub-location's BagIt manifest after import
+   * ADR-046: Removed sub12/loc12/slocnam references
    */
   async updateSubLocationManifest(subid: string): Promise<void> {
-    // Get sub-location with parent info
+    // Get sub-location with parent info (ADR-046: removed sub12)
     const subloc = await this.db
       .selectFrom('slocs')
       .select([
         'subid',
-        'sub12',
         'subnam',
         'ssubname',
         'type',
@@ -432,10 +425,10 @@ export class BagItIntegrityService {
       throw new Error(`Sub-location not found: ${subid}`);
     }
 
-    // Get parent location info for path construction
+    // Get parent location info for path construction (ADR-046: removed loc12/slocnam)
     const parentLoc = await this.db
       .selectFrom('locs')
-      .select(['locid', 'loc12', 'locnam', 'slocnam', 'type', 'address_state'])
+      .select(['locid', 'locnam', 'type', 'address_state'])
       .where('locid', '=', subloc.locid)
       .executeTakeFirst();
 
@@ -446,10 +439,9 @@ export class BagItIntegrityService {
     // Get media files for this sub-location
     const mediaFiles = await this.getMediaFilesForSubLocation(subid);
 
-    // Convert to BagSubLocation
+    // ADR-046: Convert to BagSubLocation (removed sub12/parentLoc12/parentSlocnam)
     const bagSubLocation: BagSubLocation = {
       subid: subloc.subid,
-      sub12: subloc.sub12,
       subnam: subloc.subnam,
       ssubname: subloc.ssubname,
       type: subloc.type,
@@ -462,9 +454,7 @@ export class BagItIntegrityService {
       created_date: subloc.created_date,
       modified_date: subloc.modified_date,
       parentLocid: parentLoc.locid,
-      parentLoc12: parentLoc.loc12,
       parentLocnam: parentLoc.locnam,
-      parentSlocnam: parentLoc.slocnam,
       parentType: parentLoc.type,
       parentState: parentLoc.address_state,
     };

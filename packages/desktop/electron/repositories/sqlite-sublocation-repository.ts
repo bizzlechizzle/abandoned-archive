@@ -1,17 +1,17 @@
 import { Kysely } from 'kysely';
-import { randomUUID } from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { Database, SlocsTable } from '../main/database.types';
 import { MediaPathService } from '../services/media-path-service';
 import { getLogger } from '../services/logger-service';
+import { generateSubLocationId } from '../services/crypto-service';
 
 /**
  * SubLocation entity for application use
+ * ADR-046: subid is now BLAKE3 16-char hash (no separate sub12)
  */
 export interface SubLocation {
   subid: string;
-  sub12: string;
   locid: string;
   subnam: string;
   ssubname: string | null;
@@ -100,10 +100,10 @@ export class SQLiteSubLocationRepository {
   /**
    * Create a new sub-location
    * OPT-001: Wrapped in transaction to ensure atomicity
+   * ADR-046: Uses BLAKE3 16-char hash for subid (no separate sub12)
    */
   async create(input: CreateSubLocationInput): Promise<SubLocation> {
-    const subid = randomUUID();
-    const sub12 = subid.substring(0, 12).replace(/-/g, '');
+    const subid = generateSubLocationId();
     const ssubname = input.ssubname || generateShortName(input.subnam);
     const created_date = new Date().toISOString();
 
@@ -113,7 +113,6 @@ export class SQLiteSubLocationRepository {
         .insertInto('slocs')
         .values({
           subid,
-          sub12,
           locid: input.locid,
           subnam: input.subnam,
           ssubname,
@@ -138,15 +137,6 @@ export class SQLiteSubLocationRepository {
         })
         .execute();
 
-      // If marked as primary, update parent location's sub12 field
-      if (input.is_primary) {
-        await trx
-          .updateTable('locs')
-          .set({ sub12 })
-          .where('locid', '=', input.locid)
-          .execute();
-      }
-
       // Update parent location's sublocs JSON array
       const parent = await trx
         .selectFrom('locs')
@@ -167,13 +157,14 @@ export class SQLiteSubLocationRepository {
 
     return {
       subid,
-      sub12,
       locid: input.locid,
       subnam: input.subnam,
       ssubname,
       type: input.type || null,
       status: input.status || null,
       hero_imghash: null,
+      hero_focal_x: 0.5,
+      hero_focal_y: 0.5,
       is_primary: input.is_primary || false,
       created_date,
       created_by: input.created_by || null,
@@ -262,6 +253,7 @@ export class SQLiteSubLocationRepository {
   /**
    * Delete a sub-location with cascade delete of all associated media
    * OPT-093: Full cascade delete mirroring location delete behavior
+   * ADR-046: Updated folder paths for new structure (locations/[STATE]/[LOCID]/data/sloc-[SUBID]/)
    *
    * Cascade deletes:
    * - All images with this subid
@@ -270,7 +262,6 @@ export class SQLiteSubLocationRepository {
    * - All maps with this subid
    * - Physical media files from disk
    * - Thumbnails, previews, posters, video proxies
-   * - BagIt _archive folder for this sub-location
    */
   async delete(subid: string): Promise<void> {
     const logger = getLogger();
@@ -278,9 +269,10 @@ export class SQLiteSubLocationRepository {
     if (!existing) return;
 
     // 1. Get parent location for folder path construction
+    // ADR-046: Only need locid and address_state for new folder structure
     const parentLocation = await this.db
       .selectFrom('locs')
-      .select(['locid', 'loc12', 'locnam', 'slocnam', 'address_state', 'type'])
+      .select(['locid', 'locnam', 'address_state'])
       .where('locid', '=', existing.locid)
       .executeTakeFirst();
 
@@ -330,11 +322,11 @@ export class SQLiteSubLocationRepository {
     }
 
     // 4. Audit log BEFORE deletion
+    // ADR-046: Removed sub12 from audit log (subid is the only ID now)
     logger.info('SubLocationRepository', 'DELETION AUDIT: Deleting sub-location with files', {
       subid,
       locid: existing.locid,
       subnam: existing.subnam,
-      sub12: existing.sub12,
       is_primary: existing.is_primary,
       media_count: mediaHashes.length,
       video_proxies: proxyPaths.length,
@@ -354,10 +346,7 @@ export class SQLiteSubLocationRepository {
     // Remove from parent location's sublocs array
     await this.removeFromParentSublocs(existing.locid, subid);
 
-    // If this was the primary, clear parent's sub12
-    if (existing.is_primary) {
-      await this.clearPrimaryOnParent(existing.locid);
-    }
+    // ADR-046: No need to clear parent's sub12 - that field no longer exists
 
     // 6. Background file cleanup (non-blocking for instant UI response)
     const archivePath = await this.getArchivePath();
@@ -365,40 +354,23 @@ export class SQLiteSubLocationRepository {
     setImmediate(async () => {
       try {
         // 6a. Delete sub-location folder if it exists
-        // Folder structure: [archive]/locations/[STATE]-[TYPE]/[SLOCNAM]-[LOC12]/org-{type}-[LOC12]-[SUB12]/
+        // ADR-046 Folder structure: [archive]/locations/[STATE]/[LOCID]/data/sloc-[SUBID]/
         if (archivePath && parentLocation) {
-          const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9-_]/g, '_').substring(0, 50);
           const state = parentLocation.address_state?.toUpperCase() || 'XX';
-          const locType = parentLocation.type || 'Unknown';
-          const slocnam = parentLocation.slocnam || parentLocation.locnam.substring(0, 12);
 
-          // Sub-location specific folders
-          const locationFolder = path.join(
+          // Sub-location folder: sloc-[SUBID]/ inside parent's data folder
+          const subLocationFolder = path.join(
             archivePath,
             'locations',
-            `${state}-${sanitize(locType)}`,
-            `${sanitize(slocnam)}-${parentLocation.loc12}`
+            state,
+            parentLocation.locid,
+            'data',
+            `sloc-${subid}`
           );
 
-          // Delete sub-location media folders (org-img-LOC12-SUB12, etc.)
-          for (const mediaType of ['img', 'vid', 'doc']) {
-            const subFolder = path.join(
-              locationFolder,
-              `org-${mediaType}-${parentLocation.loc12}-${existing.sub12}`
-            );
-            try {
-              await fs.rm(subFolder, { recursive: true, force: true });
-              logger.info('SubLocationRepository', `Deleted sub-location folder: ${subFolder}`);
-            } catch {
-              // Folder might not exist
-            }
-          }
-
-          // Delete sub-location _archive (BagIt) folder
-          const bagitFolder = path.join(locationFolder, `_archive-${existing.sub12}`);
           try {
-            await fs.rm(bagitFolder, { recursive: true, force: true });
-            logger.info('SubLocationRepository', `Deleted sub-location BagIt folder: ${bagitFolder}`);
+            await fs.rm(subLocationFolder, { recursive: true, force: true });
+            logger.info('SubLocationRepository', `Deleted sub-location folder: ${subLocationFolder}`);
           } catch {
             // Folder might not exist
           }
@@ -467,6 +439,7 @@ export class SQLiteSubLocationRepository {
 
   /**
    * Set a sub-location as primary for its parent
+   * ADR-046: Removed sub12 tracking on parent - no longer needed
    */
   async setPrimary(locid: string, subid: string): Promise<void> {
     // Clear existing primary
@@ -484,8 +457,6 @@ export class SQLiteSubLocationRepository {
         .set({ is_primary: 1 })
         .where('subid', '=', subid)
         .execute();
-
-      await this.setPrimaryOnParent(locid, subloc.sub12);
     }
   }
 
@@ -676,10 +647,13 @@ export class SQLiteSubLocationRepository {
 
   // Private helper methods
 
+  /**
+   * Map database row to SubLocation entity
+   * ADR-046: sub12 removed - subid is the only ID now
+   */
   private mapRowToSubLocation(row: SlocsTable): SubLocation {
     return {
       subid: row.subid,
-      sub12: row.sub12,
       locid: row.locid,
       subnam: row.subnam,
       ssubname: row.ssubname,
@@ -706,21 +680,8 @@ export class SQLiteSubLocationRepository {
     };
   }
 
-  private async setPrimaryOnParent(locid: string, sub12: string): Promise<void> {
-    await this.db
-      .updateTable('locs')
-      .set({ sub12 })
-      .where('locid', '=', locid)
-      .execute();
-  }
-
-  private async clearPrimaryOnParent(locid: string): Promise<void> {
-    await this.db
-      .updateTable('locs')
-      .set({ sub12: null })
-      .where('locid', '=', locid)
-      .execute();
-  }
+  // ADR-046: Removed setPrimaryOnParent and clearPrimaryOnParent
+  // Parent no longer tracks sub12 - the sublocs array tracks sub-locations
 
   private async addToParentSublocs(locid: string, subid: string): Promise<void> {
     const parent = await this.db

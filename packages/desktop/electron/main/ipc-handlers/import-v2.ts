@@ -83,16 +83,16 @@ function safeSerialize<T>(data: T): T {
  * Register Import v2.0 IPC handlers
  */
 export function registerImportV2Handlers(db: Kysely<Database>): void {
-  // Validation schemas
+  // ADR-046: Validation schemas - removed loc12/slocnam (not needed for folder paths)
+  // BLAKE3 16-char hex ID validator
+  const Blake3IdSchema = z.string().length(16).regex(/^[a-f0-9]+$/, 'Must be 16-char lowercase hex');
+
   const ImportStartSchema = z.object({
     paths: z.array(z.string()),
-    locid: z.string().uuid(),
-    loc12: z.string(),
+    locid: Blake3IdSchema,
     address_state: z.string().nullable(),
-    type: z.string().nullable(),
-    slocnam: z.string().nullable(),
     // Extended fields for full UI integration
-    subid: z.string().uuid().nullable().optional(),
+    subid: Blake3IdSchema.nullable().optional(),
     auth_imp: z.string().nullable().optional(),
     is_contributed: z.number().optional().default(0),
     contribution_source: z.string().nullable().optional(),
@@ -140,14 +140,12 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
       };
 
       // Start import
+      // ADR-046: Pass simplified location info (loc12/slocnam removed)
       // OPT-093: Pass subid for sub-location media assignment
       const result = await orchestrator.import(validated.paths, {
         location: {
           locid: validated.locid,
-          loc12: validated.loc12,
           address_state: validated.address_state,
-          type: validated.type,
-          slocnam: validated.slocnam,
           subid: validated.subid ?? null,
         },
         archivePath,
@@ -265,10 +263,10 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
         throw new Error('Session not found');
       }
 
-      // Get location info
+      // ADR-046: Get location info (removed loc12/slocnam)
       const location = await db
         .selectFrom('locs')
-        .select(['locid', 'loc12', 'address_state', 'type', 'slocnam'])
+        .select(['locid', 'address_state'])
         .where('locid', '=', session.locid)
         .executeTakeFirst();
 
@@ -294,15 +292,13 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
         activeImports.set(progress.sessionId, abortController);
       };
 
+      // ADR-046: Simplified location (removed loc12/slocnam)
       // OPT-093: Resume currently doesn't restore subid context
       // TODO: Store subid in import_sessions table for proper resume support
       const result = await orchestrator.resume(sessionId, {
         location: {
           locid: location.locid,
-          loc12: location.loc12,
           address_state: location.address_state,
-          type: location.type,
-          slocnam: location.slocnam,
           subid: null, // Resume doesn't have original subid - media goes to host
         },
         archivePath: archiveSetting.value,

@@ -1,5 +1,4 @@
 import { Kysely } from 'kysely';
-import { randomUUID } from 'crypto';
 import path from 'path';
 import fs from 'fs/promises';
 import type { Database, LocsTable } from '../main/database.types';
@@ -10,6 +9,7 @@ import {
   LocationInput,
   LocationEntity
 } from '@au-archive/core';
+import { generateLocationId } from '../services/crypto-service';
 
 /**
  * OPT-043: Lean location type for map display - only essential fields
@@ -62,8 +62,8 @@ export class SQLiteLocationRepository implements LocationRepository {
   }
 
   async create(input: LocationInput): Promise<Location> {
-    const locid = randomUUID();
-    const loc12 = LocationEntity.generateLoc12(locid);
+    // ADR-046: Use BLAKE3 16-char ID instead of UUID+loc12
+    const locid = generateLocationId();
     const slocnam = input.slocnam || LocationEntity.generateShortName(input.locnam);
     const locadd = new Date().toISOString();
 
@@ -101,11 +101,11 @@ export class SQLiteLocationRepository implements LocationRepository {
       lng: input.gps?.lng,
     });
 
+    // ADR-046: Removed loc12 and sub12 from insert - locid is the only ID now
     await this.db
       .insertInto('locs')
       .values({
         locid,
-        loc12,
         locnam: input.locnam,
         slocnam,
         akanam: input.akanam || null,
@@ -159,7 +159,6 @@ export class SQLiteLocationRepository implements LocationRepository {
         historical_name_verified: input.historicalNameVerified ? 1 : 0,
         akanam_verified: input.akanamVerified ? 1 : 0,
         sublocs: null,
-        sub12: null,
         is_host_only: input.isHostOnly ? 1 : 0,
         locadd,
         locup: null,
@@ -623,10 +622,10 @@ export class SQLiteLocationRepository implements LocationRepository {
     }
 
     // 4. Audit log BEFORE deletion
+    // ADR-046: Removed loc12 from audit log - locid is the only ID now
     logger.info('LocationRepository', `DELETION AUDIT: Deleting location with files`, {
       locid: id,
       locnam: location.locnam,
-      loc12: location.loc12,
       state: location.address?.state,
       type: location.type,
       media_count: mediaHashes.length,
@@ -639,22 +638,19 @@ export class SQLiteLocationRepository implements LocationRepository {
 
     // 6. Background file cleanup (non-blocking for instant UI response)
     const archivePath = await this.getArchivePath();
-    const loc12 = location.loc12;
+    // ADR-046: New folder structure uses STATE/LOCID instead of STATE-TYPE/SLOCNAM-LOC12
     const state = location.address?.state?.toUpperCase() || 'XX';
-    const locType = location.type || 'Unknown';
-    const slocnam = location.slocnam || location.locnam.substring(0, 12);
 
     setImmediate(async () => {
       try {
         // 6a. Delete location folder (contains all original media + BagIt)
-        if (archivePath && loc12) {
-          // Sanitize folder name components (remove special chars)
-          const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9-_]/g, '_').substring(0, 50);
+        // ADR-046: New structure: locations/[STATE]/[LOCID]/
+        if (archivePath) {
           const locationFolder = path.join(
             archivePath,
             'locations',
-            `${state}-${sanitize(locType)}`,
-            `${sanitize(slocnam)}-${loc12}`
+            state,
+            id
           );
 
           try {
@@ -771,10 +767,13 @@ export class SQLiteLocationRepository implements LocationRepository {
     return Number(result?.count || 0);
   }
 
+  /**
+   * Map database row to Location entity
+   * ADR-046: Removed loc12 and sub12 - locid is the only ID now
+   */
   private mapRowToLocation(row: LocsTable): Location {
     return {
       locid: row.locid,
-      loc12: row.loc12,
       locnam: row.locnam,
       slocnam: row.slocnam ?? undefined,
       akanam: row.akanam ?? undefined,
@@ -828,7 +827,6 @@ export class SQLiteLocationRepository implements LocationRepository {
       hero_focal_x: row.hero_focal_x ?? 0.5,
       hero_focal_y: row.hero_focal_y ?? 0.5,
       sublocs: row.sublocs ? JSON.parse(row.sublocs) : [],
-      sub12: row.sub12 ?? undefined,
       locadd: row.locadd ?? new Date().toISOString(),
       locup: row.locup ?? undefined,
       auth_imp: row.auth_imp ?? undefined,

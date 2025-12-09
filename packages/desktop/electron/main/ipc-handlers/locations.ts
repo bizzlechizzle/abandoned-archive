@@ -82,15 +82,14 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       }
 
       // BagIt: Initialize bag for new location (non-blocking)
+      // ADR-046: Initialize BagIt bag (removed loc12/slocnam)
       if (location) {
         try {
           const bagItService = getBagItService();
           if (bagItService) {
             await bagItService.initializeBag({
               locid: location.locid,
-              loc12: location.loc12,
               locnam: location.locnam,
-              slocnam: location.slocnam || '',
               type: location.type || null,
               access: null,
               address_state: location.address?.state || null,
@@ -153,12 +152,11 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (location) {
         try {
           const bagItService = getBagItService();
+          // ADR-046: Update BagIt info (removed loc12/slocnam)
           if (bagItService) {
             await bagItService.updateBagInfo({
               locid: location.locid,
-              loc12: location.loc12,
               locnam: location.locnam,
-              slocnam: location.slocnam || '',
               type: location.type || null,
               access: null,
               address_state: location.address?.state || null,

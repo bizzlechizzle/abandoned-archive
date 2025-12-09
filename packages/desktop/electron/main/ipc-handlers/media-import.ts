@@ -447,13 +447,13 @@ export function registerMediaImportHandlers(
         try {
           const bagItService = getBagItService();
           if (bagItService) {
+            // ADR-046: Update BagIt manifest (removed loc12/slocnam)
             const loc = await locationRepo.findById(validatedInput.locid);
             if (loc) {
               const mediaFiles = await getMediaFilesForBagIt(db, mediaRepo, validatedInput.locid);
               await bagItService.updateManifest({
                 locid: loc.locid,
-                loc12: loc.loc12,
-                slocnam: loc.slocnam || '',
+                locnam: loc.locnam,
                 address_state: loc.address?.state || null,
                 type: loc.type || null,
               }, mediaFiles);
@@ -563,13 +563,13 @@ export function registerMediaImportHandlers(
         try {
           const bagItService = getBagItService();
           if (bagItService) {
+            // ADR-046: Update BagIt manifest (removed loc12/slocnam)
             const loc = await locationRepo.findById(validatedInput.locid);
             if (loc) {
               const mediaFiles = await getMediaFilesForBagIt(db, mediaRepo, validatedInput.locid);
               await bagItService.updateManifest({
                 locid: loc.locid,
-                loc12: loc.loc12,
-                slocnam: loc.slocnam || '',
+                locnam: loc.locnam,
                 address_state: loc.address?.state || null,
                 type: loc.type || null,
               }, mediaFiles);

@@ -74,7 +74,7 @@ Each imported file has two names:
 | `original_name` | User's original filename | `IMG_1234.jpg` |
 | `organized_name` | Hash-based archive name | `a7f3b2c1e9d4f086.jpg` |
 
-Organized paths: `[archive]/locations/[STATE]-[TYPE]/[SLOCNAM]-[LOC12]/org-img-[LOC12]/`
+Organized paths: `[archive]/locations/[STATE]/[LOCID]/data/org-img/` (ADR-046)
 
 ---
 

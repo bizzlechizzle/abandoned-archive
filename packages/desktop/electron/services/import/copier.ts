@@ -170,35 +170,45 @@ export class Copier {
   /**
    * Build file path using provided hash (for inline hashing mode)
    * Same logic as buildFilePath but takes hash as parameter
+   * ADR-046: New format: [locationPath]/data/org-[type]/[hash].[ext]
+   * Sub-location format: [locationPath]/data/sloc-[SUBID]/org-[type]/[hash].[ext]
    */
   private buildFilePathWithHash(hash: string, file: HashedFile, location: LocationInfo): string {
     const locationPath = this.buildLocationPath(location);
-    const loc12 = location.loc12;
 
-    const subSuffix = location.subid
-      ? `-${location.sub12 || location.subid.substring(0, 12)}`
-      : '';
+    // Determine base path: direct data folder or sub-location folder
+    let basePath: string;
+    if (location.subid) {
+      // Sub-location: [locationPath]/data/sloc-[SUBID]/
+      basePath = path.join(locationPath, 'data', `sloc-${location.subid}`);
+    } else {
+      // Main location: [locationPath]/data/
+      basePath = path.join(locationPath, 'data');
+    }
 
+    // Determine subfolder based on media type (no loc12 suffix anymore)
     let subfolder: string;
     switch (file.mediaType) {
       case 'image':
-        subfolder = `org-img-${loc12}${subSuffix}`;
+        subfolder = 'org-img';
         break;
       case 'video':
-        subfolder = `org-vid-${loc12}${subSuffix}`;
+        subfolder = 'org-vid';
         break;
       case 'document':
-        subfolder = `org-doc-${loc12}${subSuffix}`;
+        subfolder = 'org-doc';
         break;
       case 'map':
-        subfolder = `org-map-${loc12}${subSuffix}`;
+        subfolder = 'org-map';
         break;
       default:
-        subfolder = `org-misc-${loc12}${subSuffix}`;
+        subfolder = 'org-misc';
     }
 
+    // Filename is hash + original extension
     const filename = `${hash}${file.extension}`;
-    return path.join(locationPath, subfolder, filename);
+
+    return path.join(basePath, subfolder, filename);
   }
 
   /**
@@ -522,60 +532,58 @@ export class Copier {
 
   /**
    * Build the location folder path
-   * Format: [archive]/locations/[STATE]-[TYPE]/[SLOCNAM]-[LOC12]/
+   * ADR-046: New format: [archive]/locations/[STATE]/[LOCID]/
    */
   private buildLocationPath(location: LocationInfo): string {
     const state = (location.address_state || 'XX').toUpperCase();
-    const type = (location.type || 'unknown').toLowerCase().replace(/\s+/g, '-');
-    const slocnam = (location.slocnam || 'location').toLowerCase().replace(/[^a-z0-9-]/g, '-');
-    const loc12 = location.loc12;
+    const locid = location.locid;
 
-    const stateType = `${state}-${type}`;
-    const locFolder = `${slocnam}-${loc12}`;
-
-    return path.join(this.archiveBasePath, 'locations', stateType, locFolder);
+    return path.join(this.archiveBasePath, 'locations', state, locid);
   }
 
   /**
    * Build the full file path including media type subfolder
-   * Format: [locationPath]/org-[type]-[LOC12]/[hash].[ext]
-   * Sub-location format: [locationPath]/org-[type]-[LOC12]-[SUB12]/[hash].[ext]
+   * ADR-046: New format: [locationPath]/data/org-[type]/[hash].[ext]
+   * Sub-location format: [locationPath]/data/sloc-[SUBID]/org-[type]/[hash].[ext]
    *
    * OPT-093: Added sub-location folder support
    */
   private buildFilePath(file: HashedFile, location: LocationInfo): string {
     const locationPath = this.buildLocationPath(location);
-    const loc12 = location.loc12;
 
-    // Determine subfolder suffix: include sub-location ID if provided
-    // Sub-location media goes to separate folder for organization
-    const subSuffix = location.subid
-      ? `-${location.sub12 || location.subid.substring(0, 12)}`
-      : '';
+    // Determine base path: direct data folder or sub-location folder
+    let basePath: string;
+    if (location.subid) {
+      // Sub-location: [locationPath]/data/sloc-[SUBID]/
+      basePath = path.join(locationPath, 'data', `sloc-${location.subid}`);
+    } else {
+      // Main location: [locationPath]/data/
+      basePath = path.join(locationPath, 'data');
+    }
 
-    // Determine subfolder based on media type
+    // Determine subfolder based on media type (no loc12 suffix anymore)
     let subfolder: string;
     switch (file.mediaType) {
       case 'image':
-        subfolder = `org-img-${loc12}${subSuffix}`;
+        subfolder = 'org-img';
         break;
       case 'video':
-        subfolder = `org-vid-${loc12}${subSuffix}`;
+        subfolder = 'org-vid';
         break;
       case 'document':
-        subfolder = `org-doc-${loc12}${subSuffix}`;
+        subfolder = 'org-doc';
         break;
       case 'map':
-        subfolder = `org-map-${loc12}${subSuffix}`;
+        subfolder = 'org-map';
         break;
       default:
-        subfolder = `org-misc-${loc12}${subSuffix}`;
+        subfolder = 'org-misc';
     }
 
     // Filename is hash + original extension
     const filename = `${file.hash}${file.extension}`;
 
-    return path.join(locationPath, subfolder, filename);
+    return path.join(basePath, subfolder, filename);
   }
 
   /**

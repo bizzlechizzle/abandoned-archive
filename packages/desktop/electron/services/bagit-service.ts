@@ -10,7 +10,8 @@
  * - manifest-sha256.txt: SHA256 checksums for all payload files
  * - tagmanifest-sha256.txt: SHA256 checksums for metadata files
  *
- * Files are stored in: org-doc-[LOC12]/_archive/
+ * ADR-046: Files are stored in: [archive]/locations/[STATE]/[LOCID]/archive/
+ * Sub-locations: [archive]/locations/[STATE]/[LOCID]/data/sloc-[SUBID]/archive/
  */
 
 import * as fs from 'fs/promises';
@@ -41,13 +42,11 @@ export interface MediaFile {
 
 /**
  * Location data needed for BagIt generation
- * Subset of full location entity
+ * ADR-046: Removed loc12/slocnam - use locid directly (16-char BLAKE3 hash)
  */
 export interface BagLocation {
   locid: string;
-  loc12: string;
   locnam: string;
-  slocnam?: string | null;
   type?: string | null;
   access?: string | null;
   address_state?: string | null;
@@ -71,11 +70,10 @@ export interface BagLocation {
 
 /**
  * OPT-093: Sub-location data needed for BagIt generation
- * Per Option B: Each sub-location gets its own _archive-{sub12} folder
+ * ADR-046: Each sub-location gets its own archive folder: sloc-[SUBID]/archive/
  */
 export interface BagSubLocation {
   subid: string;
-  sub12: string;
   subnam: string;
   ssubname?: string | null;
   type?: string | null;
@@ -90,9 +88,7 @@ export interface BagSubLocation {
   modified_date?: string | null;
   // Parent location info (required for path construction)
   parentLocid: string;
-  parentLoc12: string;
   parentLocnam: string;
-  parentSlocnam?: string | null;
   parentType?: string | null;
   parentState?: string | null;
 }
@@ -101,44 +97,35 @@ export class BagItService {
   constructor(private readonly archivePath: string) {}
 
   /**
-   * Get the path to a location's _archive folder
+   * Get the path to a location's archive folder
+   * ADR-046: [archive]/locations/[STATE]/[LOCID]/archive/
    */
   getArchiveFolderPath(location: BagLocation): string {
-    const state = location.address_state?.toUpperCase() || 'XX';
-    const locType = location.type || 'Unknown';
-    const stateTypeFolder = `${state}-${this.sanitizeFolderName(locType)}`;
-
-    const slocnam = location.slocnam || this.generateShortName(location.locnam);
-    const locationFolder = `${this.sanitizeFolderName(slocnam)}-${location.loc12}`;
-
-    const docFolder = `org-doc-${location.loc12}`;
+    const state = (location.address_state || 'XX').toUpperCase();
+    const locid = location.locid;
 
     return path.join(
       this.archivePath,
       'locations',
-      stateTypeFolder,
-      locationFolder,
-      docFolder,
-      '_archive'
+      state,
+      locid,
+      'archive'
     );
   }
 
   /**
-   * Get the path to a location's root folder (parent of org-* folders)
+   * Get the path to a location's root folder
+   * ADR-046: [archive]/locations/[STATE]/[LOCID]/
    */
   getLocationFolderPath(location: BagLocation): string {
-    const state = location.address_state?.toUpperCase() || 'XX';
-    const locType = location.type || 'Unknown';
-    const stateTypeFolder = `${state}-${this.sanitizeFolderName(locType)}`;
-
-    const slocnam = location.slocnam || this.generateShortName(location.locnam);
-    const locationFolder = `${this.sanitizeFolderName(slocnam)}-${location.loc12}`;
+    const state = (location.address_state || 'XX').toUpperCase();
+    const locid = location.locid;
 
     return path.join(
       this.archivePath,
       'locations',
-      stateTypeFolder,
-      locationFolder
+      state,
+      locid
     );
   }
 
@@ -158,7 +145,7 @@ export class BagItService {
     await this.writeManifest(archiveDir, []);
     await this.writeTagManifest(archiveDir);
 
-    console.log(`[BagIt] Initialized bag for location: ${location.locnam} (${location.loc12})`);
+    console.log(`[BagIt] Initialized bag for location: ${location.locnam} (${location.locid})`);
   }
 
   /**
@@ -396,27 +383,25 @@ export class BagItService {
     }
   }
 
-  // ============ Sub-Location Methods (OPT-093) ============
+  // ============ Sub-Location Methods (OPT-093 + ADR-046) ============
 
   /**
-   * Get the path to a sub-location's _archive-{sub12} folder
-   * OPT-093: Option B - separate archive per sub-location
+   * Get the path to a sub-location's archive folder
+   * ADR-046: [archive]/locations/[STATE]/[LOCID]/data/sloc-[SUBID]/archive/
    */
   getSubLocationArchiveFolderPath(subLocation: BagSubLocation): string {
-    const state = subLocation.parentState?.toUpperCase() || 'XX';
-    const locType = subLocation.parentType || 'Unknown';
-    const stateTypeFolder = `${state}-${this.sanitizeFolderName(locType)}`;
+    const state = (subLocation.parentState || 'XX').toUpperCase();
+    const locid = subLocation.parentLocid;
+    const subid = subLocation.subid;
 
-    const slocnam = subLocation.parentSlocnam || this.generateShortName(subLocation.parentLocnam);
-    const locationFolder = `${this.sanitizeFolderName(slocnam)}-${subLocation.parentLoc12}`;
-
-    // Sub-location archive: _archive-{sub12}
     return path.join(
       this.archivePath,
       'locations',
-      stateTypeFolder,
-      locationFolder,
-      `_archive-${subLocation.sub12}`
+      state,
+      locid,
+      'data',
+      `sloc-${subid}`,
+      'archive'
     );
   }
 
@@ -427,7 +412,7 @@ export class BagItService {
   async initializeSubLocationBag(subLocation: BagSubLocation): Promise<void> {
     const archiveDir = this.getSubLocationArchiveFolderPath(subLocation);
 
-    // Create _archive-{sub12} directory
+    // Create archive directory
     await fs.mkdir(archiveDir, { recursive: true });
 
     // Generate all BagIt files
@@ -436,7 +421,7 @@ export class BagItService {
     await this.writeManifest(archiveDir, []);
     await this.writeTagManifest(archiveDir);
 
-    console.log(`[BagIt] Initialized bag for sub-location: ${subLocation.subnam} (${subLocation.sub12})`);
+    console.log(`[BagIt] Initialized bag for sub-location: ${subLocation.subnam} (${subLocation.subid})`);
   }
 
   /**
@@ -446,7 +431,7 @@ export class BagItService {
   async updateSubLocationManifest(subLocation: BagSubLocation, mediaFiles: MediaFile[]): Promise<void> {
     const archiveDir = this.getSubLocationArchiveFolderPath(subLocation);
 
-    // Ensure _archive-{sub12} directory exists
+    // Ensure archive directory exists
     await fs.mkdir(archiveDir, { recursive: true });
 
     // Ensure bagit.txt exists
@@ -567,14 +552,15 @@ export class BagItService {
     const now = new Date().toISOString();
     const baggingDate = now.split('T')[0]; // YYYY-MM-DD
 
+    // ADR-046: Use subid/parentLocid (16-char BLAKE3 hashes) instead of sub12/parentLoc12
     const lines: string[] = [
       `Source-Organization: Abandoned Archive`,
       `Bagging-Date: ${baggingDate}`,
       `Bag-Software-Agent: Abandoned Archive v${APP_VERSION}`,
-      `External-Identifier: ${subLocation.sub12}`,
+      `External-Identifier: ${subLocation.subid}`,
       `External-Description: ${subLocation.subnam}`,
       `Bag-Type: Sub-Location`,
-      `Parent-Location-ID: ${subLocation.parentLoc12}`,
+      `Parent-Location-ID: ${subLocation.parentLocid}`,
       `Parent-Location-Name: ${subLocation.parentLocnam}`,
     ];
 
@@ -739,11 +725,12 @@ Tag-File-Character-Encoding: UTF-8
     const now = new Date().toISOString();
     const baggingDate = now.split('T')[0]; // YYYY-MM-DD
 
+    // ADR-046: Use locid (16-char BLAKE3 hash) instead of loc12
     const lines: string[] = [
       `Source-Organization: Abandoned Archive`,
       `Bagging-Date: ${baggingDate}`,
       `Bag-Software-Agent: Abandoned Archive v${APP_VERSION}`,
-      `External-Identifier: ${location.loc12}`,
+      `External-Identifier: ${location.locid}`,
       `External-Description: ${location.locnam}`,
     ];
 

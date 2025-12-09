@@ -578,9 +578,9 @@ const api = {
       status?: string | null;
       is_primary?: boolean;
       created_by?: string | null;
+    // ADR-046: Return types - removed sub12 field
     }): Promise<{
       subid: string;
-      sub12: string;
       locid: string;
       subnam: string;
       ssubname: string | null;
@@ -596,7 +596,6 @@ const api = {
       ipcRenderer.invoke('sublocation:create', input),
     findById: (subid: string): Promise<{
       subid: string;
-      sub12: string;
       locid: string;
       subnam: string;
       ssubname: string | null;
@@ -614,7 +613,6 @@ const api = {
       ipcRenderer.invoke('sublocation:findById', subid),
     findByLocation: (locid: string): Promise<Array<{
       subid: string;
-      sub12: string;
       locid: string;
       subnam: string;
       ssubname: string | null;
@@ -632,7 +630,6 @@ const api = {
       ipcRenderer.invoke('sublocation:findByLocation', locid),
     findWithHeroImages: (locid: string): Promise<Array<{
       subid: string;
-      sub12: string;
       locid: string;
       subnam: string;
       ssubname: string | null;
@@ -661,7 +658,6 @@ const api = {
       historicalName?: string | null;
     }): Promise<{
       subid: string;
-      sub12: string;
       locid: string;
       subnam: string;
       ssubname: string | null;

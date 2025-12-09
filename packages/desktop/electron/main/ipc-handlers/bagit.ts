@@ -195,13 +195,12 @@ export function getIntegrityService(): BagItIntegrityService | null {
 
 /**
  * Convert database location row to BagLocation interface
+ * ADR-046: Removed loc12/slocnam - use locid directly
  */
 function locationToBagLocation(loc: any): BagLocation {
   return {
     locid: loc.locid,
-    loc12: loc.loc12,
     locnam: loc.locnam,
-    slocnam: loc.slocnam,
     type: loc.type,
     access: loc.access,
     address_state: loc.address_state,
