@@ -6,7 +6,6 @@
    * Shows user selection and PIN entry for multi-user mode
    */
   import { onMount } from 'svelte';
-  import logo from '../assets/abandoned-upstate-logo.png';
 
   interface User {
     user_id: string;
@@ -122,9 +121,10 @@
 
 <div class="h-full min-h-0 bg-braun-50 flex items-center justify-center p-4 overflow-auto">
   <div class="max-w-md w-full">
-    <!-- Logo and Title -->
+    <!-- Text Logo -->
     <div class="text-center mb-8">
-      <img src={logo} alt="Abandoned Upstate" class="h-16 w-auto mx-auto mb-4" />
+      <div class="text-4xl font-bold tracking-tighter text-braun-900">ABANDONED</div>
+      <div class="text-2xl font-semibold tracking-tight text-braun-900 mb-4">ARCHIVE</div>
       <p class="text-braun-600">Sign In</p>
     </div>
 

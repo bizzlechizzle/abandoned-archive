@@ -1,9 +1,8 @@
 <script lang="ts">
   /**
    * Setup.svelte - First-run setup wizard
-   * Simplified: 2 steps - Welcome, then User + Archive setup
+   * ADR-047: 3 pages with educational rules
    */
-  import logo from '../assets/abandoned-upstate-logo.png';
 
   interface Props {
     onComplete: (userId: string, username: string) => void;
@@ -12,11 +11,10 @@
   let { onComplete }: Props = $props();
 
   let currentStep = $state(1);
-  const totalSteps = 2;
+  const totalSteps = 3;
 
   // Form state
   let username = $state('');
-  let nickname = $state('');
   let pin = $state('');
   let confirmPin = $state('');
   let archivePath = $state('');
@@ -70,14 +68,18 @@
   function canProceed(): boolean {
     switch (currentStep) {
       case 1:
-        return true; // Welcome screen, always can proceed
-      case 2:
-        // Username, PIN, and archive path required
+        // Name required
         if (username.trim().length === 0) return false;
+        return true;
+      case 2:
+        // Archive path required
+        if (archivePath.trim().length === 0) return false;
+        return true;
+      case 3:
+        // PIN required
         if (pin.length < 4 || pin.length > 6) return false;
         if (!/^\d+$/.test(pin)) return false;
         if (pin !== confirmPin) return false;
-        if (archivePath.trim().length === 0) return false;
         return true;
       default:
         return false;
@@ -94,7 +96,7 @@
       // Create user record in database
       const user = await window.electronAPI.users.create({
         username: username.trim(),
-        display_name: nickname.trim() || null,
+        display_name: null,
         pin: pin,
       });
 
@@ -118,99 +120,85 @@
   }
 </script>
 
-<div class="h-full min-h-0 bg-braun-50 flex items-center justify-center p-4 overflow-auto">
-  <div class="max-w-xl w-full">
-    <!-- Logo and Title -->
-    <div class="text-center mb-6">
-      <img src={logo} alt="Abandoned Upstate" class="h-14 w-auto mx-auto mb-3" />
-      <p class="text-braun-600">Archive Setup</p>
-    </div>
+<div class="min-h-screen bg-braun-50 flex flex-col items-center justify-center p-8">
+  <!-- Text Logo - above card -->
+  <div class="text-center mb-8">
+    <span class="text-4xl font-bold tracking-tight text-braun-900">ABANDONED ARCHIVE</span>
+  </div>
 
-    <!-- Progress Indicator -->
-    <div class="mb-6">
-      <div class="flex items-center justify-center gap-2">
-        {#each Array(totalSteps) as _, i}
-          <div class="flex items-center">
-            <div
-              class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition {i + 1 <= currentStep
-                ? 'bg-braun-900 text-white'
-                : 'bg-braun-200 text-braun-500'}"
-            >
-              {i + 1}
-            </div>
-            {#if i < totalSteps - 1}
-              <div
-                class="w-12 h-0.5 mx-1 transition {i + 1 < currentStep
-                  ? 'bg-braun-900'
-                  : 'bg-braun-200'}"
-              ></div>
-            {/if}
-          </div>
-        {/each}
-      </div>
-    </div>
-
-    <!-- Main Card -->
+  <!-- Main Card - centered -->
+  <div class="w-full max-w-md">
     <div class="bg-white rounded border border-braun-300 p-6">
-      <!-- Step 1: Welcome -->
+      <!-- Step 1: Your Name -->
       {#if currentStep === 1}
-        <div class="text-center">
-          <h2 class="text-xl font-bold text-foreground mb-4">Welcome to the Abandoned Archive!</h2>
-          <div class="space-y-3 text-left max-w-md mx-auto">
-            <p class="text-braun-700 text-sm">
-              A powerful tool for documenting and organizing abandoned locations.
-            </p>
-            <div class="bg-braun-50 rounded p-3 space-y-2">
-              <h3 class="font-semibold text-foreground text-sm">Key Features:</h3>
-              <ul class="list-disc list-inside text-xs text-braun-600 space-y-1">
-                <li>GPS-based location tracking with interactive maps</li>
-                <li>Media import with automatic metadata extraction</li>
-                <li>Organize photos, videos, and documents</li>
-                <li>Local-first data storage for complete privacy</li>
-              </ul>
+        <div class="space-y-4">
+          <div>
+            <label for="username" class="block text-sm font-medium text-braun-700 mb-1">
+              Name
+            </label>
+            <input
+              id="username"
+              type="text"
+              bind:value={username}
+              placeholder="First Name - Last Name"
+              class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 transition text-sm"
+            />
+          </div>
+
+          <!-- Rule #1: Preserve History -->
+          <div class="bg-braun-100 border border-braun-300 rounded p-3 mt-4">
+            <div class="text-xs font-semibold uppercase tracking-wider text-braun-500">
+              Preserve History
             </div>
-            <p class="text-braun-700 text-sm">
-              Let's get started by setting up your archive.
-            </p>
           </div>
         </div>
       {/if}
 
-      <!-- Step 2: User Setup + Archive Location -->
+      <!-- Step 2: Archive Location -->
       {#if currentStep === 2}
         <div>
-          <h2 class="text-xl font-bold text-foreground mb-4">Setup</h2>
+          <h2 class="text-2xl font-semibold text-braun-900 mb-4">Archive Location</h2>
 
           <div class="space-y-4">
-            <!-- Name Field -->
             <div>
-              <label for="username" class="block text-sm font-medium text-braun-700 mb-1">
-                Name
+              <label for="archivePath" class="block text-sm font-medium text-braun-700 mb-1">
+                Folder
               </label>
-              <input
-                id="username"
-                type="text"
-                bind:value={username}
-                placeholder="First Last"
-                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 transition text-sm"
-              />
+              <div class="flex gap-2">
+                <input
+                  id="archivePath"
+                  type="text"
+                  bind:value={archivePath}
+                  placeholder="Select a folder..."
+                  readonly
+                  class="flex-1 px-3 py-2 border border-braun-300 rounded bg-braun-50 text-braun-700 text-sm"
+                />
+                <button
+                  type="button"
+                  onclick={selectFolder}
+                  class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition font-medium text-sm"
+                >
+                  Browse
+                </button>
+              </div>
             </div>
 
-            <!-- Nickname Field -->
-            <div>
-              <label for="nickname" class="block text-sm font-medium text-braun-700 mb-1">
-                Nickname
-              </label>
-              <input
-                id="nickname"
-                type="text"
-                bind:value={nickname}
-                placeholder="Optional"
-                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 transition text-sm"
-              />
+            <!-- Rule #2: Document Decay -->
+            <div class="bg-braun-100 border border-braun-300 rounded p-3 mt-6">
+              <div class="text-xs font-semibold uppercase tracking-wider text-braun-500">
+                Document Decay
+              </div>
             </div>
+          </div>
+        </div>
+      {/if}
 
-            <!-- PIN Fields -->
+      <!-- Step 3: Security PIN -->
+      {#if currentStep === 3}
+        <div>
+          <h2 class="text-2xl font-semibold text-braun-900 mb-4">Security PIN</h2>
+
+          <div class="space-y-4">
             <div class="grid grid-cols-2 gap-3">
               <div>
                 <label for="pin" class="block text-sm font-medium text-braun-700 mb-1">
@@ -247,33 +235,10 @@
               <p class="text-red-500 text-xs">{pinError}</p>
             {/if}
 
-            <!-- Archive Location Section -->
-            <div class="border-t pt-4 mt-4">
-              <h3 class="font-medium text-foreground mb-3 text-sm">Archive Location</h3>
-              <div>
-                <label for="archivePath" class="block text-sm font-medium text-braun-700 mb-1">
-                  Folder
-                </label>
-                <div class="flex gap-2">
-                  <input
-                    id="archivePath"
-                    type="text"
-                    bind:value={archivePath}
-                    placeholder="Select a folder..."
-                    readonly
-                    class="flex-1 px-3 py-2 border border-braun-300 rounded bg-braun-50 text-braun-700 text-sm"
-                  />
-                  <button
-                    type="button"
-                    onclick={selectFolder}
-                    class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition font-medium text-sm"
-                  >
-                    Browse
-                  </button>
-                </div>
-                <p class="text-xs text-braun-500 mt-1">
-                  Where your media files will be stored.
-                </p>
+            <!-- Rule #3: Authentic Information -->
+            <div class="bg-braun-100 border border-braun-300 rounded p-3 mt-6">
+              <div class="text-xs font-semibold uppercase tracking-wider text-braun-500">
+                Authentic Information
               </div>
             </div>
           </div>
@@ -314,11 +279,6 @@
         </div>
       </div>
 
-      <!-- Step Indicator Text -->
-      <div class="mt-4 text-center text-xs text-braun-500">
-        Step {currentStep} of {totalSteps}
-      </div>
     </div>
-
   </div>
 </div>
