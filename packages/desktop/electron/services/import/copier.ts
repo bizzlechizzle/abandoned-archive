@@ -27,6 +27,7 @@ import type { HashedFile } from './hasher';
 import { getHardwareProfile } from '../hardware-profile';
 import type { LocationInfo } from './types';
 import { HASH_LENGTH } from '../crypto-service';
+import { isNetworkPath, getStorageConfig } from './storage-detection';
 
 /**
  * Copy strategy type
@@ -107,7 +108,8 @@ export class Copier {
     concurrency?: number
   ) {
     // Detect if archive DESTINATION is on network (SMB/NFS)
-    this.isNetworkDest = this.detectNetworkPath(archiveBasePath);
+    // Uses unified storage-detection utility
+    this.isNetworkDest = isNetworkPath(archiveBasePath);
 
     // Get hardware-scaled concurrency
     const hw = getHardwareProfile();
@@ -123,33 +125,11 @@ export class Copier {
 
   /**
    * Detect if SOURCE files are on network storage
-   * Called once when copy starts, based on first file's path
+   * Uses unified storage-detection utility
    */
   private detectNetworkSource(files: HashedFile[]): boolean {
     if (files.length === 0) return false;
-    const firstPath = files[0].originalPath;
-    return this.detectNetworkPath(firstPath);
-  }
-
-  /**
-   * Detect if path is on network storage (SMB/NFS/AFP)
-   */
-  private detectNetworkPath(archivePath: string): boolean {
-    // macOS network paths typically under /Volumes/ (mounted shares)
-    // or explicitly //server/share or smb:// style
-    if (archivePath.startsWith('/Volumes/')) {
-      // /Volumes/Macintosh HD is local, others are likely network
-      // Conservative: treat all /Volumes/ as network except boot
-      const volumeName = archivePath.split('/')[2] || '';
-      if (volumeName === 'Macintosh HD' || volumeName.includes('SSD') || volumeName.includes('Internal')) {
-        return false;
-      }
-      return true;
-    }
-    if (archivePath.startsWith('//') || archivePath.startsWith('smb://') || archivePath.startsWith('nfs://')) {
-      return true;
-    }
-    return false;
+    return isNetworkPath(files[0].originalPath);
   }
 
   /**

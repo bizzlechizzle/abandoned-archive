@@ -38,6 +38,7 @@ import { getLogger } from '../logger-service';
 import { getMetricsCollector, MetricNames } from '../monitoring/metrics-collector';
 import { getTracer, OperationNames } from '../monitoring/tracer';
 import { acquireLocationLock, releaseLocationLock } from './location-lock';
+import { isNetworkPath, getStorageConfig, type StorageConfig } from './storage-detection';
 
 const logger = getLogger();
 const metrics = getMetricsCollector();
@@ -166,27 +167,22 @@ export class ImportOrchestrator {
 
   /**
    * Detect if source paths are on network storage (SMB/NFS)
-   * Used to enable inline hashing mode (skip separate hash step)
+   * Uses unified storage-detection utility
    */
   private detectNetworkSource(paths: string[]): boolean {
     if (paths.length === 0) return false;
-    const firstPath = paths[0];
+    return isNetworkPath(paths[0]);
+  }
 
-    // macOS network paths typically under /Volumes/ (mounted shares)
-    if (firstPath.startsWith('/Volumes/')) {
-      const volumeName = firstPath.split('/')[2] || '';
-      if (volumeName === 'Macintosh HD' || volumeName.includes('SSD') || volumeName.includes('Internal')) {
-        return false;
-      }
-      return true;
+  /**
+   * Get storage configuration for source paths
+   * Returns I/O settings (buffer size, concurrency, delays)
+   */
+  private getSourceStorageConfig(paths: string[]): StorageConfig {
+    if (paths.length === 0) {
+      return getStorageConfig('/'); // Default to local
     }
-
-    // Explicit SMB/NFS paths
-    if (firstPath.startsWith('//') || firstPath.startsWith('smb://') || firstPath.startsWith('nfs://')) {
-      return true;
-    }
-
-    return false;
+    return getStorageConfig(paths[0]);
   }
 
   /**
