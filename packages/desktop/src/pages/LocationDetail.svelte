@@ -16,7 +16,7 @@
   import {
     LocationInfo,
     LocationMapSection, LocationOriginalAssets,
-    LocationImportZone, LocationBookmarks, LocationNerdStats,
+    LocationImportZone, LocationBookmarks, LocationWebSources, LocationNerdStats,
     LocationSettings, SubLocationGrid,
     type MediaImage, type MediaVideo, type MediaDocument, type Bookmark,
     type GpsWarning, type FailedFile
@@ -1036,7 +1036,11 @@
           onDismissAllWarnings={() => gpsWarnings = []}
         />
 
-        <LocationBookmarks {bookmarks} onAddBookmark={handleAddBookmark} onDeleteBookmark={handleDeleteBookmark} onOpenBookmark={handleOpenBookmark} />
+        <!-- OPT-109: Web Sources replaces simple bookmarks -->
+        <LocationWebSources
+          locid={location.locid}
+          onOpenSource={(url) => window.electronAPI.shell.openExternal(url)}
+        />
         <div id="media-gallery">
           <LocationOriginalAssets
             {images}
