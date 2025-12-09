@@ -1,23 +1,37 @@
 /**
  * ImportOrchestrator - 5-step pipeline coordinator
  *
- * Per Import Spec v2.0:
+ * v2.2 SMB-OPTIMIZED: Network-aware import pipeline
+ *
+ * Per Import Spec v2.0 + ADR-046:
  * - Step coordination (1→2→3→4→5)
+ * - Network source detection (SMB/NFS)
+ * - Inline hashing for network sources (skip Step 2)
+ * - Post-copy duplicate detection
  * - Weighted progress calculation
  * - Cancellation support
  * - Crash recovery (resume incomplete imports)
  * - Error aggregation and reporting
  * - IPC event emission
  *
+ * Network Source Flow:
+ *   1. Scan → 2. SKIP → 3. Copy+Hash → 4. Validate → 5. Finalize
+ *
+ * Local Source Flow:
+ *   1. Scan → 2. Hash → 3. Copy → 4. Validate → 5. Finalize
+ *
+ * ADR: ADR-046-smb-optimized-import
+ *
  * @module services/import/orchestrator
  */
 
 import { randomUUID } from 'crypto';
+import { promises as fs } from 'fs';
 import type { Kysely } from 'kysely';
 import type { Database } from '../../main/database.types';
 import { Scanner, type ScanResult, type ScannerOptions } from './scanner';
 import { Hasher, type HashResult, type HasherOptions } from './hasher';
-import { Copier, type CopyResult, type CopierOptions, type LocationInfo } from './copier';
+import { Copier, type CopyResult, type CopierOptions, type LocationInfo, type CopiedFile } from './copier';
 import { Validator, type ValidationResult, type ValidatorOptions } from './validator';
 import { Finalizer, type FinalizationResult, type FinalizerOptions } from './finalizer';
 import { getLogger } from '../logger-service';
@@ -151,6 +165,31 @@ export class ImportOrchestrator {
   }
 
   /**
+   * Detect if source paths are on network storage (SMB/NFS)
+   * Used to enable inline hashing mode (skip separate hash step)
+   */
+  private detectNetworkSource(paths: string[]): boolean {
+    if (paths.length === 0) return false;
+    const firstPath = paths[0];
+
+    // macOS network paths typically under /Volumes/ (mounted shares)
+    if (firstPath.startsWith('/Volumes/')) {
+      const volumeName = firstPath.split('/')[2] || '';
+      if (volumeName === 'Macintosh HD' || volumeName.includes('SSD') || volumeName.includes('Internal')) {
+        return false;
+      }
+      return true;
+    }
+
+    // Explicit SMB/NFS paths
+    if (firstPath.startsWith('//') || firstPath.startsWith('smb://') || firstPath.startsWith('nfs://')) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
    * Start a new import
    */
   async import(paths: string[], options: ImportOptions): Promise<ImportResult> {
@@ -277,7 +316,10 @@ export class ImportOrchestrator {
       // Save scan results to DB session (enables resume from step 2)
       await this.saveSessionStateWithResults(sessionId, 'scanning', 1, options.location.locid, scanResult);
 
-      // Step 2: Hash
+      // Step 2: Hash (or skip for network sources)
+      // Network sources use inline hashing during copy (single read per file)
+      const isNetworkSource = this.detectNetworkSource(paths);
+
       this.currentStatus = 'hashing';
       progress.status = 'hashing';
       progress.step = 2;
@@ -286,32 +328,64 @@ export class ImportOrchestrator {
       hashTimer = metrics.timer(MetricNames.IMPORT_HASH_DURATION, { sessionId });
       const hashSpan = importSpan.child(OperationNames.IMPORT_HASH);
 
-      hashResult = await this.hasher.hash(scanResult.files, {
-        signal,
-        onProgress: (percent, currentFile) => {
-          progress.percent = percent;
-          progress.currentFile = currentFile;
-          progress.duplicatesFound = hashResult?.totalDuplicates ?? 0;
-          emitProgress();
-        },
-      });
+      if (isNetworkSource) {
+        // NETWORK SOURCE: Skip separate hash step - copier will compute inline
+        // This halves network I/O (single read per file instead of double)
+        logger.info('ImportOrchestrator', 'Network source detected - using inline hashing (skip Step 2)', {
+          sessionId,
+          filesTotal: scanResult.files.length,
+        });
 
-      hashTimer.end();
-      hashSpan.end('success', {
-        filesHashed: hashResult.files.length,
-        duplicates: hashResult.totalDuplicates,
-        errors: hashResult.totalErrors,
-      });
+        // Convert ScannedFiles to HashedFiles with null hash (computed during copy)
+        hashResult = {
+          files: scanResult.files.map(f => ({
+            ...f,
+            hash: null,
+            hashError: null,
+            isDuplicate: false,
+            duplicateIn: null,
+          })),
+          totalHashed: 0,
+          totalDuplicates: 0,
+          totalErrors: 0,
+          hashingTimeMs: 0,
+        };
 
-      progress.duplicatesFound = hashResult.totalDuplicates;
-      progress.errorsFound = hashResult.totalErrors;
-      metrics.incrementCounter(MetricNames.IMPORT_FILES_DUPLICATES, hashResult.totalDuplicates, { sessionId });
+        hashTimer.end();
+        hashSpan.end('success', { mode: 'inline', skipped: true });
 
-      logger.info('ImportOrchestrator', 'Hashing completed', {
-        sessionId,
-        filesHashed: hashResult.files.length,
-        duplicates: hashResult.totalDuplicates,
-      });
+        // Progress jumps to 40% (end of hash phase)
+        progress.percent = 40;
+        emitProgress();
+      } else {
+        // LOCAL SOURCE: Use parallel hasher (fast for local disk)
+        hashResult = await this.hasher.hash(scanResult.files, {
+          signal,
+          onProgress: (percent, currentFile) => {
+            progress.percent = percent;
+            progress.currentFile = currentFile;
+            progress.duplicatesFound = hashResult?.totalDuplicates ?? 0;
+            emitProgress();
+          },
+        });
+
+        hashTimer.end();
+        hashSpan.end('success', {
+          filesHashed: hashResult.files.length,
+          duplicates: hashResult.totalDuplicates,
+          errors: hashResult.totalErrors,
+        });
+
+        progress.duplicatesFound = hashResult.totalDuplicates;
+        progress.errorsFound = hashResult.totalErrors;
+        metrics.incrementCounter(MetricNames.IMPORT_FILES_DUPLICATES, hashResult.totalDuplicates, { sessionId });
+
+        logger.info('ImportOrchestrator', 'Hashing completed', {
+          sessionId,
+          filesHashed: hashResult.files.length,
+          duplicates: hashResult.totalDuplicates,
+        });
+      }
 
       // Save hash results to DB session (enables resume from step 3)
       await this.saveSessionStateWithResults(sessionId, 'hashing', 2, options.location.locid, scanResult, hashResult);
@@ -352,6 +426,18 @@ export class ImportOrchestrator {
         bytesCopied: copyResult.totalBytes,
         strategy: copyResult.strategy,
       });
+
+      // Post-copy duplicate detection (for network source mode)
+      // Inline hashing means duplicates are detected AFTER copy, then removed
+      if (isNetworkSource) {
+        const duplicatesRemoved = await this.detectAndRemoveDuplicatesPostCopy(copyResult, sessionId);
+        progress.duplicatesFound = duplicatesRemoved;
+
+        logger.info('ImportOrchestrator', 'Post-copy duplicate detection', {
+          sessionId,
+          duplicatesRemoved,
+        });
+      }
 
       // Save copy results to DB session (enables resume from step 4)
       await this.saveSessionStateWithResults(sessionId, 'copying', 3, options.location.locid, scanResult, hashResult, copyResult);
@@ -1067,6 +1153,141 @@ export class ImportOrchestrator {
       totalFiles: s.total_files,
       processedFiles: s.processed_files,
     }));
+  }
+
+  /**
+   * Detect and remove duplicates after copy (for network source inline-hash mode)
+   *
+   * When inline hashing is used, we don't know file hashes until after copy.
+   * This method checks copied files against existing DB records and removes
+   * any duplicates that were just copied.
+   *
+   * @returns Number of duplicate files removed
+   */
+  private async detectAndRemoveDuplicatesPostCopy(
+    copyResult: CopyResult,
+    sessionId: string
+  ): Promise<number> {
+    // Get files that were successfully copied and have a hash
+    const copiedFiles = copyResult.files.filter(f => f.hash && f.archivePath && !f.copyError);
+    if (copiedFiles.length === 0) return 0;
+
+    let duplicatesRemoved = 0;
+
+    // Group files by media type
+    const imageFiles = copiedFiles.filter(f => f.mediaType === 'image');
+    const videoFiles = copiedFiles.filter(f => f.mediaType === 'video');
+    const docFiles = copiedFiles.filter(f => f.mediaType === 'document');
+    const mapFiles = copiedFiles.filter(f => f.mediaType === 'map');
+
+    // Check images
+    if (imageFiles.length > 0) {
+      const imageHashes = imageFiles.map(f => f.hash!);
+      const existingImages = await this.db
+        .selectFrom('imgs')
+        .select('imghash')
+        .where('imghash', 'in', imageHashes)
+        .execute();
+
+      const existingSet = new Set(existingImages.map(r => r.imghash));
+      for (const file of imageFiles) {
+        if (existingSet.has(file.hash!)) {
+          await this.removeDuplicateFile(file, 'imgs', sessionId);
+          duplicatesRemoved++;
+        }
+      }
+    }
+
+    // Check videos
+    if (videoFiles.length > 0) {
+      const videoHashes = videoFiles.map(f => f.hash!);
+      const existingVideos = await this.db
+        .selectFrom('vids')
+        .select('vidhash')
+        .where('vidhash', 'in', videoHashes)
+        .execute();
+
+      const existingSet = new Set(existingVideos.map(r => r.vidhash));
+      for (const file of videoFiles) {
+        if (existingSet.has(file.hash!)) {
+          await this.removeDuplicateFile(file, 'vids', sessionId);
+          duplicatesRemoved++;
+        }
+      }
+    }
+
+    // Check documents
+    if (docFiles.length > 0) {
+      const docHashes = docFiles.map(f => f.hash!);
+      const existingDocs = await this.db
+        .selectFrom('docs')
+        .select('dochash')
+        .where('dochash', 'in', docHashes)
+        .execute();
+
+      const existingSet = new Set(existingDocs.map(r => r.dochash));
+      for (const file of docFiles) {
+        if (existingSet.has(file.hash!)) {
+          await this.removeDuplicateFile(file, 'docs', sessionId);
+          duplicatesRemoved++;
+        }
+      }
+    }
+
+    // Check maps
+    if (mapFiles.length > 0) {
+      const mapHashes = mapFiles.map(f => f.hash!);
+      const existingMaps = await this.db
+        .selectFrom('maps')
+        .select('maphash')
+        .where('maphash', 'in', mapHashes)
+        .execute();
+
+      const existingSet = new Set(existingMaps.map(r => r.maphash));
+      for (const file of mapFiles) {
+        if (existingSet.has(file.hash!)) {
+          await this.removeDuplicateFile(file, 'maps', sessionId);
+          duplicatesRemoved++;
+        }
+      }
+    }
+
+    return duplicatesRemoved;
+  }
+
+  /**
+   * Remove a duplicate file from disk after it was copied
+   * Updates the file object to mark it as duplicate
+   */
+  private async removeDuplicateFile(
+    file: CopiedFile,
+    table: 'imgs' | 'vids' | 'docs' | 'maps',
+    sessionId: string
+  ): Promise<void> {
+    if (!file.archivePath) return;
+
+    try {
+      await fs.unlink(file.archivePath);
+      logger.debug('ImportOrchestrator', 'Removed duplicate file', {
+        sessionId,
+        hash: file.hash,
+        table,
+        path: file.archivePath,
+      });
+
+      // Mark the file as duplicate (mutate in place for copyResult)
+      file.isDuplicate = true;
+      file.duplicateIn = table;
+      file.archivePath = null; // Clear path since file was deleted
+    } catch (err) {
+      // Non-fatal: file might already be gone, or permissions issue
+      logger.warn('ImportOrchestrator', 'Failed to remove duplicate file', {
+        sessionId,
+        hash: file.hash,
+        path: file.archivePath,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**

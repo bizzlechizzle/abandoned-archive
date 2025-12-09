@@ -1,25 +1,32 @@
 /**
  * Copier - Atomic file copy (Step 3)
  *
- * v2.1 AGGRESSIVE: Parallel copy with hardware-scaled concurrency
+ * v2.2 SMB-OPTIMIZED: Inline hashing for network sources
  *
  * Philosophy: WE ARE AN ARCHIVE APP. WE COPY DATA. PERIOD.
- * - fs.copyFile() for all copies
+ * - Streaming copy with inline BLAKE3 hash for network sources (single read)
+ * - fs.copyFile() for local sources (pre-hashed)
  * - Atomic temp-file-then-rename
- * - PARALLEL I/O with PQueue
- * - SMB-aware: slightly less parallelism for network
+ * - PARALLEL I/O with PQueue + hardware-scaled concurrency
+ * - SMB-aware: throttled concurrency for network paths
  * - Pre-create directories in batch to reduce SMB round-trips
+ * - Retry with exponential backoff for network errors
+ *
+ * ADR: ADR-046-smb-optimized-import
  *
  * @module services/import/copier
  */
 
-import { promises as fs } from 'fs';
+import { promises as fs, createReadStream, createWriteStream } from 'fs';
+import { pipeline } from 'stream/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import PQueue from 'p-queue';
+import { createHash as createBlake3Hash } from 'blake3';
 import type { HashedFile } from './hasher';
 import { getHardwareProfile } from '../hardware-profile';
 import type { LocationInfo } from './types';
+import { HASH_LENGTH } from '../crypto-service';
 
 /**
  * Copy strategy type
@@ -87,30 +94,41 @@ export type { LocationInfo } from './types';
 
 /**
  * Copier class with AGGRESSIVE parallel operations
- * v2.1: Hardware-scaled, SMB-aware
+ * v2.2: Hardware-scaled, SMB-aware, inline hashing for network sources
  */
 export class Copier {
   private readonly copyQueue: PQueue;
-  private readonly isNetworkPath: boolean;
+  private readonly isNetworkDest: boolean;
   private readonly concurrency: number;
+  private isNetworkSource: boolean = false;
 
   constructor(
     private readonly archiveBasePath: string,
     concurrency?: number
   ) {
-    // Detect if archive is on network (SMB/NFS)
-    this.isNetworkPath = this.detectNetworkPath(archiveBasePath);
+    // Detect if archive DESTINATION is on network (SMB/NFS)
+    this.isNetworkDest = this.detectNetworkPath(archiveBasePath);
 
     // Get hardware-scaled concurrency
     const hw = getHardwareProfile();
-    const defaultConcurrency = this.isNetworkPath
+    const defaultConcurrency = this.isNetworkDest
       ? hw.copyWorkersNetwork
       : hw.copyWorkers;
 
     this.concurrency = concurrency ?? defaultConcurrency;
     this.copyQueue = new PQueue({ concurrency: this.concurrency });
 
-    console.log(`[Copier] Initialized: ${this.concurrency} parallel workers, network: ${this.isNetworkPath}`);
+    console.log(`[Copier] Initialized: ${this.concurrency} parallel workers, network dest: ${this.isNetworkDest}`);
+  }
+
+  /**
+   * Detect if SOURCE files are on network storage
+   * Called once when copy starts, based on first file's path
+   */
+  private detectNetworkSource(files: HashedFile[]): boolean {
+    if (files.length === 0) return false;
+    const firstPath = files[0].originalPath;
+    return this.detectNetworkPath(firstPath);
   }
 
   /**
@@ -135,12 +153,76 @@ export class Copier {
   }
 
   /**
+   * Stream copy with inline BLAKE3 hash computation
+   * Single read from source, hash computed while streaming, written to dest
+   * Returns computed hash - eliminates double-read for network sources
+   */
+  private async copyFileStreaming(
+    sourcePath: string,
+    tempPath: string
+  ): Promise<{ hash: string; bytesCopied: number }> {
+    const hasher = createBlake3Hash();
+    let bytesCopied = 0;
+
+    const source = createReadStream(sourcePath);
+    const dest = createWriteStream(tempPath);
+
+    // Hash bytes as they stream through
+    source.on('data', (chunk: Buffer) => {
+      hasher.update(chunk);
+      bytesCopied += chunk.length;
+    });
+
+    // Use pipeline for proper backpressure handling
+    await pipeline(source, dest);
+
+    // Get hash (truncated to 16 hex chars per HASH_LENGTH)
+    const hash = hasher.digest('hex').substring(0, HASH_LENGTH);
+    return { hash, bytesCopied };
+  }
+
+  /**
+   * Build file path using provided hash (for inline hashing mode)
+   * Same logic as buildFilePath but takes hash as parameter
+   */
+  private buildFilePathWithHash(hash: string, file: HashedFile, location: LocationInfo): string {
+    const locationPath = this.buildLocationPath(location);
+    const loc12 = location.loc12;
+
+    const subSuffix = location.subid
+      ? `-${location.sub12 || location.subid.substring(0, 12)}`
+      : '';
+
+    let subfolder: string;
+    switch (file.mediaType) {
+      case 'image':
+        subfolder = `org-img-${loc12}${subSuffix}`;
+        break;
+      case 'video':
+        subfolder = `org-vid-${loc12}${subSuffix}`;
+        break;
+      case 'document':
+        subfolder = `org-doc-${loc12}${subSuffix}`;
+        break;
+      case 'map':
+        subfolder = `org-map-${loc12}${subSuffix}`;
+        break;
+      default:
+        subfolder = `org-misc-${loc12}${subSuffix}`;
+    }
+
+    const filename = `${hash}${file.extension}`;
+    return path.join(locationPath, subfolder, filename);
+  }
+
+  /**
    * Copy files in PARALLEL - slam the I/O subsystem
    *
-   * v2.1 AGGRESSIVE:
+   * v2.2: Hardware-scaled, SMB-aware, inline hashing for network sources
    * - PQueue with hardware-scaled concurrency
    * - Pre-create all directories in batch
    * - Parallel copy of all files
+   * - Inline hash computation when source is network (single read)
    */
   async copy(
     files: HashedFile[],
@@ -149,8 +231,21 @@ export class Copier {
   ): Promise<CopyResult> {
     const startTime = Date.now();
 
+    // Detect if SOURCE is on network - enables inline hashing mode
+    this.isNetworkSource = this.detectNetworkSource(files);
+    if (this.isNetworkSource) {
+      console.log(`[Copier] Network SOURCE detected - using inline hashing (single read per file)`);
+    }
+
     // Filter out duplicates and errored files
-    const filesToCopy = files.filter(f => !f.isDuplicate && f.hash !== null && !f.hashError);
+    // Allow null hash for network sources (will be computed inline)
+    const filesToCopy = files.filter(f => {
+      if (f.isDuplicate || f.hashError) return false;
+      // For network source mode, allow null hash (computed during copy)
+      if (this.isNetworkSource) return true;
+      // For local source, require pre-computed hash
+      return f.hash !== null;
+    });
 
     if (filesToCopy.length === 0) {
       // Handle skipped files
@@ -194,6 +289,19 @@ export class Copier {
       this.copyQueue.concurrency = options.concurrency;
     }
 
+    // Periodic progress updates - prevents "stuck" feeling during long copies
+    // Fires every 500ms regardless of file completions
+    let progressInterval: ReturnType<typeof setInterval> | null = null;
+    if (options?.onProgress) {
+      progressInterval = setInterval(() => {
+        if (completedCount < filesToCopy.length) {
+          const percent = 40 + ((bytesCopied / totalBytes) * 40);
+          const pending = this.copyQueue.pending;
+          options.onProgress!(percent, `Copying... (${pending} active)`, bytesCopied, totalBytes);
+        }
+      }, 500);
+    }
+
     // Queue ALL files for PARALLEL copy
     const copyPromises = filesToCopy.map((file, index) =>
       this.copyQueue.add(async () => {
@@ -216,7 +324,7 @@ export class Copier {
         results.push(result);
         completedCount++;
 
-        // Progress callback (40-80% range)
+        // Progress callback (40-80% range) - on file completion
         if (options?.onProgress) {
           const percent = 40 + ((bytesCopied / totalBytes) * 40);
           options.onProgress(percent, file.filename, bytesCopied, totalBytes);
@@ -233,6 +341,11 @@ export class Copier {
 
     // Wait for ALL copies to complete (they're running in parallel)
     await Promise.all(copyPromises);
+
+    // Clean up progress interval
+    if (progressInterval) {
+      clearInterval(progressInterval);
+    }
 
     // Add skipped files (duplicates, hash errors) to results
     for (const file of files) {
@@ -268,24 +381,39 @@ export class Copier {
 
   /**
    * Pre-create all destination directories in a batch
-   * Reduces SMB round-trips significantly
+   * Network paths: sequential to avoid SMB overwhelm
+   * Local paths: parallel for speed
    */
   private async ensureDirectoriesBatch(files: HashedFile[], location: LocationInfo): Promise<void> {
     const dirs = new Set<string>();
 
     for (const file of files) {
-      const destPath = this.buildFilePath(file, location);
+      // Use placeholder hash for directory path (hash is only in filename, not directory)
+      const hash = file.hash || 'placeholder';
+      const destPath = this.buildFilePathWithHash(hash, file, location);
       dirs.add(path.dirname(destPath));
     }
 
-    // Create all directories in parallel
-    const mkdirPromises = Array.from(dirs).map(dir =>
-      fs.mkdir(dir, { recursive: true }).catch(() => {
-        // Ignore errors (directory might already exist or race condition)
-      })
-    );
+    const dirList = Array.from(dirs);
 
-    await Promise.all(mkdirPromises);
+    if (this.isNetworkDest) {
+      // Network: create directories sequentially to avoid SMB connection overwhelm
+      // SMB protocol has limited concurrent operation capacity regardless of bandwidth
+      console.log(`[Copier] Creating ${dirList.length} directories sequentially (network path)`);
+      for (const dir of dirList) {
+        await fs.mkdir(dir, { recursive: true }).catch(() => {
+          // Ignore errors (directory might already exist or race condition)
+        });
+      }
+    } else {
+      // Local: parallel is fine - OS can handle many concurrent mkdir
+      const mkdirPromises = dirList.map(dir =>
+        fs.mkdir(dir, { recursive: true }).catch(() => {
+          // Ignore errors (directory might already exist or race condition)
+        })
+      );
+      await Promise.all(mkdirPromises);
+    }
   }
 
   /**
@@ -301,8 +429,8 @@ export class Copier {
   }
 
   /**
-   * Copy a single file - FAST path
-   * No strategy detection, just copy the damn file.
+   * Copy a single file - supports both pre-hashed and inline hashing modes
+   * v2.2: Uses streaming with inline hash for network sources (single read)
    */
   private async copyFileFast(
     file: HashedFile,
@@ -316,30 +444,72 @@ export class Copier {
       bytesCopied: 0,
     };
 
-    try {
-      const destPath = this.buildFilePath(file, location);
+    // Retry config for network errors
+    const isNetwork = this.isNetworkDest || this.isNetworkSource;
+    const MAX_RETRIES = isNetwork ? 3 : 0;
+    const RETRY_DELAYS = [1000, 3000, 5000]; // ms - exponential backoff
+    const RETRYABLE_ERRORS = ['EAGAIN', 'ECONNRESET', 'ETIMEDOUT', 'EBUSY', 'EIO', 'ENETUNREACH', 'EPIPE'];
 
-      // Temp file for atomic operation
-      const tempPath = `${destPath}.${randomUUID().slice(0, 8)}.tmp`;
+    // Inline hashing mode: hash is null, compute during copy
+    const useInlineHash = file.hash === null;
 
+    // Temp file path (we'll rename to final after we know the hash)
+    const tempDir = this.buildLocationPath(location);
+    const tempPath = path.join(tempDir, `${randomUUID()}.tmp`);
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
-        // COPY. That's it. We're an archive app.
-        await fs.copyFile(file.originalPath, tempPath);
+        let finalHash: string;
+        let bytesCopied: number;
+
+        if (useInlineHash) {
+          // INLINE HASH MODE: Stream copy with hash computation (single read)
+          const streamResult = await this.copyFileStreaming(file.originalPath, tempPath);
+          finalHash = streamResult.hash;
+          bytesCopied = streamResult.bytesCopied;
+        } else {
+          // PRE-HASHED MODE: Simple copy (hash already computed)
+          await fs.copyFile(file.originalPath, tempPath);
+          finalHash = file.hash!;
+          bytesCopied = file.size;
+        }
+
+        // Build final path with the (computed or pre-existing) hash
+        const destPath = this.buildFilePathWithHash(finalHash, file, location);
+
+        // Ensure destination directory exists (may be new for inline hash)
+        await fs.mkdir(path.dirname(destPath), { recursive: true }).catch(() => {});
 
         // Atomic rename from temp to final
         await fs.rename(tempPath, destPath);
 
+        result.hash = finalHash;  // Update with computed hash (important for inline mode)
         result.archivePath = destPath;
-        result.bytesCopied = file.size;
+        result.bytesCopied = bytesCopied;
 
-      } catch (copyError) {
-        // Clean up temp file on failure
+        return result;
+
+      } catch (error) {
+        const errorCode = (error as NodeJS.ErrnoException).code;
+        const isRetryable = isNetwork && errorCode && RETRYABLE_ERRORS.includes(errorCode);
+
+        if (isRetryable && attempt < MAX_RETRIES) {
+          // Log retry attempt
+          console.log(`[Copier] Network error ${errorCode} on ${file.filename}, retry ${attempt + 1}/${MAX_RETRIES} after ${RETRY_DELAYS[attempt]}ms`);
+
+          // Clean up partial temp file before retry
+          await fs.unlink(tempPath).catch(() => {});
+
+          // Wait with exponential backoff
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS[attempt]));
+          continue;
+        }
+
+        // Non-retryable or max retries exceeded - clean up and fail
         await fs.unlink(tempPath).catch(() => {});
-        throw copyError;
+        result.copyError = error instanceof Error ? error.message : String(error);
+        return result;
       }
-
-    } catch (error) {
-      result.copyError = error instanceof Error ? error.message : String(error);
     }
 
     return result;
@@ -417,11 +587,12 @@ export class Copier {
   /**
    * Get current queue stats
    */
-  getStats(): { pending: number; concurrency: number; isNetwork: boolean } {
+  getStats(): { pending: number; concurrency: number; isNetworkDest: boolean; isNetworkSource: boolean } {
     return {
       pending: this.copyQueue.pending,
       concurrency: this.concurrency,
-      isNetwork: this.isNetworkPath,
+      isNetworkDest: this.isNetworkDest,
+      isNetworkSource: this.isNetworkSource,
     };
   }
 }

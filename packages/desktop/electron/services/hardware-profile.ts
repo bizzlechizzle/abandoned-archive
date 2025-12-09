@@ -69,7 +69,7 @@ export function detectHardwareProfile(): HardwareProfile {
       // Per-file jobs
       hashWorkers: cpuCores - 2,                    // 22 workers
       copyWorkers: 24,                               // Saturate local I/O
-      copyWorkersNetwork: 16,                        // Slightly less for SMB
+      copyWorkersNetwork: 4,                         // SMB can only handle ~4 concurrent ops
       exifToolWorkers: Math.floor(cpuCores * 0.5),  // 12 workers
       ffprobeWorkers: Math.floor(cpuCores * 0.25),  // 6 workers
       thumbnailWorkers: Math.floor(cpuCores * 0.5), // 12 workers
@@ -88,7 +88,7 @@ export function detectHardwareProfile(): HardwareProfile {
       // Per-file jobs
       hashWorkers: cpuCores - 2,
       copyWorkers: 16,
-      copyWorkersNetwork: 12,
+      copyWorkersNetwork: 4,                         // SMB can only handle ~4 concurrent ops
       exifToolWorkers: Math.floor(cpuCores * 0.4),
       ffprobeWorkers: Math.floor(cpuCores * 0.2),
       thumbnailWorkers: Math.floor(cpuCores * 0.4),
@@ -107,7 +107,7 @@ export function detectHardwareProfile(): HardwareProfile {
       // Per-file jobs
       hashWorkers: Math.max(2, cpuCores - 2),
       copyWorkers: 8,
-      copyWorkersNetwork: 6,
+      copyWorkersNetwork: 3,                         // SMB-safe limit
       exifToolWorkers: Math.max(2, Math.floor(cpuCores * 0.3)),
       ffprobeWorkers: 2,
       thumbnailWorkers: Math.max(2, Math.floor(cpuCores * 0.3)),
@@ -126,7 +126,7 @@ export function detectHardwareProfile(): HardwareProfile {
       // Per-file jobs
       hashWorkers: Math.max(1, cpuCores - 1),
       copyWorkers: 4,
-      copyWorkersNetwork: 3,
+      copyWorkersNetwork: 2,                         // Minimum SMB-safe limit
       exifToolWorkers: 2,
       ffprobeWorkers: 1,
       thumbnailWorkers: 2,

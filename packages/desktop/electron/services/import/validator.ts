@@ -1,19 +1,31 @@
 /**
  * Validator - Post-copy integrity verification (Step 4)
  *
- * Per Import Spec v2.0:
+ * v2.2 SMB-OPTIMIZED: Network-aware concurrency
+ *
+ * Per Import Spec v2.0 + ADR-046:
  * - Parallel re-hash using WorkerPool
- * - Hash comparison
- * - Rollback on mismatch
+ * - Hash comparison (BLAKE3)
+ * - Rollback on mismatch (auto-delete invalid files)
  * - Continue-on-error (don't abort batch)
  * - Progress reporting (80-95%)
+ * - SMB-aware: throttled concurrency for network archives
+ *
+ * Integrity guarantee per NDSA/Library of Congress standards:
+ * - Re-hash destination file after copy
+ * - Compare against source hash
+ * - Invalid files automatically removed
+ *
+ * ADR: ADR-046-smb-optimized-import
  *
  * @module services/import/validator
  */
 
 import { promises as fs } from 'fs';
+import PQueue from 'p-queue';
 import type { CopiedFile } from './copier';
 import { getWorkerPool, type WorkerPool } from '../worker-pool';
+import { getHardwareProfile } from '../hardware-profile';
 
 /**
  * Validation result for a single file
@@ -63,6 +75,7 @@ export interface ValidatorOptions {
 
 /**
  * Validator class for integrity verification
+ * v2.2: SMB-aware with throttled concurrency for network archives
  */
 export class Validator {
   private pool: WorkerPool | null = null;
@@ -77,7 +90,25 @@ export class Validator {
   }
 
   /**
+   * Detect if path is on network storage (SMB/NFS/AFP)
+   */
+  private detectNetworkPath(archivePath: string): boolean {
+    if (archivePath.startsWith('/Volumes/')) {
+      const volumeName = archivePath.split('/')[2] || '';
+      if (volumeName === 'Macintosh HD' || volumeName.includes('SSD') || volumeName.includes('Internal')) {
+        return false;
+      }
+      return true;
+    }
+    if (archivePath.startsWith('//') || archivePath.startsWith('smb://') || archivePath.startsWith('nfs://')) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * Validate all copied files by re-hashing and comparing
+   * v2.2: Uses PQueue with SMB-aware concurrency
    */
   async validate(files: CopiedFile[], options?: ValidatorOptions): Promise<ValidationResult> {
     await this.initialize();
@@ -87,6 +118,34 @@ export class Validator {
     // Filter files that were actually copied
     const filesToValidate = files.filter(f => f.archivePath !== null && !f.copyError);
 
+    if (filesToValidate.length === 0) {
+      // No files to validate - return early with skipped files
+      const results: ValidatedFile[] = files.map(file => ({
+        ...file,
+        isValid: false,
+        validationError: file.copyError || 'Not copied',
+      }));
+
+      return {
+        files: results,
+        totalValidated: 0,
+        totalValid: 0,
+        totalInvalid: 0,
+        totalRolledBack: 0,
+        validationTimeMs: 0,
+      };
+    }
+
+    // Detect if archive is on network - throttle concurrency if so
+    const isNetworkArchive = this.detectNetworkPath(filesToValidate[0].archivePath!);
+    const hw = getHardwareProfile();
+
+    // SMB-aware concurrency: use network workers for SMB, full hash workers for local
+    const concurrency = isNetworkArchive ? hw.copyWorkersNetwork : hw.hashWorkers;
+    const queue = new PQueue({ concurrency });
+
+    console.log(`[Validator] Starting validation: ${filesToValidate.length} files, ${concurrency} workers (network: ${isNetworkArchive})`);
+
     const totalFiles = filesToValidate.length;
     let validatedCount = 0;
     let validCount = 0;
@@ -95,24 +154,16 @@ export class Validator {
 
     const results: ValidatedFile[] = [];
 
-    // Validate files in parallel batches
-    const batchSize = 50;
+    // Queue ALL files for parallel validation with controlled concurrency
+    const validatePromises = filesToValidate.map((file) =>
+      queue.add(async () => {
+        // Check cancellation
+        if (options?.signal?.aborted) {
+          throw new Error('Validation cancelled');
+        }
 
-    for (let i = 0; i < filesToValidate.length; i += batchSize) {
-      if (options?.signal?.aborted) {
-        throw new Error('Validation cancelled');
-      }
-
-      const batch = filesToValidate.slice(i, i + batchSize);
-      const batchPaths = batch.map(f => f.archivePath!);
-
-      // Hash the batch
-      const hashResults = await this.pool!.hashBatch(batchPaths);
-
-      // Compare hashes
-      for (let j = 0; j < batch.length; j++) {
-        const file = batch[j];
-        const hashResult = hashResults[j];
+        // Hash the file
+        const hashResult = await this.pool!.hash(file.archivePath!);
 
         const validatedFile: ValidatedFile = {
           ...file,
@@ -156,8 +207,13 @@ export class Validator {
         if (options?.onFileComplete) {
           await options.onFileComplete(validatedFile, validatedCount - 1, totalFiles);
         }
-      }
-    }
+
+        return validatedFile;
+      })
+    );
+
+    // Wait for all validations to complete
+    await Promise.all(validatePromises);
 
     // Add files that weren't copied (duplicates, errors) to results
     for (const file of files) {
