@@ -392,6 +392,60 @@ const api = {
     countByLocation: (locid) => invokeAuto("bookmarks:countByLocation")(locid),
   },
 
+  // OPT-109: Web Sources Archiving (comprehensive replacement for bookmarks)
+  websources: {
+    // Core CRUD
+    create: (input) => invokeAuto("websources:create")(input),
+    findById: (sourceId) => invokeAuto("websources:findById")(sourceId),
+    findByUrl: (url) => invokeAuto("websources:findByUrl")(url),
+    findByLocation: (locid) => invokeAuto("websources:findByLocation")(locid),
+    findBySubLocation: (subid) => invokeAuto("websources:findBySubLocation")(subid),
+    findByStatus: (status) => invokeAuto("websources:findByStatus")(status),
+    findPendingForArchive: (limit) => invokeAuto("websources:findPendingForArchive")(limit),
+    findRecent: (limit) => invokeAuto("websources:findRecent")(limit),
+    findAll: () => invokeAuto("websources:findAll")(),
+    update: (sourceId, updates) => invokeAuto("websources:update")(sourceId, updates),
+    delete: (sourceId) => invokeAuto("websources:delete")(sourceId),
+
+    // Archive Status Management
+    markArchiving: (sourceId) => invokeAuto("websources:markArchiving")(sourceId),
+    markComplete: (sourceId, options) => invokeAuto("websources:markComplete")(sourceId, options),
+    markPartial: (sourceId, componentStatus, archivePath) =>
+      invokeAuto("websources:markPartial")(sourceId, componentStatus, archivePath),
+    markFailed: (sourceId, error) => invokeAuto("websources:markFailed")(sourceId, error),
+    resetToPending: (sourceId) => invokeAuto("websources:resetToPending")(sourceId),
+    updateComponentStatus: (sourceId, componentStatus) =>
+      invokeAuto("websources:updateComponentStatus")(sourceId, componentStatus),
+
+    // Version Management
+    createVersion: (sourceId, options) => invokeAuto("websources:createVersion")(sourceId, options),
+    findVersions: (sourceId) => invokeAuto("websources:findVersions")(sourceId),
+    findVersionByNumber: (sourceId, versionNumber) =>
+      invokeAuto("websources:findVersionByNumber")(sourceId, versionNumber),
+    findLatestVersion: (sourceId) => invokeAuto("websources:findLatestVersion")(sourceId),
+    countVersions: (sourceId) => invokeAuto("websources:countVersions")(sourceId),
+
+    // Full-Text Search
+    search: (query, options) => invokeAuto("websources:search")(query, options),
+
+    // Statistics
+    getStats: () => invokeAuto("websources:getStats")(),
+    getStatsByLocation: (locid) => invokeAuto("websources:getStatsByLocation")(locid),
+    count: () => invokeAuto("websources:count")(),
+    countByLocation: (locid) => invokeAuto("websources:countByLocation")(locid),
+    countBySubLocation: (subid) => invokeAuto("websources:countBySubLocation")(subid),
+
+    // Migration
+    migrateFromBookmarks: () => invokeAuto("websources:migrateFromBookmarks")(),
+
+    // Orchestrator (Archive Operations)
+    archive: (sourceId, options) => invokeLong("websources:archive")(sourceId, options),
+    archivePending: (limit, options) => invokeLong("websources:archivePending")(limit, options),
+    rearchive: (sourceId, options) => invokeLong("websources:rearchive")(sourceId, options),
+    cancelArchive: () => invokeAuto("websources:cancelArchive")(),
+    archiveStatus: () => invokeAuto("websources:archiveStatus")(),
+  },
+
   users: {
     // CRUD
     create: (input) => invokeAuto("users:create")(input),

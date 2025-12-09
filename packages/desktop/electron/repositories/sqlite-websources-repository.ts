@@ -1,0 +1,911 @@
+import { Kysely, sql } from 'kysely';
+import { randomUUID } from 'crypto';
+import type { Database, WebSourcesTable, WebSourceVersionsTable } from '../main/database.types';
+import { calculateHashBuffer } from '../services/crypto-service';
+
+// =============================================================================
+// Types and Interfaces
+// =============================================================================
+
+export type WebSourceStatus = 'pending' | 'archiving' | 'complete' | 'partial' | 'failed';
+export type WebSourceType = 'article' | 'gallery' | 'video' | 'social' | 'map' | 'document' | 'archive' | 'other';
+
+export interface ComponentStatus {
+  screenshot?: 'pending' | 'done' | 'failed' | 'skipped';
+  pdf?: 'pending' | 'done' | 'failed' | 'skipped';
+  html?: 'pending' | 'done' | 'failed' | 'skipped';
+  warc?: 'pending' | 'done' | 'failed' | 'skipped';
+  images?: 'pending' | 'done' | 'failed' | 'skipped';
+  videos?: 'pending' | 'done' | 'failed' | 'skipped';
+  text?: 'pending' | 'done' | 'failed' | 'skipped';
+}
+
+export interface WebSourceInput {
+  url: string;
+  title?: string | null;
+  locid?: string | null;
+  subid?: string | null;
+  source_type?: WebSourceType;
+  notes?: string | null;
+  auth_imp?: string | null;
+}
+
+export interface WebSourceUpdate {
+  title?: string | null;
+  locid?: string | null;
+  subid?: string | null;
+  source_type?: WebSourceType;
+  notes?: string | null;
+  status?: WebSourceStatus;
+  component_status?: ComponentStatus;
+  extracted_title?: string | null;
+  extracted_author?: string | null;
+  extracted_date?: string | null;
+  extracted_publisher?: string | null;
+  word_count?: number;
+  image_count?: number;
+  video_count?: number;
+  archive_path?: string | null;
+  screenshot_path?: string | null;
+  pdf_path?: string | null;
+  html_path?: string | null;
+  warc_path?: string | null;
+  screenshot_hash?: string | null;
+  pdf_hash?: string | null;
+  html_hash?: string | null;
+  warc_hash?: string | null;
+  content_hash?: string | null;
+  provenance_hash?: string | null;
+  archive_error?: string | null;
+  retry_count?: number;
+  archived_at?: string | null;
+}
+
+export interface WebSource {
+  source_id: string;
+  url: string;
+  title: string | null;
+  locid: string | null;
+  subid: string | null;
+  source_type: WebSourceType;
+  notes: string | null;
+  status: WebSourceStatus;
+  component_status: ComponentStatus | null;
+  extracted_title: string | null;
+  extracted_author: string | null;
+  extracted_date: string | null;
+  extracted_publisher: string | null;
+  word_count: number;
+  image_count: number;
+  video_count: number;
+  archive_path: string | null;
+  screenshot_path: string | null;
+  pdf_path: string | null;
+  html_path: string | null;
+  warc_path: string | null;
+  screenshot_hash: string | null;
+  pdf_hash: string | null;
+  html_hash: string | null;
+  warc_hash: string | null;
+  content_hash: string | null;
+  provenance_hash: string | null;
+  archive_error: string | null;
+  retry_count: number;
+  created_at: string;
+  archived_at: string | null;
+  auth_imp: string | null;
+  // Joined fields
+  locnam?: string;
+  subnam?: string;
+}
+
+export interface WebSourceVersion {
+  version_id: string;
+  source_id: string;
+  version_number: number;
+  captured_at: string;
+  screenshot_path: string | null;
+  pdf_path: string | null;
+  html_path: string | null;
+  warc_path: string | null;
+  screenshot_hash: string | null;
+  pdf_hash: string | null;
+  html_hash: string | null;
+  warc_hash: string | null;
+  content_hash: string | null;
+  content_changed: boolean;
+  diff_summary: string | null;
+}
+
+export interface WebSourceSearchResult {
+  source_id: string;
+  url: string;
+  title: string | null;
+  locid: string | null;
+  snippet: string;
+  rank: number;
+}
+
+export interface WebSourceStats {
+  total: number;
+  pending: number;
+  archiving: number;
+  complete: number;
+  partial: number;
+  failed: number;
+  total_images: number;
+  total_videos: number;
+  total_words: number;
+}
+
+// =============================================================================
+// Repository Implementation
+// =============================================================================
+
+/**
+ * Repository for managing web sources and their archives
+ * Replaces the simple bookmarks system with comprehensive web archiving
+ */
+export class SQLiteWebSourcesRepository {
+  constructor(private readonly db: Kysely<Database>) {}
+
+  // ===========================================================================
+  // Core CRUD Operations
+  // ===========================================================================
+
+  /**
+   * Create a new web source
+   * Source ID is derived from BLAKE3 hash of URL for deduplication
+   */
+  async create(input: WebSourceInput): Promise<WebSource> {
+    // Generate source_id from URL hash for deduplication
+    const source_id = this.generateSourceId(input.url);
+    const created_at = new Date().toISOString();
+
+    // Check if source already exists
+    const existing = await this.findById(source_id).catch(() => null);
+    if (existing) {
+      throw new Error(`Web source already exists for URL: ${input.url}`);
+    }
+
+    const source: WebSourcesTable = {
+      source_id,
+      url: input.url,
+      title: input.title || null,
+      locid: input.locid || null,
+      subid: input.subid || null,
+      source_type: input.source_type || 'article',
+      notes: input.notes || null,
+      status: 'pending',
+      component_status: null,
+      extracted_title: null,
+      extracted_author: null,
+      extracted_date: null,
+      extracted_publisher: null,
+      word_count: 0,
+      image_count: 0,
+      video_count: 0,
+      archive_path: null,
+      screenshot_path: null,
+      pdf_path: null,
+      html_path: null,
+      warc_path: null,
+      screenshot_hash: null,
+      pdf_hash: null,
+      html_hash: null,
+      warc_hash: null,
+      content_hash: null,
+      provenance_hash: null,
+      archive_error: null,
+      retry_count: 0,
+      created_at,
+      archived_at: null,
+      auth_imp: input.auth_imp || null,
+    };
+
+    await this.db.insertInto('web_sources').values(source).execute();
+
+    return this.findById(source_id);
+  }
+
+  /**
+   * Find a web source by ID
+   */
+  async findById(source_id: string): Promise<WebSource> {
+    const result = await this.db
+      .selectFrom('web_sources')
+      .leftJoin('locs', 'web_sources.locid', 'locs.locid')
+      .leftJoin('slocs', 'web_sources.subid', 'slocs.subid')
+      .selectAll('web_sources')
+      .select(['locs.locnam', 'slocs.subnam'])
+      .where('web_sources.source_id', '=', source_id)
+      .executeTakeFirstOrThrow();
+
+    return this.mapToWebSource(result);
+  }
+
+  /**
+   * Find a web source by URL
+   */
+  async findByUrl(url: string): Promise<WebSource | null> {
+    const source_id = this.generateSourceId(url);
+    try {
+      return await this.findById(source_id);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Find all web sources for a specific location
+   */
+  async findByLocation(locid: string): Promise<WebSource[]> {
+    const results = await this.db
+      .selectFrom('web_sources')
+      .leftJoin('locs', 'web_sources.locid', 'locs.locid')
+      .leftJoin('slocs', 'web_sources.subid', 'slocs.subid')
+      .selectAll('web_sources')
+      .select(['locs.locnam', 'slocs.subnam'])
+      .where('web_sources.locid', '=', locid)
+      .orderBy('web_sources.created_at', 'desc')
+      .execute();
+
+    return results.map((r) => this.mapToWebSource(r));
+  }
+
+  /**
+   * Find all web sources for a specific sub-location
+   */
+  async findBySubLocation(subid: string): Promise<WebSource[]> {
+    const results = await this.db
+      .selectFrom('web_sources')
+      .leftJoin('locs', 'web_sources.locid', 'locs.locid')
+      .leftJoin('slocs', 'web_sources.subid', 'slocs.subid')
+      .selectAll('web_sources')
+      .select(['locs.locnam', 'slocs.subnam'])
+      .where('web_sources.subid', '=', subid)
+      .orderBy('web_sources.created_at', 'desc')
+      .execute();
+
+    return results.map((r) => this.mapToWebSource(r));
+  }
+
+  /**
+   * Find web sources by status
+   */
+  async findByStatus(status: WebSourceStatus): Promise<WebSource[]> {
+    const results = await this.db
+      .selectFrom('web_sources')
+      .leftJoin('locs', 'web_sources.locid', 'locs.locid')
+      .leftJoin('slocs', 'web_sources.subid', 'slocs.subid')
+      .selectAll('web_sources')
+      .select(['locs.locnam', 'slocs.subnam'])
+      .where('web_sources.status', '=', status)
+      .orderBy('web_sources.created_at', 'desc')
+      .execute();
+
+    return results.map((r) => this.mapToWebSource(r));
+  }
+
+  /**
+   * Find pending sources ready for archiving
+   */
+  async findPendingForArchive(limit: number = 10): Promise<WebSource[]> {
+    const results = await this.db
+      .selectFrom('web_sources')
+      .leftJoin('locs', 'web_sources.locid', 'locs.locid')
+      .leftJoin('slocs', 'web_sources.subid', 'slocs.subid')
+      .selectAll('web_sources')
+      .select(['locs.locnam', 'slocs.subnam'])
+      .where('web_sources.status', '=', 'pending')
+      .orderBy('web_sources.created_at', 'asc')
+      .limit(limit)
+      .execute();
+
+    return results.map((r) => this.mapToWebSource(r));
+  }
+
+  /**
+   * Find recently added sources
+   */
+  async findRecent(limit: number = 10): Promise<WebSource[]> {
+    const results = await this.db
+      .selectFrom('web_sources')
+      .leftJoin('locs', 'web_sources.locid', 'locs.locid')
+      .leftJoin('slocs', 'web_sources.subid', 'slocs.subid')
+      .selectAll('web_sources')
+      .select(['locs.locnam', 'slocs.subnam'])
+      .orderBy('web_sources.created_at', 'desc')
+      .limit(limit)
+      .execute();
+
+    return results.map((r) => this.mapToWebSource(r));
+  }
+
+  /**
+   * Find all web sources
+   */
+  async findAll(): Promise<WebSource[]> {
+    const results = await this.db
+      .selectFrom('web_sources')
+      .leftJoin('locs', 'web_sources.locid', 'locs.locid')
+      .leftJoin('slocs', 'web_sources.subid', 'slocs.subid')
+      .selectAll('web_sources')
+      .select(['locs.locnam', 'slocs.subnam'])
+      .orderBy('web_sources.created_at', 'desc')
+      .execute();
+
+    return results.map((r) => this.mapToWebSource(r));
+  }
+
+  /**
+   * Update a web source
+   */
+  async update(source_id: string, updates: WebSourceUpdate): Promise<WebSource> {
+    // Convert component_status to JSON string if present
+    const dbUpdates: Partial<WebSourcesTable> = {
+      ...updates,
+      component_status: updates.component_status
+        ? JSON.stringify(updates.component_status)
+        : undefined,
+    };
+
+    // Remove undefined values
+    Object.keys(dbUpdates).forEach((key) => {
+      if (dbUpdates[key as keyof typeof dbUpdates] === undefined) {
+        delete dbUpdates[key as keyof typeof dbUpdates];
+      }
+    });
+
+    await this.db
+      .updateTable('web_sources')
+      .set(dbUpdates)
+      .where('source_id', '=', source_id)
+      .execute();
+
+    return this.findById(source_id);
+  }
+
+  /**
+   * Delete a web source and all its versions
+   */
+  async delete(source_id: string): Promise<void> {
+    // Delete versions first (FK constraint)
+    await this.db.deleteFrom('web_source_versions').where('source_id', '=', source_id).execute();
+
+    // Delete source
+    await this.db.deleteFrom('web_sources').where('source_id', '=', source_id).execute();
+  }
+
+  // ===========================================================================
+  // Archive Status Management
+  // ===========================================================================
+
+  /**
+   * Mark a source as archiving in progress
+   */
+  async markArchiving(source_id: string): Promise<void> {
+    await this.db
+      .updateTable('web_sources')
+      .set({ status: 'archiving' })
+      .where('source_id', '=', source_id)
+      .execute();
+  }
+
+  /**
+   * Mark a source as archive complete
+   */
+  async markComplete(
+    source_id: string,
+    options: {
+      archive_path: string;
+      screenshot_path?: string | null;
+      pdf_path?: string | null;
+      html_path?: string | null;
+      warc_path?: string | null;
+      screenshot_hash?: string | null;
+      pdf_hash?: string | null;
+      html_hash?: string | null;
+      warc_hash?: string | null;
+      content_hash?: string | null;
+      provenance_hash?: string | null;
+      extracted_title?: string | null;
+      extracted_author?: string | null;
+      extracted_date?: string | null;
+      extracted_publisher?: string | null;
+      word_count?: number;
+      image_count?: number;
+      video_count?: number;
+    }
+  ): Promise<WebSource> {
+    const archived_at = new Date().toISOString();
+
+    await this.db
+      .updateTable('web_sources')
+      .set({
+        status: 'complete',
+        archived_at,
+        archive_error: null,
+        ...options,
+      })
+      .where('source_id', '=', source_id)
+      .execute();
+
+    return this.findById(source_id);
+  }
+
+  /**
+   * Mark a source as partially archived (some components failed)
+   */
+  async markPartial(
+    source_id: string,
+    component_status: ComponentStatus,
+    archive_path: string
+  ): Promise<WebSource> {
+    const archived_at = new Date().toISOString();
+
+    await this.db
+      .updateTable('web_sources')
+      .set({
+        status: 'partial',
+        archived_at,
+        archive_path,
+        component_status: JSON.stringify(component_status),
+      })
+      .where('source_id', '=', source_id)
+      .execute();
+
+    return this.findById(source_id);
+  }
+
+  /**
+   * Mark a source as failed
+   */
+  async markFailed(source_id: string, error: string): Promise<WebSource> {
+    const source = await this.findById(source_id);
+
+    await this.db
+      .updateTable('web_sources')
+      .set({
+        status: 'failed',
+        archive_error: error,
+        retry_count: source.retry_count + 1,
+      })
+      .where('source_id', '=', source_id)
+      .execute();
+
+    return this.findById(source_id);
+  }
+
+  /**
+   * Reset a failed source to pending for retry
+   */
+  async resetToPending(source_id: string): Promise<WebSource> {
+    await this.db
+      .updateTable('web_sources')
+      .set({
+        status: 'pending',
+        archive_error: null,
+      })
+      .where('source_id', '=', source_id)
+      .execute();
+
+    return this.findById(source_id);
+  }
+
+  /**
+   * Update component status during archiving
+   */
+  async updateComponentStatus(source_id: string, component_status: ComponentStatus): Promise<void> {
+    await this.db
+      .updateTable('web_sources')
+      .set({ component_status: JSON.stringify(component_status) })
+      .where('source_id', '=', source_id)
+      .execute();
+  }
+
+  // ===========================================================================
+  // Version Management
+  // ===========================================================================
+
+  /**
+   * Create a new version snapshot of a web source
+   */
+  async createVersion(
+    source_id: string,
+    options: {
+      screenshot_path?: string | null;
+      pdf_path?: string | null;
+      html_path?: string | null;
+      warc_path?: string | null;
+      screenshot_hash?: string | null;
+      pdf_hash?: string | null;
+      html_hash?: string | null;
+      warc_hash?: string | null;
+      content_hash?: string | null;
+    }
+  ): Promise<WebSourceVersion> {
+    const version_id = randomUUID();
+    const captured_at = new Date().toISOString();
+
+    // Get next version number
+    const lastVersion = await this.db
+      .selectFrom('web_source_versions')
+      .select('version_number')
+      .where('source_id', '=', source_id)
+      .orderBy('version_number', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+
+    const version_number = lastVersion ? lastVersion.version_number + 1 : 1;
+
+    // Check if content changed from previous version
+    let content_changed = 0;
+    let diff_summary: string | null = null;
+
+    if (lastVersion && options.content_hash) {
+      const previousVersion = await this.findVersionByNumber(source_id, lastVersion.version_number);
+      if (previousVersion && previousVersion.content_hash !== options.content_hash) {
+        content_changed = 1;
+        diff_summary = `Content changed from version ${lastVersion.version_number}`;
+      }
+    }
+
+    const version: WebSourceVersionsTable = {
+      version_id,
+      source_id,
+      version_number,
+      captured_at,
+      screenshot_path: options.screenshot_path || null,
+      pdf_path: options.pdf_path || null,
+      html_path: options.html_path || null,
+      warc_path: options.warc_path || null,
+      screenshot_hash: options.screenshot_hash || null,
+      pdf_hash: options.pdf_hash || null,
+      html_hash: options.html_hash || null,
+      warc_hash: options.warc_hash || null,
+      content_hash: options.content_hash || null,
+      content_changed,
+      diff_summary,
+    };
+
+    await this.db.insertInto('web_source_versions').values(version).execute();
+
+    return this.mapToWebSourceVersion(version);
+  }
+
+  /**
+   * Find all versions for a web source
+   */
+  async findVersions(source_id: string): Promise<WebSourceVersion[]> {
+    const results = await this.db
+      .selectFrom('web_source_versions')
+      .selectAll()
+      .where('source_id', '=', source_id)
+      .orderBy('version_number', 'desc')
+      .execute();
+
+    return results.map((r) => this.mapToWebSourceVersion(r));
+  }
+
+  /**
+   * Find a specific version by number
+   */
+  async findVersionByNumber(source_id: string, version_number: number): Promise<WebSourceVersion | null> {
+    const result = await this.db
+      .selectFrom('web_source_versions')
+      .selectAll()
+      .where('source_id', '=', source_id)
+      .where('version_number', '=', version_number)
+      .executeTakeFirst();
+
+    return result ? this.mapToWebSourceVersion(result) : null;
+  }
+
+  /**
+   * Get latest version for a web source
+   */
+  async findLatestVersion(source_id: string): Promise<WebSourceVersion | null> {
+    const result = await this.db
+      .selectFrom('web_source_versions')
+      .selectAll()
+      .where('source_id', '=', source_id)
+      .orderBy('version_number', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+
+    return result ? this.mapToWebSourceVersion(result) : null;
+  }
+
+  /**
+   * Get version count for a web source
+   */
+  async countVersions(source_id: string): Promise<number> {
+    const result = await this.db
+      .selectFrom('web_source_versions')
+      .select((eb) => eb.fn.count<number>('version_id').as('count'))
+      .where('source_id', '=', source_id)
+      .executeTakeFirstOrThrow();
+
+    return result.count;
+  }
+
+  // ===========================================================================
+  // Full-Text Search
+  // ===========================================================================
+
+  /**
+   * Search web sources using full-text search
+   * Searches URL, title, extracted text, author, publisher
+   */
+  async search(query: string, options?: { locid?: string; limit?: number }): Promise<WebSourceSearchResult[]> {
+    const limit = options?.limit || 50;
+
+    // Use FTS5 search on web_sources_fts table
+    let queryBuilder = this.db
+      .selectFrom('web_sources_fts' as any)
+      .innerJoin('web_sources', 'web_sources_fts.source_id' as any, 'web_sources.source_id')
+      .select([
+        'web_sources.source_id',
+        'web_sources.url',
+        'web_sources.title',
+        'web_sources.locid',
+        sql<string>`snippet(web_sources_fts, 0, '<mark>', '</mark>', '...', 32)`.as('snippet'),
+        sql<number>`rank`.as('rank'),
+      ])
+      .where(sql`web_sources_fts MATCH ${query}` as any);
+
+    if (options?.locid) {
+      queryBuilder = queryBuilder.where('web_sources.locid', '=', options.locid);
+    }
+
+    const results = await queryBuilder.orderBy('rank').limit(limit).execute();
+
+    return results as WebSourceSearchResult[];
+  }
+
+  // ===========================================================================
+  // Statistics
+  // ===========================================================================
+
+  /**
+   * Get overall statistics for web sources
+   */
+  async getStats(): Promise<WebSourceStats> {
+    const counts = await this.db
+      .selectFrom('web_sources')
+      .select([
+        sql<number>`COUNT(*)`.as('total'),
+        sql<number>`SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END)`.as('pending'),
+        sql<number>`SUM(CASE WHEN status = 'archiving' THEN 1 ELSE 0 END)`.as('archiving'),
+        sql<number>`SUM(CASE WHEN status = 'complete' THEN 1 ELSE 0 END)`.as('complete'),
+        sql<number>`SUM(CASE WHEN status = 'partial' THEN 1 ELSE 0 END)`.as('partial'),
+        sql<number>`SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END)`.as('failed'),
+        sql<number>`SUM(image_count)`.as('total_images'),
+        sql<number>`SUM(video_count)`.as('total_videos'),
+        sql<number>`SUM(word_count)`.as('total_words'),
+      ])
+      .executeTakeFirstOrThrow();
+
+    return {
+      total: counts.total || 0,
+      pending: counts.pending || 0,
+      archiving: counts.archiving || 0,
+      complete: counts.complete || 0,
+      partial: counts.partial || 0,
+      failed: counts.failed || 0,
+      total_images: counts.total_images || 0,
+      total_videos: counts.total_videos || 0,
+      total_words: counts.total_words || 0,
+    };
+  }
+
+  /**
+   * Get statistics for a specific location
+   */
+  async getStatsByLocation(locid: string): Promise<WebSourceStats> {
+    const counts = await this.db
+      .selectFrom('web_sources')
+      .select([
+        sql<number>`COUNT(*)`.as('total'),
+        sql<number>`SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END)`.as('pending'),
+        sql<number>`SUM(CASE WHEN status = 'archiving' THEN 1 ELSE 0 END)`.as('archiving'),
+        sql<number>`SUM(CASE WHEN status = 'complete' THEN 1 ELSE 0 END)`.as('complete'),
+        sql<number>`SUM(CASE WHEN status = 'partial' THEN 1 ELSE 0 END)`.as('partial'),
+        sql<number>`SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END)`.as('failed'),
+        sql<number>`SUM(image_count)`.as('total_images'),
+        sql<number>`SUM(video_count)`.as('total_videos'),
+        sql<number>`SUM(word_count)`.as('total_words'),
+      ])
+      .where('locid', '=', locid)
+      .executeTakeFirstOrThrow();
+
+    return {
+      total: counts.total || 0,
+      pending: counts.pending || 0,
+      archiving: counts.archiving || 0,
+      complete: counts.complete || 0,
+      partial: counts.partial || 0,
+      failed: counts.failed || 0,
+      total_images: counts.total_images || 0,
+      total_videos: counts.total_videos || 0,
+      total_words: counts.total_words || 0,
+    };
+  }
+
+  /**
+   * Get total count
+   */
+  async count(): Promise<number> {
+    const result = await this.db
+      .selectFrom('web_sources')
+      .select((eb) => eb.fn.count<number>('source_id').as('count'))
+      .executeTakeFirstOrThrow();
+
+    return result.count;
+  }
+
+  /**
+   * Get count by location
+   */
+  async countByLocation(locid: string): Promise<number> {
+    const result = await this.db
+      .selectFrom('web_sources')
+      .select((eb) => eb.fn.count<number>('source_id').as('count'))
+      .where('locid', '=', locid)
+      .executeTakeFirstOrThrow();
+
+    return result.count;
+  }
+
+  /**
+   * Get count by sub-location
+   */
+  async countBySubLocation(subid: string): Promise<number> {
+    const result = await this.db
+      .selectFrom('web_sources')
+      .select((eb) => eb.fn.count<number>('source_id').as('count'))
+      .where('subid', '=', subid)
+      .executeTakeFirstOrThrow();
+
+    return result.count;
+  }
+
+  // ===========================================================================
+  // Bookmark Migration
+  // ===========================================================================
+
+  /**
+   * Migrate existing bookmarks to web sources
+   * Called once during migration 57
+   */
+  async migrateFromBookmarks(): Promise<{ migrated: number; failed: number }> {
+    let migrated = 0;
+    let failed = 0;
+
+    // Get all existing bookmarks
+    const bookmarks = await this.db.selectFrom('bookmarks').selectAll().execute();
+
+    for (const bookmark of bookmarks) {
+      try {
+        const source_id = this.generateSourceId(bookmark.url);
+
+        // Check if already migrated
+        const existing = await this.db
+          .selectFrom('web_sources')
+          .select('source_id')
+          .where('source_id', '=', source_id)
+          .executeTakeFirst();
+
+        if (existing) {
+          continue; // Skip if already exists
+        }
+
+        // Create web source from bookmark
+        const source: WebSourcesTable = {
+          source_id,
+          url: bookmark.url,
+          title: bookmark.title,
+          locid: bookmark.locid,
+          subid: bookmark.subid,
+          source_type: 'article',
+          notes: null,
+          status: 'pending',
+          component_status: null,
+          extracted_title: null,
+          extracted_author: null,
+          extracted_date: null,
+          extracted_publisher: null,
+          word_count: 0,
+          image_count: 0,
+          video_count: 0,
+          archive_path: null,
+          screenshot_path: bookmark.thumbnail_path,
+          pdf_path: null,
+          html_path: null,
+          warc_path: null,
+          screenshot_hash: null,
+          pdf_hash: null,
+          html_hash: null,
+          warc_hash: null,
+          content_hash: null,
+          provenance_hash: null,
+          archive_error: null,
+          retry_count: 0,
+          created_at: bookmark.bookmark_date,
+          archived_at: null,
+          auth_imp: bookmark.auth_imp,
+        };
+
+        await this.db.insertInto('web_sources').values(source).execute();
+        migrated++;
+      } catch (error) {
+        console.error(`Failed to migrate bookmark ${bookmark.bookmark_id}:`, error);
+        failed++;
+      }
+    }
+
+    return { migrated, failed };
+  }
+
+  // ===========================================================================
+  // Helper Methods
+  // ===========================================================================
+
+  /**
+   * Generate source ID from URL using BLAKE3 hash
+   */
+  private generateSourceId(url: string): string {
+    // Normalize URL before hashing (remove trailing slash, lowercase host)
+    const normalizedUrl = this.normalizeUrl(url);
+    return calculateHashBuffer(Buffer.from(normalizedUrl, 'utf-8'));
+  }
+
+  /**
+   * Normalize URL for consistent hashing
+   */
+  private normalizeUrl(url: string): string {
+    try {
+      const parsed = new URL(url);
+      // Lowercase the host
+      parsed.hostname = parsed.hostname.toLowerCase();
+      // Remove trailing slash from path
+      if (parsed.pathname.endsWith('/') && parsed.pathname.length > 1) {
+        parsed.pathname = parsed.pathname.slice(0, -1);
+      }
+      // Remove default ports
+      if (
+        (parsed.protocol === 'https:' && parsed.port === '443') ||
+        (parsed.protocol === 'http:' && parsed.port === '80')
+      ) {
+        parsed.port = '';
+      }
+      return parsed.toString();
+    } catch {
+      // If URL parsing fails, return as-is
+      return url;
+    }
+  }
+
+  /**
+   * Map database row to WebSource type
+   */
+  private mapToWebSource(row: any): WebSource {
+    return {
+      ...row,
+      source_type: row.source_type as WebSourceType,
+      status: row.status as WebSourceStatus,
+      component_status: row.component_status ? JSON.parse(row.component_status) : null,
+    };
+  }
+
+  /**
+   * Map database row to WebSourceVersion type
+   */
+  private mapToWebSourceVersion(row: WebSourceVersionsTable): WebSourceVersion {
+    return {
+      ...row,
+      content_changed: row.content_changed === 1,
+    };
+  }
+}

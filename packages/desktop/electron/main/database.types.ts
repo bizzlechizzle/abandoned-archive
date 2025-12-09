@@ -33,6 +33,9 @@ export interface Database {
   import_audit_log: ImportAuditLogTable;
   alert_history: AlertHistoryTable;
   health_snapshots: HealthSnapshotsTable;
+  // Migration 57-60: OPT-109 Web Sources Archiving
+  web_sources: WebSourcesTable;
+  web_source_versions: WebSourceVersionsTable;
 }
 
 // Locations table
@@ -276,6 +279,11 @@ export interface ImgsTable {
 
   // NOTE: darktable columns exist in DB but are deprecated/unused
   // darktable_path, darktable_processed, darktable_processed_at - REMOVED from app
+
+  // Migration 59 (OPT-109): Web source extraction tracking
+  source_id: string | null;        // FK to web_sources - which web source this was extracted from
+  source_url: string | null;       // Original URL where this image was found
+  extracted_from_web: number;      // 0/1 - Was this extracted from a web source?
 }
 
 // Videos table
@@ -340,6 +348,11 @@ export interface VidsTable {
   // JSON summary of parsed telemetry from matching SRT file
   // Contains: frames, duration_sec, gps_bounds, altitude_range, speed_max_ms
   srt_telemetry: string | null;
+
+  // Migration 59 (OPT-109): Web source extraction tracking
+  source_id: string | null;        // FK to web_sources - which web source this was extracted from
+  source_url: string | null;       // Original URL where this video was found
+  extracted_from_web: number;      // 0/1 - Was this extracted from a web source?
 }
 
 // Documents table
@@ -711,4 +724,79 @@ export interface HealthSnapshotsTable {
   status: 'healthy' | 'warning' | 'critical';
   checks: string;              // JSON health checks
   recommendations: string | null; // JSON recommendations
+}
+
+// Migration 57-60: OPT-109 Web Sources Archiving
+
+// Web Sources table - URL references for location research
+export interface WebSourcesTable {
+  source_id: string;           // BLAKE3 hash of URL
+  url: string;                 // Original URL
+  title: string | null;        // User-entered or extracted title
+  locid: string | null;        // Parent location
+  subid: string | null;        // Optional sub-location
+  source_type: string;         // 'article', 'gallery', 'video', 'social', 'map', 'document', 'archive', 'other'
+  notes: string | null;        // User notes about this source
+
+  // Archive Status
+  status: 'pending' | 'archiving' | 'complete' | 'partial' | 'failed';
+  component_status: string | null; // JSON: { screenshot: 'done', pdf: 'pending', ... }
+
+  // Extracted Metadata
+  extracted_title: string | null;
+  extracted_author: string | null;
+  extracted_date: string | null;
+  extracted_publisher: string | null;
+  word_count: number;
+  image_count: number;
+  video_count: number;
+
+  // Archive Paths (relative to location archive folder)
+  archive_path: string | null;      // Root archive folder for this source
+  screenshot_path: string | null;   // Screenshot PNG
+  pdf_path: string | null;          // PDF capture
+  html_path: string | null;         // Single-file HTML
+  warc_path: string | null;         // WARC archive
+
+  // Integrity Hashes (BLAKE3)
+  screenshot_hash: string | null;
+  pdf_hash: string | null;
+  html_hash: string | null;
+  warc_hash: string | null;
+  content_hash: string | null;      // Hash of extracted text content
+  provenance_hash: string | null;   // Hash of all hashes for tamper detection
+
+  // Error Handling
+  archive_error: string | null;     // Last error message
+  retry_count: number;              // Number of archive attempts
+
+  // Timestamps
+  created_at: string;               // ISO timestamp
+  archived_at: string | null;       // ISO timestamp when archiving completed
+  auth_imp: string | null;          // User who added this source
+}
+
+// Web Source Versions table - Track changes over time
+export interface WebSourceVersionsTable {
+  version_id: string;          // UUID
+  source_id: string;           // FK to web_sources
+  version_number: number;      // Sequential version number
+  captured_at: string;         // ISO timestamp
+
+  // Snapshot paths for this version
+  screenshot_path: string | null;
+  pdf_path: string | null;
+  html_path: string | null;
+  warc_path: string | null;
+
+  // Hashes for this version
+  screenshot_hash: string | null;
+  pdf_hash: string | null;
+  html_hash: string | null;
+  warc_hash: string | null;
+  content_hash: string | null;
+
+  // Diff tracking
+  content_changed: number;     // 0/1 - Did content change from previous version?
+  diff_summary: string | null; // Human-readable summary of changes
 }

@@ -46,6 +46,7 @@ import { registerStorageHandlers } from './storage';
 import { registerBagItHandlers } from './bagit';
 import { registerImportV2Handlers, initializeJobWorker, shutdownJobWorker } from './import-v2';
 import { registerMonitoringHandlers, setMainWindow as setMonitoringMainWindow } from './monitoring';
+import { registerWebSourcesHandlers } from './websources';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
@@ -76,6 +77,9 @@ export function registerIpcHandlers() {
   registerBookmarksHandlers(db);
   registerUsersHandlers(db);
   registerSubLocationHandlers(db);
+
+  // OPT-109: Web Sources Archiving (replaces simple bookmarks)
+  registerWebSourcesHandlers(db);
 
   // Migration 25 - Phase 3: Location authors (multi-user attribution)
   registerLocationAuthorsHandlers(db);

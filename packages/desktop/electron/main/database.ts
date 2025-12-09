@@ -2134,6 +2134,212 @@ function runMigrations(sqlite: Database.Database): void {
       `);
       console.log('Migration 56b completed: Added sub-location BagIt columns (OPT-093)');
     }
+
+    // Migration 57: OPT-109 Create web_sources table (rename from bookmarks)
+    // Transform simple bookmarks into comprehensive web archive sources
+    const webSourcesExists = sqlite.prepare(
+      "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name='web_sources'"
+    ).get() as { cnt: number };
+
+    if (webSourcesExists.cnt === 0) {
+      console.log('Running migration 57: Creating web_sources table for web archiving');
+
+      // Create the new web_sources table with full archive support
+      sqlite.exec(`
+        CREATE TABLE web_sources (
+          source_id TEXT PRIMARY KEY,
+          url TEXT NOT NULL,
+          title TEXT,
+          locid TEXT REFERENCES locs(locid) ON DELETE CASCADE,
+          subid TEXT REFERENCES slocs(subid) ON DELETE SET NULL,
+          source_type TEXT DEFAULT 'article',
+          notes TEXT,
+
+          -- Archive status
+          status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'archiving', 'complete', 'partial', 'failed')),
+          component_status TEXT,  -- JSON object tracking each component
+
+          -- Extracted metadata (from Trafilatura)
+          extracted_title TEXT,
+          extracted_author TEXT,
+          extracted_date TEXT,
+          extracted_publisher TEXT,
+          word_count INTEGER DEFAULT 0,
+          image_count INTEGER DEFAULT 0,
+          video_count INTEGER DEFAULT 0,
+
+          -- Archive paths
+          archive_path TEXT,
+          screenshot_path TEXT,
+          pdf_path TEXT,
+          html_path TEXT,
+          warc_path TEXT,
+
+          -- File hashes (BLAKE3)
+          screenshot_hash TEXT,
+          pdf_hash TEXT,
+          html_hash TEXT,
+          warc_hash TEXT,
+          content_hash TEXT,
+
+          -- Provenance
+          provenance_hash TEXT,
+
+          -- Error tracking
+          archive_error TEXT,
+          retry_count INTEGER DEFAULT 0,
+
+          -- Timestamps
+          created_at TEXT NOT NULL,
+          archived_at TEXT,
+          auth_imp TEXT
+        );
+
+        -- Indexes for efficient queries
+        CREATE INDEX idx_websources_locid ON web_sources(locid);
+        CREATE INDEX idx_websources_subid ON web_sources(subid);
+        CREATE INDEX idx_websources_status ON web_sources(status);
+        CREATE INDEX idx_websources_created ON web_sources(created_at DESC);
+        CREATE INDEX idx_websources_type ON web_sources(source_type);
+      `);
+
+      // Migrate existing bookmarks data if table exists
+      const bookmarksExists = sqlite.prepare(
+        "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name='bookmarks'"
+      ).get() as { cnt: number };
+
+      if (bookmarksExists.cnt > 0) {
+        sqlite.exec(`
+          INSERT INTO web_sources (
+            source_id, url, title, locid, subid,
+            status, created_at, auth_imp
+          )
+          SELECT
+            bookmark_id, url, title, locid, subid,
+            'pending', bookmark_date, auth_imp
+          FROM bookmarks;
+
+          DROP TABLE bookmarks;
+        `);
+        console.log('Migration 57: Migrated existing bookmarks to web_sources');
+      }
+
+      console.log('Migration 57 completed: web_sources table created');
+    }
+
+    // Migration 58: OPT-109 Create web_source_versions table
+    // Track archive versions over time (re-archiving creates new version)
+    const versionsExists = sqlite.prepare(
+      "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name='web_source_versions'"
+    ).get() as { cnt: number };
+
+    if (versionsExists.cnt === 0) {
+      console.log('Running migration 58: Creating web_source_versions table');
+
+      sqlite.exec(`
+        CREATE TABLE web_source_versions (
+          version_id TEXT PRIMARY KEY,
+          source_id TEXT NOT NULL REFERENCES web_sources(source_id) ON DELETE CASCADE,
+          version_number INTEGER NOT NULL,
+          archived_at TEXT NOT NULL,
+
+          -- Stats for this version
+          word_count INTEGER DEFAULT 0,
+          image_count INTEGER DEFAULT 0,
+          video_count INTEGER DEFAULT 0,
+
+          -- Hashes for change detection
+          content_hash TEXT,
+          screenshot_hash TEXT,
+          html_hash TEXT,
+
+          -- Archive folder for this version
+          archive_path TEXT NOT NULL,
+
+          UNIQUE(source_id, version_number)
+        );
+
+        CREATE INDEX idx_wsversions_source ON web_source_versions(source_id);
+        CREATE INDEX idx_wsversions_date ON web_source_versions(archived_at DESC);
+      `);
+
+      console.log('Migration 58 completed: web_source_versions table created');
+    }
+
+    // Migration 59: OPT-109 Add source attribution to imgs and vids tables
+    // Links extracted media back to their web source
+    const imgsColumns59 = sqlite.prepare('PRAGMA table_info(imgs)').all() as Array<{ name: string }>;
+    if (!imgsColumns59.some((c) => c.name === 'source_id')) {
+      console.log('Running migration 59: Adding web source attribution to media tables');
+
+      sqlite.exec(`
+        -- Add source attribution to imgs table
+        ALTER TABLE imgs ADD COLUMN source_id TEXT REFERENCES web_sources(source_id) ON DELETE SET NULL;
+        ALTER TABLE imgs ADD COLUMN source_url TEXT;
+        ALTER TABLE imgs ADD COLUMN extracted_from_web INTEGER DEFAULT 0;
+
+        -- Add source attribution to vids table
+        ALTER TABLE vids ADD COLUMN source_id TEXT REFERENCES web_sources(source_id) ON DELETE SET NULL;
+        ALTER TABLE vids ADD COLUMN source_url TEXT;
+        ALTER TABLE vids ADD COLUMN extracted_from_web INTEGER DEFAULT 0;
+
+        -- Indexes for filtering web-extracted media
+        CREATE INDEX idx_imgs_source ON imgs(source_id) WHERE source_id IS NOT NULL;
+        CREATE INDEX idx_imgs_extracted ON imgs(extracted_from_web) WHERE extracted_from_web = 1;
+        CREATE INDEX idx_vids_source ON vids(source_id) WHERE source_id IS NOT NULL;
+        CREATE INDEX idx_vids_extracted ON vids(extracted_from_web) WHERE extracted_from_web = 1;
+      `);
+
+      console.log('Migration 59 completed: Web source attribution columns added to media tables');
+    }
+
+    // Migration 60: OPT-109 Create FTS5 full-text search for web sources
+    // Enables searching across all archived web content
+    const ftsExists = sqlite.prepare(
+      "SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name='web_sources_fts'"
+    ).get() as { cnt: number };
+
+    if (ftsExists.cnt === 0) {
+      console.log('Running migration 60: Creating FTS5 full-text search for web sources');
+
+      sqlite.exec(`
+        -- Full-text search virtual table
+        CREATE VIRTUAL TABLE web_sources_fts USING fts5(
+          source_id UNINDEXED,
+          url,
+          title,
+          extracted_title,
+          extracted_text,
+          content='web_sources',
+          content_rowid='rowid',
+          tokenize='porter unicode61'
+        );
+
+        -- Add rowid to web_sources for FTS content sync
+        -- Note: SQLite tables have implicit rowid unless WITHOUT ROWID
+
+        -- Triggers to keep FTS in sync
+        CREATE TRIGGER web_sources_fts_insert AFTER INSERT ON web_sources BEGIN
+          INSERT INTO web_sources_fts(rowid, source_id, url, title, extracted_title, extracted_text)
+          VALUES (NEW.rowid, NEW.source_id, NEW.url, NEW.title, NEW.extracted_title, '');
+        END;
+
+        CREATE TRIGGER web_sources_fts_delete AFTER DELETE ON web_sources BEGIN
+          INSERT INTO web_sources_fts(web_sources_fts, rowid, source_id, url, title, extracted_title, extracted_text)
+          VALUES ('delete', OLD.rowid, OLD.source_id, OLD.url, OLD.title, OLD.extracted_title, '');
+        END;
+
+        CREATE TRIGGER web_sources_fts_update AFTER UPDATE ON web_sources BEGIN
+          INSERT INTO web_sources_fts(web_sources_fts, rowid, source_id, url, title, extracted_title, extracted_text)
+          VALUES ('delete', OLD.rowid, OLD.source_id, OLD.url, OLD.title, OLD.extracted_title, '');
+          INSERT INTO web_sources_fts(rowid, source_id, url, title, extracted_title, extracted_text)
+          VALUES (NEW.rowid, NEW.source_id, NEW.url, NEW.title, NEW.extracted_title, '');
+        END;
+      `);
+
+      console.log('Migration 60 completed: FTS5 full-text search created for web sources');
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;
