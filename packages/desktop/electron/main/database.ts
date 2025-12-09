@@ -2340,6 +2340,25 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 60 completed: FTS5 full-text search created for web sources');
     }
 
+    // Migration 61: OPT-109 Fix - Add missing extracted_text column to web_sources
+    // The FTS5 table references this column but it was missing from the base table
+    const hasExtractedText = sqlite.prepare(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('web_sources') WHERE name='extracted_text'"
+    ).get() as { cnt: number };
+
+    if (hasExtractedText.cnt === 0) {
+      console.log('Running migration 61: Adding extracted_text column to web_sources');
+
+      sqlite.exec(`
+        ALTER TABLE web_sources ADD COLUMN extracted_text TEXT;
+      `);
+
+      // Rebuild FTS index to sync with new column
+      sqlite.exec(`INSERT INTO web_sources_fts(web_sources_fts) VALUES('rebuild')`);
+
+      console.log('Migration 61 completed: extracted_text column added');
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

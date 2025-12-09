@@ -76,9 +76,25 @@ async function getBrowser(): Promise<Browser> {
  * Launch a new browser instance
  */
 async function launchBrowser(): Promise<Browser> {
+  // Determine platform-specific browser subfolder
+  const platform = process.platform;
+  const arch = process.arch;
+  let platformFolder = 'mac-arm64';
+  if (platform === 'darwin') {
+    platformFolder = arch === 'arm64' ? 'mac-arm64' : 'mac-x64';
+  } else if (platform === 'linux') {
+    platformFolder = 'linux-x64';
+  } else if (platform === 'win32') {
+    platformFolder = 'win-x64';
+  }
+
   // Find Chromium executable - check common locations
   const executablePaths = [
-    // Bundled Ungoogled Chromium (if available)
+    // Development: Bundled Archive Browser (relative to service file)
+    path.join(__dirname, '..', '..', '..', '..', 'resources', 'browsers', 'ungoogled-chromium', platformFolder, 'Archive Browser.app', 'Contents', 'MacOS', 'Chromium'),
+    // Production: Bundled Archive Browser (resources path)
+    path.join(process.resourcesPath || '', 'browsers', 'ungoogled-chromium', platformFolder, 'Archive Browser.app', 'Contents', 'MacOS', 'Chromium'),
+    // Legacy path for backwards compatibility
     path.join(process.resourcesPath || '', 'browser', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'),
     // System Chrome (macOS)
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',

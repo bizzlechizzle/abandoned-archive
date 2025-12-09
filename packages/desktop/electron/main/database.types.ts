@@ -747,6 +747,7 @@ export interface WebSourcesTable {
   extracted_author: string | null;
   extracted_date: string | null;
   extracted_publisher: string | null;
+  extracted_text: string | null;     // Full text content for FTS
   word_count: number;
   image_count: number;
   video_count: number;

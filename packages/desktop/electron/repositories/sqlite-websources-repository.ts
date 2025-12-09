@@ -75,6 +75,7 @@ export interface WebSource {
   extracted_author: string | null;
   extracted_date: string | null;
   extracted_publisher: string | null;
+  extracted_text: string | null;
   word_count: number;
   image_count: number;
   video_count: number;
