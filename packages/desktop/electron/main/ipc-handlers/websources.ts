@@ -23,6 +23,14 @@ import { validate, LimitSchema } from '../ipc-validation';
 
 const WebSourceStatusSchema = z.enum(['pending', 'archiving', 'complete', 'partial', 'failed']);
 
+// Source ID can be either:
+// - 16-char BLAKE3 hash (new entries)
+// - 36-char UUID (legacy migrated from bookmarks)
+const SourceIdSchema = z.string().refine(
+  (val) => val.length === 16 || val.length === 36,
+  { message: 'Source ID must be 16 characters (BLAKE3) or 36 characters (UUID)' }
+);
+
 const WebSourceTypeSchema = z.enum([
   'article',
   'gallery',
@@ -158,7 +166,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('websources:findById', async (_event, source_id: unknown) => {
     try {
-      const validatedId = z.string().length(16).parse(source_id);
+      const validatedId = SourceIdSchema.parse(source_id);
       return await webSourcesRepo.findById(validatedId);
     } catch (error) {
       console.error('Error finding web source:', error);
@@ -294,7 +302,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('websources:update', async (_event, source_id: unknown, updates: unknown) => {
     try {
-      const validatedId = z.string().length(16).parse(source_id);
+      const validatedId = SourceIdSchema.parse(source_id);
       const validatedUpdates = WebSourceUpdateSchema.parse(updates) as WebSourceUpdate;
       return await webSourcesRepo.update(validatedId, validatedUpdates);
     } catch (error) {
@@ -314,7 +322,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('websources:delete', async (_event, source_id: unknown) => {
     try {
-      const validatedId = z.string().length(16).parse(source_id);
+      const validatedId = SourceIdSchema.parse(source_id);
       await webSourcesRepo.delete(validatedId);
     } catch (error) {
       console.error('Error deleting web source:', error);
@@ -337,7 +345,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('websources:markArchiving', async (_event, source_id: unknown) => {
     try {
-      const validatedId = z.string().length(16).parse(source_id);
+      const validatedId = SourceIdSchema.parse(source_id);
       await webSourcesRepo.markArchiving(validatedId);
     } catch (error) {
       console.error('Error marking web source as archiving:', error);
@@ -356,7 +364,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('websources:markComplete', async (_event, source_id: unknown, options: unknown) => {
     try {
-      const validatedId = z.string().length(16).parse(source_id);
+      const validatedId = SourceIdSchema.parse(source_id);
       const validatedOptions = ArchiveCompleteOptionsSchema.parse(options);
       return await webSourcesRepo.markComplete(validatedId, validatedOptions);
     } catch (error) {
@@ -378,7 +386,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
     'websources:markPartial',
     async (_event, source_id: unknown, component_status: unknown, archive_path: unknown) => {
       try {
-        const validatedId = z.string().length(16).parse(source_id);
+        const validatedId = SourceIdSchema.parse(source_id);
         const validatedComponentStatus = ComponentStatusSchema.parse(component_status) as ComponentStatus;
         const validatedPath = z.string().parse(archive_path);
         return await webSourcesRepo.markPartial(validatedId, validatedComponentStatus, validatedPath);
@@ -400,7 +408,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('websources:markFailed', async (_event, source_id: unknown, error_message: unknown) => {
     try {
-      const validatedId = z.string().length(16).parse(source_id);
+      const validatedId = SourceIdSchema.parse(source_id);
       const validatedError = z.string().parse(error_message);
       return await webSourcesRepo.markFailed(validatedId, validatedError);
     } catch (error) {
@@ -420,7 +428,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('websources:resetToPending', async (_event, source_id: unknown) => {
     try {
-      const validatedId = z.string().length(16).parse(source_id);
+      const validatedId = SourceIdSchema.parse(source_id);
       return await webSourcesRepo.resetToPending(validatedId);
     } catch (error) {
       console.error('Error resetting web source to pending:', error);
@@ -441,7 +449,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
     'websources:updateComponentStatus',
     async (_event, source_id: unknown, component_status: unknown) => {
       try {
-        const validatedId = z.string().length(16).parse(source_id);
+        const validatedId = SourceIdSchema.parse(source_id);
         const validatedComponentStatus = ComponentStatusSchema.parse(component_status) as ComponentStatus;
         await webSourcesRepo.updateComponentStatus(validatedId, validatedComponentStatus);
       } catch (error) {
@@ -466,7 +474,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('websources:createVersion', async (_event, source_id: unknown, options: unknown) => {
     try {
-      const validatedId = z.string().length(16).parse(source_id);
+      const validatedId = SourceIdSchema.parse(source_id);
       const validatedOptions = VersionOptionsSchema.parse(options);
       return await webSourcesRepo.createVersion(validatedId, validatedOptions);
     } catch (error) {
@@ -486,7 +494,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('websources:findVersions', async (_event, source_id: unknown) => {
     try {
-      const validatedId = z.string().length(16).parse(source_id);
+      const validatedId = SourceIdSchema.parse(source_id);
       return await webSourcesRepo.findVersions(validatedId);
     } catch (error) {
       console.error('Error finding web source versions:', error);
@@ -507,7 +515,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
     'websources:findVersionByNumber',
     async (_event, source_id: unknown, version_number: unknown) => {
       try {
-        const validatedId = z.string().length(16).parse(source_id);
+        const validatedId = SourceIdSchema.parse(source_id);
         const validatedVersion = z.number().int().positive().parse(version_number);
         return await webSourcesRepo.findVersionByNumber(validatedId, validatedVersion);
       } catch (error) {
@@ -528,7 +536,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('websources:findLatestVersion', async (_event, source_id: unknown) => {
     try {
-      const validatedId = z.string().length(16).parse(source_id);
+      const validatedId = SourceIdSchema.parse(source_id);
       return await webSourcesRepo.findLatestVersion(validatedId);
     } catch (error) {
       console.error('Error finding latest web source version:', error);
@@ -547,7 +555,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('websources:countVersions', async (_event, source_id: unknown) => {
     try {
-      const validatedId = z.string().length(16).parse(source_id);
+      const validatedId = SourceIdSchema.parse(source_id);
       return await webSourcesRepo.countVersions(validatedId);
     } catch (error) {
       console.error('Error counting web source versions:', error);
@@ -723,7 +731,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('websources:archive', async (_event, source_id: unknown, options: unknown = {}) => {
     try {
-      const validatedId = z.string().length(16).parse(source_id);
+      const validatedId = SourceIdSchema.parse(source_id);
       const validatedOptions = ArchiveOptionsSchema.parse(options);
       const orch = await getOrchestratorInstance();
       return await orch.archiveSource(validatedId, validatedOptions);
@@ -760,7 +768,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('websources:rearchive', async (_event, source_id: unknown, options: unknown = {}) => {
     try {
-      const validatedId = z.string().length(16).parse(source_id);
+      const validatedId = SourceIdSchema.parse(source_id);
       const validatedOptions = ArchiveOptionsSchema.parse(options);
       const orch = await getOrchestratorInstance();
       return await orch.rearchiveSource(validatedId, validatedOptions);
