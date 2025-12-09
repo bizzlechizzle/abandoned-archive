@@ -89,7 +89,7 @@ pnpm reinstall        # Clean and reinstall (fixes native module issues)
 | **Database location** | `./data/au-archive.db` (project-relative). Foreign keys always enabled via PRAGMA on connection. |
 | **GPS confidence ladder** | Map-confirmed > EXIF (<10m accuracy) > Reverse-geocode > Manual guess |
 | **Import spine** | Watcher scans drop zone → hashes every file → copies into archive folder → links via SHA primary keys → then metadata extraction |
-| **Hashing first** | SHA256 computed before any metadata extraction or file moves |
+| **Hashing first** | BLAKE3 computed before any metadata extraction or file moves |
 | **Archive folder structure** | `[base]/locations/[STATE]-[TYPE]/[SLOCNAM]-[LOC12]/org-{img,vid,doc}-[LOC12]/` |
 | **Ownership pledge** | All assets stay on disk. No telemetry, no cloud sync, no auto-updates. |
 | **Source file responsibility** | User's source files are THEIR responsibility. We make a complete, verified copy. Done. |
