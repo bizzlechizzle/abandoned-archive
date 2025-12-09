@@ -1,16 +1,23 @@
 /**
  * Web Source Capture Service
  * OPT-109: Captures web pages in multiple formats (Screenshot, PDF, HTML, WARC)
+ * OPT-110: WARC capture using Puppeteer CDP (no wget dependency)
  *
- * Uses Puppeteer-core for browser-based captures and wget for WARC archives.
+ * Uses Puppeteer-core for all browser-based captures including WARC archives.
+ * WARC format follows ISO 28500:2017 standard for web archiving.
  * Follows the project's offline-first architecture with local file storage.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { spawn } from 'child_process';
-import puppeteer, { Browser, Page, LaunchOptions } from 'puppeteer-core';
+import * as zlib from 'zlib';
+import { fileURLToPath } from 'url';
+import puppeteer, { Browser, Page, LaunchOptions, CDPSession, HTTPRequest, HTTPResponse } from 'puppeteer-core';
 import { calculateHash } from './crypto-service';
+
+// ES module compatibility - __dirname equivalent
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // =============================================================================
 // Types and Interfaces
@@ -416,118 +423,315 @@ export async function captureHtml(options: CaptureOptions): Promise<CaptureResul
 }
 
 // =============================================================================
-// WARC Capture
+// WARC Capture (Puppeteer CDP-based, no wget dependency)
 // =============================================================================
 
 /**
- * Capture the URL as a WARC archive using wget
- * WARC is the standard format for web archiving
+ * WARC record types per ISO 28500:2017
+ */
+type WarcRecordType = 'warcinfo' | 'request' | 'response' | 'metadata';
+
+/**
+ * Captured network record for WARC generation
+ */
+interface NetworkRecord {
+  url: string;
+  method: string;
+  requestHeaders: Record<string, string>;
+  requestBody?: string;
+  statusCode: number;
+  statusText: string;
+  responseHeaders: Record<string, string>;
+  responseBody: Buffer;
+  timestamp: Date;
+}
+
+/**
+ * Generate a UUID v4 for WARC record IDs
+ */
+function generateWarcId(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // Version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // Variant
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `<urn:uuid:${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}>`;
+}
+
+/**
+ * Format a date as WARC-Date (ISO 8601 with Z timezone)
+ */
+function formatWarcDate(date: Date): string {
+  return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+/**
+ * Build a WARC record block following ISO 28500:2017
+ */
+function buildWarcRecord(
+  type: WarcRecordType,
+  targetUri: string,
+  date: Date,
+  contentType: string,
+  payload: Buffer,
+  extraHeaders: Record<string, string> = {}
+): Buffer {
+  const recordId = generateWarcId();
+  const warcDate = formatWarcDate(date);
+
+  // Build WARC headers
+  let headers = `WARC/1.1\r\n`;
+  headers += `WARC-Type: ${type}\r\n`;
+  headers += `WARC-Record-ID: ${recordId}\r\n`;
+  headers += `WARC-Date: ${warcDate}\r\n`;
+  headers += `WARC-Target-URI: ${targetUri}\r\n`;
+  headers += `Content-Type: ${contentType}\r\n`;
+  headers += `Content-Length: ${payload.length}\r\n`;
+
+  for (const [key, value] of Object.entries(extraHeaders)) {
+    headers += `${key}: ${value}\r\n`;
+  }
+
+  headers += `\r\n`;
+
+  // Combine: headers + payload + double CRLF terminator
+  return Buffer.concat([
+    Buffer.from(headers, 'utf-8'),
+    payload,
+    Buffer.from('\r\n\r\n', 'utf-8'),
+  ]);
+}
+
+/**
+ * Build WARC request record from network data
+ */
+function buildRequestRecord(record: NetworkRecord, concurrentId: string): Buffer {
+  // Build HTTP request block
+  let httpRequest = `${record.method} ${new URL(record.url).pathname}${new URL(record.url).search} HTTP/1.1\r\n`;
+  httpRequest += `Host: ${new URL(record.url).host}\r\n`;
+
+  for (const [key, value] of Object.entries(record.requestHeaders)) {
+    if (key.toLowerCase() !== 'host') {
+      httpRequest += `${key}: ${value}\r\n`;
+    }
+  }
+  httpRequest += `\r\n`;
+
+  if (record.requestBody) {
+    httpRequest += record.requestBody;
+  }
+
+  return buildWarcRecord(
+    'request',
+    record.url,
+    record.timestamp,
+    'application/http;msgtype=request',
+    Buffer.from(httpRequest, 'utf-8'),
+    { 'WARC-Concurrent-To': concurrentId }
+  );
+}
+
+/**
+ * Build WARC response record from network data
+ */
+function buildResponseRecord(record: NetworkRecord): { record: Buffer; id: string } {
+  const recordId = generateWarcId();
+
+  // Build HTTP response block
+  let httpResponse = `HTTP/1.1 ${record.statusCode} ${record.statusText}\r\n`;
+
+  for (const [key, value] of Object.entries(record.responseHeaders)) {
+    httpResponse += `${key}: ${value}\r\n`;
+  }
+  httpResponse += `\r\n`;
+
+  const responseBuffer = Buffer.concat([
+    Buffer.from(httpResponse, 'utf-8'),
+    record.responseBody,
+  ]);
+
+  // Build WARC headers manually to include custom record ID
+  const warcDate = formatWarcDate(record.timestamp);
+  let headers = `WARC/1.1\r\n`;
+  headers += `WARC-Type: response\r\n`;
+  headers += `WARC-Record-ID: ${recordId}\r\n`;
+  headers += `WARC-Date: ${warcDate}\r\n`;
+  headers += `WARC-Target-URI: ${record.url}\r\n`;
+  headers += `Content-Type: application/http;msgtype=response\r\n`;
+  headers += `Content-Length: ${responseBuffer.length}\r\n`;
+  headers += `\r\n`;
+
+  const warcRecord = Buffer.concat([
+    Buffer.from(headers, 'utf-8'),
+    responseBuffer,
+    Buffer.from('\r\n\r\n', 'utf-8'),
+  ]);
+
+  return { record: warcRecord, id: recordId };
+}
+
+/**
+ * Build WARC warcinfo record (metadata about the archive)
+ */
+function buildWarcinfoRecord(url: string, software: string): Buffer {
+  const info = [
+    `software: ${software}`,
+    `format: WARC File Format 1.1`,
+    `conformsTo: http://iipc.github.io/warc-specifications/specifications/warc-format/warc-1.1/`,
+    `isPartOf: AU Archive Web Sources`,
+    ``,
+  ].join('\r\n');
+
+  return buildWarcRecord(
+    'warcinfo',
+    url,
+    new Date(),
+    'application/warc-fields',
+    Buffer.from(info, 'utf-8')
+  );
+}
+
+/**
+ * Capture the URL as a WARC archive using Puppeteer CDP
+ * WARC is the standard format for web archiving (ISO 28500:2017)
+ *
+ * OPT-110: Replaced wget dependency with pure Puppeteer/CDP implementation
  */
 export async function captureWarc(options: CaptureOptions): Promise<CaptureResult> {
   const startTime = Date.now();
+  let page: Page | null = null;
+  let cdpSession: CDPSession | null = null;
+  const networkRecords: NetworkRecord[] = [];
+  const pendingRequests = new Map<string, { url: string; method: string; headers: Record<string, string>; body?: string; timestamp: Date }>();
 
   try {
-    // Find wget executable
-    const wgetPaths = ['/usr/bin/wget', '/usr/local/bin/wget', '/opt/homebrew/bin/wget'];
-    let wgetPath: string | undefined;
+    const browser = await getBrowser();
+    page = await browser.newPage();
 
-    for (const p of wgetPaths) {
-      if (fs.existsSync(p)) {
-        wgetPath = p;
-        break;
-      }
-    }
+    // Enable CDP session for network interception
+    cdpSession = await page.createCDPSession();
+    await cdpSession.send('Network.enable');
+    await cdpSession.send('Fetch.enable', { patterns: [{ requestStage: 'Response' }] });
 
-    if (!wgetPath) {
-      // Try to find in PATH
-      const { promisify } = await import('util');
-      const exec = promisify((await import('child_process')).exec);
+    // Track requests
+    cdpSession.on('Network.requestWillBeSent', (event) => {
+      pendingRequests.set(event.requestId, {
+        url: event.request.url,
+        method: event.request.method,
+        headers: event.request.headers as Record<string, string>,
+        body: event.request.postData,
+        timestamp: new Date(),
+      });
+    });
+
+    // Handle Fetch.requestPaused to capture response bodies
+    cdpSession.on('Fetch.requestPaused', async (event) => {
       try {
-        const { stdout } = await exec('which wget');
-        wgetPath = stdout.trim();
-      } catch {
-        return {
-          success: false,
-          error: 'wget not found. WARC capture requires wget to be installed.',
-          duration: Date.now() - startTime,
-        };
+        const requestData = pendingRequests.get(event.networkId || event.requestId);
+        if (!requestData) {
+          // Continue without recording if we didn't see the request
+          await cdpSession!.send('Fetch.continueRequest', { requestId: event.requestId });
+          return;
+        }
+
+        // Get response body
+        let responseBody = Buffer.alloc(0);
+        try {
+          const bodyResult = await cdpSession!.send('Fetch.getResponseBody', { requestId: event.requestId });
+          responseBody = bodyResult.base64Encoded
+            ? Buffer.from(bodyResult.body, 'base64')
+            : Buffer.from(bodyResult.body, 'utf-8');
+        } catch {
+          // Some responses don't have bodies (redirects, etc.)
+        }
+
+        // Parse response headers
+        const responseHeaders: Record<string, string> = {};
+        for (const header of event.responseHeaders || []) {
+          responseHeaders[header.name] = header.value;
+        }
+
+        // Store the complete network record
+        networkRecords.push({
+          url: requestData.url,
+          method: requestData.method,
+          requestHeaders: requestData.headers,
+          requestBody: requestData.body,
+          statusCode: event.responseStatusCode || 200,
+          statusText: event.responseStatusText || 'OK',
+          responseHeaders,
+          responseBody,
+          timestamp: requestData.timestamp,
+        });
+
+        // Continue the request
+        await cdpSession!.send('Fetch.continueRequest', { requestId: event.requestId });
+      } catch (err) {
+        // On error, still try to continue
+        try {
+          await cdpSession!.send('Fetch.continueRequest', { requestId: event.requestId });
+        } catch {
+          // Ignore if already continued
+        }
       }
+    });
+
+    // Navigate to URL and wait for network idle
+    await page.goto(options.url, {
+      waitUntil: 'networkidle2',
+      timeout: options.timeout || 30000,
+    });
+
+    // Scroll to trigger lazy loading
+    if (options.scrollPage !== false) {
+      await autoScroll(page);
     }
+
+    // Wait a bit for any final requests
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // Disable CDP session
+    await cdpSession.send('Fetch.disable');
+    await cdpSession.send('Network.disable');
+    await cdpSession.detach();
+    cdpSession = null;
+
+    if (networkRecords.length === 0) {
+      return {
+        success: false,
+        error: 'No network requests captured',
+        duration: Date.now() - startTime,
+      };
+    }
+
+    // Build WARC file
+    const warcChunks: Buffer[] = [];
+
+    // Add warcinfo record
+    warcChunks.push(buildWarcinfoRecord(options.url, 'AU Archive WebSource Capture 1.0'));
+
+    // Add request/response pairs
+    for (const record of networkRecords) {
+      const { record: responseRecord, id: responseId } = buildResponseRecord(record);
+      warcChunks.push(responseRecord);
+      warcChunks.push(buildRequestRecord(record, responseId));
+    }
+
+    const warcContent = Buffer.concat(warcChunks);
 
     // Ensure output directory exists
     await fs.promises.mkdir(options.outputDir, { recursive: true });
 
-    // Generate WARC filename
-    const warcBase = path.join(options.outputDir, options.sourceId);
-
-    // Run wget with WARC output
-    const args = [
-      '--warc-file=' + warcBase,
-      '--warc-cdx', // Also create CDX index
-      '--page-requisites', // Get all resources
-      '--adjust-extension',
-      '--span-hosts', // Allow resources from other hosts
-      '--convert-links',
-      '--restrict-file-names=windows',
-      '--no-directories',
-      '--timeout=' + Math.floor((options.timeout || 30000) / 1000),
-      '--tries=2',
-      '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      '-P',
-      options.outputDir,
-      options.url,
-    ];
-
-    await new Promise<void>((resolve, reject) => {
-      const wget = spawn(wgetPath!, args, {
-        stdio: ['ignore', 'pipe', 'pipe'],
+    // Compress and write WARC file
+    const warcPath = path.join(options.outputDir, `${options.sourceId}.warc.gz`);
+    const compressed = await new Promise<Buffer>((resolve, reject) => {
+      zlib.gzip(warcContent, (err, result) => {
+        if (err) reject(err);
+        else resolve(result);
       });
-
-      let stderr = '';
-
-      wget.stderr.on('data', (data) => {
-        stderr += data.toString();
-      });
-
-      wget.on('close', (code) => {
-        // wget returns 0 on success, non-zero on failure
-        // But some failures are recoverable (e.g., 404 for some resources)
-        if (code === 0 || code === 8) {
-          // 8 = server error, but we might have partial content
-          resolve();
-        } else {
-          reject(new Error(`wget exited with code ${code}: ${stderr}`));
-        }
-      });
-
-      wget.on('error', reject);
     });
 
-    // Find the generated WARC file (wget adds .warc.gz extension)
-    const warcPath = warcBase + '.warc.gz';
-
-    if (!fs.existsSync(warcPath)) {
-      // Try without .gz
-      const warcPathUncompressed = warcBase + '.warc';
-      if (!fs.existsSync(warcPathUncompressed)) {
-        return {
-          success: false,
-          error: 'WARC file was not created',
-          duration: Date.now() - startTime,
-        };
-      }
-      // Use uncompressed version
-      const hash = await calculateHash(warcPathUncompressed);
-      const stats = await fs.promises.stat(warcPathUncompressed);
-
-      return {
-        success: true,
-        path: warcPathUncompressed,
-        hash,
-        size: stats.size,
-        duration: Date.now() - startTime,
-      };
-    }
+    await fs.promises.writeFile(warcPath, compressed);
 
     // Calculate hash
     const hash = await calculateHash(warcPath);
@@ -546,6 +750,17 @@ export async function captureWarc(options: CaptureOptions): Promise<CaptureResul
       error: error instanceof Error ? error.message : String(error),
       duration: Date.now() - startTime,
     };
+  } finally {
+    if (cdpSession) {
+      try {
+        await cdpSession.detach();
+      } catch {
+        // Ignore detach errors
+      }
+    }
+    if (page) {
+      await page.close().catch(() => {});
+    }
   }
 }
 

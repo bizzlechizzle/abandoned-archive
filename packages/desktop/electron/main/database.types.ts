@@ -782,13 +782,21 @@ export interface WebSourceVersionsTable {
   version_id: string;          // UUID
   source_id: string;           // FK to web_sources
   version_number: number;      // Sequential version number
-  captured_at: string;         // ISO timestamp
+  archived_at: string;         // ISO timestamp
 
-  // Snapshot paths for this version
+  // Archive path for this version (required)
+  archive_path: string | null;
+
+  // Snapshot paths for this version (optional, added by migration 62)
   screenshot_path: string | null;
   pdf_path: string | null;
   html_path: string | null;
   warc_path: string | null;
+
+  // Stats for this version
+  word_count: number | null;
+  image_count: number | null;
+  video_count: number | null;
 
   // Hashes for this version
   screenshot_hash: string | null;
@@ -797,7 +805,7 @@ export interface WebSourceVersionsTable {
   warc_hash: string | null;
   content_hash: string | null;
 
-  // Diff tracking
+  // Diff tracking (added by migration 62)
   content_changed: number;     // 0/1 - Did content change from previous version?
   diff_summary: string | null; // Human-readable summary of changes
 }

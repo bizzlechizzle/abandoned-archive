@@ -2359,6 +2359,137 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 61 completed: extracted_text column added');
     }
 
+    // Migration 62: OPT-109 Fix - Add missing columns to web_source_versions
+    // The repository code expects more columns than the original migration created
+    const versionsColumns = sqlite.prepare('PRAGMA table_info(web_source_versions)').all() as Array<{ name: string }>;
+    const versionColNames = versionsColumns.map((c) => c.name);
+
+    if (!versionColNames.includes('screenshot_path')) {
+      console.log('Running migration 62: Adding missing columns to web_source_versions');
+
+      sqlite.exec(`
+        -- Add individual file paths
+        ALTER TABLE web_source_versions ADD COLUMN screenshot_path TEXT;
+        ALTER TABLE web_source_versions ADD COLUMN pdf_path TEXT;
+        ALTER TABLE web_source_versions ADD COLUMN html_path TEXT;
+        ALTER TABLE web_source_versions ADD COLUMN warc_path TEXT;
+
+        -- Add missing hashes
+        ALTER TABLE web_source_versions ADD COLUMN pdf_hash TEXT;
+        ALTER TABLE web_source_versions ADD COLUMN warc_hash TEXT;
+
+        -- Add change tracking
+        ALTER TABLE web_source_versions ADD COLUMN content_changed INTEGER DEFAULT 0;
+        ALTER TABLE web_source_versions ADD COLUMN diff_summary TEXT;
+      `);
+
+      console.log('Migration 62 completed: web_source_versions columns added');
+    }
+
+    // Migration 63: OPT-110 Fix - Fix FTS5 triggers to use actual extracted_text
+    // The original triggers used empty string '' instead of NEW.extracted_text
+    // This broke full-text search on web source content
+    const triggerCheck = sqlite.prepare(
+      "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='web_sources_fts_insert'"
+    ).get() as { sql: string } | undefined;
+
+    // Check if trigger uses empty string (broken) or actual column (fixed)
+    if (triggerCheck && triggerCheck.sql && triggerCheck.sql.includes("''")) {
+      console.log('Running migration 63: Fixing FTS5 triggers to use extracted_text');
+
+      sqlite.exec(`
+        -- Drop broken triggers
+        DROP TRIGGER IF EXISTS web_sources_fts_insert;
+        DROP TRIGGER IF EXISTS web_sources_fts_update;
+        DROP TRIGGER IF EXISTS web_sources_fts_delete;
+
+        -- Recreate triggers with correct extracted_text reference
+        CREATE TRIGGER web_sources_fts_insert AFTER INSERT ON web_sources BEGIN
+          INSERT INTO web_sources_fts(rowid, source_id, url, title, extracted_title, extracted_text)
+          VALUES (NEW.rowid, NEW.source_id, NEW.url, NEW.title, NEW.extracted_title,
+                  COALESCE(NEW.extracted_text, ''));
+        END;
+
+        CREATE TRIGGER web_sources_fts_delete AFTER DELETE ON web_sources BEGIN
+          INSERT INTO web_sources_fts(web_sources_fts, rowid, source_id, url, title, extracted_title, extracted_text)
+          VALUES ('delete', OLD.rowid, OLD.source_id, OLD.url, OLD.title, OLD.extracted_title,
+                  COALESCE(OLD.extracted_text, ''));
+        END;
+
+        CREATE TRIGGER web_sources_fts_update AFTER UPDATE ON web_sources BEGIN
+          INSERT INTO web_sources_fts(web_sources_fts, rowid, source_id, url, title, extracted_title, extracted_text)
+          VALUES ('delete', OLD.rowid, OLD.source_id, OLD.url, OLD.title, OLD.extracted_title,
+                  COALESCE(OLD.extracted_text, ''));
+          INSERT INTO web_sources_fts(rowid, source_id, url, title, extracted_title, extracted_text)
+          VALUES (NEW.rowid, NEW.source_id, NEW.url, NEW.title, NEW.extracted_title,
+                  COALESCE(NEW.extracted_text, ''));
+        END;
+
+        -- Rebuild FTS index to pick up any existing data
+        INSERT INTO web_sources_fts(web_sources_fts) VALUES('rebuild');
+      `);
+
+      console.log('Migration 63 completed: FTS5 triggers fixed');
+    }
+
+    // Migration 64: OPT-110 Backfill - Read existing text files and populate extracted_text
+    // This populates the FTS index with content from existing archives
+    // Note: Path migration is deferred to avoid data loss - new archives use correct paths
+    const needsTextBackfill = sqlite.prepare(`
+      SELECT COUNT(*) as cnt FROM web_sources
+      WHERE extracted_text IS NULL
+      AND word_count > 0
+      AND archive_path IS NOT NULL
+    `).get() as { cnt: number };
+
+    if (needsTextBackfill.cnt > 0) {
+      console.log(`Running migration 64: Backfilling extracted_text for ${needsTextBackfill.cnt} sources`);
+
+      // Get all sources that have word_count but no extracted_text
+      const sources = sqlite.prepare(`
+        SELECT source_id, archive_path, word_count
+        FROM web_sources
+        WHERE extracted_text IS NULL
+        AND word_count > 0
+        AND archive_path IS NOT NULL
+      `).all() as Array<{ source_id: string; archive_path: string; word_count: number }>;
+
+      let backfilled = 0;
+      // Use already-imported fs and path modules (ESM compatible)
+
+      for (const source of sources) {
+        try {
+          // Look for text file in archive
+          const textDir = path.join(source.archive_path, 'text');
+          if (fs.existsSync(textDir)) {
+            const files = fs.readdirSync(textDir);
+            const contentFile = files.find((f: string) => f.endsWith('_content.txt'));
+
+            if (contentFile) {
+              const textPath = path.join(textDir, contentFile);
+              const content = fs.readFileSync(textPath, 'utf-8');
+
+              if (content && content.trim()) {
+                sqlite.prepare(`
+                  UPDATE web_sources SET extracted_text = ? WHERE source_id = ?
+                `).run(content, source.source_id);
+                backfilled++;
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`Failed to backfill text for ${source.source_id}:`, err);
+        }
+      }
+
+      // Rebuild FTS index to include backfilled content
+      if (backfilled > 0) {
+        sqlite.exec(`INSERT INTO web_sources_fts(web_sources_fts) VALUES('rebuild')`);
+      }
+
+      console.log(`Migration 64 completed: Backfilled ${backfilled} sources with extracted_text`);
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

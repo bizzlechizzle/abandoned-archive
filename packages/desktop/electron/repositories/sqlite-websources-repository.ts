@@ -104,11 +104,15 @@ export interface WebSourceVersion {
   version_id: string;
   source_id: string;
   version_number: number;
-  captured_at: string;
+  archived_at: string;
+  archive_path: string | null;
   screenshot_path: string | null;
   pdf_path: string | null;
   html_path: string | null;
   warc_path: string | null;
+  word_count: number | null;
+  image_count: number | null;
+  video_count: number | null;
   screenshot_hash: string | null;
   pdf_hash: string | null;
   html_hash: string | null;
@@ -395,6 +399,7 @@ export class SQLiteWebSourcesRepository {
 
   /**
    * Mark a source as archive complete
+   * OPT-110: Now accepts extracted_text for FTS5 full-text search
    */
   async markComplete(
     source_id: string,
@@ -414,6 +419,7 @@ export class SQLiteWebSourcesRepository {
       extracted_author?: string | null;
       extracted_date?: string | null;
       extracted_publisher?: string | null;
+      extracted_text?: string | null; // OPT-110: Full text for FTS5 search
       word_count?: number;
       image_count?: number;
       video_count?: number;
@@ -437,11 +443,33 @@ export class SQLiteWebSourcesRepository {
 
   /**
    * Mark a source as partially archived (some components failed)
+   * OPT-109 Fix: Now accepts all successful component data, not just archive_path
+   * OPT-110: Now accepts extracted_text for FTS5 full-text search
    */
   async markPartial(
     source_id: string,
     component_status: ComponentStatus,
-    archive_path: string
+    options: {
+      archive_path: string;
+      screenshot_path?: string | null;
+      pdf_path?: string | null;
+      html_path?: string | null;
+      warc_path?: string | null;
+      screenshot_hash?: string | null;
+      pdf_hash?: string | null;
+      html_hash?: string | null;
+      warc_hash?: string | null;
+      content_hash?: string | null;
+      provenance_hash?: string | null;
+      extracted_title?: string | null;
+      extracted_author?: string | null;
+      extracted_date?: string | null;
+      extracted_publisher?: string | null;
+      extracted_text?: string | null; // OPT-110: Full text for FTS5 search
+      word_count?: number;
+      image_count?: number;
+      video_count?: number;
+    }
   ): Promise<WebSource> {
     const archived_at = new Date().toISOString();
 
@@ -450,8 +478,9 @@ export class SQLiteWebSourcesRepository {
       .set({
         status: 'partial',
         archived_at,
-        archive_path,
+        archive_error: null,
         component_status: JSON.stringify(component_status),
+        ...options,
       })
       .where('source_id', '=', source_id)
       .execute();
@@ -515,6 +544,7 @@ export class SQLiteWebSourcesRepository {
   async createVersion(
     source_id: string,
     options: {
+      archive_path: string;
       screenshot_path?: string | null;
       pdf_path?: string | null;
       html_path?: string | null;
@@ -524,10 +554,13 @@ export class SQLiteWebSourcesRepository {
       html_hash?: string | null;
       warc_hash?: string | null;
       content_hash?: string | null;
+      word_count?: number;
+      image_count?: number;
+      video_count?: number;
     }
   ): Promise<WebSourceVersion> {
     const version_id = randomUUID();
-    const captured_at = new Date().toISOString();
+    const archived_at = new Date().toISOString();
 
     // Get next version number
     const lastVersion = await this.db
@@ -556,11 +589,15 @@ export class SQLiteWebSourcesRepository {
       version_id,
       source_id,
       version_number,
-      captured_at,
+      archived_at,
+      archive_path: options.archive_path,
       screenshot_path: options.screenshot_path || null,
       pdf_path: options.pdf_path || null,
       html_path: options.html_path || null,
       warc_path: options.warc_path || null,
+      word_count: options.word_count || null,
+      image_count: options.image_count || null,
+      video_count: options.video_count || null,
       screenshot_hash: options.screenshot_hash || null,
       pdf_hash: options.pdf_hash || null,
       html_hash: options.html_hash || null,

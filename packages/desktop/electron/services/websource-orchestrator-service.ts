@@ -92,12 +92,12 @@ const DEFAULT_OPTIONS: ArchiveOptions = {
   captureHtml: true,
   captureWarc: true,
   extractImages: true,
-  extractVideos: false, // Videos are large, opt-in
+  extractVideos: true, // OPT-110: Always extract videos per user requirement
   extractText: true,
   linkMedia: true,
   timeout: 60000,
   maxImages: 50,
-  maxVideos: 3,
+  maxVideos: 10, // OPT-110: Increased from 3 to allow more video extraction
 };
 
 // =============================================================================
@@ -251,6 +251,7 @@ export class WebSourceOrchestrator extends EventEmitter {
       let extractedVideos: ExtractedVideo[] = [];
       let wordCount = metadata.wordCount;
       let contentHash: string | null = null;
+      let extractedTextContent: string | null = null; // OPT-110: Capture text for FTS5
 
       // Image extraction
       if (opts.extractImages) {
@@ -287,6 +288,7 @@ export class WebSourceOrchestrator extends EventEmitter {
         if (result.success && result.text) {
           wordCount = result.text.wordCount;
           contentHash = result.text.hash;
+          extractedTextContent = result.text.content; // OPT-110: Capture text for FTS5 storage
           componentStatus.text = 'done';
         } else {
           componentStatus.text = 'failed';
@@ -326,10 +328,32 @@ export class WebSourceOrchestrator extends EventEmitter {
         componentStatus.text === 'failed';
 
       if (hasAnySuccess && hasAnyFailure) {
-        // Partial success
-        await this.repository.markPartial(sourceId, componentStatus, archivePath);
+        // Partial success - OPT-109 Fix: pass all successful component data
+        // OPT-110: Now includes extracted_text for FTS5 search
+        await this.repository.markPartial(sourceId, componentStatus, {
+          archive_path: archivePath,
+          screenshot_path: screenshotPath,
+          pdf_path: pdfPath,
+          html_path: htmlPath,
+          warc_path: warcPath,
+          screenshot_hash: screenshotHash,
+          pdf_hash: pdfHash,
+          html_hash: htmlHash,
+          warc_hash: warcHash,
+          content_hash: contentHash,
+          provenance_hash: provenanceHash,
+          extracted_title: metadata.title,
+          extracted_author: metadata.author,
+          extracted_date: metadata.date,
+          extracted_publisher: metadata.publisher,
+          extracted_text: extractedTextContent, // OPT-110: Store text for FTS5
+          word_count: wordCount,
+          image_count: extractedImages.length,
+          video_count: extractedVideos.length,
+        });
       } else if (hasAnySuccess) {
         // Complete success
+        // OPT-110: Now includes extracted_text for FTS5 search
         await this.repository.markComplete(sourceId, {
           archive_path: archivePath,
           screenshot_path: screenshotPath,
@@ -346,6 +370,7 @@ export class WebSourceOrchestrator extends EventEmitter {
           extracted_author: metadata.author,
           extracted_date: metadata.date,
           extracted_publisher: metadata.publisher,
+          extracted_text: extractedTextContent, // OPT-110: Store text for FTS5
           word_count: wordCount,
           image_count: extractedImages.length,
           video_count: extractedVideos.length,
@@ -357,6 +382,7 @@ export class WebSourceOrchestrator extends EventEmitter {
 
       // Create version snapshot
       await this.repository.createVersion(sourceId, {
+        archive_path: archivePath,
         screenshot_path: screenshotPath,
         pdf_path: pdfPath,
         html_path: htmlPath,
@@ -366,6 +392,9 @@ export class WebSourceOrchestrator extends EventEmitter {
         html_hash: htmlHash,
         warc_hash: warcHash,
         content_hash: contentHash,
+        word_count: wordCount,
+        image_count: extractedImages.length,
+        video_count: extractedVideos.length,
       });
 
       this.emitProgress(sourceId, source.url, 'complete', undefined, 100, 'Archive complete');
@@ -468,6 +497,8 @@ export class WebSourceOrchestrator extends EventEmitter {
 
   /**
    * Get archive path for a source
+   * OPT-110: CORRECTED per CLAUDE.md requirement
+   * Path: [archive]/locations/[STATE]-[TYPE]/[SLOCNAM]-[LOC12]/org-doc-[LOC12]/_websources/[domain]-[source_id]/
    */
   private async getArchivePath(source: WebSource): Promise<string> {
     if (!this.archiveBasePath) {
@@ -483,16 +514,42 @@ export class WebSourceOrchestrator extends EventEmitter {
       throw new Error('Archive location not set');
     }
 
-    // Create path: [archive]/[locid]/_websources/[sourceId]/
     let archivePath: string;
 
     if (source.locid) {
+      // OPT-110: Look up location data for proper folder naming per CLAUDE.md
+      const location = await this.db
+        .selectFrom('locs')
+        .select(['loc12', 'locnam', 'slocnam', 'type', 'address_state'])
+        .where('locid', '=', source.locid)
+        .executeTakeFirst();
+
+      if (!location) {
+        throw new Error(`Location not found: ${source.locid}`);
+      }
+
+      // Build proper folder path per CLAUDE.md:
+      // [base]/locations/[STATE]-[TYPE]/[SLOCNAM]-[LOC12]/org-doc-[LOC12]/_websources/[domain]-[source_id]/
+      const state = location.address_state?.toUpperCase() || 'XX';
+      const locType = location.type || 'Unknown';
+      const stateTypeFolder = `${state}-${this.sanitizeFolderName(locType)}`;
+
+      const slocnam = location.slocnam || this.generateShortName(location.locnam);
+      const locationFolder = `${this.sanitizeFolderName(slocnam)}-${location.loc12}`;
+
+      const docFolder = `org-doc-${location.loc12}`;
+
+      // Extract domain for human-readable folder naming
+      const domain = this.extractDomain(source.url);
+
       archivePath = path.join(
         this.archiveBasePath,
         'locations',
-        source.locid,
+        stateTypeFolder,
+        locationFolder,
+        docFolder,
         '_websources',
-        source.source_id
+        `${domain}-${source.source_id}`
       );
     } else {
       // Unlinked sources go to a shared folder
@@ -500,6 +557,39 @@ export class WebSourceOrchestrator extends EventEmitter {
     }
 
     return archivePath;
+  }
+
+  /**
+   * Extract domain from URL for folder naming
+   * OPT-110: Human-readable folder names
+   */
+  private extractDomain(url: string): string {
+    try {
+      const parsed = new URL(url);
+      return parsed.hostname.replace(/^www\./, '');
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  /**
+   * Sanitize string for folder name
+   * OPT-110: Matches BagItService pattern for consistency
+   */
+  private sanitizeFolderName(name: string): string {
+    return name
+      .replace(/[<>:"/\\|?*]/g, '')
+      .replace(/\s+/g, '-')
+      .substring(0, 50);
+  }
+
+  /**
+   * Generate short name from location name
+   * OPT-110: Matches BagItService pattern for consistency
+   */
+  private generateShortName(locnam: string): string {
+    const words = locnam.split(/\s+/).slice(0, 3);
+    return words.map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join('-');
   }
 
   /**

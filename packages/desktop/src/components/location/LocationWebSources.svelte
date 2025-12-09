@@ -5,6 +5,18 @@
    * Per LILBITS: ~300 lines, single responsibility
    */
 
+  type ComponentStatusValue = 'pending' | 'done' | 'failed' | 'skipped';
+
+  interface ComponentStatus {
+    screenshot?: ComponentStatusValue;
+    pdf?: ComponentStatusValue;
+    html?: ComponentStatusValue;
+    warc?: ComponentStatusValue;
+    images?: ComponentStatusValue;
+    videos?: ComponentStatusValue;
+    text?: ComponentStatusValue;
+  }
+
   interface WebSource {
     source_id: string;
     url: string;
@@ -20,6 +32,8 @@
     screenshot_path: string | null;
     created_at: string;
     archived_at: string | null;
+    component_status: ComponentStatus | null;
+    archive_error: string | null;
   }
 
   interface Props {
@@ -35,6 +49,27 @@
   let loading = $state(true);
   let showAddForm = $state(false);
   let archivingSource = $state<string | null>(null);
+  let expandedSource = $state<string | null>(null);
+
+  // Helper for component status icons
+  function getComponentIcon(status: ComponentStatusValue | undefined): string {
+    switch (status) {
+      case 'done': return '✓';
+      case 'failed': return '✗';
+      case 'skipped': return '○';
+      case 'pending': return '◌';
+      default: return '·';
+    }
+  }
+
+  function getComponentClass(status: ComponentStatusValue | undefined): string {
+    switch (status) {
+      case 'done': return 'text-green-600';
+      case 'failed': return 'text-red-600';
+      case 'skipped': return 'text-braun-400';
+      default: return 'text-braun-300';
+    }
+  }
 
   // Add form state
   let newUrl = $state('');
@@ -234,9 +269,19 @@
                 >
                   {source.title || source.extracted_title || source.url}
                 </button>
-                <span class="px-2 py-0.5 text-xs rounded capitalize {getStatusColor(source.status)}">
-                  {getStatusLabel(source.status)}
-                </span>
+{#if (source.status === 'partial' || source.status === 'failed') && source.component_status}
+                  <button
+                    onclick={() => expandedSource = expandedSource === source.source_id ? null : source.source_id}
+                    class="px-2 py-0.5 text-xs rounded capitalize cursor-pointer hover:opacity-80 {getStatusColor(source.status)}"
+                    title="Click to see details"
+                  >
+                    {getStatusLabel(source.status)} ▾
+                  </button>
+                {:else}
+                  <span class="px-2 py-0.5 text-xs rounded capitalize {getStatusColor(source.status)}">
+                    {getStatusLabel(source.status)}
+                  </span>
+                {/if}
                 <span class="px-2 py-0.5 bg-braun-100 text-braun-600 text-xs rounded capitalize">
                   {source.source_type}
                 </span>
@@ -263,6 +308,37 @@
               {#if source.notes}
                 <p class="text-sm text-braun-600 mt-2">{source.notes}</p>
               {/if}
+              {#if expandedSource === source.source_id && source.component_status}
+                <div class="mt-3 p-3 bg-white rounded border border-braun-200 text-xs">
+                  <div class="font-medium text-braun-700 mb-2">Archive Components:</div>
+                  <div class="grid grid-cols-2 gap-x-4 gap-y-1">
+                    <div class={getComponentClass(source.component_status.screenshot)}>
+                      {getComponentIcon(source.component_status.screenshot)} Screenshot
+                    </div>
+                    <div class={getComponentClass(source.component_status.pdf)}>
+                      {getComponentIcon(source.component_status.pdf)} PDF
+                    </div>
+                    <div class={getComponentClass(source.component_status.html)}>
+                      {getComponentIcon(source.component_status.html)} HTML
+                    </div>
+                    <div class={getComponentClass(source.component_status.warc)}>
+                      {getComponentIcon(source.component_status.warc)} WARC
+                    </div>
+                    <div class={getComponentClass(source.component_status.images)}>
+                      {getComponentIcon(source.component_status.images)} Images{#if source.image_count > 0} ({source.image_count}){/if}
+                    </div>
+                    <div class={getComponentClass(source.component_status.videos)}>
+                      {getComponentIcon(source.component_status.videos)} Videos{#if source.video_count > 0} ({source.video_count}){/if}
+                    </div>
+                    <div class={getComponentClass(source.component_status.text)}>
+                      {getComponentIcon(source.component_status.text)} Text{#if source.word_count > 0} ({source.word_count.toLocaleString()} words){/if}
+                    </div>
+                  </div>
+                  {#if source.archive_error}
+                    <div class="mt-2 text-red-600 text-xs">Error: {source.archive_error}</div>
+                  {/if}
+                </div>
+              {/if}
             </div>
             <div class="flex items-center gap-2 ml-4">
               {#if source.status === 'pending' || source.status === 'failed'}
@@ -274,6 +350,24 @@
                 >
                   {archivingSource === source.source_id ? 'Archiving...' : 'Archive'}
                 </button>
+              {:else if source.status === 'partial'}
+                <button
+                  onclick={() => handleArchive(source.source_id)}
+                  disabled={archivingSource === source.source_id}
+                  class="px-3 py-1 text-sm border border-braun-300 rounded hover:bg-braun-100 disabled:opacity-50"
+                  title="Re-archive to retry failed components"
+                >
+                  {archivingSource === source.source_id ? 'Archiving...' : 'Re-archive'}
+                </button>
+                {#if onViewArchive}
+                  <button
+                    onclick={() => onViewArchive?.(source.source_id)}
+                    class="px-3 py-1 text-sm border border-braun-300 rounded hover:bg-braun-100"
+                    title="View archive"
+                  >
+                    View
+                  </button>
+                {/if}
               {:else if source.status === 'complete' && onViewArchive}
                 <button
                   onclick={() => onViewArchive?.(source.source_id)}

@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
+import { fileURLToPath } from 'url';
 import puppeteer, { Browser, Page } from 'puppeteer-core';
 import { calculateHash } from './crypto-service';
 import https from 'https';
@@ -19,6 +20,10 @@ import http from 'http';
 import { URL } from 'url';
 
 const execAsync = promisify(exec);
+
+// ES module compatibility - __dirname equivalent
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // =============================================================================
 // Types and Interfaces
