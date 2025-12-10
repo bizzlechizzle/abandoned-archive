@@ -36,10 +36,6 @@
 </script>
 
 <section class="mt-8">
-  <div class="mb-4">
-    <h2 class="text-lg font-semibold text-braun-900">Buildings & Structures</h2>
-  </div>
-
   {#if sublocations.length === 0}
     <div class="text-center py-12 bg-braun-50 rounded border-2 border-dashed border-braun-200">
       <svg class="w-12 h-12 mx-auto text-braun-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

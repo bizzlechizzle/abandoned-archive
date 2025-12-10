@@ -234,8 +234,7 @@
   // Check if we have any info to display at all
   const hasAnyInfo = $derived(
     hasHistoricalName || hasAkaName || hasStatus || hasDocumentation ||
-    hasBuiltOrAbandoned || hasType || hasFlags || hasAuthor || hasAuthors ||
-    hasMediaAuthors || hasExternalContributors || hasSublocations
+    hasBuiltOrAbandoned || hasType || hasFlags || hasSublocations
   );
 
   // Documentation labels for display
@@ -645,45 +644,6 @@
         </div>
       {/if}
 
-      <!-- Author / Contributors -->
-      {#if hasAuthor || hasAuthors || hasMediaAuthors || hasExternalContributors}
-        {@const showAuthImp = hasAuthor && !authors.some(a => a.username === location.auth_imp || a.display_name === location.auth_imp)}
-        <div>
-          <h3 class="section-title mb-1">{(hasAuthors || hasMediaAuthors || hasExternalContributors) ? 'Authors' : 'Author'}</h3>
-          <p class="text-base">
-            {#if showAuthImp}
-              <button
-                onclick={() => onNavigateFilter('author', location.auth_imp!)}
-                class="text-braun-900 hover:underline"
-                title="View all locations by {location.auth_imp}"
-              >{location.auth_imp}</button>
-            {/if}
-            {#each authors as author, i}
-              {#if showAuthImp || i > 0}<span class="text-braun-400"> / </span>{/if}
-              <button
-                onclick={() => router.navigate('/locations', undefined, { authorId: author.user_id })}
-                class="text-braun-900 hover:underline"
-                title="View all locations by {author.display_name || author.username}"
-              >{author.display_name || author.username} <span class="text-sm text-braun-500">({roleLabels[author.role] || author.role})</span></button>
-            {/each}
-            {#each mediaAuthors() as mediaAuthor, i}
-              {#if showAuthImp || authors.length > 0 || i > 0}<span class="text-braun-400"> / </span>{/if}
-              <button
-                onclick={() => onNavigateFilter('author', mediaAuthor)}
-                class="text-braun-900 hover:underline"
-                title="View all locations by {mediaAuthor}"
-              >{mediaAuthor}</button>
-            {/each}
-            {#each externalContributors() as source, i}
-              {#if showAuthImp || authors.length > 0 || mediaAuthors().length > 0 || i > 0}<span class="text-braun-400"> / </span>{/if}
-              <span
-                class="px-2 py-0.5 bg-gps-medium/10 text-gps-medium rounded text-sm"
-                title="Contributed media"
-              >{source}</span>
-            {/each}
-          </p>
-        </div>
-      {/if}
     {:else}
       <p class="text-braun-500 text-sm italic">No information added yet</p>
     {/if}

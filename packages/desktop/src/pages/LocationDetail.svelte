@@ -972,7 +972,6 @@
               <!-- Buildings (Host Location) or Siblings (Sub-Location) -->
               {#if isViewingSubLocation && sublocations.length > 1}
                 <p class="text-sm text-braun-500">
-                  <span class="text-braun-400">Also: </span>
                   {#each sublocations.filter(s => s.subid !== currentSubLocation?.subid) as subloc, i}
                     {#if i > 0}<span class="text-braun-400"> · </span>{/if}
                     <button
@@ -983,7 +982,6 @@
                 </p>
               {:else if !isViewingSubLocation && isHostLocation && sublocations.length > 0}
                 <p class="text-sm text-braun-500" bind:this={sublocTaglineEl}>
-                  <span class="text-braun-400">{sublocations.length} building{sublocations.length > 1 ? 's' : ''}: </span>
                   {#each sublocations as subloc, i}
                     {#if i > 0}<span class="text-braun-400"> · </span>{/if}
                     <button
@@ -1041,10 +1039,7 @@
           </div>
         </div>
 
-        <!-- Notes scoped to sub-location when viewing one -->
-        <NotesSection locid={isViewingSubLocation && currentSubLocation ? currentSubLocation.subid : location.locid} {currentUser} />
-
-        <!-- Migration 28: Sub-Location Grid (only for host locations, hide when viewing a sub-location) -->
+        <!-- Sub-Location Grid (only for host locations, hide when viewing a sub-location) -->
         {#if !isViewingSubLocation && isHostLocation}
           <div id="buildings-section">
             <SubLocationGrid
@@ -1054,6 +1049,9 @@
             />
           </div>
         {/if}
+
+        <!-- Notes scoped to sub-location when viewing one -->
+        <NotesSection locid={isViewingSubLocation && currentSubLocation ? currentSubLocation.subid : location.locid} {currentUser} />
 
         <!-- Import zone - host locations get campus-level media, buildings get building media -->
         <LocationImportZone
