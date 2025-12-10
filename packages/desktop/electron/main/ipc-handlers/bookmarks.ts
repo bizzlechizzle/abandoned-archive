@@ -2,13 +2,14 @@
  * Bookmarks IPC Handlers
  * Handles bookmarks:* IPC channels
  * ADR-046: Updated locid validation from UUID to BLAKE3 16-char hex
+ * ADR-049: Updated bookmark_id validation to unified 16-char hex
  */
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
 import type { Database } from '../database';
 import { SQLiteBookmarksRepository } from '../../repositories/sqlite-bookmarks-repository';
-import { validate, LimitSchema, Blake3IdSchema } from '../ipc-validation';
+import { validate, LimitSchema, Blake3IdSchema, BookmarkIdSchema } from '../ipc-validation';
 
 export function registerBookmarksHandlers(db: Kysely<Database>) {
   const bookmarksRepo = new SQLiteBookmarksRepository(db);
@@ -36,7 +37,7 @@ export function registerBookmarksHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('bookmarks:findById', async (_event, bookmark_id: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(bookmark_id);
+      const validatedId = BookmarkIdSchema.parse(bookmark_id);
       return await bookmarksRepo.findById(validatedId);
     } catch (error) {
       console.error('Error finding bookmark:', error);
@@ -85,7 +86,7 @@ export function registerBookmarksHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('bookmarks:update', async (_event, bookmark_id: unknown, updates: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(bookmark_id);
+      const validatedId = BookmarkIdSchema.parse(bookmark_id);
       const BookmarkUpdateSchema = z.object({
         url: z.string().url().optional(),
         title: z.string().nullable().optional(),
@@ -106,7 +107,7 @@ export function registerBookmarksHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('bookmarks:delete', async (_event, bookmark_id: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(bookmark_id);
+      const validatedId = BookmarkIdSchema.parse(bookmark_id);
       await bookmarksRepo.delete(validatedId);
     } catch (error) {
       console.error('Error deleting bookmark:', error);

@@ -106,9 +106,10 @@ export function createTestLocation(overrides: Partial<any> = {}) {
 
 /**
  * Create test image data with all required fields per database.types.ts
+ * ADR-049: Uses 16-char hex IDs
  */
 export function createTestImage(locid: string, overrides: Partial<any> = {}) {
-  const hash = crypto.randomUUID().replace(/-/g, '');
+  const hash = generateTestBlake3Id();
   return {
     // Identity
     imghash: hash,

@@ -61,7 +61,9 @@ describe('SQLiteLocationRepository Integration', () => {
     });
 
     it('should return null for non-existent ID', async () => {
-      const found = await repo.findById(crypto.randomUUID());
+      // ADR-049: Use 16-char hex ID format
+      const fakeId = Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+      const found = await repo.findById(fakeId);
       expect(found).toBeNull();
     });
   });
@@ -136,7 +138,9 @@ describe('SQLiteLocationRepository Integration', () => {
     });
 
     it('should not throw when deleting non-existent location', async () => {
-      await expect(repo.delete(crypto.randomUUID())).resolves.not.toThrow();
+      // ADR-049: Use 16-char hex ID format
+      const fakeId = Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+      await expect(repo.delete(fakeId)).resolves.not.toThrow();
     });
   });
 

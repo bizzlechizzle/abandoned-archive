@@ -25,7 +25,7 @@
  * @module services/import/orchestrator
  */
 
-import { randomUUID } from 'crypto';
+import { generateId } from '../../main/ipc-validation';
 import { promises as fs } from 'fs';
 import type { Kysely } from 'kysely';
 import type { Database } from '../../main/database.types';
@@ -189,7 +189,7 @@ export class ImportOrchestrator {
    * Start a new import
    */
   async import(paths: string[], options: ImportOptions): Promise<ImportResult> {
-    const sessionId = randomUUID();
+    const sessionId = generateId();
     const startedAt = new Date();
     this.currentSessionId = sessionId;
     this.abortController = new AbortController();

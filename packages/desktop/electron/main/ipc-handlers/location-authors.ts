@@ -2,6 +2,7 @@
  * Location Authors IPC Handlers
  * Migration 25 - Phase 3: Author Attribution
  * ADR-046: Updated locid validation from UUID to BLAKE3 16-char hex
+ * ADR-049: Updated user_id validation to unified 16-char hex
  *
  * Handles location-authors:* IPC channels for tracking
  * who has contributed to documenting each location.
@@ -11,7 +12,7 @@ import { z } from 'zod';
 import type { Kysely } from 'kysely';
 import type { Database } from '../database';
 import { SQLiteLocationAuthorsRepository } from '../../repositories/sqlite-location-authors-repository';
-import { Blake3IdSchema } from '../ipc-validation';
+import { Blake3IdSchema, UserIdSchema } from '../ipc-validation';
 
 export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
   const authorsRepo = new SQLiteLocationAuthorsRepository(db);
@@ -23,7 +24,7 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
     try {
       const AddAuthorSchema = z.object({
         locid: Blake3IdSchema,
-        user_id: z.string().uuid(),
+        user_id: UserIdSchema,
         role: z.enum(['creator', 'documenter', 'contributor']),
       });
       const validatedInput = AddAuthorSchema.parse(input);
@@ -45,7 +46,7 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
   ipcMain.handle('location-authors:remove', async (_event, locid: unknown, user_id: unknown) => {
     try {
       const validatedLocid = Blake3IdSchema.parse(locid);
-      const validatedUserId = z.string().uuid().parse(user_id);
+      const validatedUserId = UserIdSchema.parse(user_id);
       await authorsRepo.removeAuthor(validatedLocid, validatedUserId);
       return { success: true };
     } catch (error) {
@@ -74,7 +75,7 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('location-authors:findByUser', async (_event, user_id: unknown) => {
     try {
-      const validatedUserId = z.string().uuid().parse(user_id);
+      const validatedUserId = UserIdSchema.parse(user_id);
       return await authorsRepo.findByUser(validatedUserId);
     } catch (error) {
       console.error('Error finding locations by user:', error);
@@ -102,7 +103,7 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('location-authors:countByUserAndRole', async (_event, user_id: unknown) => {
     try {
-      const validatedUserId = z.string().uuid().parse(user_id);
+      const validatedUserId = UserIdSchema.parse(user_id);
       return await authorsRepo.countByUserAndRole(validatedUserId);
     } catch (error) {
       console.error('Error counting by user and role:', error);
@@ -136,7 +137,7 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
   ) => {
     try {
       const validatedLocid = Blake3IdSchema.parse(locid);
-      const validatedUserId = z.string().uuid().parse(user_id);
+      const validatedUserId = UserIdSchema.parse(user_id);
       const validatedAction = z.enum(['create', 'import', 'edit']).parse(action);
       await authorsRepo.trackUserContribution(validatedLocid, validatedUserId, validatedAction);
       return { success: true };

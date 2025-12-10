@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { randomUUID } from 'crypto';
+import { generateId } from '../main/ipc-validation';
 import type { Database, ProjectsTable, ProjectLocationsTable } from '../main/database.types';
 
 export interface ProjectInput {
@@ -41,7 +41,7 @@ export class SQLiteProjectsRepository {
    * Create a new project
    */
   async create(input: ProjectInput): Promise<Project> {
-    const project_id = randomUUID();
+    const project_id = generateId();
     const created_date = new Date().toISOString();
 
     const project: ProjectsTable = {

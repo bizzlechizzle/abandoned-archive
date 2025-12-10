@@ -1,6 +1,6 @@
 import path from 'path';
 import fs from 'fs/promises';
-import { randomUUID } from 'crypto';
+import { generateId } from '../../main/ipc-validation';
 
 /**
  * Import Phase States per whereswaldo11.md spec:
@@ -139,7 +139,7 @@ export class ImportManifest {
 
   private createEmptyManifest(): ImportManifestData {
     return {
-      import_id: `imp-${this.formatDate()}-${randomUUID().substring(0, 8)}`,
+      import_id: `imp-${this.formatDate()}-${generateId().substring(0, 8)}`,
       version: '1.0',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

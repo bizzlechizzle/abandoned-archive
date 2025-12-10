@@ -1180,7 +1180,7 @@ export class FileImportService {
     xmlPath: string,
     mediaType: string
   ): Promise<ImportResult> {
-    const sidecarId = randomUUID();
+    const sidecarId = generateId();
     const timestamp = new Date().toISOString();
 
     // Read XML content
@@ -1579,7 +1579,7 @@ export class FileImportService {
       notes: string;
     }
   ): Promise<string> {
-    const importId = randomUUID();
+    const importId = generateId();
     const importDate = new Date().toISOString();
 
     await trx
@@ -1603,5 +1603,5 @@ export class FileImportService {
   // NOTE: recalculateRegionsForLocation was removed - now handled by LocationEnrichmentService
 }
 
-// Import randomUUID for transaction helper
-import { randomUUID } from 'crypto';
+// ADR-049: Import generateId for 16-char hex IDs
+import { generateId } from '../main/ipc-validation';

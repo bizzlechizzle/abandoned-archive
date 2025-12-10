@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { randomUUID } from 'crypto';
+import { generateId } from '../main/ipc-validation';
 import type { Database, BookmarksTable } from '../main/database.types';
 
 export interface BookmarkInput {
@@ -43,7 +43,7 @@ export class SQLiteBookmarksRepository {
    * Create a new bookmark
    */
   async create(input: BookmarkInput): Promise<Bookmark> {
-    const bookmark_id = randomUUID();
+    const bookmark_id = generateId();
     const bookmark_date = new Date().toISOString();
 
     const bookmark: BookmarksTable = {

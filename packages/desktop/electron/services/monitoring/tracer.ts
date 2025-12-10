@@ -7,7 +7,7 @@
  * @module services/monitoring/tracer
  */
 
-import { randomUUID } from 'crypto';
+import { generateId } from '../../main/ipc-validation';
 import { getLogger } from '../logger-service';
 
 const logger = getLogger();
@@ -164,8 +164,8 @@ export class Tracer {
     parentContext: TraceContext | null,
     tags?: Record<string, unknown>
   ): SpanHandle {
-    const spanId = randomUUID();
-    const traceId = parentContext?.traceId ?? randomUUID();
+    const spanId = generateId();
+    const traceId = parentContext?.traceId ?? generateId();
     const parentSpanId = parentContext?.spanId ?? null;
 
     const span: Span = {

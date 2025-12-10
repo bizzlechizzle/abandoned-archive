@@ -15,7 +15,7 @@
 
 import { promises as fs, constants as fsConstants } from 'fs';
 import path from 'path';
-import { randomUUID } from 'crypto';
+import { generateId } from '../../main/ipc-validation';
 import { realpath, lstat } from 'fs/promises';
 
 /**
@@ -367,7 +367,7 @@ export class Scanner {
     this.pathTraversalBlocked = 0;
     this.symlinkBlocked = 0;
 
-    const sessionId = randomUUID();
+    const sessionId = generateId();
     const files: ScannedFile[] = [];
     let totalBytes = 0;
     let processedPaths = 0;
@@ -561,7 +561,7 @@ export class Scanner {
     const shouldSkip = SKIP_EXTENSIONS.has(extension) || mediaType === 'unknown';
 
     return {
-      id: randomUUID(),
+      id: generateId(),
       originalPath: filePath,
       filename,
       extension,

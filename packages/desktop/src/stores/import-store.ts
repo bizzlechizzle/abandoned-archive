@@ -1,8 +1,18 @@
 /**
  * Global import state management
  * Tracks active and recent import jobs across the app
+ * ADR-049: Uses unified 16-char hex IDs
  */
 import { writable, derived } from 'svelte/store';
+
+/**
+ * ADR-049: Generate 16-char hex ID (client-side equivalent of server's generateId)
+ */
+function generateClientId(): string {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
 
 export interface ImportJob {
   id: string;
@@ -44,7 +54,7 @@ function createImportStore() {
      */
     startJob(locid: string, locationName: string, totalFiles: number): string {
       const job: ImportJob = {
-        id: crypto.randomUUID(),
+        id: generateClientId(),
         locid,
         locationName,
         totalFiles,

@@ -421,9 +421,8 @@ export class RefMapDedupService {
       return { pointId: existing.pointId, merged: true };
     }
 
-    // No duplicate - insert new point
-    const { randomUUID } = await import('crypto');
-    const pointId = randomUUID();
+    // No duplicate - insert new point (ADR-049: uses generateId for 16-char hex)
+    const pointId = generateId();
 
     await this.db
       .insertInto('ref_map_points')

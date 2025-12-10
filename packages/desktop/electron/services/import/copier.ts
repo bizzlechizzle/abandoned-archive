@@ -20,7 +20,7 @@
 import { promises as fs, createReadStream, createWriteStream } from 'fs';
 import { pipeline } from 'stream/promises';
 import path from 'path';
-import { randomUUID } from 'crypto';
+import { generateId } from '../../main/ipc-validation';
 import PQueue from 'p-queue';
 import { createHash as createBlake3Hash } from 'blake3';
 import type { HashedFile } from './hasher';
@@ -470,7 +470,7 @@ export class Copier {
 
     // Temp file path (we'll rename to final after we know the hash)
     const tempDir = this.buildLocationPath(location);
-    const tempPath = path.join(tempDir, `${randomUUID()}.tmp`);
+    const tempPath = path.join(tempDir, `${generateId()}.tmp`);
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {

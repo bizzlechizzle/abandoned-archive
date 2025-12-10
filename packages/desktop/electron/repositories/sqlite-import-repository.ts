@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { randomUUID } from 'crypto';
+import { generateId } from '../main/ipc-validation';
 import type { Database, ImportsTable } from '../main/database.types';
 
 export interface ImportRecord {
@@ -33,7 +33,7 @@ export class SQLiteImportRepository {
   constructor(private readonly db: Kysely<Database>) {}
 
   async create(input: ImportInput): Promise<ImportRecord> {
-    const import_id = randomUUID();
+    const import_id = generateId();
     const import_date = new Date().toISOString();
 
     const record: ImportsTable = {

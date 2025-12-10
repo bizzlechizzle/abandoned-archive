@@ -1,5 +1,5 @@
 import { Kysely, sql } from 'kysely';
-import { randomUUID } from 'crypto';
+import { generateId } from '../main/ipc-validation';
 import type { Database, WebSourcesTable, WebSourceVersionsTable } from '../main/database.types';
 import { calculateHashBuffer } from '../services/crypto-service';
 
@@ -559,7 +559,7 @@ export class SQLiteWebSourcesRepository {
       video_count?: number;
     }
   ): Promise<WebSourceVersion> {
-    const version_id = randomUUID();
+    const version_id = generateId();
     const archived_at = new Date().toISOString();
 
     // Get next version number

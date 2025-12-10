@@ -2,12 +2,14 @@
  * Users IPC Handlers
  * Handles users:* IPC channels
  * Migration 24: Added PIN authentication methods
+ * ADR-049: Updated user_id validation from UUID to 16-char hex
  */
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
 import type { Database } from '../database';
 import { SQLiteUsersRepository } from '../../repositories/sqlite-users-repository';
+import { UserIdSchema } from '../ipc-validation';
 
 export function registerUsersHandlers(db: Kysely<Database>) {
   const usersRepo = new SQLiteUsersRepository(db);
@@ -45,7 +47,7 @@ export function registerUsersHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('users:findById', async (_event, user_id: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(user_id);
+      const validatedId = UserIdSchema.parse(user_id);
       return await usersRepo.findById(validatedId);
     } catch (error) {
       console.error('Error finding user by id:', error);
@@ -67,7 +69,7 @@ export function registerUsersHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('users:update', async (_event, user_id: unknown, updates: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(user_id);
+      const validatedId = UserIdSchema.parse(user_id);
       const UpdateSchema = z.object({
         username: z.string().min(1).optional(),
         display_name: z.string().nullable().optional(),
@@ -86,7 +88,7 @@ export function registerUsersHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('users:delete', async (_event, user_id: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(user_id);
+      const validatedId = UserIdSchema.parse(user_id);
       await usersRepo.delete(validatedId);
     } catch (error) {
       console.error('Error deleting user:', error);
@@ -102,7 +104,7 @@ export function registerUsersHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('users:verifyPin', async (_event, user_id: unknown, pin: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(user_id);
+      const validatedId = UserIdSchema.parse(user_id);
       const validatedPin = z.string().min(4).max(6).regex(/^\d+$/).parse(pin);
       const isValid = await usersRepo.verifyPin(validatedId, validatedPin);
 
@@ -120,7 +122,7 @@ export function registerUsersHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('users:setPin', async (_event, user_id: unknown, pin: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(user_id);
+      const validatedId = UserIdSchema.parse(user_id);
       const validatedPin = z.string().min(4).max(6).regex(/^\d+$/).parse(pin);
       await usersRepo.setPin(validatedId, validatedPin);
       return { success: true };
@@ -136,7 +138,7 @@ export function registerUsersHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('users:clearPin', async (_event, user_id: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(user_id);
+      const validatedId = UserIdSchema.parse(user_id);
       await usersRepo.clearPin(validatedId);
       return { success: true };
     } catch (error) {
@@ -148,7 +150,7 @@ export function registerUsersHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('users:hasPin', async (_event, user_id: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(user_id);
+      const validatedId = UserIdSchema.parse(user_id);
       return await usersRepo.hasPin(validatedId);
     } catch (error) {
       console.error('Error checking PIN:', error);
@@ -169,7 +171,7 @@ export function registerUsersHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('users:updateLastLogin', async (_event, user_id: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(user_id);
+      const validatedId = UserIdSchema.parse(user_id);
       await usersRepo.updateLastLogin(validatedId);
       return { success: true };
     } catch (error) {

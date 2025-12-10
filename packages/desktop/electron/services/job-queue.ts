@@ -12,7 +12,7 @@
  * @module services/job-queue
  */
 
-import { randomUUID } from 'crypto';
+import { generateId } from '../../main/ipc-validation';
 import type { Kysely } from 'kysely';
 import type { Database, JobsTable } from '../main/database.types';
 import { getLogger } from './logger-service';
@@ -71,7 +71,7 @@ export class JobQueue {
       staleLockTimeoutMs?: number;
     }
   ) {
-    this.workerId = options?.workerId ?? `worker-${randomUUID().slice(0, 8)}`;
+    this.workerId = options?.workerId ?? `worker-${generateId().slice(0, 8)}`;
     this.staleLockTimeoutMs = options?.staleLockTimeoutMs ?? 5 * 60 * 1000; // 5 minutes
   }
 
@@ -86,7 +86,7 @@ export class JobQueue {
    * Add a single job to the queue
    */
   async addJob<T>(input: JobInput<T>): Promise<string> {
-    const jobId = randomUUID();
+    const jobId = generateId();
     const now = new Date().toISOString();
 
     await this.db
@@ -128,7 +128,7 @@ export class JobQueue {
 
     const values = inputs.map(input => {
       // OPT-087: Use pre-generated jobId if provided, otherwise generate new one
-      const jobId = input.jobId || randomUUID();
+      const jobId = input.jobId || generateId();
       jobIds.push(jobId);
       return {
         job_id: jobId,

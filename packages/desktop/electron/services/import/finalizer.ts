@@ -12,7 +12,7 @@
  * @module services/import/finalizer
  */
 
-import { randomUUID } from 'crypto';
+import { generateId } from '../../main/ipc-validation';
 import path from 'path';
 import type { Kysely } from 'kysely';
 import type { Database } from '../../main/database.types';
@@ -105,7 +105,7 @@ export class Finalizer {
     options?.onProgress?.(95, 'Committing to database');
 
     // Create import record
-    const importRecordId = randomUUID();
+    const importRecordId = generateId();
     const now = new Date().toISOString();
 
     // Transaction for all DB operations
@@ -738,7 +738,7 @@ export class Finalizer {
 
       // ExifTool job for all media types
       // OPT-087: Pass pre-generated jobId to ensure dependency chain works
-      const exifJobId = randomUUID();
+      const exifJobId = generateId();
       jobs.push({
         queue: IMPORT_QUEUES.EXIFTOOL,
         priority: JOB_PRIORITY.HIGH,
@@ -750,7 +750,7 @@ export class Finalizer {
       // FFprobe job for videos (depends on ExifTool)
       // OPT-087: Pass pre-generated jobId for dependency chain
       if (file.mediaType === 'video') {
-        const ffprobeJobId = randomUUID();
+        const ffprobeJobId = generateId();
         jobs.push({
           queue: IMPORT_QUEUES.FFPROBE,
           priority: JOB_PRIORITY.HIGH,
@@ -796,7 +796,7 @@ export class Finalizer {
     // Depends on last ExifTool job (ensures all metadata extracted first)
     // OPT-087: Pass pre-generated jobId for dependency chain
     // OPT-093: Pass subid for sub-location GPS enrichment
-    const gpsEnrichmentJobId = randomUUID();
+    const gpsEnrichmentJobId = generateId();
     jobs.push({
       queue: IMPORT_QUEUES.GPS_ENRICHMENT,
       priority: JOB_PRIORITY.NORMAL,

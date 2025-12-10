@@ -1,19 +1,44 @@
 import { z } from 'zod';
+import { randomBytes } from 'crypto';
 
 /**
  * IPC Input Validation Schemas
  * Validates all user inputs from renderer process
  */
 
-// Common validators
-export const UuidSchema = z.string().uuid();
+/**
+ * ADR-049: Unified 16-char hex ID format
+ * All IDs use 16 lowercase hex characters (64 bits)
+ * - Sufficient entropy for local archive (2^64 = 18 quintillion)
+ * - Consistent format across all entity types
+ * - Smaller than UUID (16 chars vs 36 chars)
+ */
+export const Hex16IdSchema = z.string().length(16).regex(/^[a-f0-9]+$/, 'Must be 16-char lowercase hex');
 
-// ADR-046: BLAKE3 16-char hex ID validator for locations/sublocations
-export const Blake3IdSchema = z.string().length(16).regex(/^[a-f0-9]+$/, 'Must be 16-char lowercase hex');
+/**
+ * Generate a new 16-char hex ID
+ * Use this instead of crypto.randomUUID()
+ */
+export function generateId(): string {
+  return randomBytes(8).toString('hex');
+}
 
-// Semantic aliases for BLAKE3 IDs
-export const LocIdSchema = Blake3IdSchema;
-export const SubIdSchema = Blake3IdSchema;
+// Semantic aliases for specific ID types (all use same format)
+export const LocIdSchema = Hex16IdSchema;      // Location ID
+export const SubIdSchema = Hex16IdSchema;      // Sub-location ID
+export const UserIdSchema = Hex16IdSchema;     // User ID
+export const NoteIdSchema = Hex16IdSchema;     // Note ID
+export const BookmarkIdSchema = Hex16IdSchema; // Bookmark ID
+export const ProjectIdSchema = Hex16IdSchema;  // Project ID
+export const ImportIdSchema = Hex16IdSchema;   // Import record ID
+export const MapIdSchema = Hex16IdSchema;      // Reference map ID
+export const PointIdSchema = Hex16IdSchema;    // Reference map point ID
+export const ViewIdSchema = Hex16IdSchema;     // Location view ID
+export const ExclusionIdSchema = Hex16IdSchema; // Location exclusion ID
+export const VersionIdSchema = Hex16IdSchema;  // Websource version ID
+
+// Legacy alias (deprecated - use Hex16IdSchema)
+export const Blake3IdSchema = Hex16IdSchema;
 export const PositiveIntSchema = z.number().int().positive();
 export const NonNegativeIntSchema = z.number().int().nonnegative();
 export const LimitSchema = z.number().int().positive().max(1000).default(10);
@@ -38,17 +63,17 @@ export function validate<T>(schema: z.ZodType<T>, data: unknown): T {
   }
 }
 
-// Common parameter schemas
+// Common parameter schemas (ADR-049: unified 16-char hex)
 export const IdParamSchema = z.object({
-  id: UuidSchema,
+  id: Hex16IdSchema,
 });
 
 export const TwoIdParamsSchema = z.object({
-  id1: UuidSchema,
-  id2: UuidSchema,
+  id1: Hex16IdSchema,
+  id2: Hex16IdSchema,
 });
 
-// ADR-046: Location/SubLocation ID parameter schemas
+// Location/SubLocation ID parameter schemas
 export const LocIdParamSchema = z.object({
   locid: Blake3IdSchema,
 });

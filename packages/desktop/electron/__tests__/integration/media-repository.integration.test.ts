@@ -113,7 +113,8 @@ describe('SQLiteMediaRepository Integration', () => {
 
   describe('foreign key constraints', () => {
     it('should prevent inserting image with non-existent location', async () => {
-      const fakeLocationId = crypto.randomUUID();
+      // ADR-049: Use 16-char hex ID format
+      const fakeLocationId = Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
       const image = createTestImage(fakeLocationId);
 
       await expect(mediaRepo.insertImage(image)).rejects.toThrow();

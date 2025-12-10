@@ -12,7 +12,7 @@
  */
 
 import { Worker } from 'worker_threads';
-import { randomUUID } from 'crypto';
+import { generateId } from '../../main/ipc-validation';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import PQueue from 'p-queue';
@@ -124,7 +124,7 @@ export class WorkerPool {
    */
   private async createWorker(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const workerId = `hash-worker-${randomUUID().slice(0, 8)}`;
+      const workerId = `hash-worker-${generateId().slice(0, 8)}`;
 
       try {
         const worker = new Worker(this.workerPath, {
@@ -244,7 +244,7 @@ export class WorkerPool {
 
     const result = await this.queue.add(async () => {
       return new Promise<HashResult>((resolve) => {
-        const taskId = randomUUID();
+        const taskId = generateId();
 
         // Select worker using round-robin
         const worker = this.workers[this.roundRobinIndex % this.workers.length];

@@ -27,7 +27,7 @@ import { SQLiteImportRepository } from '../repositories/sqlite-import-repository
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
 import type { Kysely } from 'kysely';
 import type { Database } from '../main/database.types';
-import { randomUUID } from 'crypto';
+import { generateId } from '../../main/ipc-validation';
 
 export interface PhaseImportInput {
   filePath: string;

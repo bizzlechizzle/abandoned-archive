@@ -93,7 +93,7 @@ export class GeocodingCache {
    * Store a geocoding result in the cache
    */
   async store(entry: Omit<GeocodeCacheEntry, 'id' | 'hit_count' | 'created_at' | 'last_used_at'>): Promise<void> {
-    const id = crypto.randomUUID();
+    const id = crypto.generateId();
     const now = new Date().toISOString();
 
     try {

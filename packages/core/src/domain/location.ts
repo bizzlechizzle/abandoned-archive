@@ -99,9 +99,9 @@ export const LocationInputSchema = z.object({
   historicalNameVerified: z.boolean().default(false), // User verified historical name is correct
   akanamVerified: z.boolean().default(false),  // User verified AKA name is correct
   // Migration 25: Activity tracking (optional on input, set by system)
-  created_by_id: z.string().uuid().optional(),
+  created_by_id: z.string().length(16).regex(/^[a-f0-9]+$/).optional(),
   created_by: z.string().optional(),
-  modified_by_id: z.string().uuid().optional(),
+  modified_by_id: z.string().length(16).regex(/^[a-f0-9]+$/).optional(),
   modified_by: z.string().optional(),
   // OPT-062: Host-only location (campus/complex expecting sub-locations)
   isHostOnly: z.boolean().default(false),
@@ -134,9 +134,9 @@ export const LocationSchema = LocationInputSchema.extend({
   country: z.string().default('United States'),        // Country name
   continent: z.string().default('North America'),      // Continent name
   // Migration 25: Activity tracking
-  createdById: z.string().uuid().optional(),
+  createdById: z.string().length(16).regex(/^[a-f0-9]+$/).optional(),
   createdBy: z.string().optional(),
-  modifiedById: z.string().uuid().optional(),
+  modifiedById: z.string().length(16).regex(/^[a-f0-9]+$/).optional(),
   modifiedBy: z.string().optional(),
   modifiedAt: z.string().datetime().optional(),
   // Migration 33: View tracking for Nerd Stats

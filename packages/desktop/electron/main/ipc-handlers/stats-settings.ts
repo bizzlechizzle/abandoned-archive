@@ -2,12 +2,13 @@
  * Stats and Settings IPC Handlers
  * Handles stats:* and settings:* IPC channels
  * Migration 25 - Phase 4: Per-user stats for Nerd Stats integration
+ * ADR-049: Updated userId validation to unified 16-char hex
  */
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
 import type { Database } from '../database';
-import { validate, LimitSchema, SettingKeySchema } from '../ipc-validation';
+import { validate, LimitSchema, SettingKeySchema, UserIdSchema } from '../ipc-validation';
 import { SQLiteLocationAuthorsRepository } from '../../repositories/sqlite-location-authors-repository';
 
 export function registerStatsHandlers(db: Kysely<Database>) {
@@ -168,7 +169,7 @@ export function registerStatsHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('stats:userContributions', async (_event, userId: unknown) => {
     try {
-      const validatedUserId = z.string().uuid().parse(userId);
+      const validatedUserId = UserIdSchema.parse(userId);
 
       // Get role counts from location_authors
       const roleCounts = await authorsRepo.countByUserAndRole(validatedUserId);

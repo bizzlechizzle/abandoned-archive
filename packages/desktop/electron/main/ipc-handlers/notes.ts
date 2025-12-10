@@ -2,13 +2,14 @@
  * Notes IPC Handlers
  * Handles notes:* IPC channels
  * ADR-046: Updated locid validation from UUID to BLAKE3 16-char hex
+ * ADR-049: Updated note_id validation to unified 16-char hex
  */
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
 import type { Database } from '../database';
 import { SQLiteNotesRepository } from '../../repositories/sqlite-notes-repository';
-import { validate, LimitSchema, Blake3IdSchema } from '../ipc-validation';
+import { validate, LimitSchema, Blake3IdSchema, NoteIdSchema } from '../ipc-validation';
 
 export function registerNotesHandlers(db: Kysely<Database>) {
   const notesRepo = new SQLiteNotesRepository(db);
@@ -35,7 +36,7 @@ export function registerNotesHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('notes:findById', async (_event, note_id: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(note_id);
+      const validatedId = NoteIdSchema.parse(note_id);
       return await notesRepo.findById(validatedId);
     } catch (error) {
       console.error('Error finding note:', error);
@@ -74,7 +75,7 @@ export function registerNotesHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('notes:update', async (_event, note_id: unknown, updates: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(note_id);
+      const validatedId = NoteIdSchema.parse(note_id);
       const NoteUpdateSchema = z.object({
         note_text: z.string().min(1).optional(),
         note_type: z.string().optional(),
@@ -93,7 +94,7 @@ export function registerNotesHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('notes:delete', async (_event, note_id: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(note_id);
+      const validatedId = NoteIdSchema.parse(note_id);
       await notesRepo.delete(validatedId);
     } catch (error) {
       console.error('Error deleting note:', error);
