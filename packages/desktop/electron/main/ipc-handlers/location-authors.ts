@@ -1,6 +1,7 @@
 /**
  * Location Authors IPC Handlers
  * Migration 25 - Phase 3: Author Attribution
+ * ADR-046: Updated locid validation from UUID to BLAKE3 16-char hex
  *
  * Handles location-authors:* IPC channels for tracking
  * who has contributed to documenting each location.
@@ -10,6 +11,7 @@ import { z } from 'zod';
 import type { Kysely } from 'kysely';
 import type { Database } from '../database';
 import { SQLiteLocationAuthorsRepository } from '../../repositories/sqlite-location-authors-repository';
+import { Blake3IdSchema } from '../ipc-validation';
 
 export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
   const authorsRepo = new SQLiteLocationAuthorsRepository(db);
@@ -20,7 +22,7 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
   ipcMain.handle('location-authors:add', async (_event, input: unknown) => {
     try {
       const AddAuthorSchema = z.object({
-        locid: z.string().uuid(),
+        locid: Blake3IdSchema,
         user_id: z.string().uuid(),
         role: z.enum(['creator', 'documenter', 'contributor']),
       });
@@ -42,7 +44,7 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('location-authors:remove', async (_event, locid: unknown, user_id: unknown) => {
     try {
-      const validatedLocid = z.string().uuid().parse(locid);
+      const validatedLocid = Blake3IdSchema.parse(locid);
       const validatedUserId = z.string().uuid().parse(user_id);
       await authorsRepo.removeAuthor(validatedLocid, validatedUserId);
       return { success: true };
@@ -58,7 +60,7 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('location-authors:findByLocation', async (_event, locid: unknown) => {
     try {
-      const validatedLocid = z.string().uuid().parse(locid);
+      const validatedLocid = Blake3IdSchema.parse(locid);
       return await authorsRepo.findByLocation(validatedLocid);
     } catch (error) {
       console.error('Error finding authors by location:', error);
@@ -86,7 +88,7 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('location-authors:findCreator', async (_event, locid: unknown) => {
     try {
-      const validatedLocid = z.string().uuid().parse(locid);
+      const validatedLocid = Blake3IdSchema.parse(locid);
       return await authorsRepo.findCreator(validatedLocid);
     } catch (error) {
       console.error('Error finding creator:', error);
@@ -114,7 +116,7 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('location-authors:countByLocation', async (_event, locid: unknown) => {
     try {
-      const validatedLocid = z.string().uuid().parse(locid);
+      const validatedLocid = Blake3IdSchema.parse(locid);
       return await authorsRepo.countByLocation(validatedLocid);
     } catch (error) {
       console.error('Error counting by location:', error);
@@ -133,7 +135,7 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
     action: unknown
   ) => {
     try {
-      const validatedLocid = z.string().uuid().parse(locid);
+      const validatedLocid = Blake3IdSchema.parse(locid);
       const validatedUserId = z.string().uuid().parse(user_id);
       const validatedAction = z.enum(['create', 'import', 'edit']).parse(action);
       await authorsRepo.trackUserContribution(validatedLocid, validatedUserId, validatedAction);

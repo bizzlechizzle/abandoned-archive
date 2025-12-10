@@ -4,9 +4,11 @@
  * Migration 25: Activity tracking - injects current user into imports
  * Migration 25 - Phase 3: Author attribution - tracks documenters in location_authors
  * OPT-031: Uses shared user service for getCurrentUser
+ * ADR-046: Updated locid/subid validation from UUID to BLAKE3 16-char hex
  */
 import { ipcMain, dialog } from 'electron';
 import { z } from 'zod';
+import { Blake3IdSchema } from '../ipc-validation';
 import fs from 'fs/promises';
 import path from 'path';
 import type { Kysely } from 'kysely';
@@ -351,8 +353,8 @@ export function registerMediaImportHandlers(
     try {
       const ImportInputSchema = z.object({
         files: z.array(z.object({ filePath: z.string(), originalName: z.string() })),
-        locid: z.string().uuid(),
-        subid: z.string().uuid().nullable().optional(),
+        locid: Blake3IdSchema,
+        subid: Blake3IdSchema.nullable().optional(),
         auth_imp: z.string().nullable(),
         // Migration 26: Contributor tracking
         is_contributed: z.number().default(0),
@@ -481,8 +483,8 @@ export function registerMediaImportHandlers(
     try {
       const ImportInputSchema = z.object({
         files: z.array(z.object({ filePath: z.string(), originalName: z.string() })),
-        locid: z.string().uuid(),
-        subid: z.string().uuid().nullable().optional(),
+        locid: Blake3IdSchema,
+        subid: Blake3IdSchema.nullable().optional(),
         auth_imp: z.string().nullable(),
         verifyChecksums: z.boolean().default(true),
       });

@@ -7,6 +7,13 @@ import { z } from 'zod';
 
 // Common validators
 export const UuidSchema = z.string().uuid();
+
+// ADR-046: BLAKE3 16-char hex ID validator for locations/sublocations
+export const Blake3IdSchema = z.string().length(16).regex(/^[a-f0-9]+$/, 'Must be 16-char lowercase hex');
+
+// Semantic aliases for BLAKE3 IDs
+export const LocIdSchema = Blake3IdSchema;
+export const SubIdSchema = Blake3IdSchema;
 export const PositiveIntSchema = z.number().int().positive();
 export const NonNegativeIntSchema = z.number().int().nonnegative();
 export const LimitSchema = z.number().int().positive().max(1000).default(10);
@@ -39,6 +46,20 @@ export const IdParamSchema = z.object({
 export const TwoIdParamsSchema = z.object({
   id1: UuidSchema,
   id2: UuidSchema,
+});
+
+// ADR-046: Location/SubLocation ID parameter schemas
+export const LocIdParamSchema = z.object({
+  locid: Blake3IdSchema,
+});
+
+export const SubIdParamSchema = z.object({
+  subid: Blake3IdSchema,
+});
+
+export const LocSubIdParamsSchema = z.object({
+  locid: Blake3IdSchema,
+  subid: Blake3IdSchema.nullable().optional(),
 });
 
 export const PaginationSchema = z.object({

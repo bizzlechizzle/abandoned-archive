@@ -1,9 +1,11 @@
 /**
  * Media Processing IPC Handlers
  * Handles media viewing, thumbnails, previews, caching, and XMP operations
+ * ADR-046: Updated locid/subid validation from UUID to BLAKE3 16-char hex
  */
 import { ipcMain, shell } from 'electron';
 import { z } from 'zod';
+import { Blake3IdSchema } from '../ipc-validation';
 import path from 'path';
 import fs from 'fs/promises';
 import type { Kysely } from 'kysely';
@@ -40,9 +42,10 @@ export function registerMediaProcessingHandlers(
   /**
    * OPT-094: Find media by location with optional sub-location filtering
    * Supports both old API (string locid) and new API (object with subid)
+   * ADR-046: locid/subid are 16-char BLAKE3 hex IDs
    * - Old: media:findByLocation(locid) - returns all media (backward compatible)
    * - New: media:findByLocation({ locid, subid: null }) - returns host media only
-   * - New: media:findByLocation({ locid, subid: 'uuid' }) - returns sub-location media only
+   * - New: media:findByLocation({ locid, subid: '<blake3-id>' }) - returns sub-location media only
    */
   ipcMain.handle('media:findByLocation', async (_event, params: unknown) => {
     try {
@@ -52,13 +55,13 @@ export function registerMediaProcessingHandlers(
       // Support both old (string) and new (object) call signatures
       if (typeof params === 'string') {
         // Backward compatible: media:findByLocation(locid)
-        locid = z.string().uuid().parse(params);
+        locid = Blake3IdSchema.parse(params);
         subid = undefined; // Return all media
       } else {
         // New API: media:findByLocation({ locid, subid })
         const schema = z.object({
-          locid: z.string().uuid(),
-          subid: z.string().uuid().nullable().optional(),
+          locid: Blake3IdSchema,
+          subid: Blake3IdSchema.nullable().optional(),
         });
         const validated = schema.parse(params);
         locid = validated.locid;
@@ -84,10 +87,10 @@ export function registerMediaProcessingHandlers(
   ipcMain.handle('media:findImagesPaginated', async (_event, params: unknown) => {
     try {
       const schema = z.object({
-        locid: z.string().uuid(),
+        locid: Blake3IdSchema,
         limit: z.number().min(1).max(500).default(50),
         offset: z.number().min(0).default(0),
-        subid: z.string().uuid().nullable().optional(), // OPT-094
+        subid: Blake3IdSchema.nullable().optional(), // OPT-094
       });
       const { locid, limit, offset, subid } = schema.parse(params);
       return await mediaRepo.findImagesByLocationPaginated(locid, limit, offset, { subid });
@@ -614,7 +617,7 @@ export function registerMediaProcessingHandlers(
   // Scan location for Live Photos and SDR duplicates (one-time or manual trigger)
   ipcMain.handle('media:detectLivePhotosAndSDR', async (_event, locid: unknown) => {
     try {
-      const validLocid = z.string().uuid().parse(locid);
+      const validLocid = Blake3IdSchema.parse(locid);
 
       // Get all images and videos for this location
       const images = await mediaRepo.getImageFilenamesByLocation(validLocid);
@@ -817,7 +820,7 @@ export function registerMediaProcessingHandlers(
   // Location-specific image fix: thumbnails + rotations + DNG quality for one location
   ipcMain.handle('media:fixLocationImages', async (_event, locid: unknown) => {
     try {
-      const validLocid = z.string().uuid().parse(locid);
+      const validLocid = Blake3IdSchema.parse(locid);
       const archivePath = await getArchivePath();
       const mediaPathService = new MediaPathService(archivePath);
       const thumbnailService = new ThumbnailService(mediaPathService);
@@ -906,7 +909,7 @@ export function registerMediaProcessingHandlers(
   // Location-specific video fix: poster frames + thumbnails for one location
   ipcMain.handle('media:fixLocationVideos', async (_event, locid: unknown) => {
     try {
-      const validLocid = z.string().uuid().parse(locid);
+      const validLocid = Blake3IdSchema.parse(locid);
       const archivePath = await getArchivePath();
       const mediaPathService = new MediaPathService(archivePath);
       const thumbnailService = new ThumbnailService(mediaPathService);
@@ -991,7 +994,7 @@ export function registerMediaProcessingHandlers(
   // Generate proxies for all videos in a location (background batch)
   ipcMain.handle('media:generateProxiesForLocation', async (event, locid: unknown) => {
     try {
-      const validLocid = z.string().uuid().parse(locid);
+      const validLocid = Blake3IdSchema.parse(locid);
       const archivePath = await getArchivePath();
 
       // Get videos without proxies
@@ -1142,7 +1145,7 @@ export function registerMediaProcessingHandlers(
       const validInput = z.object({
         hash: z.string().min(1),
         type: z.enum(['image', 'video', 'document']),
-        subid: z.string().uuid().nullable(),
+        subid: Blake3IdSchema.nullable(),
       }).parse(input);
 
       const { hash, type, subid } = validInput;

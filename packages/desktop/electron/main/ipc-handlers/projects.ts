@@ -1,5 +1,7 @@
 /**
  * Projects IPC Handlers
+ * ADR-046: Updated locid validation from UUID to BLAKE3 16-char hex
+ * Note: project_id remains UUID (entity ID), only locid uses BLAKE3
  * Handles projects:* IPC channels
  */
 import { ipcMain } from 'electron';
@@ -7,7 +9,7 @@ import { z } from 'zod';
 import type { Kysely } from 'kysely';
 import type { Database } from '../database';
 import { SQLiteProjectsRepository } from '../../repositories/sqlite-projects-repository';
-import { validate, LimitSchema } from '../ipc-validation';
+import { validate, LimitSchema, Blake3IdSchema } from '../ipc-validation';
 
 export function registerProjectsHandlers(db: Kysely<Database>) {
   const projectsRepo = new SQLiteProjectsRepository(db);
@@ -93,7 +95,7 @@ export function registerProjectsHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('projects:findByLocation', async (_event, locid: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(locid);
+      const validatedId = Blake3IdSchema.parse(locid);
       return await projectsRepo.findByLocation(validatedId);
     } catch (error) {
       console.error('Error finding projects by location:', error);
@@ -141,7 +143,7 @@ export function registerProjectsHandlers(db: Kysely<Database>) {
   ipcMain.handle('projects:addLocation', async (_event, project_id: unknown, locid: unknown) => {
     try {
       const validatedProjectId = z.string().uuid().parse(project_id);
-      const validatedLocId = z.string().uuid().parse(locid);
+      const validatedLocId = Blake3IdSchema.parse(locid);
       await projectsRepo.addLocation(validatedProjectId, validatedLocId);
     } catch (error) {
       console.error('Error adding location to project:', error);
@@ -156,7 +158,7 @@ export function registerProjectsHandlers(db: Kysely<Database>) {
   ipcMain.handle('projects:removeLocation', async (_event, project_id: unknown, locid: unknown) => {
     try {
       const validatedProjectId = z.string().uuid().parse(project_id);
-      const validatedLocId = z.string().uuid().parse(locid);
+      const validatedLocId = Blake3IdSchema.parse(locid);
       await projectsRepo.removeLocation(validatedProjectId, validatedLocId);
     } catch (error) {
       console.error('Error removing location from project:', error);
@@ -171,7 +173,7 @@ export function registerProjectsHandlers(db: Kysely<Database>) {
   ipcMain.handle('projects:isLocationInProject', async (_event, project_id: unknown, locid: unknown) => {
     try {
       const validatedProjectId = z.string().uuid().parse(project_id);
-      const validatedLocId = z.string().uuid().parse(locid);
+      const validatedLocId = Blake3IdSchema.parse(locid);
       return await projectsRepo.isLocationInProject(validatedProjectId, validatedLocId);
     } catch (error) {
       console.error('Error checking if location is in project:', error);

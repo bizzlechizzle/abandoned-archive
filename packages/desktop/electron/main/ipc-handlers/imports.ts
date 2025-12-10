@@ -1,13 +1,14 @@
 /**
  * Imports IPC Handlers
  * Handles imports:* IPC channels
+ * ADR-046: Updated locid validation from UUID to BLAKE3 16-char hex
  */
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
 import type { Database } from '../database';
 import { SQLiteImportRepository } from '../../repositories/sqlite-import-repository';
-import { validate, LimitSchema } from '../ipc-validation';
+import { validate, LimitSchema, Blake3IdSchema } from '../ipc-validation';
 
 export function registerImportsHandlers(db: Kysely<Database>) {
   const importRepo = new SQLiteImportRepository(db);
@@ -15,7 +16,7 @@ export function registerImportsHandlers(db: Kysely<Database>) {
   ipcMain.handle('imports:create', async (_event, input: unknown) => {
     try {
       const ImportInputSchema = z.object({
-        locid: z.string().uuid().nullable(),
+        locid: Blake3IdSchema.nullable(),
         auth_imp: z.string().nullable(),
         img_count: z.number().int().min(0).optional(),
         vid_count: z.number().int().min(0).optional(),
@@ -49,7 +50,7 @@ export function registerImportsHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('imports:findByLocation', async (_event, locid: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(locid);
+      const validatedId = Blake3IdSchema.parse(locid);
       return await importRepo.findByLocation(validatedId);
     } catch (error) {
       console.error('Error finding imports by location:', error);

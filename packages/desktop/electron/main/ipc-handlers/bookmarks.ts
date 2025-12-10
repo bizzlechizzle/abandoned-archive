@@ -1,13 +1,14 @@
 /**
  * Bookmarks IPC Handlers
  * Handles bookmarks:* IPC channels
+ * ADR-046: Updated locid validation from UUID to BLAKE3 16-char hex
  */
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
 import type { Database } from '../database';
 import { SQLiteBookmarksRepository } from '../../repositories/sqlite-bookmarks-repository';
-import { validate, LimitSchema } from '../ipc-validation';
+import { validate, LimitSchema, Blake3IdSchema } from '../ipc-validation';
 
 export function registerBookmarksHandlers(db: Kysely<Database>) {
   const bookmarksRepo = new SQLiteBookmarksRepository(db);
@@ -17,7 +18,7 @@ export function registerBookmarksHandlers(db: Kysely<Database>) {
       const BookmarkInputSchema = z.object({
         url: z.string().url(),
         title: z.string().nullable().optional(),
-        locid: z.string().uuid().nullable().optional(),
+        locid: Blake3IdSchema.nullable().optional(),
         auth_imp: z.string().nullable().optional(),
         thumbnail_path: z.string().nullable().optional(),
       });
@@ -49,7 +50,7 @@ export function registerBookmarksHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('bookmarks:findByLocation', async (_event, locid: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(locid);
+      const validatedId = Blake3IdSchema.parse(locid);
       return await bookmarksRepo.findByLocation(validatedId);
     } catch (error) {
       console.error('Error finding bookmarks by location:', error);
@@ -88,7 +89,7 @@ export function registerBookmarksHandlers(db: Kysely<Database>) {
       const BookmarkUpdateSchema = z.object({
         url: z.string().url().optional(),
         title: z.string().nullable().optional(),
-        locid: z.string().uuid().nullable().optional(),
+        locid: Blake3IdSchema.nullable().optional(),
         thumbnail_path: z.string().nullable().optional(),
       });
       const validatedUpdates = BookmarkUpdateSchema.parse(updates);
@@ -129,7 +130,7 @@ export function registerBookmarksHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('bookmarks:countByLocation', async (_event, locid: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(locid);
+      const validatedId = Blake3IdSchema.parse(locid);
       return await bookmarksRepo.countByLocation(validatedId);
     } catch (error) {
       console.error('Error counting bookmarks by location:', error);

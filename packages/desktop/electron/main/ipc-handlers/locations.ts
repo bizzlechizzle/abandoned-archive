@@ -5,10 +5,12 @@
  * Migration 25 - Phase 3: Author attribution via location_authors table
  * Migration 38: Duplicate detection for pin-to-location conversion
  * OPT-031: Uses shared user service for getCurrentUser
+ * ADR-046: Updated validation from UUID to BLAKE3 16-char hex for locid
  */
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
+import { Blake3IdSchema } from '../ipc-validation';
 import type { Database } from '../database';
 import { SQLiteLocationRepository } from '../../repositories/sqlite-location-repository';
 import { SQLiteLocationAuthorsRepository } from '../../repositories/sqlite-location-authors-repository';
@@ -45,7 +47,7 @@ export function registerLocationHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('location:findById', async (_event, id: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(id);
+      const validatedId = Blake3IdSchema.parse(id);
       const location = await locationRepo.findById(validatedId);
       return location;
     } catch (error) {
@@ -128,7 +130,7 @@ export function registerLocationHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('location:update', async (_event, id: unknown, input: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(id);
+      const validatedId = Blake3IdSchema.parse(id);
       const validatedInput = LocationInputSchema.partial().parse(input);
 
       // Migration 25: Inject current user context for modification tracking
@@ -195,7 +197,7 @@ export function registerLocationHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('location:delete', async (_event, id: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(id);
+      const validatedId = Blake3IdSchema.parse(id);
       await locationRepo.delete(validatedId);
     } catch (error) {
       console.error('Error deleting location:', error);
@@ -382,7 +384,7 @@ export function registerLocationHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('location:toggleFavorite', async (_event, id: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(id);
+      const validatedId = Blake3IdSchema.parse(id);
       const location = await locationRepo.findById(validatedId);
       if (!location) {
         throw new Error('Location not found');
@@ -490,7 +492,7 @@ export function registerLocationHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('location:updateRegionData', async (_event, id: unknown, regionData: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(id);
+      const validatedId = Blake3IdSchema.parse(id);
 
       // Validate region data
       const RegionDataSchema = z.object({
@@ -594,7 +596,7 @@ export function registerLocationHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('location:trackView', async (_event, id: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(id);
+      const validatedId = Blake3IdSchema.parse(id);
 
       // Get current user - required for per-user tracking
       const currentUser = await getCurrentUser(db);
@@ -620,7 +622,7 @@ export function registerLocationHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('location:getViewStats', async (_event, id: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(id);
+      const validatedId = Blake3IdSchema.parse(id);
       return await viewsRepo.getViewStats(validatedId);
     } catch (error) {
       console.error('Error getting view stats:', error);
@@ -637,7 +639,7 @@ export function registerLocationHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('location:getViewHistory', async (_event, id: unknown, limit?: number) => {
     try {
-      const validatedId = z.string().uuid().parse(id);
+      const validatedId = Blake3IdSchema.parse(id);
       return await viewsRepo.getViewHistory(validatedId, limit ?? 50);
     } catch (error) {
       console.error('Error getting view history:', error);

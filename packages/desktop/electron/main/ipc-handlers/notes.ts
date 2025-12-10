@@ -1,13 +1,14 @@
 /**
  * Notes IPC Handlers
  * Handles notes:* IPC channels
+ * ADR-046: Updated locid validation from UUID to BLAKE3 16-char hex
  */
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
 import type { Database } from '../database';
 import { SQLiteNotesRepository } from '../../repositories/sqlite-notes-repository';
-import { validate, LimitSchema } from '../ipc-validation';
+import { validate, LimitSchema, Blake3IdSchema } from '../ipc-validation';
 
 export function registerNotesHandlers(db: Kysely<Database>) {
   const notesRepo = new SQLiteNotesRepository(db);
@@ -15,7 +16,7 @@ export function registerNotesHandlers(db: Kysely<Database>) {
   ipcMain.handle('notes:create', async (_event, input: unknown) => {
     try {
       const NoteInputSchema = z.object({
-        locid: z.string().uuid(),
+        locid: Blake3IdSchema,
         note_text: z.string().min(1),
         auth_imp: z.string().nullable().optional(),
         note_type: z.string().optional(),
@@ -48,7 +49,7 @@ export function registerNotesHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('notes:findByLocation', async (_event, locid: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(locid);
+      const validatedId = Blake3IdSchema.parse(locid);
       return await notesRepo.findByLocation(validatedId);
     } catch (error) {
       console.error('Error finding notes by location:', error);
@@ -106,7 +107,7 @@ export function registerNotesHandlers(db: Kysely<Database>) {
 
   ipcMain.handle('notes:countByLocation', async (_event, locid: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(locid);
+      const validatedId = Blake3IdSchema.parse(locid);
       return await notesRepo.countByLocation(validatedId);
     } catch (error) {
       console.error('Error counting notes:', error);

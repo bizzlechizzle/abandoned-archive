@@ -2,13 +2,21 @@ import { z } from 'zod';
 
 /**
  * BLAKE3 hash validation: exactly 16 lowercase hex characters
+ * ADR-046: Used for media hashes (imghash, vidhash, etc.)
  */
 const HashSchema = z.string().length(16).regex(/^[a-f0-9]+$/, 'Must be 16 lowercase hex characters');
 
+/**
+ * BLAKE3 ID validation: exactly 16 lowercase hex characters
+ * ADR-046: Used for location and sublocation IDs
+ */
+const Blake3IdSchema = z.string().length(16).regex(/^[a-f0-9]+$/, 'Must be 16 lowercase hex characters');
+
 // Base Media Schema
+// ADR-046: locid/subid use BLAKE3 16-char hex IDs
 const BaseMediaSchema = z.object({
-  locid: z.string().uuid().optional(),
-  subid: z.string().uuid().optional(),
+  locid: Blake3IdSchema.optional(),
+  subid: Blake3IdSchema.optional(),
   auth_imp: z.string().optional()
 });
 

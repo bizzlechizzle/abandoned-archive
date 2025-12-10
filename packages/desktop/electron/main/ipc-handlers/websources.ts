@@ -2,6 +2,7 @@
  * Web Sources IPC Handlers
  * Handles websources:* IPC channels for the OPT-109 Web Archiving feature
  * Replaces bookmarks:* handlers with comprehensive web source management
+ * ADR-046: Updated locid/subid validation from UUID to BLAKE3 16-char hex
  */
 import { ipcMain } from 'electron';
 import { z } from 'zod';
@@ -15,7 +16,7 @@ import {
   WebSourceType,
   ComponentStatus,
 } from '../../repositories/sqlite-websources-repository';
-import { validate, LimitSchema } from '../ipc-validation';
+import { validate, LimitSchema, Blake3IdSchema } from '../ipc-validation';
 
 // =============================================================================
 // Validation Schemas
@@ -55,8 +56,8 @@ const ComponentStatusSchema = z.object({
 const WebSourceInputSchema = z.object({
   url: z.string().url(),
   title: z.string().nullable().optional(),
-  locid: z.string().uuid().nullable().optional(),
-  subid: z.string().uuid().nullable().optional(),
+  locid: Blake3IdSchema.nullable().optional(),
+  subid: Blake3IdSchema.nullable().optional(),
   source_type: WebSourceTypeSchema.optional(),
   notes: z.string().nullable().optional(),
   auth_imp: z.string().nullable().optional(),
@@ -64,8 +65,8 @@ const WebSourceInputSchema = z.object({
 
 const WebSourceUpdateSchema = z.object({
   title: z.string().nullable().optional(),
-  locid: z.string().uuid().nullable().optional(),
-  subid: z.string().uuid().nullable().optional(),
+  locid: Blake3IdSchema.nullable().optional(),
+  subid: Blake3IdSchema.nullable().optional(),
   source_type: WebSourceTypeSchema.optional(),
   notes: z.string().nullable().optional(),
   status: WebSourceStatusSchema.optional(),
@@ -127,7 +128,7 @@ const VersionOptionsSchema = z.object({
 });
 
 const SearchOptionsSchema = z.object({
-  locid: z.string().uuid().optional(),
+  locid: Blake3IdSchema.optional(),
   limit: z.number().int().positive().max(1000).optional(),
 });
 
@@ -204,7 +205,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('websources:findByLocation', async (_event, locid: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(locid);
+      const validatedId = Blake3IdSchema.parse(locid);
       return await webSourcesRepo.findByLocation(validatedId);
     } catch (error) {
       console.error('Error finding web sources by location:', error);
@@ -223,7 +224,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('websources:findBySubLocation', async (_event, subid: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(subid);
+      const validatedId = Blake3IdSchema.parse(subid);
       return await webSourcesRepo.findBySubLocation(validatedId);
     } catch (error) {
       console.error('Error finding web sources by sub-location:', error);
@@ -615,7 +616,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('websources:getStatsByLocation', async (_event, locid: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(locid);
+      const validatedId = Blake3IdSchema.parse(locid);
       return await webSourcesRepo.getStatsByLocation(validatedId);
     } catch (error) {
       console.error('Error getting web sources stats by location:', error);
@@ -647,7 +648,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('websources:countByLocation', async (_event, locid: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(locid);
+      const validatedId = Blake3IdSchema.parse(locid);
       return await webSourcesRepo.countByLocation(validatedId);
     } catch (error) {
       console.error('Error counting web sources by location:', error);
@@ -666,7 +667,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('websources:countBySubLocation', async (_event, subid: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(subid);
+      const validatedId = Blake3IdSchema.parse(subid);
       return await webSourcesRepo.countBySubLocation(validatedId);
     } catch (error) {
       console.error('Error counting web sources by sub-location:', error);
