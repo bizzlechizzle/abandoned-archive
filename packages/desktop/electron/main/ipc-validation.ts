@@ -17,7 +17,6 @@ export const Hex16IdSchema = z.string().length(16).regex(/^[a-f0-9]+$/, 'Must be
 
 /**
  * Generate a new 16-char hex ID
- * Use this instead of crypto.randomUUID()
  */
 export function generateId(): string {
   return randomBytes(8).toString('hex');
