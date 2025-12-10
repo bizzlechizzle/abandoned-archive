@@ -544,6 +544,64 @@ const api = {
     },
   },
 
+  // ADR-050: Import v2 progress events
+  importV2: {
+    onProgress: (callback: (progress: {
+      sessionId: string;
+      status: string;
+      step: number;
+      totalSteps: number;
+      percent: number;
+      currentFile: string;
+      filesProcessed: number;
+      filesTotal: number;
+      bytesProcessed: number;
+      bytesTotal: number;
+      duplicatesFound: number;
+      errorsFound: number;
+      estimatedRemainingMs: number;
+    }) => void) => {
+      const listener = (_event: unknown, progress: {
+        sessionId: string;
+        status: string;
+        step: number;
+        totalSteps: number;
+        percent: number;
+        currentFile: string;
+        filesProcessed: number;
+        filesTotal: number;
+        bytesProcessed: number;
+        bytesTotal: number;
+        duplicatesFound: number;
+        errorsFound: number;
+        estimatedRemainingMs: number;
+      }) => callback(progress);
+      ipcRenderer.on('import:v2:progress', listener);
+      return () => ipcRenderer.removeListener('import:v2:progress', listener);
+    },
+    onComplete: (callback: (event: {
+      sessionId: string;
+      status: string;
+      totalImported: number;
+      totalDuplicates: number;
+      totalErrors: number;
+      totalDurationMs: number;
+      jobsQueued: number;
+    }) => void) => {
+      const listener = (_event: unknown, eventData: {
+        sessionId: string;
+        status: string;
+        totalImported: number;
+        totalDuplicates: number;
+        totalErrors: number;
+        totalDurationMs: number;
+        jobsQueued: number;
+      }) => callback(eventData);
+      ipcRenderer.on('import:v2:complete', listener);
+      return () => ipcRenderer.removeListener('import:v2:complete', listener);
+    },
+  },
+
   notes: {
     create: (input: {
       locid: string;

@@ -49,6 +49,8 @@
 
   // Import progress listener
   let unsubscribeProgress: (() => void) | null = null;
+  // ADR-050: Import v2 progress listener
+  let unsubscribeV2Progress: (() => void) | null = null;
   // FIX: Import started listener (receives importId immediately for cancel to work)
   let unsubscribeStarted: (() => void) | null = null;
   // FIX 5.4: Backup status listener
@@ -182,6 +184,21 @@
       });
     }
 
+    // ADR-050: Subscribe to Import v2 progress events (5-step pipeline)
+    // This is the new import system with incremental filesProcessed tracking
+    if (window.electronAPI?.importV2?.onProgress) {
+      unsubscribeV2Progress = window.electronAPI.importV2.onProgress((progress) => {
+        // Map v2 progress fields to import store
+        importStore.updateProgress(
+          progress.filesProcessed,
+          progress.filesTotal,
+          Math.round(progress.percent),
+          progress.currentFile,
+          progress.sessionId
+        );
+      });
+    }
+
     // FIX 5.4: Subscribe to backup status events from main process
     if (window.electronAPI?.backup?.onStatus) {
       unsubscribeBackup = window.electronAPI.backup.onStatus((status) => {
@@ -218,6 +235,10 @@
     }
     if (unsubscribeProgress) {
       unsubscribeProgress();
+    }
+    // ADR-050: Cleanup v2 progress listener
+    if (unsubscribeV2Progress) {
+      unsubscribeV2Progress();
     }
     // FIX 5.4: Cleanup backup listener
     if (unsubscribeBackup) {

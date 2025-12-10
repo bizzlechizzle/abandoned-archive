@@ -355,12 +355,19 @@ export class ImportOrchestrator {
         emitProgress();
       } else {
         // LOCAL SOURCE: Use parallel hasher (fast for local disk)
-        hashResult = await this.hasher.hash(scanResult.files, {
+        // ADR-050: Track filesProcessed incrementally during hashing
+      let hashFilesProcessed = 0;
+      hashResult = await this.hasher.hash(scanResult.files, {
           signal,
-          onProgress: (percent, currentFile) => {
+          onProgress: (percent, currentFile, filesHashed) => {
             progress.percent = percent;
             progress.currentFile = currentFile;
             progress.duplicatesFound = hashResult?.totalDuplicates ?? 0;
+            // ADR-050: Update filesProcessed with real count during hash step
+            if (filesHashed !== undefined) {
+              hashFilesProcessed = filesHashed;
+              progress.filesProcessed = filesHashed;
+            }
             emitProgress();
           },
         });
@@ -395,12 +402,17 @@ export class ImportOrchestrator {
       copyTimer = metrics.timer(MetricNames.IMPORT_COPY_DURATION, { sessionId });
       const copySpan = importSpan.child(OperationNames.IMPORT_COPY);
 
+      // ADR-050: Track filesProcessed incrementally during copy
       copyResult = await this.copier.copy(hashResult.files, options.location, {
         signal,
-        onProgress: (percent, currentFile, bytesCopied, totalBytes) => {
+        onProgress: (percent, currentFile, bytesCopied, totalBytes, filesCopied) => {
           progress.percent = percent;
           progress.currentFile = currentFile;
           progress.bytesProcessed = bytesCopied;
+          // ADR-050: Update filesProcessed with real count during copy step
+          if (filesCopied !== undefined) {
+            progress.filesProcessed = filesCopied;
+          }
           emitProgress();
         },
       });

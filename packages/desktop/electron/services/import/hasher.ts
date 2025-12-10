@@ -41,8 +41,9 @@ export interface HashResult {
 export interface HasherOptions {
   /**
    * Progress callback (5-40% range)
+   * ADR-050: Added filesHashed parameter for incremental progress tracking
    */
-  onProgress?: (percent: number, currentFile: string) => void;
+  onProgress?: (percent: number, currentFile: string, filesHashed?: number) => void;
 
   /**
    * Abort signal for cancellation
@@ -124,9 +125,10 @@ export class Hasher {
         completedFiles++;
 
         // Report progress (5-40% range)
+        // ADR-050: Pass completedFiles for incremental progress tracking
         if (options?.onProgress) {
           const percent = 5 + ((completedFiles / totalFiles) * 35);
-          options.onProgress(percent, file.filename);
+          options.onProgress(percent, file.filename, completedFiles);
         }
 
         // FIX 6: Stream result to caller for incremental persistence

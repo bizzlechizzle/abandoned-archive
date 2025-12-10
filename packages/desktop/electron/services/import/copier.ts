@@ -64,8 +64,9 @@ export interface CopyResult {
 export interface CopierOptions {
   /**
    * Progress callback (40-80% range)
+   * ADR-050: Added filesCopied parameter for incremental progress tracking
    */
-  onProgress?: (percent: number, currentFile: string, bytesCopied: number, totalBytes: number) => void;
+  onProgress?: (percent: number, currentFile: string, bytesCopied: number, totalBytes: number, filesCopied?: number) => void;
 
   /**
    * Abort signal for cancellation
@@ -340,9 +341,10 @@ export class Copier {
         }
 
         // Progress callback (40-80% range) - on file completion
+        // ADR-050: Pass completedCount for incremental progress tracking
         if (options?.onProgress) {
           const percent = 40 + ((bytesCopied / totalBytes) * 40);
-          options.onProgress(percent, file.filename, bytesCopied, totalBytes);
+          options.onProgress(percent, file.filename, bytesCopied, totalBytes, completedCount);
         }
 
         // Streaming callback for incremental persistence
