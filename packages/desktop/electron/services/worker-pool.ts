@@ -12,7 +12,7 @@
  */
 
 import { Worker } from 'worker_threads';
-import { generateId } from '../../main/ipc-validation';
+import { generateId } from '../main/ipc-validation';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import PQueue from 'p-queue';

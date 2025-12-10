@@ -1,6 +1,6 @@
 import path from 'path';
 import fs from 'fs/promises';
-import { generateId } from '../../main/ipc-validation';
+import { generateId } from '../main/ipc-validation';
 
 /**
  * Import Phase States per whereswaldo11.md spec:

@@ -12,7 +12,7 @@
  * @module services/job-queue
  */
 
-import { generateId } from '../../main/ipc-validation';
+import { generateId } from '../main/ipc-validation';
 import type { Kysely } from 'kysely';
 import type { Database, JobsTable } from '../main/database.types';
 import { getLogger } from './logger-service';
