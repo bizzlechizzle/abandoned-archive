@@ -270,7 +270,8 @@
 
       // OPT-094: Server-side filtering - no client-side filtering needed
       // Server returns exact data based on subid parameter:
-      // - subid = 'uuid' → returns only that sub-location's media
+      // ADR-046: subid is 16-char BLAKE3 hex ID
+      // - subid = '<blake3-id>' → returns only that sub-location's media
       // - subid = null → returns only host-level media (subid IS NULL in DB)
       if (media) {
         images = (media.images as MediaImage[]) || [];

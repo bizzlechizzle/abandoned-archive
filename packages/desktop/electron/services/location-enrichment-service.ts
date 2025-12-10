@@ -124,7 +124,7 @@ export class LocationEnrichmentService {
    * - Region calc failure: Logs warning, continues with GPS + address only
    * - Database failure: Returns error result
    *
-   * @param locid - Location UUID to enrich
+   * @param locid - Location ID (BLAKE3 16-char hex) to enrich
    * @param input - GPS coordinates and options
    * @returns What was updated
    *

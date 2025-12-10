@@ -53,10 +53,15 @@ export function createTestDatabase(): {
 /**
  * Create test location data with all required fields per database.types.ts
  */
+// ADR-046: Generate BLAKE3-like 16-char hex ID for testing
+function generateTestBlake3Id(): string {
+  return Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+}
+
 export function createTestLocation(overrides: Partial<any> = {}) {
   return {
-    // Identity
-    locid: crypto.randomUUID(),
+    // Identity - ADR-046: locid is BLAKE3 16-char hex
+    locid: generateTestBlake3Id(),
     loc12: `L-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
     locnam: 'Test Location',
 

@@ -435,9 +435,12 @@ function main() {
       )
     `);
 
+    // ADR-046: Generate BLAKE3-like 16-char hex ID
+    const generateBlake3Id = () => Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+
     let seededCount = 0;
     for (const loc of testLocations) {
-      const locid = crypto.randomUUID();
+      const locid = generateBlake3Id();
       const loc12 = generateLoc12(loc.locnam);
       const slocnam = loc.locnam.substring(0, 20).toLowerCase().replace(/[^a-z0-9]+/g, '-');
 

@@ -22,7 +22,12 @@ if [ ! -f "$DB_PATH" ]; then
     exit 1
 fi
 
-# Function to generate UUID
+# ADR-046: Generate BLAKE3-like 16-char hex ID (for locid)
+generate_blake3_id() {
+    openssl rand -hex 8
+}
+
+# Generate UUID (for user_id and other entity IDs)
 generate_uuid() {
     python3 -c "import uuid; print(str(uuid.uuid4()))"
 }
@@ -118,7 +123,7 @@ seed_locations() {
     for loc in "${locations[@]}"; do
         IFS='|' read -r name type stype city county state zip lat lng condition status access <<< "$loc"
 
-        LOCID=$(generate_uuid)
+        LOCID=$(generate_blake3_id)
         LOC12=$(generate_loc12 "$name")
         SLOCNAM=$(echo "$name" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]-' | head -c 20)
 
