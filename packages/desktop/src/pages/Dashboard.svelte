@@ -197,16 +197,13 @@
                   onclick={() => router.navigate(`/location/${location.locid}`)}
                   class="flex items-center gap-4 w-full text-left px-3 py-3 rounded hover:bg-braun-100 transition"
                 >
-                  <div class="w-32 h-20 bg-braun-200 rounded flex-shrink-0 overflow-hidden">
-                    {#if location.heroThumbPath}
+                  {#if location.heroThumbPath}
+                    <div class="w-32 h-20 bg-braun-200 rounded flex-shrink-0 overflow-hidden">
                       <img src={`media://${location.heroThumbPath}?v=${cacheVersion}`} alt="" class="w-full h-full object-cover" loading="lazy" width="128" height="80" />
-                    {/if}
-                  </div>
+                    </div>
+                  {/if}
                   <div class="min-w-0">
                     <span class="text-base text-braun-900 font-medium truncate block">{location.locnam}</span>
-                    {#if location.address?.state}
-                      <span class="text-sm text-braun-500">{location.address.state}</span>
-                    {/if}
                   </div>
                 </button>
               {/each}
@@ -349,16 +346,13 @@
                 onclick={() => router.navigate(`/location/${location.locid}`)}
                 class="flex items-center gap-4 w-full text-left px-2 py-2 rounded hover:bg-braun-100 transition"
               >
-                <div class="w-16 h-16 bg-braun-200 rounded flex-shrink-0 overflow-hidden">
-                  {#if location.heroThumbPath}
+                {#if location.heroThumbPath}
+                  <div class="w-16 h-16 bg-braun-200 rounded flex-shrink-0 overflow-hidden">
                     <img src={`media://${location.heroThumbPath}?v=${cacheVersion}`} alt="" class="w-full h-full object-cover" loading="lazy" width="64" height="64" />
-                  {/if}
-                </div>
+                  </div>
+                {/if}
                 <div class="min-w-0">
                   <span class="text-sm text-braun-900 font-medium truncate block">{location.locnam}</span>
-                  {#if location.address?.state}
-                    <span class="text-xs text-braun-500">{location.address.state}</span>
-                  {/if}
                 </div>
               </button>
             {/each}
@@ -384,18 +378,15 @@
                 class="flex items-center gap-4 w-full text-left px-2 py-2 rounded hover:bg-braun-100 transition"
                 disabled={!importRecord.locid}
               >
-                <div class="w-16 h-16 bg-braun-200 rounded flex-shrink-0 overflow-hidden flex items-center justify-center text-braun-500 text-lg font-medium">
-                  {#if importRecord.heroThumbPath}
+                {#if importRecord.heroThumbPath}
+                  <div class="w-16 h-16 bg-braun-200 rounded flex-shrink-0 overflow-hidden">
                     <img src={`media://${importRecord.heroThumbPath}?v=${cacheVersion}`} alt="" class="w-full h-full object-cover" loading="lazy" width="64" height="64" />
-                  {:else}
-                    {importRecord.img_count + importRecord.vid_count + importRecord.doc_count}
-                  {/if}
-                </div>
+                  </div>
+                {/if}
                 <div class="min-w-0">
                   <span class="text-sm text-braun-900 font-medium truncate block">
                     {importRecord.locnam || `Import #${importRecord.import_id.slice(0, 8)}`}
                   </span>
-                  <span class="text-xs text-braun-500">{formatDate(importRecord.import_date)}</span>
                 </div>
               </button>
             {/each}

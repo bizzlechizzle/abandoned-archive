@@ -970,19 +970,32 @@
             {/if}
           </button>
         {:else}
-          <!-- No hero - placeholder -->
+          <!-- No hero - same spacing, transparent background -->
           <div
-            class="relative overflow-hidden bg-braun-100 flex items-center justify-center rounded"
+            class="relative overflow-hidden rounded"
             style="aspect-ratio: 4 / 1;"
           >
-              <div class="text-center text-braun-500">
-                <svg class="w-8 h-8 mx-auto mb-2 text-braun-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                <p class="text-sm font-medium">No hero image</p>
-              </div>
+            <!-- Location name - bottom right, dark font -->
+            <div class="absolute bottom-0 right-0 p-4 flex flex-col items-end">
+              {#if isViewingSubLocation && currentSubLocation}
+                <!-- Host location name (small) above sub-location name -->
+                <button
+                  onclick={() => router.navigate(`/location/${locationId}`)}
+                  class="text-sm text-braun-500 hover:underline mb-1"
+                >
+                  {location.locnam}
+                </button>
+                <span class="text-4xl font-bold text-braun-900">
+                  {currentSubLocation.subnam}
+                </span>
+              {:else}
+                <span class="text-4xl font-bold text-braun-900">
+                  {location.locnam}
+                </span>
+              {/if}
             </div>
-          {/if}
+          </div>
+        {/if}
       </div>
 
       {#if isEditing}

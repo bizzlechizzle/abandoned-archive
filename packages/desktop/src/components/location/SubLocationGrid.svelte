@@ -63,32 +63,30 @@
           onclick={() => navigateToSubLocation(subloc.subid)}
           class="building-card rounded overflow-hidden text-left group"
         >
-          <!-- Hero image (4:1 aspect ratio to match sub-location page) -->
-          <div class="card-container bg-braun-100 relative overflow-hidden" style="aspect-ratio: 4 / 1;">
+          <!-- Card container (4:1 aspect ratio) - transparent when no hero -->
+          <div class="card-container relative overflow-hidden {subloc.hero_thumb_path ? 'bg-braun-100' : ''}" style="aspect-ratio: 4 / 1;">
             {#if subloc.hero_thumb_path}
               <img
                 src="media://{subloc.hero_thumb_path}"
                 alt={subloc.subnam}
                 class="w-full h-full object-cover"
               />
+              <!-- Hover-only overlay -->
+              <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition pointer-events-none"></div>
+              <!-- Bottom-right text - white -->
+              <div class="absolute bottom-0 right-0 p-4 pointer-events-none">
+                <span class="text-2xl font-bold" style="color: #FAFAF8;">
+                  {subloc.subnam}
+                </span>
+              </div>
             {:else}
-              <div class="w-full h-full flex items-center justify-center bg-braun-200">
-                <svg class="w-12 h-12 text-braun-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                </svg>
+              <!-- No hero - title only, same position -->
+              <div class="absolute bottom-0 right-0 p-4 pointer-events-none">
+                <span class="text-2xl font-bold text-braun-900">
+                  {subloc.subnam}
+                </span>
               </div>
             {/if}
-
-            <!-- Hover-only overlay (matches sub-location page) -->
-            <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition pointer-events-none"></div>
-
-            <!-- Bottom-right text (matches sub-location page) -->
-            <div class="absolute bottom-0 right-0 p-4 pointer-events-none">
-              <span class="text-2xl font-bold" style="color: #FAFAF8;">
-                {subloc.subnam}
-              </span>
-            </div>
-
           </div>
         </button>
       {/each}
