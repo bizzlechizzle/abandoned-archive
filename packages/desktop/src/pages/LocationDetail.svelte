@@ -900,102 +900,102 @@
       </div>
     </div>
   {:else}
-    <div class="max-w-6xl mx-auto px-8 pt-8 pb-8">
-      <!-- Hero Image (full width, 4:1 aspect ratio) -->
-      <div class="mb-6">
-        {#if heroThumbPath}
-          {@const focalX = currentSubLocation?.hero_focal_x ?? location?.hero_focal_x ?? 0.5}
-          {@const focalY = currentSubLocation?.hero_focal_y ?? location?.hero_focal_y ?? 0.5}
-          <button
-            onclick={handleHeroClick}
-            class="relative overflow-hidden w-full group cursor-pointer rounded"
-            style="aspect-ratio: 4 / 1;"
-            title="View hero image"
-          >
-            <img
-              src={`media://${heroThumbPath}`}
-              alt="Hero image"
-              class="w-full h-full object-cover"
-              style="object-position: {focalX * 100}% {focalY * 100}%;"
-            />
-            <!-- Hover overlay -->
-            <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition"></div>
-            <!-- Location name overlay - bottom right -->
-            <div class="absolute bottom-0 right-0 p-4 pointer-events-none flex flex-col items-end">
-              {#if isViewingSubLocation && currentSubLocation}
-                <!-- Host location name (small, clickable) above sub-location name -->
-                <button
-                  onclick={(e) => { e.stopPropagation(); router.navigate(`/location/${locationId}`); }}
-                  class="text-sm hover:underline pointer-events-auto mb-1"
-                  style="color: #FAFAF8;"
-                >
-                  {location.locnam}
-                </button>
-                <span class="text-4xl font-bold" style="color: #FAFAF8;">
-                  {currentSubLocation.subnam}
-                </span>
-              {:else}
-                <span class="text-4xl font-bold" style="color: #FAFAF8;">
-                  {location.locnam}
-                </span>
-              {/if}
-            </div>
-            {#if isViewingSubLocation && sublocations.length > 1}
-              <!-- Sibling sub-locations (sub-location view) - top left, excluding current -->
-              <div
-                class="absolute top-0 left-0 p-4 flex flex-wrap gap-x-4 gap-y-1 text-sm pointer-events-auto"
+    <div class="max-w-6xl mx-auto px-8 pt-12 pb-8">
+      <!-- Index Card Header -->
+      <div class="mb-8 py-16">
+        <div class="index-card bg-white border border-braun-300 rounded p-6">
+          <div class="flex gap-6">
+            <!-- Left: Thumbnail (4:1 ratio, grows with content) -->
+            {#if heroThumbPath}
+              {@const focalX = currentSubLocation?.hero_focal_x ?? location?.hero_focal_x ?? 0.5}
+              {@const focalY = currentSubLocation?.hero_focal_y ?? location?.hero_focal_y ?? 0.5}
+              <button
+                onclick={handleHeroClick}
+                class="flex-shrink-0 w-72 rounded overflow-hidden group"
+                title="View hero image"
               >
-                {#each sublocations.filter(s => s.subid !== currentSubLocation?.subid) as subloc}
-                  <button
-                    onclick={(e) => { e.stopPropagation(); router.navigate(`/location/${locationId}/sub/${subloc.subid}`); }}
-                    class="hover:underline"
-                    style="color: #FAFAF8;"
-                  >{subloc.subnam}</button>
-                {/each}
-              </div>
-            {:else if !isViewingSubLocation && isHostLocation && sublocations.length > 0}
-              <!-- Buildings tagline (host location view) - top left -->
-              <div
-                bind:this={sublocTaglineEl}
-                class="absolute top-0 left-0 p-4 flex flex-wrap gap-x-4 gap-y-1 text-sm pointer-events-auto"
-              >
-                {#each sublocations as subloc}
-                  <button
-                    onclick={(e) => { e.stopPropagation(); router.navigate(`/location/${locationId}/sub/${subloc.subid}`); }}
-                    class="hover:underline"
-                    style="color: #FAFAF8;"
-                  >{subloc.subnam}</button>
-                {/each}
+                <img
+                  src={`media://${heroThumbPath}`}
+                  alt="Hero thumbnail"
+                  class="w-full h-full object-cover group-hover:opacity-80 transition scale-110"
+                  style="aspect-ratio: 4 / 1; object-position: {focalX * 100}% {focalY * 100}%;"
+                />
+              </button>
+            {:else}
+              <!-- Placeholder when no hero -->
+              <div class="flex-shrink-0 w-72 rounded bg-braun-100 flex items-center justify-center" style="aspect-ratio: 4 / 1;">
+                <svg class="w-8 h-8 text-braun-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
               </div>
             {/if}
-          </button>
-        {:else}
-          <!-- No hero - same spacing, transparent background -->
-          <div
-            class="relative overflow-hidden rounded"
-            style="aspect-ratio: 4 / 1;"
-          >
-            <!-- Location name - bottom right, dark font -->
-            <div class="absolute bottom-0 right-0 p-4 flex flex-col items-end">
+
+            <!-- Right: Location Info (right-justified) -->
+            <div class="flex-1 min-w-0 space-y-3 text-right">
+              <!-- Title Row -->
               {#if isViewingSubLocation && currentSubLocation}
-                <!-- Host location name (small) above sub-location name -->
-                <button
-                  onclick={() => router.navigate(`/location/${locationId}`)}
-                  class="text-sm text-braun-500 hover:underline mb-1"
-                >
-                  {location.locnam}
-                </button>
-                <span class="text-4xl font-bold text-braun-900">
-                  {currentSubLocation.subnam}
-                </span>
+                <!-- Sub-location: Show host name above -->
+                <div>
+                  <button
+                    onclick={() => router.navigate(`/location/${locationId}`)}
+                    class="text-sm text-braun-500 hover:text-braun-900 hover:underline"
+                  >
+                    {location.locnam}
+                  </button>
+                  <h1 class="text-5xl font-bold text-braun-900 leading-tight">
+                    {currentSubLocation.subnam}
+                  </h1>
+                </div>
               {:else}
-                <span class="text-4xl font-bold text-braun-900">
+                <h1 class="text-5xl font-bold text-braun-900 leading-tight">
                   {location.locnam}
-                </span>
+                </h1>
+              {/if}
+
+              <!-- Status + Sub-Type -->
+              <p class="text-base text-braun-700">
+                {#if location.access}{location.access}{/if}
+                {#if location.access && location.stype} {/if}
+                {#if location.stype}{location.stype}{/if}
+                {#if !location.access && !location.stype}<span class="text-braun-400 italic">No status set</span>{/if}
+              </p>
+
+              <!-- Built / Abandoned -->
+              {#if location.builtYear || location.abandonedYear}
+                <p class="text-base text-braun-700">
+                  {#if location.builtYear}Est. {location.builtYear}{/if}
+                  {#if location.builtYear && location.abandonedYear}<span class="text-braun-400"> · </span>{/if}
+                  {#if location.abandonedYear}Closed {location.abandonedYear}{/if}
+                </p>
+              {/if}
+
+              <!-- Buildings (Host Location) or Siblings (Sub-Location) -->
+              {#if isViewingSubLocation && sublocations.length > 1}
+                <p class="text-sm text-braun-500">
+                  <span class="text-braun-400">Also: </span>
+                  {#each sublocations.filter(s => s.subid !== currentSubLocation?.subid) as subloc, i}
+                    {#if i > 0}<span class="text-braun-400"> · </span>{/if}
+                    <button
+                      onclick={() => router.navigate(`/location/${locationId}/sub/${subloc.subid}`)}
+                      class="hover:text-braun-900 hover:underline"
+                    >{subloc.subnam}</button>
+                  {/each}
+                </p>
+              {:else if !isViewingSubLocation && isHostLocation && sublocations.length > 0}
+                <p class="text-sm text-braun-500" bind:this={sublocTaglineEl}>
+                  <span class="text-braun-400">{sublocations.length} building{sublocations.length > 1 ? 's' : ''}: </span>
+                  {#each sublocations as subloc, i}
+                    {#if i > 0}<span class="text-braun-400"> · </span>{/if}
+                    <button
+                      onclick={() => router.navigate(`/location/${locationId}/sub/${subloc.subid}`)}
+                      class="hover:text-braun-900 hover:underline"
+                    >{subloc.subnam}</button>
+                  {/each}
+                </p>
               {/if}
             </div>
           </div>
-        {/if}
+        </div>
       </div>
 
       {#if isEditing}
