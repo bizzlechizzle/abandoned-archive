@@ -2488,6 +2488,18 @@ function runMigrations(sqlite: Database.Database): void {
       console.log(`Migration 64 completed: Backfilled ${backfilled} sources with extracted_text`);
     }
 
+    // Migration 65: Add stype column to slocs table for sub-location sub-types
+    // Host locations and sub-locations each have their own type/subtype taxonomies
+    const slocsHasStype = sqlite.prepare(`
+      SELECT COUNT(*) as cnt FROM pragma_table_info('slocs') WHERE name = 'stype'
+    `).get() as { cnt: number };
+
+    if (slocsHasStype.cnt === 0) {
+      console.log('Running migration 65: Adding stype column to slocs table');
+      sqlite.exec(`ALTER TABLE slocs ADD COLUMN stype TEXT`);
+      console.log('Migration 65 completed: stype column added to slocs');
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

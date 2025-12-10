@@ -35,11 +35,13 @@
   }
 
   // Migration 32: SubLocation type for edit mode
+  // Migration 65: Added stype for sub-location sub-type
   interface SubLocationData {
     subid: string;
     subnam: string;
     ssubname: string | null;
     type: string | null;
+    stype: string | null;
     status: string | null;
     is_primary: boolean;
     akanam: string | null;
@@ -47,10 +49,12 @@
   }
 
   // Migration 32: SubLocation update input
+  // Migration 65: Added stype for sub-location sub-type
   interface SubLocationUpdates {
     subnam?: string;
     ssubname?: string | null;
     type?: string | null;
+    stype?: string | null;
     status?: string | null;
     is_primary?: boolean;
     akanam?: string | null;
@@ -105,11 +109,20 @@
   let authors = $state<LocationAuthor[]>([]);
 
   // Load autocomplete options and authors on mount
+  // Migration 65: Load from sublocation-specific endpoints when in sub-location mode
   onMount(async () => {
     try {
+      // Determine which API to use based on mode
+      const typePromise = isSubLocationMode
+        ? window.electronAPI?.sublocations?.getDistinctTypes?.() || []
+        : window.electronAPI?.locations?.getDistinctTypes?.() || [];
+      const stypePromise = isSubLocationMode
+        ? window.electronAPI?.sublocations?.getDistinctSubTypes?.() || []
+        : window.electronAPI?.locations?.getDistinctSubTypes?.() || [];
+
       const [types, stypes, locationAuthors] = await Promise.all([
-        window.electronAPI?.locations?.getDistinctTypes?.() || [],
-        window.electronAPI?.locations?.getDistinctSubTypes?.() || [],
+        typePromise,
+        stypePromise,
         window.electronAPI?.locationAuthors?.findByLocation?.(location.locid) || [],
       ]);
       typeOptions = types;
@@ -136,7 +149,7 @@
     abandonedYear: '',
     abandonedType: 'year' as 'year' | 'range' | 'date',
     type: '',             // Type (locs.type or slocs.type for Building Type)
-    stype: '',            // Sub-Type (host only)
+    stype: '',            // Sub-Type (Migration 65: now supported for both host and sub-locations)
     historic: false,
     favorite: false,
     project: false,
@@ -309,7 +322,8 @@
         akanamVerified: false, // Not used for sub-locations
         access: currentSubLocation.status || '', // slocs.status
         type: currentSubLocation.type || '', // Building Type
-        stype: '', // Not used for sub-locations
+        // Migration 65: Sub-location sub-type (now supported)
+        stype: currentSubLocation.stype || '',
         is_primary: currentSubLocation.is_primary || false,
         // Campus-level fields from host location
         builtYear: location.builtYear || '',
@@ -369,6 +383,8 @@
         const subUpdates: SubLocationUpdates = {
           subnam: editForm.locnam,
           type: editForm.type || null, // Building Type
+          // Migration 65: Sub-location sub-type (separate from host location stype)
+          stype: editForm.stype || null,
           status: editForm.access || null,
           is_primary: editForm.is_primary,
           akanam: editForm.akanam || null,

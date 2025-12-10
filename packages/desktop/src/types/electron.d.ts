@@ -458,103 +458,189 @@ export interface ElectronAPI {
   };
 
   // Migration 28: Sub-location API
+  // ADR-046: Updated to remove sub12 (subid is BLAKE3 16-char hash now)
+  // Migration 31: Added GPS fields
+  // Migration 32: Added akanam/historicalName
+  // Migration 65: Added stype and getDistinctTypes/getDistinctSubTypes
   sublocations: {
     create: (input: {
       locid: string;
       subnam: string;
       ssubname?: string | null;
       type?: string | null;
+      stype?: string | null;
       status?: string | null;
       is_primary?: boolean;
       created_by?: string | null;
     }) => Promise<{
       subid: string;
-      sub12: string;
       locid: string;
       subnam: string;
       ssubname: string | null;
       type: string | null;
+      stype: string | null;
       status: string | null;
       hero_imghash: string | null;
+      hero_focal_x: number;
+      hero_focal_y: number;
       is_primary: boolean;
       created_date: string;
       created_by: string | null;
       modified_date: string | null;
       modified_by: string | null;
+      gps_lat: number | null;
+      gps_lng: number | null;
+      gps_accuracy: number | null;
+      gps_source: string | null;
+      gps_verified_on_map: boolean;
+      gps_captured_at: string | null;
+      akanam: string | null;
+      historicalName: string | null;
     }>;
     findById: (subid: string) => Promise<{
       subid: string;
-      sub12: string;
       locid: string;
       subnam: string;
       ssubname: string | null;
       type: string | null;
+      stype: string | null;
       status: string | null;
       hero_imghash: string | null;
+      hero_focal_x: number;
+      hero_focal_y: number;
       is_primary: boolean;
       created_date: string;
       created_by: string | null;
       modified_date: string | null;
       modified_by: string | null;
+      gps_lat: number | null;
+      gps_lng: number | null;
+      gps_accuracy: number | null;
+      gps_source: string | null;
+      gps_verified_on_map: boolean;
+      gps_captured_at: string | null;
+      akanam: string | null;
+      historicalName: string | null;
     } | null>;
     findByLocation: (locid: string) => Promise<Array<{
       subid: string;
-      sub12: string;
       locid: string;
       subnam: string;
       ssubname: string | null;
       type: string | null;
+      stype: string | null;
       status: string | null;
       hero_imghash: string | null;
+      hero_focal_x: number;
+      hero_focal_y: number;
       is_primary: boolean;
       created_date: string;
       created_by: string | null;
       modified_date: string | null;
       modified_by: string | null;
+      gps_lat: number | null;
+      gps_lng: number | null;
+      gps_accuracy: number | null;
+      gps_source: string | null;
+      gps_verified_on_map: boolean;
+      gps_captured_at: string | null;
+      akanam: string | null;
+      historicalName: string | null;
     }>>;
     findWithHeroImages: (locid: string) => Promise<Array<{
       subid: string;
-      sub12: string;
       locid: string;
       subnam: string;
       ssubname: string | null;
       type: string | null;
+      stype: string | null;
       status: string | null;
       hero_imghash: string | null;
+      hero_focal_x: number;
+      hero_focal_y: number;
       is_primary: boolean;
       created_date: string;
       created_by: string | null;
       modified_date: string | null;
       modified_by: string | null;
+      gps_lat: number | null;
+      gps_lng: number | null;
+      gps_accuracy: number | null;
+      gps_source: string | null;
+      gps_verified_on_map: boolean;
+      gps_captured_at: string | null;
+      akanam: string | null;
+      historicalName: string | null;
       hero_thumb_path?: string;
+      asset_count?: number;
     }>>;
     update: (subid: string, updates: {
       subnam?: string;
       ssubname?: string | null;
       type?: string | null;
+      stype?: string | null;
       status?: string | null;
       hero_imghash?: string | null;
+      hero_focal_x?: number;
+      hero_focal_y?: number;
       is_primary?: boolean;
       modified_by?: string | null;
+      akanam?: string | null;
+      historicalName?: string | null;
     }) => Promise<{
       subid: string;
-      sub12: string;
       locid: string;
       subnam: string;
       ssubname: string | null;
       type: string | null;
+      stype: string | null;
       status: string | null;
       hero_imghash: string | null;
+      hero_focal_x: number;
+      hero_focal_y: number;
       is_primary: boolean;
       created_date: string;
       created_by: string | null;
       modified_date: string | null;
       modified_by: string | null;
+      gps_lat: number | null;
+      gps_lng: number | null;
+      gps_accuracy: number | null;
+      gps_source: string | null;
+      gps_verified_on_map: boolean;
+      gps_captured_at: string | null;
+      akanam: string | null;
+      historicalName: string | null;
     } | null>;
     delete: (subid: string) => Promise<void>;
     setPrimary: (locid: string, subid: string) => Promise<void>;
     checkName: (locid: string, subnam: string, excludeSubid?: string) => Promise<boolean>;
     count: (locid: string) => Promise<number>;
+    // Migration 31: Sub-location GPS
+    updateGps: (subid: string, gps: { lat: number; lng: number; accuracy?: number | null; source: string }) => Promise<{
+      subid: string;
+      locid: string;
+      subnam: string;
+      gps_lat: number | null;
+      gps_lng: number | null;
+      gps_accuracy: number | null;
+      gps_source: string | null;
+      gps_verified_on_map: boolean;
+      gps_captured_at: string | null;
+    } | null>;
+    clearGps: (subid: string) => Promise<{ subid: string } | null>;
+    verifyGps: (subid: string) => Promise<{ subid: string; gps_verified_on_map: boolean } | null>;
+    findWithGps: (locid: string) => Promise<Array<{
+      subid: string;
+      locid: string;
+      subnam: string;
+      gps_lat: number | null;
+      gps_lng: number | null;
+      gps_verified_on_map: boolean;
+    }>>;
+    // Migration 65: Sub-location type/subtype (separate taxonomy from host locations)
+    getDistinctTypes: () => Promise<string[]>;
+    getDistinctSubTypes: () => Promise<string[]>;
   };
 
   projects: {

@@ -365,6 +365,9 @@ const api = {
     clearGps: (subid) => invokeAuto("sublocation:clearGps")(subid),
     verifyGps: (subid) => invokeAuto("sublocation:verifyGps")(subid),
     findWithGps: (locid) => invokeAuto("sublocation:findWithGps")(locid),
+    // Migration 65: Sub-location type/subtype (separate taxonomy from host locations)
+    getDistinctTypes: () => invokeAuto("sublocation:getDistinctTypes")(),
+    getDistinctSubTypes: () => invokeAuto("sublocation:getDistinctSubTypes")(),
   },
 
   projects: {

@@ -6,7 +6,7 @@
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
-import type { Database } from '../database';
+import type { Database } from '../database.types';
 import { SQLiteSubLocationRepository } from '../../repositories/sqlite-sublocation-repository';
 
 // ADR-046: BLAKE3 16-char hex ID validator
@@ -22,6 +22,8 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
         subnam: z.string().min(1),
         ssubname: z.string().nullable().optional(),
         type: z.string().nullable().optional(),
+        // Migration 65: Sub-location sub-type
+        stype: z.string().nullable().optional(),
         status: z.string().nullable().optional(),
         is_primary: z.boolean().optional(),
         created_by: z.string().nullable().optional(),
@@ -87,6 +89,8 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
         subnam: z.string().min(1).optional(),
         ssubname: z.string().nullable().optional(),
         type: z.string().nullable().optional(),
+        // Migration 65: Sub-location sub-type
+        stype: z.string().nullable().optional(),
         status: z.string().nullable().optional(),
         hero_imghash: z.string().nullable().optional(),
         hero_focal_x: z.number().min(0).max(1).optional(),  // OPT-095: Hero focal point X
@@ -227,6 +231,28 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
+    }
+  });
+
+  // Migration 65: Get distinct types for sub-locations (separate from host location types)
+  ipcMain.handle('sublocation:getDistinctTypes', async () => {
+    try {
+      return await sublocRepo.getDistinctTypes();
+    } catch (error) {
+      console.error('Error getting distinct sub-location types:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
+    }
+  });
+
+  // Migration 65: Get distinct sub-types for sub-locations (separate from host location stypes)
+  ipcMain.handle('sublocation:getDistinctSubTypes', async () => {
+    try {
+      return await sublocRepo.getDistinctSubTypes();
+    } catch (error) {
+      console.error('Error getting distinct sub-location sub-types:', error);
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(message);
     }

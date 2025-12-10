@@ -192,6 +192,8 @@ export interface SlocsTable {
 
   // Migration 28: Enhanced sub-location fields
   type: string | null;
+  // Migration 65: Sub-location sub-type (separate taxonomy from host locations)
+  stype: string | null;
   status: string | null;
   hero_imghash: string | null;
   hero_focal_x: number;           // 0-1 horizontal position (0.5 = center)
@@ -215,6 +217,21 @@ export interface SlocsTable {
   // Migration 32: AKA and historical name for sub-locations
   akanam: string | null;
   historicalName: string | null;
+
+  // Migration 56 (OPT-093): Sub-location stats
+  img_count: number;
+  vid_count: number;
+  doc_count: number;
+  map_count: number;
+  total_size_bytes: number;
+  earliest_media_date: string | null;
+  latest_media_date: string | null;
+  stats_updated_at: string | null;
+
+  // Migration 56 (OPT-093): Sub-location BagIt
+  bag_status: string | null;
+  bag_last_verified: string | null;
+  bag_last_error: string | null;
 }
 
 // Images table

@@ -95,10 +95,16 @@
   let users = $state<Array<{user_id: string, username: string, display_name: string | null}>>([]);
 
   // Migration 28: Add Building modal
+  // Migration 65: Added type/stype for sub-location taxonomy
   let showAddBuildingModal = $state(false);
   let newBuildingName = $state('');
+  let newBuildingType = $state('');
+  let newBuildingSubType = $state('');
   let newBuildingIsPrimary = $state(false);
   let addingBuilding = $state(false);
+  // Migration 65: Autocomplete options for sub-location types (separate from host)
+  let sublocTypeOptions = $state<string[]>([]);
+  let sublocStypeOptions = $state<string[]>([]);
 
   // OPT-066: Track if sub-locations tagline wraps to multiple lines
   let sublocTaglineEl = $state<HTMLElement | null>(null);
@@ -703,10 +709,24 @@
 
   // Bookmark handlers
   // Migration 28: Add Building handlers
-  function openAddBuildingModal() {
+  async function openAddBuildingModal() {
     newBuildingName = '';
+    newBuildingType = '';
+    newBuildingSubType = '';
     newBuildingIsPrimary = sublocations.length === 0; // First building is primary by default
     showAddBuildingModal = true;
+
+    // Migration 65: Load sub-location type options (separate from host locations)
+    try {
+      const [types, stypes] = await Promise.all([
+        window.electronAPI?.sublocations?.getDistinctTypes?.() || [],
+        window.electronAPI?.sublocations?.getDistinctSubTypes?.() || [],
+      ]);
+      sublocTypeOptions = types;
+      sublocStypeOptions = stypes;
+    } catch (err) {
+      console.error('Error loading sub-location type options:', err);
+    }
   }
 
   // Convert to Host Location - opens Add Building modal (adding first building makes it a host)
@@ -717,6 +737,8 @@
   function closeAddBuildingModal() {
     showAddBuildingModal = false;
     newBuildingName = '';
+    newBuildingType = '';
+    newBuildingSubType = '';
     newBuildingIsPrimary = false;
     addingBuilding = false;
   }
@@ -729,7 +751,9 @@
       await window.electronAPI.sublocations.create({
         locid: location.locid,
         subnam: newBuildingName.trim(),
-        type: location.type || null,
+        // Migration 65: Use sub-location specific type/stype (not host's type)
+        type: newBuildingType.trim() || null,
+        stype: newBuildingSubType.trim() || null,
         status: null,
         is_primary: newBuildingIsPrimary,
         created_by: currentUser || null,
@@ -1267,6 +1291,44 @@
               placeholder="e.g., Main Building, Powerhouse"
               class="w-full px-4 py-3 bg-white border border-braun-400 rounded text-sm text-braun-900 placeholder:text-braun-400 focus:outline-none focus:border-braun-600 transition-colors disabled:opacity-50"
             />
+          </div>
+
+          <!-- Migration 65: Type and Sub-Type fields for sub-locations (separate taxonomy) -->
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label for="building-type" class="form-label">Type</label>
+              <input
+                id="building-type"
+                type="text"
+                list="building-type-options"
+                bind:value={newBuildingType}
+                disabled={addingBuilding}
+                placeholder="e.g., Administration"
+                class="w-full px-4 py-3 bg-white border border-braun-400 rounded text-sm text-braun-900 placeholder:text-braun-400 focus:outline-none focus:border-braun-600 transition-colors disabled:opacity-50"
+              />
+              <datalist id="building-type-options">
+                {#each sublocTypeOptions as option}
+                  <option value={option} />
+                {/each}
+              </datalist>
+            </div>
+            <div>
+              <label for="building-subtype" class="form-label">Sub-Type</label>
+              <input
+                id="building-subtype"
+                type="text"
+                list="building-subtype-options"
+                bind:value={newBuildingSubType}
+                disabled={addingBuilding}
+                placeholder="e.g., Office Wing"
+                class="w-full px-4 py-3 bg-white border border-braun-400 rounded text-sm text-braun-900 placeholder:text-braun-400 focus:outline-none focus:border-braun-600 transition-colors disabled:opacity-50"
+              />
+              <datalist id="building-subtype-options">
+                {#each sublocStypeOptions as option}
+                  <option value={option} />
+                {/each}
+              </datalist>
+            </div>
           </div>
 
           <label class="flex items-center gap-3 cursor-pointer select-none">

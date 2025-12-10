@@ -16,6 +16,8 @@ export interface SubLocation {
   subnam: string;
   ssubname: string | null;
   type: string | null;
+  // Migration 65: Sub-location sub-type (separate taxonomy from host locations)
+  stype: string | null;
   status: string | null;
   hero_imghash: string | null;
   hero_focal_x: number;
@@ -55,6 +57,8 @@ export interface CreateSubLocationInput {
   subnam: string;
   ssubname?: string | null;
   type?: string | null;
+  // Migration 65: Sub-location sub-type
+  stype?: string | null;
   status?: string | null;
   is_primary?: boolean;
   created_by?: string | null;
@@ -67,6 +71,8 @@ export interface UpdateSubLocationInput {
   subnam?: string;
   ssubname?: string | null;
   type?: string | null;
+  // Migration 65: Sub-location sub-type
+  stype?: string | null;
   status?: string | null;
   hero_imghash?: string | null;
   hero_focal_x?: number;
@@ -117,8 +123,12 @@ export class SQLiteSubLocationRepository {
           subnam: input.subnam,
           ssubname,
           type: input.type || null,
+          // Migration 65: Sub-location sub-type
+          stype: input.stype || null,
           status: input.status || null,
           hero_imghash: null,
+          hero_focal_x: 0.5,
+          hero_focal_y: 0.5,
           is_primary: input.is_primary ? 1 : 0,
           created_date,
           created_by: input.created_by || null,
@@ -134,6 +144,19 @@ export class SQLiteSubLocationRepository {
           // Migration 32: AKA and historical name (null on creation)
           akanam: null,
           historicalName: null,
+          // Migration 56 (OPT-093): Sub-location stats (all start at 0)
+          img_count: 0,
+          vid_count: 0,
+          doc_count: 0,
+          map_count: 0,
+          total_size_bytes: 0,
+          earliest_media_date: null,
+          latest_media_date: null,
+          stats_updated_at: null,
+          // Migration 56 (OPT-093): Sub-location BagIt
+          bag_status: null,
+          bag_last_verified: null,
+          bag_last_error: null,
         })
         .execute();
 
@@ -161,6 +184,8 @@ export class SQLiteSubLocationRepository {
       subnam: input.subnam,
       ssubname,
       type: input.type || null,
+      // Migration 65: Sub-location sub-type
+      stype: input.stype || null,
       status: input.status || null,
       hero_imghash: null,
       hero_focal_x: 0.5,
@@ -228,6 +253,8 @@ export class SQLiteSubLocationRepository {
     if (input.subnam !== undefined) updateValues.subnam = input.subnam;
     if (input.ssubname !== undefined) updateValues.ssubname = input.ssubname;
     if (input.type !== undefined) updateValues.type = input.type;
+    // Migration 65: Sub-location sub-type
+    if (input.stype !== undefined) updateValues.stype = input.stype;
     if (input.status !== undefined) updateValues.status = input.status;
     if (input.hero_imghash !== undefined) updateValues.hero_imghash = input.hero_imghash;
     if (input.hero_focal_x !== undefined) updateValues.hero_focal_x = input.hero_focal_x;
@@ -645,6 +672,38 @@ export class SQLiteSubLocationRepository {
     return rows.map(row => this.mapRowToSubLocation(row));
   }
 
+  /**
+   * Migration 65: Get distinct types used in sub-locations
+   * Returns types from slocs table (separate from host location types)
+   */
+  async getDistinctTypes(): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('slocs')
+      .select('type')
+      .distinct()
+      .where('type', 'is not', null)
+      .orderBy('type')
+      .execute();
+
+    return rows.map(r => r.type).filter((t): t is string => !!t);
+  }
+
+  /**
+   * Migration 65: Get distinct sub-types used in sub-locations
+   * Returns stypes from slocs table (separate from host location stypes)
+   */
+  async getDistinctSubTypes(): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('slocs')
+      .select('stype')
+      .distinct()
+      .where('stype', 'is not', null)
+      .orderBy('stype')
+      .execute();
+
+    return rows.map(r => r.stype).filter((t): t is string => !!t);
+  }
+
   // Private helper methods
 
   /**
@@ -658,6 +717,8 @@ export class SQLiteSubLocationRepository {
       subnam: row.subnam,
       ssubname: row.ssubname,
       type: row.type || null,
+      // Migration 65: Sub-location sub-type
+      stype: row.stype || null,
       status: row.status || null,
       hero_imghash: row.hero_imghash || null,
       hero_focal_x: row.hero_focal_x ?? 0.5,
