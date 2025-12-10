@@ -762,7 +762,7 @@
 
   function handleOpenBookmark(url: string) { window.electronAPI?.shell?.openExternal(url); }
 
-  // OPT-087 + OPT-090: Handle asset-ready events for surgical refresh + notifications
+  // OPT-087 + OPT-090 + OPT-105: Handle asset-ready events for surgical refresh + notifications
   function handleAssetReady(event: CustomEvent<{
     type: string;
     hash?: string;
@@ -774,8 +774,12 @@
   }>) {
     const { type, hash, paths, locid, lat, lng } = event.detail;
 
+    // OPT-105: Debug logging for asset-ready events
+    console.log('[LocationDetail] asset-ready event:', { type, hash, locid, hasPath: !!paths });
+
     // OPT-090: Handle GPS enrichment for current location
     if (type === 'gps-enriched' && locid === locationId && lat != null && lng != null) {
+      console.log('[LocationDetail] GPS enriched, reloading location');
       loadLocation();
       notifyRefresh('gps');
       return;
@@ -786,6 +790,7 @@
       // Update image thumbnail paths
       const imgIndex = images.findIndex(img => img.imghash === hash);
       if (imgIndex >= 0) {
+        console.log('[LocationDetail] Updating image thumbnail:', hash);
         images[imgIndex] = {
           ...images[imgIndex],
           thumb_path_sm: paths.sm || images[imgIndex].thumb_path_sm,
@@ -800,6 +805,7 @@
       // Update video thumbnail paths
       const vidIndex = videos.findIndex(vid => vid.vidhash === hash);
       if (vidIndex >= 0) {
+        console.log('[LocationDetail] Updating video thumbnail:', hash);
         videos[vidIndex] = {
           ...videos[vidIndex],
           thumb_path_sm: paths.sm || videos[vidIndex].thumb_path_sm,
@@ -813,10 +819,25 @@
     }
 
     // OPT-090: Handle video proxy ready
+    // OPT-105: Reload video data to get updated proxy path
     if (type === 'proxy' && hash) {
       const vidIndex = videos.findIndex(vid => vid.vidhash === hash);
       if (vidIndex >= 0) {
+        console.log('[LocationDetail] Video proxy ready, reloading:', hash);
+        // Reload to get updated proxy_path from database
+        loadLocation();
         notifyRefresh('videos');
+      }
+    }
+
+    // OPT-105: Handle metadata complete - reload to get updated metadata
+    if (type === 'metadata' && hash) {
+      const imgIndex = images.findIndex(img => img.imghash === hash);
+      const vidIndex = videos.findIndex(vid => vid.vidhash === hash);
+      if (imgIndex >= 0 || vidIndex >= 0) {
+        console.log('[LocationDetail] Metadata complete, reloading:', hash);
+        loadLocation();
+        notifyRefresh(imgIndex >= 0 ? 'images' : 'videos');
       }
     }
   }

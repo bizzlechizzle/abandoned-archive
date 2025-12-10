@@ -113,18 +113,23 @@
             Cancel
           </button>
         </div>
-        <!-- OPT-104: Minimal progress bar with pulsing numbers -->
+        <!-- OPT-105: Granular progress bar with current file display -->
         <div class="relative h-6 bg-braun-200 rounded overflow-hidden">
           <div
-            class="absolute inset-y-0 left-0 bg-braun-900 transition-[width] duration-150 ease-out"
+            class="absolute inset-y-0 left-0 bg-braun-900 transition-[width] duration-100 ease-out"
             style="width: {$storeProgress.percent}%"
           ></div>
           <div class="absolute inset-0 flex items-center justify-center">
             <span class="text-xs font-medium text-white mix-blend-difference">
-              processing <span class="animate-pulse-dot">{$storeProgress.current}/{$storeProgress.total} · {$storeProgress.percent}%</span>
+              {$storeProgress.current}/{$storeProgress.total} · {$storeProgress.percent}%
             </span>
           </div>
         </div>
+        {#if $storeProgress.currentFilename}
+          <p class="mt-1 text-xs text-braun-500 truncate" title={$storeProgress.currentFilename}>
+            {$storeProgress.currentFilename}
+          </p>
+        {/if}
       </div>
     {:else}
       <svg class="w-10 h-10 mx-auto mb-2 text-braun-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

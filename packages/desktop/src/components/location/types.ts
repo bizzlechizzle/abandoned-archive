@@ -60,7 +60,8 @@ export interface MediaVideo {
 
 export interface MediaDocument {
   dochash: string;
-  docnam: string;
+  docnam: string;      // Archive name (hash.ext)
+  docnamo: string;     // Original name (user's filename)
   docloc: string;
   locid: string | null;
   subid: string | null;  // Migration 28: Sub-location link

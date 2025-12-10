@@ -56,7 +56,8 @@
               {getFileExtension(doc.docnam)}
             </div>
             <div class="flex-1 min-w-0">
-              <p class="text-sm font-medium text-braun-900 truncate">{doc.docnam}</p>
+              <p class="text-sm font-medium text-braun-900 truncate" title={doc.docnamo || doc.docnam}>{doc.docnamo || doc.docnam}</p>
+              <p class="text-xs text-braun-400 font-mono truncate" title={doc.docnam}>{doc.docnam}</p>
             </div>
             <!-- External link icon -->
             <svg class="w-4 h-4 text-braun-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
