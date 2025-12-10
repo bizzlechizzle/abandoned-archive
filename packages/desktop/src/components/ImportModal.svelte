@@ -1,18 +1,12 @@
 <script lang="ts">
   /**
    * ImportModal.svelte
-   * P1: Global pop-up import form for creating new locations
-   * Per v010steps.md - accessible anywhere, replaces /imports page
-   *
-   * Migration 28: Added sub-location support with 2-column premium layout
-   * - Row 1: Location Name | Sub-Location checkbox
-   * - Row 2: Sub-Location Name | Primary Building (when sub-location checked)
-   * - Row 3: Type | Sub-Type
-   * - Row 4: Author | Status
+   * Simplified location creation popup
+   * Fields: Name, State, Host Location checkbox
+   * Author auto-filled from current user
    */
   import { onMount } from 'svelte';
   import type { Location } from '@au-archive/core';
-  import type { IntelligenceMatch, IntelligenceScanResult } from '../types/electron';
   import { importModal, closeImportModal } from '../stores/import-modal-store';
   import { router } from '../stores/router';
   import { toasts } from '../stores/toast-store';
@@ -20,32 +14,20 @@
   import ImportIntelligence from './ImportIntelligence.svelte';
   import DuplicateWarningPanel from './DuplicateWarningPanel.svelte';
   import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
-  import { ACCESS_OPTIONS } from '../constants/location-enums';
-  import { getTypeForSubtype } from '../lib/type-hierarchy';
   import { DUPLICATE_CONFIG } from '../lib/constants';
 
-  // Form state
+  // Form state - simplified to essential fields only
   let name = $state('');
-  let type = $state('');
-  let subType = $state('');
   let selectedState = $state('');
-  let author = $state('');
-  let access = $state('Abandoned');
 
-  // Host location & sub-location state (Migration 28)
-  let isHostLocation = $state(false);  // This is a campus with multiple buildings
-  let addFirstBuilding = $state(false); // Add the first building now
-  let subLocationName = $state('');
-  let isPrimaryBuilding = $state(true); // Default to primary for first sub-location
-  let subLocNameDuplicate = $state(false);
-  let subLocNameChecking = $state(false);
+  // Host location flag (campus with multiple buildings)
+  let isHostLocation = $state(false);
 
   // P2: Database-driven lists
   let allLocations = $state<Location[]>([]);
-  let allTypes = $state<string[]>([]);
 
-  // Users for author dropdown
-  let users = $state<Array<{user_id: string, username: string, display_name: string | null}>>([]);
+  // Current user for auto-attribution
+  let currentUser = $state('');
 
   // UI state
   let saving = $state(false);
@@ -93,13 +75,6 @@
   let duplicateCheckTimeout: ReturnType<typeof setTimeout> | null = null;
   // Track ref point ID when creating from a reference map point
   let creatingFromRefPointId = $state<string | null>(null);
-
-  // Auto-fill sub-location name when location name changes (if adding first building)
-  $effect(() => {
-    if (addFirstBuilding && name && !subLocationName) {
-      subLocationName = name;
-    }
-  });
 
   // Generate state suggestions (all US states formatted)
   function getStateSuggestions(): string[] {
@@ -151,64 +126,23 @@
     selectedState = value.toUpperCase().substring(0, 2);
   }
 
-  // Get type suggestions from existing locations
-  function getTypeSuggestions(): string[] {
-    const types = new Set<string>();
-    allLocations.forEach(loc => {
-      if (loc.type) types.add(loc.type);
-    });
-    return Array.from(types).sort();
-  }
-
-  // Get sub-type suggestions from all locations (database-wide)
-  function getSubTypeSuggestions(): string[] {
-    const subTypes = new Set<string>();
-    allLocations.forEach(loc => {
-      if (loc.stype) subTypes.add(loc.stype);
-    });
-    return Array.from(subTypes).sort();
-  }
-
-  // Load locations, users, and default author from database/settings
+  // Load locations and current user from database/settings
   async function loadOptions() {
     try {
       const locations = await window.electronAPI.locations.findAll();
       allLocations = locations;
 
-      // Extract unique types
-      const types = new Set<string>();
-      locations.forEach((loc: any) => {
-        if (loc.type) types.add(loc.type);
-      });
-
-      allTypes = Array.from(types).sort();
-
-      // Load users for author dropdown
-      if (window.electronAPI?.users) {
-        users = await window.electronAPI.users.findAll();
-      }
-
-      // Set default author to current user
+      // Get current user for auto-attribution
       if (window.electronAPI?.settings) {
         const settings = await window.electronAPI.settings.getAll();
-        if (settings.current_user && !author) {
-          author = settings.current_user;
+        if (settings.current_user) {
+          currentUser = settings.current_user;
         }
       }
     } catch (err) {
       console.error('Error loading options:', err);
     }
   }
-
-  // Auto-fill type when user enters a known sub-type
-  $effect(() => {
-    if (subType && !type) {
-      const matchedType = getTypeForSubtype(subType);
-      if (matchedType) {
-        type = matchedType;
-      }
-    }
-  });
 
   // Handle pre-filled data from store
   $effect(() => {
@@ -218,9 +152,6 @@
       }
       if ($importModal.prefilledData.state) {
         selectedState = $importModal.prefilledData.state;
-      }
-      if ($importModal.prefilledData.type) {
-        type = $importModal.prefilledData.type;
       }
       // Migration 38: Track ref point ID for deletion after location creation
       if ($importModal.prefilledData.refPointId) {
@@ -240,15 +171,20 @@
     }
   });
 
-  // Phase 2: Debounced reference map matching
-  // Searches for matches when name changes (300ms debounce)
+  // Debounced reference map matching
+  // Searches for matches when name OR state changes (300ms debounce)
   $effect(() => {
+    // Read reactive values to ensure effect re-runs
+    const currentName = name.trim();
+    const currentState = selectedState;
+
     // Don't search if:
     // - GPS already provided (from map click)
     // - User dismissed suggestions
     // - Name too short
+    // - State not selected (require state for better matches)
     const hasGps = $importModal.prefilledData?.gps_lat && $importModal.prefilledData?.gps_lng;
-    if (hasGps || matchesDismissed || name.trim().length < 3) {
+    if (hasGps || matchesDismissed || currentName.length < 3 || currentState.length !== 2) {
       refMapMatches = [];
       return;
     }
@@ -264,10 +200,10 @@
 
       try {
         matchesLoading = true;
-        const matches = await window.electronAPI.refMaps.findMatches(name.trim(), {
+        const matches = await window.electronAPI.refMaps.findMatches(currentName, {
           threshold: DUPLICATE_CONFIG.NAME_SIMILARITY_THRESHOLD,
           limit: 3,
-          state: selectedState || null,
+          state: currentState,
         });
         refMapMatches = matches;
       } catch (err) {
@@ -396,31 +332,14 @@
       error = 'State must be 2-letter postal abbreviation (e.g., NY, CA)';
       return false;
     }
-    if (!type) {
-      error = 'Type is required';
-      return false;
-    }
-    // Validate sub-location name if adding first building
-    if (addFirstBuilding) {
-      if (!subLocationName.trim()) {
-        error = 'Building name is required when adding first building';
-        return false;
-      }
-      if (subLocNameDuplicate) {
-        error = 'A building with this name already exists';
-        return false;
-      }
-    }
     return true;
   }
 
   function buildLocationData(): Record<string, unknown> {
     const data: Record<string, unknown> = {
       locnam: name.trim(),
-      type: type || undefined,
-      stype: subType || undefined,
-      access: access || undefined,
-      auth_imp: author.trim() || undefined,
+      // Auto-use signed-in user for attribution
+      auth_imp: currentUser || undefined,
       // OPT-062: Pass host-only flag to create a location expecting sub-locations
       isHostOnly: isHostLocation,
       address: {
@@ -457,18 +376,6 @@
       // Create the location
       const newLocation = await window.electronAPI.locations.create(buildLocationData());
 
-      // If adding first building, create the sub-location inside the new host location
-      if (addFirstBuilding && newLocation?.locid) {
-        await window.electronAPI.sublocations.create({
-          locid: newLocation.locid,
-          subnam: subLocationName.trim(),
-          type: type || null,
-          status: access || null,
-          is_primary: isPrimaryBuilding,
-          created_by: author.trim() || null,
-        });
-      }
-
       // Migration 38: Delete the ref point if we created from one
       // ADR: ADR-pin-conversion-duplicate-prevention.md - original map file preserved
       if (creatingFromRefPointId && window.electronAPI?.refMaps?.deletePoint) {
@@ -480,11 +387,9 @@
       }
 
       closeImportModal();
-      const successMsg = addFirstBuilding
-        ? 'Host location and first building created'
-        : isHostLocation
-          ? 'Host location created - add buildings from the location page'
-          : 'Location created successfully';
+      const successMsg = isHostLocation
+        ? 'Host location created - add buildings from the location page'
+        : 'Location created';
       toasts.success(successMsg);
 
       if (newLocation?.locid) {
@@ -500,71 +405,10 @@
     }
   }
 
-  async function handleCreateAndAddMedia() {
-    if (!validateForm()) return;
-
-    try {
-      saving = true;
-      error = '';
-
-      const newLocation = await window.electronAPI.locations.create(buildLocationData());
-
-      // If adding first building, create the sub-location
-      let createdSubId: string | undefined;
-      if (addFirstBuilding && newLocation?.locid) {
-        const subloc = await window.electronAPI.sublocations.create({
-          locid: newLocation.locid,
-          subnam: subLocationName.trim(),
-          type: type || null,
-          status: access || null,
-          is_primary: isPrimaryBuilding,
-          created_by: author.trim() || null,
-        });
-        createdSubId = subloc.subid;
-      }
-
-      // Migration 38: Delete the ref point if we created from one
-      if (creatingFromRefPointId && window.electronAPI?.refMaps?.deletePoint) {
-        try {
-          await window.electronAPI.refMaps.deletePoint(creatingFromRefPointId);
-        } catch (delErr) {
-          // Non-fatal - location was created successfully
-        }
-      }
-
-      closeImportModal();
-      toasts.success('Location created - select media to import');
-
-      if (newLocation?.locid) {
-        // Navigate to the sub-location if created, otherwise to the location
-        if (createdSubId) {
-          router.navigate(`/location/${newLocation.locid}/sub/${createdSubId}?autoImport=true`);
-        } else {
-          router.navigate(`/location/${newLocation.locid}?autoImport=true`);
-        }
-      }
-
-      resetForm();
-    } catch (err) {
-      console.error('Error creating location:', err);
-      error = 'Failed to create location. Please try again.';
-    } finally {
-      saving = false;
-    }
-  }
-
   function resetForm() {
     name = '';
-    type = '';
-    subType = '';
     selectedState = '';
-    author = '';
-    access = 'Abandoned';
     isHostLocation = false;
-    addFirstBuilding = false;
-    subLocationName = '';
-    isPrimaryBuilding = true;
-    subLocNameDuplicate = false;
     error = '';
     // Phase 2: Reset match state
     refMapMatches = [];
@@ -640,31 +484,6 @@
     intelligenceDismissed = true;
   }
 
-  // Handle host location checkbox toggle
-  function handleHostLocationToggle() {
-    isHostLocation = !isHostLocation;
-    if (!isHostLocation) {
-      // Reset building fields when unchecking host location
-      addFirstBuilding = false;
-      subLocationName = '';
-      isPrimaryBuilding = true;
-      subLocNameDuplicate = false;
-    }
-  }
-
-  // Handle add first building checkbox toggle
-  function handleAddBuildingToggle() {
-    addFirstBuilding = !addFirstBuilding;
-    if (addFirstBuilding && name && !subLocationName) {
-      subLocationName = name;
-    }
-    if (!addFirstBuilding) {
-      subLocationName = '';
-      isPrimaryBuilding = true;
-      subLocNameDuplicate = false;
-    }
-  }
-
   onMount(() => {
     loadOptions();
   });
@@ -681,31 +500,25 @@
     aria-modal="true"
     aria-labelledby="modal-title"
   >
-    <!-- Modal - wider for 2-column layout -->
+    <!-- Modal - clean single-column layout -->
     <div
-      class="bg-braun-50 rounded border border-braun-300 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto relative z-[100000]"
+      class="bg-braun-50 rounded border border-braun-300 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto relative z-[100000]"
       onclick={(e) => e.stopPropagation()}
     >
-      <!-- Header -->
-      <div class="p-5 flex justify-between items-center bg-braun-50">
-        <div>
-          <h2 id="modal-title" class="text-xl font-semibold text-braun-900">
-            New Location
-          </h2>
+      <!-- Content with integrated close button -->
+      <div class="p-6 space-y-4">
+        <!-- Close button row -->
+        <div class="flex justify-end -mt-2 -mr-2">
+          <button
+            onclick={handleCancel}
+            class="text-braun-400 hover:text-braun-600 transition p-1 rounded hover:bg-braun-200"
+            aria-label="Close"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
-        <button
-          onclick={handleCancel}
-          class="text-braun-400 hover:text-braun-600 transition p-1 rounded hover:bg-braun-200"
-          aria-label="Close"
-        >
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-
-      <!-- Content -->
-      <div class="p-5 space-y-5">
         <!-- Import Intelligence Panel - shown when GPS is prefilled -->
         {#if showIntelligence && $importModal.prefilledData?.gps_lat && $importModal.prefilledData?.gps_lng}
           <ImportIntelligence
@@ -713,7 +526,7 @@
             lng={$importModal.prefilledData.gps_lng}
             hints={{
               filename: undefined,
-              inferredType: type || undefined,
+              inferredType: undefined,
               inferredState: selectedState || undefined,
             }}
             proposedName={name || $importModal.prefilledData?.name || undefined}
@@ -749,48 +562,24 @@
           </div>
         {/if}
 
-        <!-- Row 1: Location Name + Checkboxes (Host / Sub-Location) -->
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label for="loc-name" class="block text-sm font-medium text-braun-700 mb-1.5">
-              Location Name
-            </label>
-            <input
-              id="loc-name"
-              type="text"
-              bind:value={name}
-              disabled={saving}
-              placeholder="Enter location name"
-              class="w-full px-3 py-2.5 border border-braun-300 rounded bg-white focus:outline-none focus:border-braun-600 focus:border-transparent disabled:opacity-50 transition"
-            />
-          </div>
-          <div class="flex items-end pb-2 gap-4">
-            <label class="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={isHostLocation}
-                onchange={handleHostLocationToggle}
-                disabled={saving}
-                class="h-4 w-4 rounded border-braun-300 text-braun-900 focus:border-braun-600 cursor-pointer"
-              />
-              <span class="text-sm font-medium text-braun-700">Host</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={addFirstBuilding}
-                onchange={handleAddBuildingToggle}
-                disabled={saving || !isHostLocation}
-                class="h-4 w-4 rounded border-braun-300 text-braun-900 focus:border-braun-600 cursor-pointer disabled:opacity-40"
-              />
-              <span class="text-sm font-medium text-braun-700 {!isHostLocation ? 'opacity-40' : ''}">Sub-Location</span>
-            </label>
-          </div>
+        <!-- Location Name -->
+        <div>
+          <label for="loc-name" class="block text-sm font-medium text-braun-700 mb-1.5">
+            Location Name
+          </label>
+          <input
+            id="loc-name"
+            type="text"
+            bind:value={name}
+            disabled={saving}
+            placeholder=""
+            class="w-full px-3 py-2.5 border border-braun-300 rounded bg-white focus:outline-none focus:border-braun-600 focus:border-transparent disabled:opacity-50 transition"
+          />
         </div>
 
-        <!-- Phase 2: Reference Map Match Suggestions -->
+        <!-- Reference Map Match Suggestions -->
         {#if refMapMatches.length > 0 && !matchesDismissed}
-          <div class="bg-braun-100 border border-braun-300 rounded p-3 animate-in fade-in duration-200">
+          <div class="bg-braun-100 border border-braun-300 rounded p-3">
             <div class="flex items-start gap-2">
               <svg class="w-5 h-5 text-braun-900 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
@@ -805,10 +594,7 @@
                     <div class="flex items-center justify-between bg-white rounded px-3 py-2 border border-braun-200">
                       <div class="min-w-0 flex-1">
                         <p class="text-sm font-medium text-braun-900 truncate">{match.name}</p>
-                        <p class="text-xs text-braun-500">
-                          From: {match.mapName}
-                          <span class="ml-2 text-braun-900">{Math.round(match.score * 100)}% match</span>
-                        </p>
+                        <p class="text-xs text-braun-600">{Math.round(match.score * 100)}% match</p>
                       </div>
                       <button
                         onclick={() => applyMatchGps(match)}
@@ -837,39 +623,6 @@
           </div>
         {/if}
 
-        <!-- Row 2: Sub-Location Name + Primary (conditional) -->
-        {#if addFirstBuilding}
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label for="subloc-name" class="block text-sm font-medium text-braun-700 mb-1.5">
-                Sub-Location Name
-              </label>
-              <input
-                id="subloc-name"
-                type="text"
-                bind:value={subLocationName}
-                disabled={saving}
-                placeholder="e.g., Main Building, Powerhouse"
-                class="w-full px-3 py-2.5 border border-braun-300 rounded bg-white focus:outline-none focus:border-braun-600 focus:border-transparent disabled:opacity-50 transition"
-              />
-              {#if subLocNameDuplicate}
-                <p class="text-xs text-red-600 mt-1">Name already exists</p>
-              {/if}
-            </div>
-            <div class="flex items-end pb-2">
-              <label class="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  bind:checked={isPrimaryBuilding}
-                  disabled={saving}
-                  class="h-4 w-4 rounded border-braun-300 text-braun-900 focus:border-braun-600 cursor-pointer"
-                />
-                <span class="text-sm font-medium text-braun-700">Primary</span>
-              </label>
-            </div>
-          </div>
-        {/if}
-
         <!-- State (required) -->
         <div>
           <label for="loc-state" class="block text-sm font-medium text-braun-700 mb-1.5">
@@ -880,86 +633,30 @@
             onchange={handleStateChange}
             suggestions={getStateSuggestions()}
             id="loc-state"
-            placeholder="NY or New York"
-            class="w-full px-3 py-2.5 border border-braun-300 rounded bg-white focus:outline-none focus:border-braun-600 focus:border-transparent disabled:opacity-50 transition uppercase"
+            placeholder="New York or NY"
+            class="w-full px-3 py-2.5 border border-braun-300 rounded bg-white focus:outline-none focus:border-braun-600 focus:border-transparent disabled:opacity-50 transition"
           />
-          <p class="text-xs text-braun-500 mt-1">Type 2-letter code or full state name</p>
         </div>
 
-        <!-- Row 3: Type + Sub-Type -->
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label for="loc-type" class="block text-sm font-medium text-braun-700 mb-1.5">
-              Type
-            </label>
-            <AutocompleteInput
-              value={type}
-              onchange={(val) => type = val}
-              suggestions={allTypes}
-              id="loc-type"
-              placeholder="e.g., Factory, Hospital"
-              class="w-full px-3 py-2.5 border border-braun-300 rounded bg-white focus:outline-none focus:border-braun-600 focus:border-transparent disabled:opacity-50 transition"
-            />
-          </div>
-          <div>
-            <label for="loc-subtype" class="block text-sm font-medium text-braun-700 mb-1.5">
-              Sub-Type
-            </label>
-            <AutocompleteInput
-              value={subType}
-              onchange={(val) => subType = val}
-              suggestions={getSubTypeSuggestions()}
-              id="loc-subtype"
-              placeholder="e.g., Textile Mill, Asylum"
-              class="w-full px-3 py-2.5 border border-braun-300 rounded bg-white focus:outline-none focus:border-braun-600 focus:border-transparent disabled:opacity-50 transition"
-            />
-          </div>
-        </div>
-
-        <!-- Row 4: Author + Status -->
-        <div class="grid grid-cols-2 gap-4">
-          <div>
-            <label for="loc-author" class="block text-sm font-medium text-braun-700 mb-1.5">
-              Author
-            </label>
-            <select
-              id="loc-author"
-              bind:value={author}
-              disabled={saving}
-              class="w-full px-3 py-2.5 border border-braun-300 rounded focus:outline-none focus:border-braun-600 focus:border-transparent disabled:opacity-50 transition bg-white"
-            >
-              {#each users as user}
-                <option value={user.username}>
-                  {user.display_name || user.username}
-                </option>
-              {/each}
-            </select>
-          </div>
-          <div>
-            <label for="loc-access" class="block text-sm font-medium text-braun-700 mb-1.5">
-              Status
-            </label>
-            <select
-              id="loc-access"
-              bind:value={access}
-              disabled={saving}
-              class="w-full px-3 py-2.5 border border-braun-300 rounded focus:outline-none focus:border-braun-600 focus:border-transparent disabled:opacity-50 transition bg-white"
-            >
-              {#each ACCESS_OPTIONS as opt}
-                <option value={opt}>{opt}</option>
-              {/each}
-            </select>
-          </div>
-        </div>
+        <!-- Campus checkbox -->
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            bind:checked={isHostLocation}
+            disabled={saving}
+            class="h-4 w-4 rounded border-braun-300 text-braun-900 focus:border-braun-600 cursor-pointer"
+          />
+          <span class="text-sm text-braun-700">Campus with multiple buildings</span>
+        </label>
 
         <!-- GPS Pre-fill indicator -->
         {#if $importModal.prefilledData?.gps_lat && $importModal.prefilledData?.gps_lng}
-          <div class="p-3 bg-green-50 border border-green-200 rounded flex items-center gap-2">
-            <svg class="w-5 h-5 text-green-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" />
+          <div class="p-3 bg-braun-100 border border-braun-300 rounded flex items-center gap-2">
+            <svg class="w-4 h-4 text-braun-700 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
             </svg>
-            <p class="text-sm text-green-700">
-              GPS coordinates pre-filled: {$importModal.prefilledData.gps_lat.toFixed(6)}, {$importModal.prefilledData.gps_lng.toFixed(6)}
+            <p class="text-sm text-braun-700">
+              GPS: {$importModal.prefilledData.gps_lat.toFixed(6)}, {$importModal.prefilledData.gps_lng.toFixed(6)}
             </p>
           </div>
         {/if}
@@ -969,7 +666,7 @@
 
       <!-- Footer - hide when showing intelligence -->
       {#if !showIntelligence || intelligenceDismissed || !$importModal.prefilledData?.gps_lat}
-      <div class="p-5 bg-braun-50 flex justify-end items-center">
+      <div class="px-6 pb-6 bg-braun-50 flex justify-end items-center">
         <div class="flex gap-3">
           <button
             onclick={handleCancel}
@@ -979,16 +676,9 @@
             Cancel
           </button>
           <button
-            onclick={handleCreateAndAddMedia}
-            disabled={saving}
-            class="px-3 py-1.5 text-sm border-2 border-braun-400 text-braun-900 bg-white rounded hover:bg-braun-900 hover:text-white transition disabled:opacity-50 font-medium"
-          >
-            {saving ? 'Adding...' : 'Add Media'}
-          </button>
-          <button
             onclick={handleCreate}
             disabled={saving}
-            class="px-3 py-1.5 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50 font-medium "
+            class="px-3 py-1.5 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50 font-medium"
           >
             {saving ? 'Creating...' : 'Create'}
           </button>

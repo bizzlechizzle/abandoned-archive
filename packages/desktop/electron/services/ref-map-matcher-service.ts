@@ -99,8 +99,16 @@ export class RefMapMatcherService {
         .where('ref_map_points.name', 'is not', null);
 
       // Filter by state if provided (optimization for large datasets)
+      // Match points that either have the same state OR have no state set
+      // Case-insensitive comparison for flexibility
       if (opts.state) {
-        pointsQuery = pointsQuery.where('ref_map_points.state', '=', opts.state);
+        const normalizedState = opts.state.toUpperCase();
+        pointsQuery = pointsQuery.where(eb =>
+          eb.or([
+            eb('ref_map_points.state', '=', normalizedState),
+            eb('ref_map_points.state', 'is', null),
+          ])
+        );
       }
 
       const points = await pointsQuery.execute();
