@@ -14,7 +14,7 @@
   import NotesSection from '../components/NotesSection.svelte';
   import MediaViewer from '../components/MediaViewer.svelte';
   import {
-    LocationInfo, LocationTimeline,
+    LocationInfo, LocationTimeline, LocationInfoHorizontal,
     LocationMapSection, LocationOriginalAssets,
     LocationImportZone, LocationBookmarks, LocationWebSources, LocationNerdStats,
     LocationSettings, SubLocationGrid,
@@ -1174,25 +1174,15 @@
       {#if isEditing}
         <LocationEditForm {location} onSave={handleSave} onCancel={() => isEditing = false} />
       {:else}
-        <!-- Side-by-side: Info on LEFT (55%), Map on RIGHT (45%) - equal height -->
+        <!-- Side-by-side: Timeline on LEFT (55%), Map on RIGHT (45%) - equal height -->
         <div class="flex gap-6 mb-8 items-stretch">
-          <!-- Left: Information box (55% width) -->
+          <!-- Left: Timeline (55% width) - PLAN: replaces LocationInfo position -->
           <div class="w-[55%] flex flex-col">
-            <LocationInfo
-              {location}
-              {images}
-              {videos}
-              {documents}
-              {allImagesForAuthors}
-              {allVideosForAuthors}
-              {allDocumentsForAuthors}
-              onNavigateFilter={navigateToFilter}
-              onSave={handleSave}
-              {sublocations}
+            <LocationTimeline
+              locid={location.locid}
+              subid={isViewingSubLocation && currentSubLocation ? currentSubLocation.subid : null}
               isHostLocation={isHostLocation && !isViewingSubLocation}
-              onConvertToHost={isViewingSubLocation ? undefined : handleConvertToHost}
-              currentSubLocation={isViewingSubLocation ? currentSubLocation : null}
-              onSubLocationSave={isViewingSubLocation ? handleSubLocationSave : undefined}
+              onUpdate={loadLocation}
             />
           </div>
 
@@ -1220,13 +1210,14 @@
           </div>
         </div>
 
-        <!-- Timeline Section (Migration 69) -->
+        <!-- PLAN: Horizontal Info Strip (below Timeline/Map row) -->
         <div class="mb-8">
-          <LocationTimeline
-            locid={location.locid}
-            subid={isViewingSubLocation && currentSubLocation ? currentSubLocation.subid : null}
-            isHostLocation={isHostLocation && !isViewingSubLocation}
-            onUpdate={loadLocation}
+          <LocationInfoHorizontal
+            {location}
+            onNavigateFilter={navigateToFilter}
+            onSave={handleSave}
+            currentSubLocation={isViewingSubLocation ? currentSubLocation : null}
+            onSubLocationSave={isViewingSubLocation ? handleSubLocationSave : undefined}
           />
         </div>
 

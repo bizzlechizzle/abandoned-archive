@@ -21,5 +21,7 @@ export { default as SubLocationGrid } from './SubLocationGrid.svelte';
 export { default as LocationTimeline } from './LocationTimeline.svelte';
 export { default as TimelineEventRow } from './TimelineEventRow.svelte';
 export { default as TimelineDateInput } from './TimelineDateInput.svelte';
+// Horizontal info strip (replaces LocationInfo in main position)
+export { default as LocationInfoHorizontal } from './LocationInfoHorizontal.svelte';
 
 export * from './types';

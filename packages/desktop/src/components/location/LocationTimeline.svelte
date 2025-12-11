@@ -2,10 +2,9 @@
   /**
    * LocationTimeline - Timeline display for location history
    * Shows established date, visits (from EXIF), and database entry
-   * Per PLAN-timeline-feature: Braun-compliant vertical timeline design
+   * Per PLAN: Braun white card styling matching LocationMapSection
    */
   import type { TimelineEvent, TimelineEventWithSource } from '@au-archive/core';
-  import TimelineEventRow from './TimelineEventRow.svelte';
   import TimelineDateInput from './TimelineDateInput.svelte';
   import { onMount } from 'svelte';
 
@@ -29,8 +28,9 @@
   let error = $state<string | null>(null);
   let editMode = $state(false);
   let showAllVisits = $state(false);
+  let editingEstablished = $state(false);
 
-  // Editable established date
+  // Derived events
   let establishedEvent = $derived(
     events.find(e => e.event_type === 'established')
   );
@@ -52,6 +52,17 @@
     visitEvents.length > VISIBLE_VISITS ? visitEvents.length - VISIBLE_VISITS : 0
   );
 
+  // Subtype labels for established events ("Built", "Opened", etc.)
+  const subtypeLabels: Record<string, string> = {
+    built: 'Built',
+    opened: 'Opened',
+    expanded: 'Expanded',
+    renovated: 'Renovated',
+    closed: 'Closed',
+    abandoned: 'Abandoned',
+    demolished: 'Demolished'
+  };
+
   // Load timeline on mount
   onMount(() => {
     loadTimeline();
@@ -59,7 +70,6 @@
 
   // Reload when locid/subid changes
   $effect(() => {
-    // Trigger on locid or subid change
     const _ = locid + (subid ?? '');
     loadTimeline();
   });
@@ -70,13 +80,10 @@
 
     try {
       if (subid) {
-        // Sub-location: get only its events
         events = await window.electronAPI.timeline.findBySubLocation(locid, subid);
       } else if (isHostLocation) {
-        // Host location: get combined timeline (includes sub-location events)
         events = await window.electronAPI.timeline.findCombined(locid);
       } else {
-        // Regular location: get its events only
         events = await window.electronAPI.timeline.findByLocation(locid);
       }
     } catch (e) {
@@ -95,6 +102,7 @@
         dateInput,
         eventSubtype
       );
+      editingEstablished = false;
       await loadTimeline();
       onUpdate?.();
     } catch (e) {
@@ -102,126 +110,148 @@
     }
   }
 
-  async function handleApprove(eventId: string) {
-    try {
-      // TODO: Get current user ID from store
-      await window.electronAPI.timeline.approve(eventId, 'user');
-      await loadTimeline();
-      onUpdate?.();
-    } catch (e) {
-      console.error('Failed to approve event:', e);
+  function toggleEditMode() {
+    editMode = !editMode;
+    if (!editMode) {
+      editingEstablished = false;
     }
   }
 
-  function toggleEditMode() {
-    editMode = !editMode;
+  function getEstablishedDisplay(): string {
+    if (!establishedEvent) return 'Built —';
+    const subtype = establishedEvent.event_subtype || 'built';
+    const label = subtypeLabels[subtype] || 'Built';
+    const date = establishedEvent.date_display;
+    return date ? `${label} ${date}` : `${label} —`;
+  }
+
+  function formatVisitDate(event: TimelineEvent): string {
+    return event.date_display || '—';
+  }
+
+  function getMediaSummary(event: TimelineEvent): string {
+    const count = event.media_count || 0;
+    if (count === 0) return '';
+    return count === 1 ? '1 photo' : `${count} photos`;
+  }
+
+  function formatDatabaseEntryDate(): string {
+    if (!databaseEntryEvent?.date_display) return '';
+    return `Added to Database · ${databaseEntryEvent.date_display}`;
   }
 </script>
 
-<div class="timeline-container bg-braun-50 border border-braun-200 rounded">
-  <!-- Header -->
-  <div class="flex items-center justify-between px-4 py-3 border-b border-braun-200">
-    <h3 class="text-[11px] font-medium uppercase tracking-[0.1em] text-braun-500">
-      Timeline
-    </h3>
+<!-- PLAN: Match LocationMapSection white card styling -->
+<div class="bg-white rounded border border-braun-300 flex-1 flex flex-col">
+  <!-- Header with edit button -->
+  <div class="px-8 pt-6 pb-4 flex items-center justify-between">
+    <h2 class="text-2xl font-semibold text-braun-900 leading-none">Timeline</h2>
     <button
       type="button"
       onclick={toggleEditMode}
-      class="text-[11px] font-medium text-braun-600 hover:text-braun-900 uppercase tracking-wide"
+      class="text-sm text-braun-500 hover:text-braun-900 hover:underline"
+      title={editMode ? 'Collapse edit mode' : 'Edit timeline'}
     >
       {editMode ? 'collapse' : 'edit'}
     </button>
   </div>
 
   <!-- Content -->
-  <div class="px-4 py-3">
+  <div class="px-8 pb-6 flex-1">
     {#if loading}
       <div class="flex items-center justify-center py-8">
-        <div class="text-braun-500 text-[13px]">Loading timeline...</div>
+        <div class="text-braun-500 text-sm">Loading timeline...</div>
       </div>
     {:else if error}
       <div class="flex items-center justify-center py-8">
-        <div class="text-red-600 text-[13px]">{error}</div>
+        <div class="text-red-600 text-sm">{error}</div>
       </div>
     {:else}
-      <div class="timeline-events relative">
+      <div class="timeline-events relative pl-5">
         <!-- Vertical line -->
-        <div class="absolute left-[3px] top-0 bottom-0 w-[1px] bg-braun-300"></div>
+        <div class="absolute left-[3px] top-2 bottom-2 w-px bg-braun-300"></div>
 
-        <!-- Established Event -->
-        {#if establishedEvent}
-          <TimelineEventRow
-            event={establishedEvent}
-            {editMode}
-            isFirst={true}
-            onUpdate={handleEstablishedUpdate}
-            onApprove={handleApprove}
-          />
-        {:else if editMode}
-          <!-- Show add button if no established event -->
-          <div class="relative pl-6 pb-4">
-            <div class="absolute left-0 top-1 w-[7px] h-[7px] rounded-full border border-braun-400 bg-white"></div>
-            <div class="text-[15px] text-braun-400">Established</div>
-            <TimelineDateInput
-              onSave={(date, subtype) => handleEstablishedUpdate(date, subtype)}
-              placeholder="Enter date..."
-            />
-          </div>
-        {/if}
+        <!-- Established Event (always first) -->
+        <div class="relative pb-4">
+          <!-- Filled dot for established -->
+          <div class="absolute -left-5 top-[5px] w-[7px] h-[7px] rounded-full bg-braun-900"></div>
+
+          {#if editMode && editingEstablished}
+            <!-- Inline edit form -->
+            <div class="bg-braun-50 border border-braun-200 rounded p-4">
+              <TimelineDateInput
+                initialValue={establishedEvent?.date_display || ''}
+                initialSubtype={establishedEvent?.event_subtype || 'built'}
+                onSave={handleEstablishedUpdate}
+                onCancel={() => editingEstablished = false}
+              />
+            </div>
+          {:else}
+            <button
+              type="button"
+              onclick={() => editMode && (editingEstablished = true)}
+              class="text-[15px] text-braun-900 {editMode ? 'hover:underline cursor-pointer' : 'cursor-default'}"
+              disabled={!editMode}
+            >
+              {getEstablishedDisplay()}
+            </button>
+          {/if}
+        </div>
 
         <!-- Visit Events -->
-        {#if visibleVisits.length > 0}
-          {#each visibleVisits as event (event.event_id)}
-            <TimelineEventRow
-              {event}
-              {editMode}
-              showSourceBuilding={isHostLocation && 'source_building' in event}
-              onApprove={handleApprove}
-            />
-          {/each}
-        {/if}
+        {#each visibleVisits as event (event.event_id)}
+          <div class="relative pb-4">
+            <!-- Hollow dot for visits -->
+            <div class="absolute -left-5 top-[5px] w-[7px] h-[7px] rounded-full border border-braun-400 bg-white"></div>
+
+            <div class="text-[15px] text-braun-900">
+              {formatVisitDate(event)}
+            </div>
+            <div class="text-[13px] text-braun-600">
+              {#if event.source_device}
+                {event.source_device}
+                {#if getMediaSummary(event)}
+                  · {getMediaSummary(event)}
+                {/if}
+              {:else if getMediaSummary(event)}
+                {getMediaSummary(event)}
+              {/if}
+            </div>
+          </div>
+        {/each}
 
         <!-- Show more visits button -->
         {#if hiddenVisitCount > 0 && !showAllVisits}
-          <div class="relative pl-6 py-2">
+          <div class="relative pb-4">
             <button
               type="button"
               onclick={() => showAllVisits = true}
-              class="text-[13px] text-braun-600 hover:text-braun-900"
+              class="text-[13px] text-braun-600 hover:text-braun-900 hover:underline"
             >
               Show {hiddenVisitCount} earlier visits
             </button>
           </div>
         {/if}
 
-        <!-- Database Entry Event -->
+        <!-- Database Entry Event (always last) -->
         {#if databaseEntryEvent}
-          <TimelineEventRow
-            event={databaseEntryEvent}
-            {editMode}
-            isLast={true}
-          />
+          <div class="relative">
+            <!-- Small square dot for database entry -->
+            <div class="absolute -left-5 top-[6px] w-[5px] h-[5px] bg-braun-400"></div>
+
+            <div class="text-[13px] text-braun-500">
+              {formatDatabaseEntryDate()}
+            </div>
+          </div>
         {/if}
 
         <!-- Empty state for no visits -->
-        {#if visitEvents.length === 0 && !editMode}
-          <div class="relative pl-6 py-3">
-            <div class="text-[13px] text-braun-500 bg-braun-100 rounded px-3 py-2">
-              Import media to automatically detect visit dates
-            </div>
+        {#if visitEvents.length === 0 && !loading}
+          <div class="py-2 text-[13px] text-braun-500 italic">
+            Import media to detect visit dates
           </div>
         {/if}
       </div>
     {/if}
   </div>
 </div>
-
-<style>
-  .timeline-container {
-    min-height: 200px;
-  }
-
-  .timeline-events {
-    padding-left: 0;
-  }
-</style>
