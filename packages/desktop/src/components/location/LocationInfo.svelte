@@ -79,13 +79,19 @@
     // Migration 32: Sub-location edit mode
     currentSubLocation?: SubLocationData | null;
     onSubLocationSave?: (subUpdates: SubLocationUpdates, locUpdates: Partial<LocationInput>) => Promise<void>;
+    // Hero image props (moved from Index Card)
+    heroThumbPath?: string | null;
+    heroFocalX?: number;
+    heroFocalY?: number;
+    onHeroClick?: () => void;
   }
 
   let {
     location, images = [], videos = [], documents = [], onNavigateFilter, onSave,
     allImagesForAuthors, allVideosForAuthors, allDocumentsForAuthors,
     sublocations = [], isHostLocation = false, onConvertToHost,
-    currentSubLocation = null, onSubLocationSave
+    currentSubLocation = null, onSubLocationSave,
+    heroThumbPath = null, heroFocalX = 0.5, heroFocalY = 0.5, onHeroClick
   }: Props = $props();
 
   // Migration 32: Sub-location edit mode detection
@@ -501,26 +507,15 @@
 <svelte:window onkeydown={showEditModal ? handleKeydown : undefined} />
 
 <!-- DECISION-019: Information Box styled to match LocationMapSection -->
-<div class="bg-white rounded border border-braun-300">
-  <!-- Header with edit button -->
-  <div class="flex items-start justify-between px-8 pt-6 pb-4">
+<div class="bg-white rounded border border-braun-300 flex-1 flex flex-col">
+  <!-- Header (no edit button - moved to bottom) -->
+  <div class="px-8 pt-6 pb-4">
     <h2 class="text-2xl font-semibold text-braun-900 leading-none">Information</h2>
-    <div class="flex items-center gap-3">
-      {#if onSave || onSubLocationSave}
-        <button
-          onclick={openEditModal}
-          class="text-sm text-braun-900 hover:underline leading-none mt-1"
-          title="Edit information"
-        >
-          edit
-        </button>
-      {/if}
-    </div>
   </div>
 
   <!-- Content sections - PUEA: Only show sections that have data -->
   <!-- Display order: AKA, Status+Type, Built/Abandoned, Documentation, Flags, Historical Name, Author -->
-  <div class="px-8 pb-6">
+  <div class="px-8 pb-6 flex-1">
     {#if hasAnyInfo}
       <!-- AKA Name (show only if exists and not duplicate of Historical Name) -->
       {#if shouldShowAka}
@@ -664,6 +659,19 @@
       <p class="text-braun-500 text-sm italic">No information added yet</p>
     {/if}
   </div>
+
+  <!-- Edit button at bottom (right-justified) -->
+  {#if onSave || onSubLocationSave}
+    <div class="px-8 pb-6 text-right">
+      <button
+        onclick={openEditModal}
+        class="text-sm text-braun-500 hover:text-braun-900 hover:underline"
+        title="Edit information"
+      >
+        edit
+      </button>
+    </div>
+  {/if}
 </div>
 
 <!-- DECISION-019: Edit Modal -->

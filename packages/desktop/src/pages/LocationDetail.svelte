@@ -1059,9 +1059,30 @@
       {#if isEditing}
         <LocationEditForm {location} onSave={handleSave} onCancel={() => isEditing = false} />
       {:else}
-        <!-- LocationMapSection: right-aligned with negative space on left -->
-        <div class="flex justify-end mb-8">
-          <div class="w-full max-w-lg">
+        <!-- Side-by-side: Info on LEFT (55%), Map on RIGHT (45%) - equal height -->
+        <div class="flex gap-6 mb-8 items-stretch">
+          <!-- Left: Information box (55% width) -->
+          <div class="w-[55%] flex flex-col">
+            <LocationInfo
+              {location}
+              {images}
+              {videos}
+              {documents}
+              {allImagesForAuthors}
+              {allVideosForAuthors}
+              {allDocumentsForAuthors}
+              onNavigateFilter={navigateToFilter}
+              onSave={handleSave}
+              {sublocations}
+              isHostLocation={isHostLocation && !isViewingSubLocation}
+              onConvertToHost={isViewingSubLocation ? undefined : handleConvertToHost}
+              currentSubLocation={isViewingSubLocation ? currentSubLocation : null}
+              onSubLocationSave={isViewingSubLocation ? handleSubLocationSave : undefined}
+            />
+          </div>
+
+          <!-- Right: Map Section (45% width) -->
+          <div class="w-[45%] flex flex-col">
             <!-- DECISION-011: Unified location box with verification checkmarks, edit modal -->
             <!-- Migration 31: Pass sub-location GPS props when viewing a sub-location -->
             <LocationMapSection
@@ -1083,24 +1104,6 @@
             />
           </div>
         </div>
-
-        <!-- LocationInfo: full width -->
-        <LocationInfo
-          {location}
-          {images}
-          {videos}
-          {documents}
-          {allImagesForAuthors}
-          {allVideosForAuthors}
-          {allDocumentsForAuthors}
-          onNavigateFilter={navigateToFilter}
-          onSave={handleSave}
-          {sublocations}
-          isHostLocation={isHostLocation && !isViewingSubLocation}
-          onConvertToHost={isViewingSubLocation ? undefined : handleConvertToHost}
-          currentSubLocation={isViewingSubLocation ? currentSubLocation : null}
-          onSubLocationSave={isViewingSubLocation ? handleSubLocationSave : undefined}
-        />
 
         <!-- Sub-Location Grid (only for host locations, hide when viewing a sub-location) -->
         {#if !isViewingSubLocation && isHostLocation}

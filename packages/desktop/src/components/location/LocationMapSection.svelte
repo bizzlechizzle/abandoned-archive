@@ -145,6 +145,22 @@
   const isGpsVerified = $derived(subLocation ? subLocation.gps_verified_on_map : (location.gps?.verifiedOnMap === true));
   const isAreaVerified = $derived(!!(location.address?.county || culturalRegion));
 
+  // Dynamic edit button state: "add" (red) / "verify" (yellow) / "edit" (gray)
+  // Priority: Missing data (red) > Unverified data (yellow) > Verified (gray)
+  // All states include hover:text-braun-900 for consistent hover behavior
+  const editButtonState = $derived<{ text: string; colorClass: string }>(() => {
+    // Red: Missing GPS OR Address
+    if (!hasGps || !hasAddress) {
+      return { text: 'add', colorClass: 'text-gps-low hover:text-braun-900' };
+    }
+    // Yellow: Has data but not verified
+    if (!isGpsVerified || !isAddressVerified) {
+      return { text: 'verify', colorClass: 'text-gps-medium hover:text-braun-900' };
+    }
+    // Gray: Fully verified
+    return { text: 'edit', colorClass: 'text-braun-500 hover:text-braun-900' };
+  });
+
   // Copy address with notification
   function copyAddress() {
     const addr = [
@@ -255,45 +271,17 @@
   const mapZoom = $derived(isHostLocation ? Math.max(1, baseZoom - 1) : baseZoom);
 </script>
 
-<div class="bg-white rounded border border-braun-300">
-  <!-- Header: Location with verification status and edit button (DECISION-013: No border) -->
-  <div class="flex items-start justify-between px-8 pt-6 pb-4">
+<div class="bg-white rounded border border-braun-300 flex-1 flex flex-col">
+  <!-- Header: Location (edit button moved to bottom) -->
+  <div class="px-8 pt-6 pb-4">
     <h2 class="text-2xl font-semibold text-braun-900 leading-none">Location</h2>
-    <button
-      onclick={handleEditClick}
-      class="text-sm text-braun-900 hover:underline leading-none mt-1"
-      title={subLocation ? 'Edit building GPS' : 'Edit location'}
-    >
-      edit
-    </button>
   </div>
 
-  <!-- SECTION 1: GPS (stacked first) - Migration 31: Shows sub-location GPS when viewing building -->
-  <!-- OPT-101: Label removed - coordinates are self-evident -->
-  <!-- OPT-101-fix: Added mt-2 for breathing room, text-base for larger mono -->
-  {#if hasGps}
-    <div class="px-8 mt-2">
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="relative leading-relaxed" onmouseup={handleGpsSelection} oncontextmenu={handleGpsContextMenu}>
-        <button
-          onclick={openOnAtlas}
-          class="text-braun-900 hover:underline font-mono text-base text-left"
-          title="View on Atlas"
-        >
-          {effectiveGpsLat!.toFixed(6)}, {effectiveGpsLng!.toFixed(6)}
-        </button>
-        {#if copiedGps}
-          <span class="absolute right-0 top-0 text-xs text-gps-verified font-medium">Copied!</span>
-        {/if}
-      </div>
-    </div>
-  {/if}
-
-  <!-- SECTION 2: Address (stacked second, single line) -->
+  <!-- SECTION 1: Address (moved above GPS) -->
   <!-- OPT-101: Label removed - address format is self-evident -->
   <!-- OPT-101-fix: text-[15px] for body standard, leading-relaxed -->
   {#if hasAddress}
-    <div class="px-8 mt-6">
+    <div class="px-8 mt-2">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="text-[15px] text-braun-900 relative leading-relaxed" onmouseup={handleAddressSelection} oncontextmenu={handleAddressContextMenu}>
         <p>
@@ -319,94 +307,30 @@
     </div>
   {/if}
 
-  <!-- SECTION 3: Local (DECISION-018: Horizontal dash-separated format) -->
-  <!-- OPT-101: Label removed - geographic hierarchy is self-evident -->
-  <!-- OPT-101-fix: text-braun-600 to differentiate from Region, leading-relaxed -->
-  {#if hasLocalData}
-    <div class="px-8 mt-6">
-      <p class="text-sm text-braun-600 leading-relaxed">
-        {#if location.address?.county}
-          <button
-            onclick={() => onNavigateFilter('county', location.address!.county!, location.address?.state ? { state: location.address.state } : undefined)}
-            class="text-braun-600 hover:text-braun-900 hover:underline"
-            title="View all locations in {location.address.county} County"
-          >{location.address.county} County</button>
+  <!-- SECTION 2: GPS (moved below Address) -->
+  <!-- Migration 31: Shows sub-location GPS when viewing building -->
+  <!-- OPT-101: Label removed - coordinates are self-evident -->
+  {#if hasGps}
+    <div class="px-8 mt-4">
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="relative leading-relaxed" onmouseup={handleGpsSelection} oncontextmenu={handleGpsContextMenu}>
+        <button
+          onclick={openOnAtlas}
+          class="text-braun-900 hover:underline font-mono text-base text-left"
+          title="View on Atlas"
+        >
+          {effectiveGpsLat!.toFixed(6)}, {effectiveGpsLng!.toFixed(6)}
+        </button>
+        {#if copiedGps}
+          <span class="absolute right-0 top-0 text-xs text-gps-verified font-medium">Copied!</span>
         {/if}
-        {#if culturalRegion}
-          {#if location.address?.county}<span class="text-braun-400"> - </span>{/if}
-          <button
-            onclick={() => onNavigateFilter('culturalRegion', culturalRegion)}
-            class="text-braun-600 hover:text-braun-900 hover:underline"
-            title="View all locations in {culturalRegion}"
-          >{culturalRegion}</button>
-          {#if localCulturalRegionVerified}<span class="text-gps-verified ml-1 text-xs" title="Verified">(verified)</span>{/if}
-        {/if}
-        {#if directionOnly}
-          {#if location.address?.county || culturalRegion}<span class="text-braun-400"> - </span>{/if}
-          <button
-            onclick={() => onNavigateFilter('stateDirection', stateDirection)}
-            class="text-braun-600 hover:text-braun-900 hover:underline"
-            title="View all locations in {stateDirection}"
-          >{directionOnly}</button>
-        {/if}
-        {#if fullStateName}
-          {#if location.address?.county || culturalRegion || directionOnly}<span class="text-braun-400"> - </span>{/if}
-          <button
-            onclick={() => onNavigateFilter('state', location.address!.state!)}
-            class="text-braun-600 hover:text-braun-900 hover:underline"
-            title="View all locations in {fullStateName}"
-          >{fullStateName}</button>
-        {/if}
-      </p>
+      </div>
     </div>
   {/if}
 
-  <!-- SECTION 4: Region (DECISION-018: Horizontal dash-separated format) -->
-  <!-- OPT-101: Label removed - geographic hierarchy is self-evident -->
-  <!-- OPT-101-fix: text-braun-500 (lighter than Local) to show hierarchy, leading-relaxed -->
-  {#if hasRegionData}
-    <div class="px-8 mt-6">
-      <p class="text-sm text-braun-500 leading-relaxed">
-        {#if countryCulturalRegion}
-          <button
-            onclick={() => onNavigateFilter('countryCulturalRegion', countryCulturalRegion)}
-            class="text-braun-500 hover:text-braun-900 hover:underline"
-            title="View all locations in {countryCulturalRegion}"
-          >{countryCulturalRegion}</button>
-          {#if countryCulturalRegionVerified}<span class="text-gps-verified ml-1 text-xs" title="Verified">(verified)</span>{/if}
-        {/if}
-        {#if censusRegion}
-          {#if countryCulturalRegion}<span class="text-braun-400"> - </span>{/if}
-          <button
-            onclick={() => onNavigateFilter('censusRegion', censusRegion)}
-            class="text-braun-500 hover:text-braun-900 hover:underline"
-            title="View all locations in {censusRegion}"
-          >{censusRegion}</button>
-        {/if}
-        {#if country}
-          {#if countryCulturalRegion || censusRegion}<span class="text-braun-400"> - </span>{/if}
-          <button
-            onclick={() => onNavigateFilter('country', country)}
-            class="text-braun-500 hover:text-braun-900 hover:underline"
-            title="View all locations in {country}"
-          >{country}</button>
-        {/if}
-        {#if continent}
-          {#if countryCulturalRegion || censusRegion || country}<span class="text-braun-400"> - </span>{/if}
-          <button
-            onclick={() => onNavigateFilter('continent', continent)}
-            class="text-braun-500 hover:text-braun-900 hover:underline"
-            title="View all locations in {continent}"
-          >{continent}</button>
-        {/if}
-      </p>
-    </div>
-  {/if}
-
-  <!-- SECTION 5: Mini Map (full width, smaller) - Hidden when no GPS -->
+  <!-- SECTION 3: Mini Map (moved above Local/Region) -->
   <!-- Campus map shows host location + all sub-locations with GPS -->
-  <!-- OPT-101: Increased spacing from mt-4 to mt-6 -->
-  <div class="px-8 mt-6 pb-6">
+  <div class="px-8 mt-6">
     {#if hasGps}
       <div class="relative rounded overflow-hidden border border-braun-200 group" style="aspect-ratio: 2 / 1;">
         <Map
@@ -448,6 +372,101 @@
         </div>
       </div>
     {/if}
+  </div>
+
+  <!-- SECTION 4: Local (DECISION-018: Horizontal dash-separated format) -->
+  <!-- OPT-101: Label removed - geographic hierarchy is self-evident -->
+  <!-- OPT-101-fix: text-braun-600 to differentiate from Region, leading-relaxed -->
+  {#if hasLocalData}
+    <div class="px-8 mt-6">
+      <p class="text-sm text-braun-600 leading-relaxed">
+        {#if location.address?.county}
+          <button
+            onclick={() => onNavigateFilter('county', location.address!.county!, location.address?.state ? { state: location.address.state } : undefined)}
+            class="text-braun-600 hover:text-braun-900 hover:underline"
+            title="View all locations in {location.address.county} County"
+          >{location.address.county} County</button>
+        {/if}
+        {#if culturalRegion}
+          {#if location.address?.county}<span class="text-braun-400"> - </span>{/if}
+          <button
+            onclick={() => onNavigateFilter('culturalRegion', culturalRegion)}
+            class="text-braun-600 hover:text-braun-900 hover:underline"
+            title="View all locations in {culturalRegion}"
+          >{culturalRegion}</button>
+          {#if localCulturalRegionVerified}<span class="text-gps-verified ml-1 text-xs" title="Verified">(verified)</span>{/if}
+        {/if}
+        {#if directionOnly}
+          {#if location.address?.county || culturalRegion}<span class="text-braun-400"> - </span>{/if}
+          <button
+            onclick={() => onNavigateFilter('stateDirection', stateDirection)}
+            class="text-braun-600 hover:text-braun-900 hover:underline"
+            title="View all locations in {stateDirection}"
+          >{directionOnly}</button>
+        {/if}
+        {#if fullStateName}
+          {#if location.address?.county || culturalRegion || directionOnly}<span class="text-braun-400"> - </span>{/if}
+          <button
+            onclick={() => onNavigateFilter('state', location.address!.state!)}
+            class="text-braun-600 hover:text-braun-900 hover:underline"
+            title="View all locations in {fullStateName}"
+          >{fullStateName}</button>
+        {/if}
+      </p>
+    </div>
+  {/if}
+
+  <!-- SECTION 5: Region (DECISION-018: Horizontal dash-separated format) -->
+  <!-- OPT-101: Label removed - geographic hierarchy is self-evident -->
+  <!-- OPT-101-fix: text-braun-500 (lighter than Local) to show hierarchy, leading-relaxed -->
+  {#if hasRegionData}
+    <div class="px-8 mt-6 pb-6">
+      <p class="text-sm text-braun-500 leading-relaxed">
+        {#if countryCulturalRegion}
+          <button
+            onclick={() => onNavigateFilter('countryCulturalRegion', countryCulturalRegion)}
+            class="text-braun-500 hover:text-braun-900 hover:underline"
+            title="View all locations in {countryCulturalRegion}"
+          >{countryCulturalRegion}</button>
+          {#if countryCulturalRegionVerified}<span class="text-gps-verified ml-1 text-xs" title="Verified">(verified)</span>{/if}
+        {/if}
+        {#if censusRegion}
+          {#if countryCulturalRegion}<span class="text-braun-400"> - </span>{/if}
+          <button
+            onclick={() => onNavigateFilter('censusRegion', censusRegion)}
+            class="text-braun-500 hover:text-braun-900 hover:underline"
+            title="View all locations in {censusRegion}"
+          >{censusRegion}</button>
+        {/if}
+        {#if country}
+          {#if countryCulturalRegion || censusRegion}<span class="text-braun-400"> - </span>{/if}
+          <button
+            onclick={() => onNavigateFilter('country', country)}
+            class="text-braun-500 hover:text-braun-900 hover:underline"
+            title="View all locations in {country}"
+          >{country}</button>
+        {/if}
+        {#if continent}
+          {#if countryCulturalRegion || censusRegion || country}<span class="text-braun-400"> - </span>{/if}
+          <button
+            onclick={() => onNavigateFilter('continent', continent)}
+            class="text-braun-500 hover:text-braun-900 hover:underline"
+            title="View all locations in {continent}"
+          >{continent}</button>
+        {/if}
+      </p>
+    </div>
+  {/if}
+
+  <!-- Edit button at bottom (right-justified) - Dynamic text/color based on verification status -->
+  <div class="px-8 pb-6 text-right">
+    <button
+      onclick={handleEditClick}
+      class="text-sm {editButtonState().colorClass} hover:underline"
+      title={subLocation ? 'Edit building GPS' : 'Edit location'}
+    >
+      {editButtonState().text}
+    </button>
   </div>
 </div>
 

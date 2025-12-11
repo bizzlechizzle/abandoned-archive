@@ -60,7 +60,7 @@
 
   let saving = $state(false);
   let error = $state<string | null>(null);
-  let activeTab = $state<'address' | 'gps' | 'cultural'>('address');
+  let activeTab = $state<'gps' | 'address' | 'cultural'>('gps');
 
   // DECISION-017: Proximity-filtered local cultural regions based on state and adjacent states
   const localCulturalRegions = $derived(() => {
@@ -227,17 +227,8 @@
       </button>
     </div>
 
-    <!-- Tabs -->
+    <!-- Tabs (order: GPS → Address → Cultural Region) -->
     <div class="flex border-b border-braun-200">
-      <button
-        onclick={() => activeTab = 'address'}
-        class="flex-1 px-4 py-3 text-sm font-medium transition
-          {activeTab === 'address'
-            ? 'text-braun-900 border-b-2 border-braun-900 bg-braun-50'
-            : 'text-braun-500 hover:text-braun-700'}"
-      >
-        Mailing Address
-      </button>
       <button
         onclick={() => activeTab = 'gps'}
         class="flex-1 px-4 py-3 text-sm font-medium transition
@@ -246,6 +237,15 @@
             : 'text-braun-500 hover:text-braun-700'}"
       >
         GPS & Map
+      </button>
+      <button
+        onclick={() => activeTab = 'address'}
+        class="flex-1 px-4 py-3 text-sm font-medium transition
+          {activeTab === 'address'
+            ? 'text-braun-900 border-b-2 border-braun-900 bg-braun-50'
+            : 'text-braun-500 hover:text-braun-700'}"
+      >
+        Mailing Address
       </button>
       <button
         onclick={() => activeTab = 'cultural'}
@@ -266,7 +266,68 @@
         </div>
       {/if}
 
-      {#if activeTab === 'address'}
+      {#if activeTab === 'gps'}
+        <!-- GPS Tab -->
+        <div class="space-y-4">
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label for="gps_lat" class="block text-sm font-medium text-braun-700 mb-1">Latitude</label>
+              <input
+                id="gps_lat"
+                type="text"
+                bind:value={formData.gps_lat}
+                placeholder="42.123456"
+                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 font-mono text-sm"
+              />
+            </div>
+            <div>
+              <label for="gps_lng" class="block text-sm font-medium text-braun-700 mb-1">Longitude</label>
+              <input
+                id="gps_lng"
+                type="text"
+                bind:value={formData.gps_lng}
+                placeholder="-73.123456"
+                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 font-mono text-sm"
+              />
+            </div>
+          </div>
+
+          <!-- Map for GPS verification -->
+          <div>
+            <p class="text-sm text-braun-600 mb-2">
+              Drag the marker to the exact location, or click on the map to set GPS
+            </p>
+            <div class="h-64 rounded border border-braun-200 overflow-hidden">
+              <Map
+                locations={mapLocation.gps ? [mapLocation] : []}
+                onLocationVerify={handleGpsUpdate}
+                onMapClick={(lat, lng) => {
+                  formData.gps_lat = lat.toFixed(6);
+                  formData.gps_lng = lng.toFixed(6);
+                }}
+                zoom={mapLocation.gps ? 17 : 10}
+                defaultLayer="satellite-labels"
+                hideAttribution={true}
+                showLayerControl={false}
+              />
+            </div>
+          </div>
+
+          <!-- GPS Verification -->
+          <div class="pt-4 border-t border-braun-200">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                bind:checked={formData.gps_verified}
+                class="w-4 h-4 text-gps-verified rounded border-braun-300 focus:ring-gps-verified accent-gps-verified"
+              />
+              <span class="text-sm font-medium text-braun-700">
+                Verify GPS Location
+              </span>
+            </label>
+          </div>
+        </div>
+      {:else if activeTab === 'address'}
         <!-- Address Tab -->
         <div class="space-y-4">
           <div>
@@ -330,71 +391,10 @@
               <input
                 type="checkbox"
                 bind:checked={formData.address_verified}
-                class="w-4 h-4 text-verified rounded border-braun-300 focus:ring-verified"
+                class="w-4 h-4 text-gps-verified rounded border-braun-300 focus:ring-gps-verified accent-gps-verified"
               />
               <span class="text-sm font-medium text-braun-700">
-                Confirm Mailing Address
-              </span>
-            </label>
-          </div>
-        </div>
-      {:else if activeTab === 'gps'}
-        <!-- GPS Tab -->
-        <div class="space-y-4">
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label for="gps_lat" class="block text-sm font-medium text-braun-700 mb-1">Latitude</label>
-              <input
-                id="gps_lat"
-                type="text"
-                bind:value={formData.gps_lat}
-                placeholder="42.123456"
-                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 font-mono text-sm"
-              />
-            </div>
-            <div>
-              <label for="gps_lng" class="block text-sm font-medium text-braun-700 mb-1">Longitude</label>
-              <input
-                id="gps_lng"
-                type="text"
-                bind:value={formData.gps_lng}
-                placeholder="-73.123456"
-                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 font-mono text-sm"
-              />
-            </div>
-          </div>
-
-          <!-- Map for GPS verification -->
-          <div>
-            <p class="text-sm text-braun-600 mb-2">
-              Drag the marker to the exact location, or click on the map to set GPS
-            </p>
-            <div class="h-64 rounded border border-braun-200 overflow-hidden">
-              <Map
-                locations={mapLocation.gps ? [mapLocation] : []}
-                onLocationVerify={handleGpsUpdate}
-                onMapClick={(lat, lng) => {
-                  formData.gps_lat = lat.toFixed(6);
-                  formData.gps_lng = lng.toFixed(6);
-                }}
-                zoom={mapLocation.gps ? 17 : 10}
-                defaultLayer="satellite-labels"
-                hideAttribution={true}
-                showLayerControl={false}
-              />
-            </div>
-          </div>
-
-          <!-- GPS Verification -->
-          <div class="pt-4 border-t border-braun-200">
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                bind:checked={formData.gps_verified}
-                class="w-4 h-4 text-verified rounded border-braun-300 focus:ring-verified"
-              />
-              <span class="text-sm font-medium text-braun-700">
-                Confirm GPS Location
+                Verify Mailing Address
               </span>
             </label>
           </div>
@@ -426,19 +426,6 @@
                 >{suggestedCulturalRegion}</button>
               </p>
             {/if}
-
-            <!-- Local Cultural Region Verification -->
-            <label class="flex items-center gap-2 cursor-pointer mt-2">
-              <input
-                type="checkbox"
-                bind:checked={formData.local_cultural_region_verified}
-                disabled={!formData.cultural_region}
-                class="w-4 h-4 text-verified rounded border-braun-300 focus:ring-verified disabled:opacity-50"
-              />
-              <span class="text-sm text-braun-600 {!formData.cultural_region ? 'opacity-50' : ''}">
-                Confirm Local Cultural Region
-              </span>
-            </label>
           </div>
 
           <!-- Country Cultural Region -->
@@ -470,19 +457,6 @@
                 >{suggestedCountryCulturalRegion()}</button>
               </p>
             {/if}
-
-            <!-- Country Cultural Region Verification -->
-            <label class="flex items-center gap-2 cursor-pointer mt-2">
-              <input
-                type="checkbox"
-                bind:checked={formData.country_cultural_region_verified}
-                disabled={!formData.country_cultural_region}
-                class="w-4 h-4 text-verified rounded border-braun-300 focus:ring-verified disabled:opacity-50"
-              />
-              <span class="text-sm text-braun-600 {!formData.country_cultural_region ? 'opacity-50' : ''}">
-                Confirm Country Cultural Region
-              </span>
-            </label>
           </div>
         </div>
       {/if}
