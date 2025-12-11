@@ -1,6 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { generateId } from '../main/ipc-validation';
-import type { Database, WebSourcesTable, WebSourceVersionsTable } from '../main/database.types';
+import type { Database, WebSourcesTable, WebSourceVersionsTable, WebSourceImagesTable, WebSourceVideosTable } from '../main/database.types';
 import { calculateHashBuffer } from '../services/crypto-service';
 
 // =============================================================================
@@ -187,6 +187,7 @@ export class SQLiteWebSourcesRepository {
       extracted_author: null,
       extracted_date: null,
       extracted_publisher: null,
+      extracted_text: null,
       word_count: 0,
       image_count: 0,
       video_count: 0,
@@ -206,6 +207,14 @@ export class SQLiteWebSourcesRepository {
       created_at,
       archived_at: null,
       auth_imp: input.auth_imp || null,
+      // OPT-111: Enhanced metadata fields
+      domain: null,
+      extracted_links: null,
+      page_metadata_json: null,
+      http_headers_json: null,
+      canonical_url: null,
+      language: null,
+      favicon_path: null,
     };
 
     await this.db.insertInto('web_sources').values(source).execute();
@@ -854,6 +863,7 @@ export class SQLiteWebSourcesRepository {
           extracted_author: null,
           extracted_date: null,
           extracted_publisher: null,
+          extracted_text: null,
           word_count: 0,
           image_count: 0,
           video_count: 0,
@@ -873,6 +883,14 @@ export class SQLiteWebSourcesRepository {
           created_at: bookmark.bookmark_date,
           archived_at: null,
           auth_imp: bookmark.auth_imp,
+          // OPT-111: Enhanced metadata fields
+          domain: null,
+          extracted_links: null,
+          page_metadata_json: null,
+          http_headers_json: null,
+          canonical_url: null,
+          language: null,
+          favicon_path: null,
         };
 
         await this.db.insertInto('web_sources').values(source).execute();
@@ -945,5 +963,172 @@ export class SQLiteWebSourcesRepository {
       ...row,
       content_changed: row.content_changed === 1,
     };
+  }
+
+  // =============================================================================
+  // OPT-111: Per-Image and Per-Video Metadata Methods
+  // =============================================================================
+
+  /**
+   * Get all images for a web source
+   */
+  async findImages(sourceId: string): Promise<WebSourceImagesTable[]> {
+    return await this.db
+      .selectFrom('web_source_images')
+      .selectAll()
+      .where('source_id', '=', sourceId)
+      .orderBy('image_index', 'asc')
+      .execute();
+  }
+
+  /**
+   * Get all videos for a web source
+   */
+  async findVideos(sourceId: string): Promise<WebSourceVideosTable[]> {
+    return await this.db
+      .selectFrom('web_source_videos')
+      .selectAll()
+      .where('source_id', '=', sourceId)
+      .orderBy('video_index', 'asc')
+      .execute();
+  }
+
+  /**
+   * Insert image metadata for a web source
+   */
+  async insertImage(sourceId: string, imageIndex: number, data: {
+    url: string;
+    localPath?: string;
+    hash?: string;
+    width?: number;
+    height?: number;
+    size?: number;
+    originalFilename?: string;
+    alt?: string;
+    caption?: string;
+    credit?: string;
+    attribution?: string;
+    srcsetVariants?: string[];
+    contextHtml?: string;
+    linkUrl?: string;
+    exif?: Record<string, unknown>;
+    isHiRes?: boolean;
+    isHero?: boolean;
+  }): Promise<void> {
+    await this.db.insertInto('web_source_images').values({
+      source_id: sourceId,
+      image_index: imageIndex,
+      url: data.url,
+      local_path: data.localPath || null,
+      hash: data.hash || null,
+      width: data.width || null,
+      height: data.height || null,
+      size: data.size || null,
+      original_filename: data.originalFilename || null,
+      alt: data.alt || null,
+      caption: data.caption || null,
+      credit: data.credit || null,
+      attribution: data.attribution || null,
+      srcset_variants: data.srcsetVariants ? JSON.stringify(data.srcsetVariants) : null,
+      context_html: data.contextHtml || null,
+      link_url: data.linkUrl || null,
+      exif_json: data.exif ? JSON.stringify(data.exif) : null,
+      is_hi_res: data.isHiRes ? 1 : 0,
+      is_hero: data.isHero ? 1 : 0,
+    }).execute();
+  }
+
+  /**
+   * Insert video metadata for a web source
+   */
+  async insertVideo(sourceId: string, videoIndex: number, data: {
+    url: string;
+    localPath?: string;
+    hash?: string;
+    title?: string;
+    description?: string;
+    duration?: number;
+    size?: number;
+    platform?: string;
+    uploader?: string;
+    uploaderUrl?: string;
+    uploadDate?: string;
+    viewCount?: number;
+    likeCount?: number;
+    tags?: string[];
+    categories?: string[];
+    thumbnailUrl?: string;
+    thumbnailPath?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<void> {
+    await this.db.insertInto('web_source_videos').values({
+      source_id: sourceId,
+      video_index: videoIndex,
+      url: data.url,
+      local_path: data.localPath || null,
+      hash: data.hash || null,
+      title: data.title || null,
+      description: data.description || null,
+      duration: data.duration || null,
+      size: data.size || null,
+      platform: data.platform || null,
+      uploader: data.uploader || null,
+      uploader_url: data.uploaderUrl || null,
+      upload_date: data.uploadDate || null,
+      view_count: data.viewCount || null,
+      like_count: data.likeCount || null,
+      tags: data.tags ? JSON.stringify(data.tags) : null,
+      categories: data.categories ? JSON.stringify(data.categories) : null,
+      thumbnail_url: data.thumbnailUrl || null,
+      thumbnail_path: data.thumbnailPath || null,
+      metadata_json: data.metadata ? JSON.stringify(data.metadata) : null,
+    }).execute();
+  }
+
+  /**
+   * Delete all images for a source (used during re-archive)
+   */
+  async deleteImages(sourceId: string): Promise<void> {
+    await this.db
+      .deleteFrom('web_source_images')
+      .where('source_id', '=', sourceId)
+      .execute();
+  }
+
+  /**
+   * Delete all videos for a source (used during re-archive)
+   */
+  async deleteVideos(sourceId: string): Promise<void> {
+    await this.db
+      .deleteFrom('web_source_videos')
+      .where('source_id', '=', sourceId)
+      .execute();
+  }
+
+  /**
+   * Update page-level metadata fields
+   */
+  async updatePageMetadata(sourceId: string, data: {
+    domain?: string;
+    extractedLinks?: Array<{ url: string; text: string; rel: string | null }>;
+    pageMetadata?: Record<string, unknown>;
+    httpHeaders?: Record<string, string>;
+    canonicalUrl?: string;
+    language?: string;
+    faviconPath?: string;
+  }): Promise<void> {
+    await this.db
+      .updateTable('web_sources')
+      .set({
+        domain: data.domain || null,
+        extracted_links: data.extractedLinks ? JSON.stringify(data.extractedLinks) : null,
+        page_metadata_json: data.pageMetadata ? JSON.stringify(data.pageMetadata) : null,
+        http_headers_json: data.httpHeaders ? JSON.stringify(data.httpHeaders) : null,
+        canonical_url: data.canonicalUrl || null,
+        language: data.language || null,
+        favicon_path: data.faviconPath || null,
+      })
+      .where('source_id', '=', sourceId)
+      .execute();
   }
 }

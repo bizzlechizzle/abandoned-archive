@@ -449,6 +449,11 @@ const api = {
     rearchive: (sourceId, options) => invokeLong("websources:rearchive")(sourceId, options),
     cancelArchive: () => invokeAuto("websources:cancelArchive")(),
     archiveStatus: () => invokeAuto("websources:archiveStatus")(),
+
+    // OPT-111: Enhanced Metadata Access
+    getImages: (sourceId) => invokeAuto("websources:getImages")(sourceId),
+    getVideos: (sourceId) => invokeAuto("websources:getVideos")(sourceId),
+    getDetail: (sourceId) => invokeAuto("websources:getDetail")(sourceId),
   },
 
   users: {

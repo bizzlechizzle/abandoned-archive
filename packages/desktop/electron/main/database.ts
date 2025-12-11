@@ -2500,6 +2500,104 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 65 completed: stype column added to slocs');
     }
 
+    // Migration 66: OPT-111 Enhanced web source metadata for archive viewer
+    // Add domain, extracted_links, page_metadata_json columns to web_sources
+    // Create web_source_images and web_source_videos tables for per-item metadata
+    const wsHasDomain = sqlite.prepare(`
+      SELECT COUNT(*) as cnt FROM pragma_table_info('web_sources') WHERE name = 'domain'
+    `).get() as { cnt: number };
+
+    if (wsHasDomain.cnt === 0) {
+      console.log('Running migration 66: Enhanced web source metadata tables');
+
+      // Add new columns to web_sources for page-level metadata
+      sqlite.exec(`
+        ALTER TABLE web_sources ADD COLUMN domain TEXT;
+        ALTER TABLE web_sources ADD COLUMN extracted_links TEXT;
+        ALTER TABLE web_sources ADD COLUMN page_metadata_json TEXT;
+        ALTER TABLE web_sources ADD COLUMN http_headers_json TEXT;
+        ALTER TABLE web_sources ADD COLUMN canonical_url TEXT;
+        ALTER TABLE web_sources ADD COLUMN language TEXT;
+        ALTER TABLE web_sources ADD COLUMN favicon_path TEXT;
+      `);
+
+      // Create web_source_images table for per-image metadata
+      // Stores extracted metadata like alt, caption, credit, EXIF for each image
+      sqlite.exec(`
+        CREATE TABLE IF NOT EXISTS web_source_images (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          source_id TEXT NOT NULL,
+          image_index INTEGER NOT NULL,
+
+          url TEXT NOT NULL,
+          local_path TEXT,
+          hash TEXT,
+
+          width INTEGER,
+          height INTEGER,
+          size INTEGER,
+
+          original_filename TEXT,
+          alt TEXT,
+          caption TEXT,
+          credit TEXT,
+          attribution TEXT,
+          srcset_variants TEXT,
+          context_html TEXT,
+          link_url TEXT,
+
+          exif_json TEXT,
+
+          is_hi_res INTEGER DEFAULT 0,
+          is_hero INTEGER DEFAULT 0,
+
+          created_at TEXT DEFAULT (datetime('now')),
+
+          FOREIGN KEY (source_id) REFERENCES web_sources(source_id) ON DELETE CASCADE
+        )
+      `);
+      sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_web_source_images_source ON web_source_images(source_id)`);
+
+      // Create web_source_videos table for per-video metadata
+      // Stores yt-dlp extracted metadata like title, uploader, duration, etc.
+      sqlite.exec(`
+        CREATE TABLE IF NOT EXISTS web_source_videos (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          source_id TEXT NOT NULL,
+          video_index INTEGER NOT NULL,
+
+          url TEXT NOT NULL,
+          local_path TEXT,
+          hash TEXT,
+
+          title TEXT,
+          description TEXT,
+          duration INTEGER,
+          size INTEGER,
+          platform TEXT,
+
+          uploader TEXT,
+          uploader_url TEXT,
+          upload_date TEXT,
+          view_count INTEGER,
+          like_count INTEGER,
+
+          tags TEXT,
+          categories TEXT,
+          thumbnail_url TEXT,
+          thumbnail_path TEXT,
+          metadata_json TEXT,
+
+          created_at TEXT DEFAULT (datetime('now')),
+
+          FOREIGN KEY (source_id) REFERENCES web_sources(source_id) ON DELETE CASCADE
+        )
+      `);
+      sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_web_source_videos_source ON web_source_videos(source_id)`);
+
+      console.log('Migration 66 completed: Enhanced web source metadata tables created');
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

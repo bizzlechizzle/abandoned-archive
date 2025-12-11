@@ -36,6 +36,9 @@ export interface Database {
   // Migration 57-60: OPT-109 Web Sources Archiving
   web_sources: WebSourcesTable;
   web_source_versions: WebSourceVersionsTable;
+  // Migration 66: OPT-111 Enhanced Web Source Metadata
+  web_source_images: WebSourceImagesTable;
+  web_source_videos: WebSourceVideosTable;
 }
 
 // Locations table
@@ -789,6 +792,15 @@ export interface WebSourcesTable {
   created_at: string;               // ISO timestamp
   archived_at: string | null;       // ISO timestamp when archiving completed
   auth_imp: string | null;          // User who added this source
+
+  // OPT-111: Enhanced page-level metadata (Migration 66)
+  domain: string | null;              // Extracted domain from URL
+  extracted_links: string | null;     // JSON array of {url, text, rel} objects
+  page_metadata_json: string | null;  // Full OpenGraph, Schema.org, meta tags
+  http_headers_json: string | null;   // HTTP response headers
+  canonical_url: string | null;       // Canonical URL from link tag
+  language: string | null;            // Page language from html lang attribute
+  favicon_path: string | null;        // Path to downloaded favicon
 }
 
 // Web Source Versions table - Track changes over time
@@ -822,4 +834,75 @@ export interface WebSourceVersionsTable {
   // Diff tracking (added by migration 62)
   content_changed: number;     // 0/1 - Did content change from previous version?
   diff_summary: string | null; // Human-readable summary of changes
+}
+
+// OPT-111: Web Source Images table - Per-image metadata from archived pages (Migration 66)
+export interface WebSourceImagesTable {
+  id: Generated<number>;
+  source_id: string;
+  image_index: number;
+
+  // Location
+  url: string;
+  local_path: string | null;
+  hash: string | null;
+
+  // Dimensions
+  width: number | null;
+  height: number | null;
+  size: number | null;
+
+  // Metadata from page
+  original_filename: string | null;
+  alt: string | null;
+  caption: string | null;
+  credit: string | null;
+  attribution: string | null;
+  srcset_variants: string | null;  // JSON array
+  context_html: string | null;
+  link_url: string | null;
+
+  // EXIF from downloaded file
+  exif_json: string | null;
+
+  // Flags
+  is_hi_res: number;
+  is_hero: number;
+
+  created_at: Generated<string>;
+}
+
+// OPT-111: Web Source Videos table - Per-video metadata from archived pages (Migration 66)
+export interface WebSourceVideosTable {
+  id: Generated<number>;
+  source_id: string;
+  video_index: number;
+
+  // Location
+  url: string;
+  local_path: string | null;
+  hash: string | null;
+
+  // Basic info
+  title: string | null;
+  description: string | null;
+  duration: number | null;
+  size: number | null;
+  platform: string | null;
+
+  // Source info
+  uploader: string | null;
+  uploader_url: string | null;
+  upload_date: string | null;
+  view_count: number | null;
+  like_count: number | null;
+
+  // Extended metadata
+  tags: string | null;       // JSON array
+  categories: string | null; // JSON array
+  thumbnail_url: string | null;
+  thumbnail_path: string | null;
+  metadata_json: string | null;
+
+  created_at: Generated<string>;
 }

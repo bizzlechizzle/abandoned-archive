@@ -2,8 +2,11 @@
   /**
    * LocationWebSources - Web source archive management
    * OPT-109: Comprehensive web archiving replacing simple bookmarks
+   * OPT-111: Enhanced metadata viewer modal integration
    * Per LILBITS: ~300 lines, single responsibility
    */
+
+  import WebSourceDetailModal from './WebSourceDetailModal.svelte';
 
   type ComponentStatusValue = 'pending' | 'done' | 'failed' | 'skipped';
 
@@ -39,10 +42,9 @@
   interface Props {
     locid: string;
     onOpenSource: (url: string) => void;
-    onViewArchive?: (sourceId: string) => void;
   }
 
-  let { locid, onOpenSource, onViewArchive }: Props = $props();
+  let { locid, onOpenSource }: Props = $props();
 
   // State
   let sources = $state<WebSource[]>([]);
@@ -50,6 +52,10 @@
   let showAddForm = $state(false);
   let archivingSource = $state<string | null>(null);
   let expandedSource = $state<string | null>(null);
+
+  // OPT-111: Detail modal state
+  let showDetailModal = $state(false);
+  let detailSourceId = $state<string | null>(null);
 
   // Helper for component status icons
   function getComponentIcon(status: ComponentStatusValue | undefined): string {
@@ -151,6 +157,17 @@
     } catch (err) {
       console.error('Failed to delete source:', err);
     }
+  }
+
+  // OPT-111: Open detail modal for archive viewing
+  function handleViewArchive(sourceId: string) {
+    detailSourceId = sourceId;
+    showDetailModal = true;
+  }
+
+  function handleCloseDetail() {
+    showDetailModal = false;
+    detailSourceId = null;
   }
 
   function getStatusColor(status: string): string {
@@ -359,20 +376,18 @@
                 >
                   {archivingSource === source.source_id ? 'Archiving...' : 'Re-archive'}
                 </button>
-                {#if onViewArchive}
-                  <button
-                    onclick={() => onViewArchive?.(source.source_id)}
-                    class="px-3 py-1 text-sm border border-braun-300 rounded hover:bg-braun-100"
-                    title="View archive"
-                  >
-                    View
-                  </button>
-                {/if}
-              {:else if source.status === 'complete' && onViewArchive}
                 <button
-                  onclick={() => onViewArchive?.(source.source_id)}
+                  onclick={() => handleViewArchive(source.source_id)}
                   class="px-3 py-1 text-sm border border-braun-300 rounded hover:bg-braun-100"
-                  title="View archive"
+                  title="View archive details"
+                >
+                  View
+                </button>
+              {:else if source.status === 'complete'}
+                <button
+                  onclick={() => handleViewArchive(source.source_id)}
+                  class="px-3 py-1 text-sm border border-braun-300 rounded hover:bg-braun-100"
+                  title="View archive details"
                 >
                   View
                 </button>
@@ -398,3 +413,12 @@
     </div>
   {/if}
 </div>
+
+<!-- OPT-111: Archive Detail Modal -->
+{#if showDetailModal && detailSourceId}
+  <WebSourceDetailModal
+    sourceId={detailSourceId}
+    onClose={handleCloseDetail}
+    onOpenUrl={onOpenSource}
+  />
+{/if}

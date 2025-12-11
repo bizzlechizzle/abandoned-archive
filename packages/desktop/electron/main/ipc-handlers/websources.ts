@@ -812,4 +812,63 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
       throw new Error(message);
     }
   });
+
+  // =============================================================================
+  // OPT-111: Enhanced Metadata Handlers
+  // =============================================================================
+
+  /**
+   * Get all images for a web source
+   */
+  ipcMain.handle('websources:getImages', async (_event, sourceId: string) => {
+    try {
+      const validatedId = SourceIdSchema.parse(sourceId);
+      return await webSourcesRepo.findImages(validatedId);
+    } catch (error) {
+      console.error('Error getting web source images:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
+    }
+  });
+
+  /**
+   * Get all videos for a web source
+   */
+  ipcMain.handle('websources:getVideos', async (_event, sourceId: string) => {
+    try {
+      const validatedId = SourceIdSchema.parse(sourceId);
+      return await webSourcesRepo.findVideos(validatedId);
+    } catch (error) {
+      console.error('Error getting web source videos:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
+    }
+  });
+
+  /**
+   * Get full detail for archive viewer (source + images + videos)
+   */
+  ipcMain.handle('websources:getDetail', async (_event, sourceId: string) => {
+    try {
+      const validatedId = SourceIdSchema.parse(sourceId);
+
+      const source = await webSourcesRepo.findById(validatedId);
+      if (!source) {
+        throw new Error('Web source not found');
+      }
+
+      const images = await webSourcesRepo.findImages(validatedId);
+      const videos = await webSourcesRepo.findVideos(validatedId);
+
+      return {
+        source,
+        images,
+        videos,
+      };
+    } catch (error) {
+      console.error('Error getting web source detail:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
+    }
+  });
 }
