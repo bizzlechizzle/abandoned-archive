@@ -99,16 +99,17 @@
   );
 
   // Verification status for status line (green/yellow/red)
-  // Weighted scoring: Information (70%) + Location (30%)
+  // MASTER VERIFICATION LOGIC - Weighted scoring:
+  //   Information (65%) + Location (25%) + Hero Image (10%)
   // Colors: 0-80% = red, 80-100% = yellow, 100% = green
   const verificationStatus = $derived.by((): 'green' | 'yellow' | 'red' => {
     if (!location) return 'red';
 
-    // Information score (70% weight) - ALWAYS from host location
+    // Information score (65% weight) - ALWAYS from host location
     const infoComplete = !!(location.category && location.class && location.access);
     const infoScore = infoComplete ? 100 : 0;
 
-    // Location score (30% weight) - GPS from sub-location when viewing building
+    // Location score (25% weight) - GPS from sub-location when viewing building
     let hasGps: boolean;
     let gpsVerified: boolean;
 
@@ -128,8 +129,14 @@
       : (!gpsVerified || !addressVerified) ? 80
       : 100;
 
-    // Weighted total
-    const total = (infoScore * 0.70) + (locationScore * 0.30);
+    // Hero Image score (10% weight) - from sub-location when viewing building, else host
+    const heroHash = isViewingSubLocation && currentSubLocation
+      ? currentSubLocation.hero_imghash
+      : location.hero_imghash;
+    const heroScore = heroHash ? 100 : 0;
+
+    // Weighted total: Information (65%) + Location (25%) + Hero (10%)
+    const total = (infoScore * 0.65) + (locationScore * 0.25) + (heroScore * 0.10);
 
     if (total >= 100) return 'green';
     if (total >= 80) return 'yellow';
@@ -159,6 +166,11 @@
   // OPT-066: Track if sub-locations tagline wraps to multiple lines
   let sublocTaglineEl = $state<HTMLElement | null>(null);
   let sublocTaglineWraps = $state(false);
+
+  // Auto-shrink title to fit single line
+  let titleEl = $state<HTMLHeadingElement | null>(null);
+  const TITLE_BASE_FONT_SIZE = 48; // text-5xl = 3rem = 48px
+  const TITLE_MIN_FONT_SIZE = 24;  // Don't go smaller than this
 
   // OPT-092: Trailing debounce for background job notifications
   // Accumulate events, show ONE toast per category after 3s of quiet
@@ -275,6 +287,29 @@
     resizeObserver.observe(el);
 
     return () => resizeObserver.disconnect();
+  });
+
+  // Auto-shrink title effect: reduce font size until title fits on single line
+  $effect(() => {
+    const el = titleEl;
+    // Track dependencies to re-run when location/sublocation changes
+    const _loc = location?.locnam;
+    const _sub = currentSubLocation?.subnam;
+    if (!el) return;
+
+    // Use rAF to ensure DOM has updated
+    requestAnimationFrame(() => {
+      // Reset to base size first
+      el.style.fontSize = `${TITLE_BASE_FONT_SIZE}px`;
+      el.style.whiteSpace = 'nowrap';
+
+      // Shrink until it fits (or hit minimum)
+      let fontSize = TITLE_BASE_FONT_SIZE;
+      while (el.scrollWidth > el.clientWidth && fontSize > TITLE_MIN_FONT_SIZE) {
+        fontSize -= 2;
+        el.style.fontSize = `${fontSize}px`;
+      }
+    });
   });
 
   // Load functions
@@ -1037,13 +1072,6 @@
                   style="aspect-ratio: 2 / 1; object-position: {focalX * 100}% {focalY * 100}%;"
                 />
               </button>
-            {:else}
-              <!-- Placeholder when no hero -->
-              <div class="flex-shrink-0 w-72 rounded bg-braun-100 flex items-center justify-center" style="aspect-ratio: 2 / 1;">
-                <svg class="w-8 h-8 text-braun-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
             {/if}
 
             <!-- Right: Location Info (right-justified) -->
@@ -1058,12 +1086,12 @@
                   >
                     {location.locnam}
                   </button>
-                  <h1 class="text-5xl font-bold text-braun-900 leading-tight">
+                  <h1 bind:this={titleEl} class="font-bold text-braun-900 leading-tight">
                     {currentSubLocation.subnam}
                   </h1>
                 </div>
               {:else}
-                <h1 class="text-5xl font-bold text-braun-900 leading-tight">
+                <h1 bind:this={titleEl} class="font-bold text-braun-900 leading-tight">
                   {location.locnam}
                 </h1>
               {/if}
@@ -1116,9 +1144,9 @@
       <div
         class="h-1 rounded mx-4 mb-8"
         style="background-color: {verificationStatus === 'green' ? '#4A8C5E' : verificationStatus === 'yellow' ? '#C9A227' : '#B85C4A'};"
-        title={verificationStatus === 'green' ? 'GPS and Address verified' :
-               verificationStatus === 'yellow' ? 'Has GPS and Address (not fully verified)' :
-               'Missing GPS or Address data'}
+        title={verificationStatus === 'green' ? 'Complete: Info, Location, and Hero Image' :
+               verificationStatus === 'yellow' ? 'Partial: Missing some verification or hero image' :
+               'Incomplete: Missing info, location data, or hero image'}
       ></div>
 
       {#if isEditing}

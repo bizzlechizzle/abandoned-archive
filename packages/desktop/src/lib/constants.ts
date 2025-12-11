@@ -137,6 +137,7 @@ export const SUCCESS_MESSAGES = {
 // ADR: ADR-pin-conversion-duplicate-prevention.md
 // Updated: 2025-12-11 with Token Set Ratio and multi-signal matching
 export const DUPLICATE_CONFIG = {
+  // === Cross-table matching (ref_map_points ↔ locs) ===
   GPS_RADIUS_METERS: 150,           // Same site threshold - locations within this distance are definite duplicates
   NAME_MATCH_RADIUS_METERS: 500,    // Max distance for name similarity matches - prevents matching by town name alone
   NAME_SIMILARITY_THRESHOLD: 0.80,  // 80% combined (JW + Token Set Ratio) - catches word reordering
@@ -145,6 +146,12 @@ export const DUPLICATE_CONFIG = {
   TOKEN_SET_WEIGHT: 0.5,            // Weight for Token Set Ratio in combined score (0=JW only, 1=TSR only)
   AUTO_MERGE_CONFIDENCE: 70,        // Auto-merge threshold for multi-signal confidence (0-100)
   USER_REVIEW_CONFIDENCE: 50,       // User review threshold for multi-signal confidence (0-100)
+
+  // === Within-table dedup (ref_map_points internal merging) ===
+  // Wider thresholds because same location from different map sources may vary
+  GPS_MERGE_THRESHOLD_METERS: 50,   // Same building tolerance for ref_map_points dedup (~150ft)
+  NAME_DEDUP_THRESHOLD: 0.85,       // 85% similarity for name-based dedup within ref_map_points
+  NAME_DEDUP_GPS_RADIUS_METERS: 500, // Max GPS distance for name-based dedup (same general area)
 } as const;
 
 // Generic names that require GPS confirmation for duplicate detection
