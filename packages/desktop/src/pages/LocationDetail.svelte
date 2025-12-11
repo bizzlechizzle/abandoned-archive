@@ -201,6 +201,21 @@
     }, NOTIFICATION_DELAY_MS);
   }
 
+  // OPT-110: Debounced loadLocation to prevent page flash from rapid asset-ready events
+  // When multiple background jobs complete (thumbnails, metadata, proxies), coalesce into single refresh
+  let loadLocationDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  const LOAD_LOCATION_DEBOUNCE_MS = 300;
+
+  function debouncedLoadLocation() {
+    if (loadLocationDebounceTimer) {
+      clearTimeout(loadLocationDebounceTimer);
+    }
+    loadLocationDebounceTimer = setTimeout(async () => {
+      loadLocationDebounceTimer = null;
+      await loadLocation();
+    }, LOAD_LOCATION_DEBOUNCE_MS);
+  }
+
   // Derived: Combined media list for MediaViewer (images first, then videos)
   // OPT-105: Added thumbPathLg for fallback chain (RAW files without extracted preview)
   const imageMediaList = $derived(images.map(img => ({
@@ -929,9 +944,10 @@
     console.log('[LocationDetail] asset-ready event:', { type, hash, locid, hasPath: !!paths });
 
     // OPT-090: Handle GPS enrichment for current location
+    // OPT-110: Use debounced reload to prevent page flash
     if (type === 'gps-enriched' && locid === locationId && lat != null && lng != null) {
-      console.log('[LocationDetail] GPS enriched, reloading location');
-      loadLocation();
+      console.log('[LocationDetail] GPS enriched, scheduling debounced reload');
+      debouncedLoadLocation();
       notifyRefresh('gps');
       return;
     }
@@ -971,23 +987,25 @@
 
     // OPT-090: Handle video proxy ready
     // OPT-105: Reload video data to get updated proxy path
+    // OPT-110: Use debounced reload to prevent page flash
     if (type === 'proxy' && hash) {
       const vidIndex = videos.findIndex(vid => vid.vidhash === hash);
       if (vidIndex >= 0) {
-        console.log('[LocationDetail] Video proxy ready, reloading:', hash);
-        // Reload to get updated proxy_path from database
-        loadLocation();
+        console.log('[LocationDetail] Video proxy ready, scheduling debounced reload:', hash);
+        // Debounced reload to get updated proxy_path from database
+        debouncedLoadLocation();
         notifyRefresh('videos');
       }
     }
 
     // OPT-105: Handle metadata complete - reload to get updated metadata
+    // OPT-110: Use debounced reload to prevent page flash
     if (type === 'metadata' && hash) {
       const imgIndex = images.findIndex(img => img.imghash === hash);
       const vidIndex = videos.findIndex(vid => vid.vidhash === hash);
       if (imgIndex >= 0 || vidIndex >= 0) {
-        console.log('[LocationDetail] Metadata complete, reloading:', hash);
-        loadLocation();
+        console.log('[LocationDetail] Metadata complete, scheduling debounced reload:', hash);
+        debouncedLoadLocation();
         notifyRefresh(imgIndex >= 0 ? 'images' : 'videos');
       }
     }
@@ -1034,9 +1052,11 @@
 
   // OPT-087: Cleanup asset-ready event listener to prevent memory leaks
   // OPT-092: Also cleanup notification timer
+  // OPT-110: Also cleanup loadLocation debounce timer
   onDestroy(() => {
     window.removeEventListener('asset-ready', handleAssetReady as EventListener);
     if (notificationTimer) clearTimeout(notificationTimer);
+    if (loadLocationDebounceTimer) clearTimeout(loadLocationDebounceTimer);
   });
 </script>
 
@@ -1065,11 +1085,13 @@
                 class="flex-shrink-0 w-72 rounded overflow-hidden group"
                 title="View hero image"
               >
+                <!-- OPT-110: Fade-in transition for smooth hero image loading -->
                 <img
                   src={`media://${heroThumbPath}`}
                   alt="Hero thumbnail"
-                  class="w-full h-full object-cover group-hover:opacity-80 transition scale-110"
+                  class="w-full h-full object-cover scale-110 opacity-0 transition-opacity duration-200"
                   style="aspect-ratio: 2 / 1; object-position: {focalX * 100}% {focalY * 100}%;"
+                  onload={(e) => e.currentTarget.classList.remove('opacity-0')}
                 />
               </button>
             {/if}

@@ -138,11 +138,13 @@
                       class="video-card aspect-[1.618/1] bg-braun-100 rounded overflow-hidden relative group"
                     >
                       {#if video.thumb_path_sm || video.thumb_path}
+                        <!-- OPT-110: Fade-in transition for smooth image loading -->
                         <img
                           src={`media://${video.thumb_path_sm || video.thumb_path}?v=${cacheVersion}`}
                           alt={video.vidnam}
                           loading="lazy"
-                          class="w-full h-full object-cover"
+                          class="w-full h-full object-cover opacity-0 transition-opacity duration-200"
+                          onload={(e) => e.currentTarget.classList.remove('opacity-0')}
                         />
                       {:else}
                         <div class="absolute inset-0 flex items-center justify-center text-braun-400 bg-braun-200">
@@ -175,19 +177,22 @@
           </div>
         {:else}
           <!-- Standard grid for preview or smaller collections -->
+          <!-- OPT-110: Keyed by vidhash to prevent DOM thrashing on array updates -->
           <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {#each displayedVideos as video, displayIndex}
-              {@const actualIndex = videoIndexMap().get(video.vidhash) ?? displayIndex}
+            {#each displayedVideos as video (video.vidhash)}
+              {@const actualIndex = videoIndexMap().get(video.vidhash) ?? 0}
               <button
                 onclick={() => onOpenLightbox(actualIndex)}
                 class="video-card aspect-[1.618/1] bg-braun-100 rounded overflow-hidden relative group"
               >
                 {#if video.thumb_path_sm || video.thumb_path}
+                  <!-- OPT-110: Fade-in transition for smooth image loading -->
                   <img
                     src={`media://${video.thumb_path_sm || video.thumb_path}?v=${cacheVersion}`}
                     alt={video.vidnam}
                     loading="lazy"
-                    class="w-full h-full object-cover"
+                    class="w-full h-full object-cover opacity-0 transition-opacity duration-200"
+                    onload={(e) => e.currentTarget.classList.remove('opacity-0')}
                   />
                 {:else}
                   <div class="absolute inset-0 flex items-center justify-center text-braun-400 bg-braun-200">

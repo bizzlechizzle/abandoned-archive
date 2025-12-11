@@ -49,19 +49,22 @@
   }
 </script>
 
+<!-- OPT-110: Keyed by hash to prevent DOM thrashing on array updates -->
 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
-  {#each items as item, index}
+  {#each items as item, index (item.hash)}
     <button
       class="aspect-square relative group overflow-hidden rounded bg-braun-800 hover:ring-2 hover:ring-braun-500 transition"
       onclick={() => onSelect(index)}
     >
       {#if item.thumbPath || isBrowserSupported(item.path)}
+        <!-- OPT-110: Fade-in transition for smooth image loading -->
         <img
           src={getThumbnailSrc(item)}
           alt={item.name}
           loading="lazy"
           decoding="async"
-          class="w-full h-full object-cover"
+          class="w-full h-full object-cover opacity-0 transition-opacity duration-200"
+          onload={(e) => e.currentTarget.classList.remove('opacity-0')}
         />
       {:else}
         <!-- Placeholder for unsupported formats without thumbnails -->

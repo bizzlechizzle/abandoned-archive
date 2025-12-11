@@ -140,6 +140,7 @@
                       class="image-card aspect-[1.618/1] bg-braun-100 rounded overflow-hidden relative group"
                     >
                       {#if image.thumb_path_sm || image.thumb_path}
+                        <!-- OPT-110: Fade-in transition for smooth image loading -->
                         <img
                           src={`media://${image.thumb_path_sm || image.thumb_path}?v=${cacheVersion}`}
                           srcset={`
@@ -148,7 +149,8 @@
                           `}
                           alt={image.imgnam}
                           loading="lazy"
-                          class="w-full h-full object-cover"
+                          class="w-full h-full object-cover opacity-0 transition-opacity duration-200"
+                          onload={(e) => e.currentTarget.classList.remove('opacity-0')}
                         />
                       {:else}
                         <div class="absolute inset-0 flex items-center justify-center text-braun-400">
@@ -172,15 +174,17 @@
           </div>
         {:else}
           <!-- Standard grid (non-virtual) for preview or smaller collections -->
+          <!-- OPT-110: Keyed by imghash to prevent DOM thrashing on array updates -->
           <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {#each displayedImages as image, displayIndex}
-              {@const actualIndex = imageIndexMap().get(image.imghash) ?? displayIndex}
+            {#each displayedImages as image (image.imghash)}
+              {@const actualIndex = imageIndexMap().get(image.imghash) ?? 0}
               {@const isHero = heroImghash === image.imghash}
               <button
                 onclick={() => onOpenLightbox(actualIndex)}
                 class="image-card aspect-[1.618/1] bg-braun-100 rounded overflow-hidden relative group"
               >
                 {#if image.thumb_path_sm || image.thumb_path}
+                  <!-- OPT-110: Fade-in transition for smooth image loading -->
                   <img
                     src={`media://${image.thumb_path_sm || image.thumb_path}?v=${cacheVersion}`}
                     srcset={`
@@ -189,7 +193,8 @@
                     `}
                     alt={image.imgnam}
                     loading="lazy"
-                    class="w-full h-full object-cover"
+                    class="w-full h-full object-cover opacity-0 transition-opacity duration-200"
+                    onload={(e) => e.currentTarget.classList.remove('opacity-0')}
                   />
                 {:else}
                   <div class="absolute inset-0 flex items-center justify-center text-braun-400">

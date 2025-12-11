@@ -13,12 +13,20 @@
   import { isImporting, importProgress, recentImports as storeRecentImports } from '../stores/import-store';
   import { thumbnailCache } from '../stores/thumbnail-cache-store';
 
-  // OPT-087: Handle asset-ready events for hero thumbnail refresh
+  // OPT-087 + OPT-110: Handle asset-ready events for hero thumbnail refresh
+  // OPT-110: Debounce cache bust to prevent rapid reloads during batch thumbnail generation
+  let cacheBustTimer: ReturnType<typeof setTimeout> | null = null;
+  const CACHE_BUST_DEBOUNCE_MS = 500;
+
   function handleAssetReady(event: CustomEvent<{ type: string; hash: string; paths?: { sm?: string; lg?: string } }>) {
     const { type } = event.detail;
-    // When thumbnails are ready, bust the cache to refresh hero images
+    // When thumbnails are ready, debounce the cache bust to prevent rapid reloads
     if (type === 'thumbnail') {
-      thumbnailCache.bust();
+      if (cacheBustTimer) clearTimeout(cacheBustTimer);
+      cacheBustTimer = setTimeout(() => {
+        cacheBustTimer = null;
+        thumbnailCache.bust();
+      }, CACHE_BUST_DEBOUNCE_MS);
     }
   }
   import SkeletonLoader from '../components/SkeletonLoader.svelte';
@@ -165,8 +173,10 @@
   });
 
   // OPT-087: Cleanup asset-ready event listener
+  // OPT-110: Also cleanup cache bust debounce timer
   onDestroy(() => {
     window.removeEventListener('asset-ready', handleAssetReady as EventListener);
+    if (cacheBustTimer) clearTimeout(cacheBustTimer);
   });
 
   function formatDate(isoDate: string): string {
