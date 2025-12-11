@@ -2064,6 +2064,17 @@
               </div>
             </div>
           {/if}
+
+          <!-- Startup PIN Required -->
+          <div class="flex items-center justify-between pt-4 mt-4 border-t border-braun-200">
+            <span class="text-sm font-medium text-braun-700">Startup PIN Required</span>
+            <button
+              onclick={() => requestPinForAction('startupPin')}
+              class="text-sm px-2 py-0.5 rounded transition {requireLogin ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-braun-100 text-braun-600 hover:bg-braun-200'}"
+            >
+              {requireLogin ? 'Enabled' : 'Disabled'}
+            </button>
+          </div>
         </div>
         {/if}
       </div>
@@ -2092,17 +2103,6 @@
             <span class="text-sm font-medium text-braun-700">Archive Location</span>
             <button
               onclick={() => requestPinForAction('archive')}
-              class="text-sm text-braun-900 hover:underline"
-            >
-              edit
-            </button>
-          </div>
-
-          <!-- Startup PIN Row -->
-          <div class="flex items-center justify-between py-2 border-b border-braun-100">
-            <span class="text-sm font-medium text-braun-700">Startup PIN Required</span>
-            <button
-              onclick={() => requestPinForAction('startupPin')}
               class="text-sm text-braun-900 hover:underline"
             >
               edit

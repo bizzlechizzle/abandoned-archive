@@ -152,10 +152,18 @@
       if (setupComplete) {
         requiresLogin = await checkAuthRequired();
 
-        if (!requiresLogin) {
-          // Auto-login if no PIN required
+        // Check if multiple users exist
+        const users = await window.electronAPI.users.findAll();
+        const hasMultipleUsers = users.length > 1;
+
+        if (hasMultipleUsers) {
+          // Multiple users - always show user selection (PIN check happens on Login page)
+          requiresLogin = true;
+        } else if (!requiresLogin) {
+          // Single user, no PIN required - auto-login
           await autoLogin();
         }
+        // If requiresLogin is true, the Login page will be shown
       }
     } catch (error) {
       console.error('Error checking setup status:', error);

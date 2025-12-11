@@ -1,8 +1,12 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { router } from '../stores/router';
   import { openImportModal } from '../stores/import-modal-store';
+  import { userStore, currentUser } from '../stores/user-store';
+  import UserSwitcher from './UserSwitcher.svelte';
 
   let currentRoute = $state('/dashboard');
+  let showUserSwitcher = $state(false);
 
   $effect(() => {
     const unsubscribe = router.subscribe((route) => {
@@ -27,6 +31,19 @@
   function isActive(path: string): boolean {
     return currentRoute === path;
   }
+
+  function openUserSwitcher() {
+    showUserSwitcher = true;
+  }
+
+  function closeUserSwitcher() {
+    showUserSwitcher = false;
+  }
+
+  // Initialize user store on mount
+  onMount(() => {
+    userStore.init();
+  });
 </script>
 
 <nav class="w-64 h-screen bg-braun-50 text-braun-900 flex flex-col border-r border-braun-300">
@@ -90,6 +107,19 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>
       </button>
+      <!-- User Icon Button -->
+      <button
+        onclick={openUserSwitcher}
+        class="p-2 rounded hover:bg-braun-100 transition-colors {showUserSwitcher ? 'bg-braun-100' : ''}"
+        title={$currentUser ? ($currentUser.display_name || $currentUser.username) : 'User'}
+      >
+        <svg class="w-5 h-5 text-braun-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+      </button>
     </div>
   </div>
 </nav>
+
+<!-- User Switcher Modal -->
+<UserSwitcher isOpen={showUserSwitcher} onClose={closeUserSwitcher} />

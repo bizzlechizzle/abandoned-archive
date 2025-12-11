@@ -18,6 +18,19 @@ export interface MapLocation {
   favorite: boolean;
 }
 
+/**
+ * User record type for authentication and user management
+ */
+export interface UserRecord {
+  user_id: string;
+  username: string;
+  display_name: string | null;
+  created_date: string;
+  has_pin: boolean;
+  is_active: boolean;
+  last_login: string | null;
+}
+
 export interface ElectronAPI {
   versions: {
     node: () => string;
@@ -686,10 +699,20 @@ export interface ElectronAPI {
     create: (input: {
       username: string;
       display_name?: string | null;
-    }) => Promise<unknown>;
-    findAll: () => Promise<unknown[]>;
-    findByUsername: (username: string) => Promise<unknown | null>;
-    delete: (user_id: string) => Promise<void>;
+      pin?: string | null;
+    }) => Promise<UserRecord>;
+    findAll: () => Promise<UserRecord[]>;
+    findById: (userId: string) => Promise<UserRecord>;
+    findByUsername: (username: string) => Promise<UserRecord | null>;
+    update: (userId: string, updates: { username?: string; display_name?: string | null }) => Promise<UserRecord>;
+    delete: (userId: string) => Promise<void>;
+    // Authentication (Migration 24)
+    verifyPin: (userId: string, pin: string) => Promise<{ success: boolean; error?: string }>;
+    setPin: (userId: string, pin: string) => Promise<{ success: boolean }>;
+    clearPin: (userId: string) => Promise<{ success: boolean }>;
+    hasPin: (userId: string) => Promise<boolean>;
+    anyUserHasPin: () => Promise<boolean>;
+    updateLastLogin: (userId: string) => Promise<{ success: boolean }>;
   };
 
   health: {
