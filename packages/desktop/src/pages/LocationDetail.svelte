@@ -37,7 +37,7 @@
     locid: string;
     subnam: string;
     ssubname: string | null;
-    type: string | null;
+    category: string | null;
     status: string | null;
     hero_imghash: string | null;
     hero_focal_x?: number;  // OPT-095: Hero focal point X (0-1)
@@ -82,12 +82,12 @@
   let showVerifyModal = $state(false);
   let verifyForm = $state({
     locnam: '',
-    type: '',
-    stype: '',
+    category: '',
+    class: '',
     access: '',
   });
-  let verifyTypeOptions = $state<string[]>([]);
-  let verifyStypeOptions = $state<string[]>([]);
+  let verifyCategoryOptions = $state<string[]>([]);
+  let verifyClassOptions = $state<string[]>([]);
   let savingVerify = $state(false);
 
   // Derived: Are we viewing a sub-location?
@@ -134,16 +134,16 @@
   let users = $state<Array<{user_id: string, username: string, display_name: string | null}>>([]);
 
   // Migration 28: Add Building modal
-  // Migration 65: Added type/stype for sub-location taxonomy
+  // Migration 65: Added category/class for sub-location taxonomy
   let showAddBuildingModal = $state(false);
   let newBuildingName = $state('');
-  let newBuildingType = $state('');
-  let newBuildingSubType = $state('');
+  let newBuildingCategory = $state('');
+  let newBuildingClass = $state('');
   let newBuildingIsPrimary = $state(false);
   let addingBuilding = $state(false);
-  // Migration 65: Autocomplete options for sub-location types (separate from host)
-  let sublocTypeOptions = $state<string[]>([]);
-  let sublocStypeOptions = $state<string[]>([]);
+  // Migration 65: Autocomplete options for sub-location categories (separate from host)
+  let sublocCategoryOptions = $state<string[]>([]);
+  let sublocClassOptions = $state<string[]>([]);
 
   // OPT-066: Track if sub-locations tagline wraps to multiple lines
   let sublocTaglineEl = $state<HTMLElement | null>(null);
@@ -420,20 +420,20 @@
     // Populate form with current values
     verifyForm = {
       locnam: location.locnam || '',
-      type: location.type || '',
-      stype: location.stype || '',
+      category: location.category || '',
+      class: location.class || '',
       access: location.access || '',
     };
-    // Load type/stype options
+    // Load category/class options
     try {
-      const [types, stypes] = await Promise.all([
-        window.electronAPI?.locations?.getDistinctTypes?.() || [],
-        window.electronAPI?.locations?.getDistinctSubTypes?.() || [],
+      const [categories, classes] = await Promise.all([
+        window.electronAPI?.locations?.getDistinctCategories?.() || [],
+        window.electronAPI?.locations?.getDistinctClasses?.() || [],
       ]);
-      verifyTypeOptions = types;
-      verifyStypeOptions = stypes;
+      verifyCategoryOptions = categories;
+      verifyClassOptions = classes;
     } catch (err) {
-      console.error('Error loading type options:', err);
+      console.error('Error loading category options:', err);
     }
     showVerifyModal = true;
   }
@@ -444,8 +444,8 @@
     try {
       await window.electronAPI.locations.update(location.locid, {
         locnam: verifyForm.locnam,
-        type: verifyForm.type || undefined,
-        stype: verifyForm.stype || undefined,
+        category: verifyForm.category || undefined,
+        class: verifyForm.class || undefined,
         access: verifyForm.access || undefined,
       });
       await loadLocation();
@@ -726,7 +726,7 @@
         locid: location.locid,
         loc12: location.loc12,
         address_state: location.address?.state || null,
-        type: location.type || null,
+        category: location.category || null,
         slocnam: currentSubLocation?.subnam || null,
         subid: subId || null,
         auth_imp: author,
@@ -792,21 +792,21 @@
   // Migration 28: Add Building handlers
   async function openAddBuildingModal() {
     newBuildingName = '';
-    newBuildingType = '';
-    newBuildingSubType = '';
+    newBuildingCategory = '';
+    newBuildingClass = '';
     newBuildingIsPrimary = sublocations.length === 0; // First building is primary by default
     showAddBuildingModal = true;
 
-    // Migration 65: Load sub-location type options (separate from host locations)
+    // Migration 65: Load sub-location category options (separate from host locations)
     try {
-      const [types, stypes] = await Promise.all([
-        window.electronAPI?.sublocations?.getDistinctTypes?.() || [],
-        window.electronAPI?.sublocations?.getDistinctSubTypes?.() || [],
+      const [categories, classes] = await Promise.all([
+        window.electronAPI?.sublocations?.getDistinctCategories?.() || [],
+        window.electronAPI?.sublocations?.getDistinctClasses?.() || [],
       ]);
-      sublocTypeOptions = types;
-      sublocStypeOptions = stypes;
+      sublocCategoryOptions = categories;
+      sublocClassOptions = classes;
     } catch (err) {
-      console.error('Error loading sub-location type options:', err);
+      console.error('Error loading sub-location category options:', err);
     }
   }
 
@@ -818,8 +818,8 @@
   function closeAddBuildingModal() {
     showAddBuildingModal = false;
     newBuildingName = '';
-    newBuildingType = '';
-    newBuildingSubType = '';
+    newBuildingCategory = '';
+    newBuildingClass = '';
     newBuildingIsPrimary = false;
     addingBuilding = false;
   }
@@ -832,9 +832,9 @@
       await window.electronAPI.sublocations.create({
         locid: location.locid,
         subnam: newBuildingName.trim(),
-        // Migration 65: Use sub-location specific type/stype (not host's type)
-        type: newBuildingType.trim() || null,
-        stype: newBuildingSubType.trim() || null,
+        // Migration 65: Use sub-location specific category/class (not host's category)
+        category: newBuildingCategory.trim() || null,
+        class: newBuildingClass.trim() || null,
         status: null,
         is_primary: newBuildingIsPrimary,
         created_by: currentUser || null,
@@ -1057,12 +1057,12 @@
                 </h1>
               {/if}
 
-              <!-- Status + Sub-Type -->
+              <!-- Status + Class -->
               <p class="text-base text-braun-700">
                 {#if location.access}{location.access}{/if}
-                {#if location.access && location.stype} {/if}
-                {#if location.stype}{location.stype}{/if}
-                {#if !location.access && !location.stype}<button onclick={openVerifyModal} class="text-error hover:underline cursor-pointer">verify location</button>{/if}
+                {#if location.access && location.class} {/if}
+                {#if location.class}{location.class}{/if}
+                {#if !location.access && !location.class}<button onclick={openVerifyModal} class="text-error hover:underline cursor-pointer">verify location</button>{/if}
               </p>
 
               <!-- Built / Abandoned -->
@@ -1389,38 +1389,38 @@
             />
           </div>
 
-          <!-- Migration 65: Type and Sub-Type fields for sub-locations (separate taxonomy) -->
+          <!-- Migration 65: Category and Class fields for sub-locations (separate taxonomy) -->
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label for="building-type" class="form-label">Type</label>
+              <label for="building-category" class="form-label">Category</label>
               <input
-                id="building-type"
+                id="building-category"
                 type="text"
-                list="building-type-options"
-                bind:value={newBuildingType}
+                list="building-category-options"
+                bind:value={newBuildingCategory}
                 disabled={addingBuilding}
                 placeholder="e.g., Administration"
                 class="w-full px-4 py-3 bg-white border border-braun-400 rounded text-sm text-braun-900 placeholder:text-braun-400 focus:outline-none focus:border-braun-600 transition-colors disabled:opacity-50"
               />
-              <datalist id="building-type-options">
-                {#each sublocTypeOptions as option}
+              <datalist id="building-category-options">
+                {#each sublocCategoryOptions as option}
                   <option value={option} />
                 {/each}
               </datalist>
             </div>
             <div>
-              <label for="building-subtype" class="form-label">Sub-Type</label>
+              <label for="building-class" class="form-label">Class</label>
               <input
-                id="building-subtype"
+                id="building-class"
                 type="text"
-                list="building-subtype-options"
-                bind:value={newBuildingSubType}
+                list="building-class-options"
+                bind:value={newBuildingClass}
                 disabled={addingBuilding}
                 placeholder="e.g., Office Wing"
                 class="w-full px-4 py-3 bg-white border border-braun-400 rounded text-sm text-braun-900 placeholder:text-braun-400 focus:outline-none focus:border-braun-600 transition-colors disabled:opacity-50"
               />
-              <datalist id="building-subtype-options">
-                {#each sublocStypeOptions as option}
+              <datalist id="building-class-options">
+                {#each sublocClassOptions as option}
                   <option value={option} />
                 {/each}
               </datalist>
@@ -1503,23 +1503,23 @@
               />
             </div>
             <div>
-              <label for="verify-type" class="block text-xs font-semibold text-braun-500 uppercase tracking-wider mb-1">Type</label>
+              <label for="verify-category" class="block text-xs font-semibold text-braun-500 uppercase tracking-wider mb-1">Category</label>
               <input
-                id="verify-type"
+                id="verify-category"
                 type="text"
-                list="verify-type-options"
-                bind:value={verifyForm.type}
+                list="verify-category-options"
+                bind:value={verifyForm.category}
                 class="w-full px-3 py-2 border border-braun-300 rounded text-sm focus:outline-none focus:border-braun-600"
                 placeholder="e.g., Hospital"
               />
-              <datalist id="verify-type-options">
-                {#each verifyTypeOptions as option}
+              <datalist id="verify-category-options">
+                {#each verifyCategoryOptions as option}
                   <option value={option} />
                 {/each}
               </datalist>
             </div>
 
-            <!-- Row 2: Status | Sub-Type -->
+            <!-- Row 2: Status | Class -->
             <div>
               <label for="verify-status" class="block text-xs font-semibold text-braun-500 uppercase tracking-wider mb-1">Status</label>
               <select
@@ -1534,17 +1534,17 @@
               </select>
             </div>
             <div>
-              <label for="verify-stype" class="block text-xs font-semibold text-braun-500 uppercase tracking-wider mb-1">Sub-Type</label>
+              <label for="verify-class" class="block text-xs font-semibold text-braun-500 uppercase tracking-wider mb-1">Class</label>
               <input
-                id="verify-stype"
+                id="verify-class"
                 type="text"
-                list="verify-stype-options"
-                bind:value={verifyForm.stype}
+                list="verify-class-options"
+                bind:value={verifyForm.class}
                 class="w-full px-3 py-2 border border-braun-300 rounded text-sm focus:outline-none focus:border-braun-600"
                 placeholder="e.g., Psychiatric"
               />
-              <datalist id="verify-stype-options">
-                {#each verifyStypeOptions as option}
+              <datalist id="verify-class-options">
+                {#each verifyClassOptions as option}
                   <option value={option} />
                 {/each}
               </datalist>

@@ -141,17 +141,17 @@ export class PhaseImportService {
       const manifestLocation: ManifestLocation = {
         locid: location.locid,
         locnam: location.locnam,
-        state: location.address_state || null,
-        type: location.type || null,
-        gps: location.gps_lat && location.gps_lng
-          ? { lat: location.gps_lat, lng: location.gps_lng }
+        state: location.address?.state || null,
+        category: location.category || null,
+        gps: location.gps?.lat && location.gps?.lng
+          ? { lat: location.gps.lat, lng: location.gps.lng }
           : null,
         address: {
-          street: location.address_street || null,
-          city: location.address_city || null,
-          county: location.address_county || null,
-          state: location.address_state || null,
-          zipcode: location.address_zipcode || null,
+          street: location.address?.street || null,
+          city: location.address?.city || null,
+          county: location.address?.county || null,
+          state: location.address?.state || null,
+          zipcode: location.address?.zipcode || null,
         },
       };
 
@@ -311,7 +311,7 @@ export class PhaseImportService {
 
         // DECISION-013: Always check GPS mismatch when both location and media have GPS
         // This allows users to see when media has better GPS data than the location
-        if (metadata.gps && location.gps) {
+        if (metadata?.gps && location.gps) {
           const mismatch = GPSValidator.checkGPSMismatch(
             location.gps,
             metadata.gps,

@@ -62,7 +62,11 @@ export class SQLiteImportRepository {
       .where('imports.import_id', '=', import_id)
       .executeTakeFirstOrThrow();
 
-    return row;
+    return {
+      ...row,
+      locnam: row.locnam ?? undefined,
+      address_state: row.address_state ?? undefined,
+    };
   }
 
   async findRecent(limit: number = 5): Promise<ImportRecord[]> {
@@ -139,7 +143,11 @@ export class SQLiteImportRepository {
       .orderBy('imports.import_date', 'desc')
       .execute();
 
-    return rows;
+    return rows.map(row => ({
+      ...row,
+      locnam: row.locnam ?? undefined,
+      address_state: row.address_state ?? undefined,
+    }));
   }
 
   async findAll(): Promise<ImportRecord[]> {
@@ -151,7 +159,11 @@ export class SQLiteImportRepository {
       .orderBy('imports.import_date', 'desc')
       .execute();
 
-    return rows;
+    return rows.map(row => ({
+      ...row,
+      locnam: row.locnam ?? undefined,
+      address_state: row.address_state ?? undefined,
+    }));
   }
 
   async getTotalMediaCount(): Promise<{ images: number; videos: number; documents: number; maps: number }> {

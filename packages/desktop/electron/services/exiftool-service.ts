@@ -50,18 +50,39 @@ export class ExifToolService {
 
       console.log('[ExifTool] Extraction completed in', Date.now() - startTime, 'ms');
 
+      // Helper to convert ExifDateTime or string to ISO string
+      const toISOString = (val: unknown): string | null => {
+        if (!val) return null;
+        if (typeof val === 'string') return val;
+        if (typeof val === 'object' && 'toISOString' in val && typeof (val as any).toISOString === 'function') {
+          return (val as { toISOString(): string }).toISOString();
+        }
+        return String(val);
+      };
+
+      // Helper to convert GPS coordinate to number
+      const toNumber = (val: unknown): number | null => {
+        if (val === undefined || val === null) return null;
+        if (typeof val === 'number') return val;
+        if (typeof val === 'string') return parseFloat(val);
+        return null;
+      };
+
+      const gpsLat = toNumber(tags.GPSLatitude);
+      const gpsLng = toNumber(tags.GPSLongitude);
+
       return {
         width: tags.ImageWidth || tags.ExifImageWidth || null,
         height: tags.ImageHeight || tags.ExifImageHeight || null,
-        dateTaken: tags.DateTimeOriginal?.toISOString() || tags.CreateDate?.toISOString() || null,
+        dateTaken: toISOString(tags.DateTimeOriginal) || toISOString(tags.CreateDate) || null,
         cameraMake: tags.Make || null,
         cameraModel: tags.Model || null,
         gps:
-          tags.GPSLatitude && tags.GPSLongitude
+          gpsLat !== null && gpsLng !== null
             ? {
-                lat: tags.GPSLatitude,
-                lng: tags.GPSLongitude,
-                altitude: tags.GPSAltitude,
+                lat: gpsLat,
+                lng: gpsLng,
+                altitude: toNumber(tags.GPSAltitude) ?? undefined,
               }
             : null,
         rawExif: JSON.stringify(tags, null, 2),

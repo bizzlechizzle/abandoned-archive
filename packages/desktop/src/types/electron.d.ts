@@ -7,7 +7,7 @@ import type { Location, LocationInput, LocationFilters } from '@au-archive/core'
 export interface MapLocation {
   locid: string;
   locnam: string;
-  type?: string;
+  category?: string;
   gps_lat: number;
   gps_lng: number;
   gps_accuracy?: number;
@@ -55,8 +55,8 @@ export interface ElectronAPI {
     // OPT-036: Get all filter options in one efficient call
     getFilterOptions: () => Promise<{
       states: string[];
-      types: string[];
-      stypes: string[];
+      categories: string[];
+      classes: string[];
       cities: string[];
       counties: string[];
       censusRegions: string[];
@@ -87,7 +87,7 @@ export interface ElectronAPI {
 
   stats: {
     topStates: (limit?: number) => Promise<Array<{ state: string; count: number }>>;
-    topTypes: (limit?: number) => Promise<Array<{ type: string; count: number }>>;
+    topCategories: (limit?: number) => Promise<Array<{ category: string; count: number }>>;
   };
 
   settings: {
@@ -461,14 +461,14 @@ export interface ElectronAPI {
   // ADR-046: Updated to remove sub12 (subid is BLAKE3 16-char hash now)
   // Migration 31: Added GPS fields
   // Migration 32: Added akanam (historicalName removed)
-  // Migration 65: Added stype and getDistinctTypes/getDistinctSubTypes
+  // Migration 65: Added class and getDistinctCategories/getDistinctClasses
   sublocations: {
     create: (input: {
       locid: string;
       subnam: string;
       ssubname?: string | null;
-      type?: string | null;
-      stype?: string | null;
+      category?: string | null;
+      class?: string | null;
       status?: string | null;
       is_primary?: boolean;
       created_by?: string | null;
@@ -477,8 +477,8 @@ export interface ElectronAPI {
       locid: string;
       subnam: string;
       ssubname: string | null;
-      type: string | null;
-      stype: string | null;
+      category: string | null;
+      class: string | null;
       status: string | null;
       hero_imghash: string | null;
       hero_focal_x: number;
@@ -501,8 +501,8 @@ export interface ElectronAPI {
       locid: string;
       subnam: string;
       ssubname: string | null;
-      type: string | null;
-      stype: string | null;
+      category: string | null;
+      class: string | null;
       status: string | null;
       hero_imghash: string | null;
       hero_focal_x: number;
@@ -525,8 +525,8 @@ export interface ElectronAPI {
       locid: string;
       subnam: string;
       ssubname: string | null;
-      type: string | null;
-      stype: string | null;
+      category: string | null;
+      class: string | null;
       status: string | null;
       hero_imghash: string | null;
       hero_focal_x: number;
@@ -549,8 +549,8 @@ export interface ElectronAPI {
       locid: string;
       subnam: string;
       ssubname: string | null;
-      type: string | null;
-      stype: string | null;
+      category: string | null;
+      class: string | null;
       status: string | null;
       hero_imghash: string | null;
       hero_focal_x: number;
@@ -573,8 +573,8 @@ export interface ElectronAPI {
     update: (subid: string, updates: {
       subnam?: string;
       ssubname?: string | null;
-      type?: string | null;
-      stype?: string | null;
+      category?: string | null;
+      class?: string | null;
       status?: string | null;
       hero_imghash?: string | null;
       hero_focal_x?: number;
@@ -587,8 +587,8 @@ export interface ElectronAPI {
       locid: string;
       subnam: string;
       ssubname: string | null;
-      type: string | null;
-      stype: string | null;
+      category: string | null;
+      class: string | null;
       status: string | null;
       hero_imghash: string | null;
       hero_focal_x: number;
@@ -632,9 +632,9 @@ export interface ElectronAPI {
       gps_lng: number | null;
       gps_verified_on_map: boolean;
     }>>;
-    // Migration 65: Sub-location type/subtype (separate taxonomy from host locations)
-    getDistinctTypes: () => Promise<string[]>;
-    getDistinctSubTypes: () => Promise<string[]>;
+    // Migration 65: Sub-location category/class (separate taxonomy from host locations)
+    getDistinctCategories: () => Promise<string[]>;
+    getDistinctClasses: () => Promise<string[]>;
   };
 
   projects: {

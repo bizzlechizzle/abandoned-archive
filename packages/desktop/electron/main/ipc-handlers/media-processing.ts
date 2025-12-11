@@ -9,7 +9,7 @@ import { Blake3IdSchema } from '../ipc-validation';
 import path from 'path';
 import fs from 'fs/promises';
 import type { Kysely } from 'kysely';
-import type { Database } from '../database';
+import type { Database } from '../database.types';
 import { SQLiteMediaRepository } from '../../repositories/sqlite-media-repository';
 import { ExifToolService } from '../../services/exiftool-service';
 import { FFmpegService } from '../../services/ffmpeg-service';

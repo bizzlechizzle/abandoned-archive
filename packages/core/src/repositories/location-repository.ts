@@ -2,7 +2,7 @@ import { Location, LocationInput } from '../domain';
 
 export interface LocationFilters {
   state?: string;
-  type?: string;
+  category?: string;
   hasGPS?: boolean;
   documented?: boolean;
   search?: string;
@@ -11,8 +11,10 @@ export interface LocationFilters {
   // DECISION-013: New filters
   project?: boolean;
   county?: string;
-  stype?: string;
+  class?: string;
   access?: string;
+  // Pagination support
+  limit?: number;
 }
 
 export interface LocationRepository {

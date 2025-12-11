@@ -72,11 +72,11 @@ const api = {
       countryCulturalRegionVerified: boolean;
     }): Promise<void> =>
       ipcRenderer.invoke('location:updateRegionData', id, regionData),
-    // Autocomplete helpers for Type/Sub-Type
-    getDistinctTypes: (): Promise<string[]> =>
-      ipcRenderer.invoke('location:getDistinctTypes'),
-    getDistinctSubTypes: (): Promise<string[]> =>
-      ipcRenderer.invoke('location:getDistinctSubTypes'),
+    // Autocomplete helpers for Category/Class
+    getDistinctCategories: (): Promise<string[]> =>
+      ipcRenderer.invoke('location:getDistinctCategories'),
+    getDistinctClasses: (): Promise<string[]> =>
+      ipcRenderer.invoke('location:getDistinctClasses'),
     // Migration 34: Track location views with per-user tracking
     trackView: (id: string): Promise<number> =>
       ipcRenderer.invoke('location:trackView', id),
@@ -147,11 +147,11 @@ const api = {
   stats: {
     topStates: (limit?: number): Promise<Array<{ state: string; count: number }>> =>
       ipcRenderer.invoke('stats:topStates', limit),
-    topTypes: (limit?: number): Promise<Array<{ type: string; count: number }>> =>
-      ipcRenderer.invoke('stats:topTypes', limit),
-    // Dashboard: Top types with hero thumbnails
-    topTypesWithHero: (limit?: number): Promise<Array<{ type: string; count: number; heroThumbPath?: string }>> =>
-      ipcRenderer.invoke('stats:topTypesWithHero', limit),
+    topCategories: (limit?: number): Promise<Array<{ category: string; count: number }>> =>
+      ipcRenderer.invoke('stats:topCategories', limit),
+    // Dashboard: Top categories with hero thumbnails
+    topCategoriesWithHero: (limit?: number): Promise<Array<{ category: string; count: number; heroThumbPath?: string }>> =>
+      ipcRenderer.invoke('stats:topCategoriesWithHero', limit),
     // Dashboard: Top states with hero thumbnails
     topStatesWithHero: (limit?: number): Promise<Array<{ state: string; count: number; heroThumbPath?: string }>> =>
       ipcRenderer.invoke('stats:topStatesWithHero', limit),

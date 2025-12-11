@@ -15,9 +15,9 @@ export interface SubLocation {
   locid: string;
   subnam: string;
   ssubname: string | null;
-  type: string | null;
-  // Migration 65: Sub-location sub-type (separate taxonomy from host locations)
-  stype: string | null;
+  category: string | null;
+  // Migration 65: Sub-location class (separate taxonomy from host locations)
+  class: string | null;
   status: string | null;
   hero_imghash: string | null;
   hero_focal_x: number;
@@ -55,9 +55,9 @@ export interface CreateSubLocationInput {
   locid: string;
   subnam: string;
   ssubname?: string | null;
-  type?: string | null;
-  // Migration 65: Sub-location sub-type
-  stype?: string | null;
+  category?: string | null;
+  // Migration 65: Sub-location class
+  class?: string | null;
   status?: string | null;
   is_primary?: boolean;
   created_by?: string | null;
@@ -69,9 +69,9 @@ export interface CreateSubLocationInput {
 export interface UpdateSubLocationInput {
   subnam?: string;
   ssubname?: string | null;
-  type?: string | null;
-  // Migration 65: Sub-location sub-type
-  stype?: string | null;
+  category?: string | null;
+  // Migration 65: Sub-location class
+  class?: string | null;
   status?: string | null;
   hero_imghash?: string | null;
   hero_focal_x?: number;
@@ -120,9 +120,9 @@ export class SQLiteSubLocationRepository {
           locid: input.locid,
           subnam: input.subnam,
           ssubname,
-          type: input.type || null,
-          // Migration 65: Sub-location sub-type
-          stype: input.stype || null,
+          category: input.category || null,
+          // Migration 65: Sub-location class
+          class: input.class || null,
           status: input.status || null,
           hero_imghash: null,
           hero_focal_x: 0.5,
@@ -180,9 +180,9 @@ export class SQLiteSubLocationRepository {
       locid: input.locid,
       subnam: input.subnam,
       ssubname,
-      type: input.type || null,
-      // Migration 65: Sub-location sub-type
-      stype: input.stype || null,
+      category: input.category || null,
+      // Migration 65: Sub-location class
+      class: input.class || null,
       status: input.status || null,
       hero_imghash: null,
       hero_focal_x: 0.5,
@@ -248,9 +248,9 @@ export class SQLiteSubLocationRepository {
 
     if (input.subnam !== undefined) updateValues.subnam = input.subnam;
     if (input.ssubname !== undefined) updateValues.ssubname = input.ssubname;
-    if (input.type !== undefined) updateValues.type = input.type;
-    // Migration 65: Sub-location sub-type
-    if (input.stype !== undefined) updateValues.stype = input.stype;
+    if (input.category !== undefined) updateValues.category = input.category;
+    // Migration 65: Sub-location class
+    if (input.class !== undefined) updateValues.class = input.class;
     if (input.status !== undefined) updateValues.status = input.status;
     if (input.hero_imghash !== undefined) updateValues.hero_imghash = input.hero_imghash;
     if (input.hero_focal_x !== undefined) updateValues.hero_focal_x = input.hero_focal_x;
@@ -302,34 +302,34 @@ export class SQLiteSubLocationRepository {
     // 2. Collect all media hashes for this sub-location
     const imgHashes = await this.db
       .selectFrom('imgs')
-      .select(['imghash as hash', 'organized_path'])
+      .select(['imghash as hash', 'imgloc as path'])
       .where('subid', '=', subid)
       .execute();
 
     const vidHashes = await this.db
       .selectFrom('vids')
-      .select(['vidhash as hash', 'organized_path'])
+      .select(['vidhash as hash', 'vidloc as path'])
       .where('subid', '=', subid)
       .execute();
 
     const docHashes = await this.db
       .selectFrom('docs')
-      .select(['dochash as hash', 'organized_path'])
+      .select(['dochash as hash', 'docloc as path'])
       .where('subid', '=', subid)
       .execute();
 
     const mapHashes = await this.db
       .selectFrom('maps')
-      .select(['maphash as hash', 'organized_path'])
+      .select(['maphash as hash', 'maploc as path'])
       .where('subid', '=', subid)
       .execute();
 
     // Combine with type annotations
     const mediaHashes: Array<{ hash: string; type: 'img' | 'vid' | 'doc' | 'map'; path?: string }> = [
-      ...imgHashes.map(r => ({ hash: r.hash, type: 'img' as const, path: r.organized_path ?? undefined })),
-      ...vidHashes.map(r => ({ hash: r.hash, type: 'vid' as const, path: r.organized_path ?? undefined })),
-      ...docHashes.map(r => ({ hash: r.hash, type: 'doc' as const, path: r.organized_path ?? undefined })),
-      ...mapHashes.map(r => ({ hash: r.hash, type: 'map' as const, path: r.organized_path ?? undefined })),
+      ...imgHashes.map(r => ({ hash: r.hash, type: 'img' as const, path: r.path ?? undefined })),
+      ...vidHashes.map(r => ({ hash: r.hash, type: 'vid' as const, path: r.path ?? undefined })),
+      ...docHashes.map(r => ({ hash: r.hash, type: 'doc' as const, path: r.path ?? undefined })),
+      ...mapHashes.map(r => ({ hash: r.hash, type: 'map' as const, path: r.path ?? undefined })),
     ];
 
     // 3. Get video proxy paths
@@ -669,35 +669,35 @@ export class SQLiteSubLocationRepository {
   }
 
   /**
-   * Migration 65: Get distinct types used in sub-locations
-   * Returns types from slocs table (separate from host location types)
+   * Migration 65: Get distinct categories used in sub-locations
+   * Returns categories from slocs table (separate from host location categories)
    */
-  async getDistinctTypes(): Promise<string[]> {
+  async getDistinctCategories(): Promise<string[]> {
     const rows = await this.db
       .selectFrom('slocs')
-      .select('type')
+      .select('category')
       .distinct()
-      .where('type', 'is not', null)
-      .orderBy('type')
+      .where('category', 'is not', null)
+      .orderBy('category')
       .execute();
 
-    return rows.map(r => r.type).filter((t): t is string => !!t);
+    return rows.map(r => r.category).filter((t): t is string => !!t);
   }
 
   /**
-   * Migration 65: Get distinct sub-types used in sub-locations
-   * Returns stypes from slocs table (separate from host location stypes)
+   * Migration 65: Get distinct classes used in sub-locations
+   * Returns classes from slocs table (separate from host location classes)
    */
-  async getDistinctSubTypes(): Promise<string[]> {
+  async getDistinctClasses(): Promise<string[]> {
     const rows = await this.db
       .selectFrom('slocs')
-      .select('stype')
+      .select('class')
       .distinct()
-      .where('stype', 'is not', null)
-      .orderBy('stype')
+      .where('class', 'is not', null)
+      .orderBy('class')
       .execute();
 
-    return rows.map(r => r.stype).filter((t): t is string => !!t);
+    return rows.map(r => r.class).filter((t): t is string => !!t);
   }
 
   // Private helper methods
@@ -712,9 +712,9 @@ export class SQLiteSubLocationRepository {
       locid: row.locid,
       subnam: row.subnam,
       ssubname: row.ssubname,
-      type: row.type || null,
-      // Migration 65: Sub-location sub-type
-      stype: row.stype || null,
+      category: row.category || null,
+      // Migration 65: Sub-location class
+      class: row.class || null,
       status: row.status || null,
       hero_imghash: row.hero_imghash || null,
       hero_focal_x: row.hero_focal_x ?? 0.5,

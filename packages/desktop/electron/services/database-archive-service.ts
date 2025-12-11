@@ -276,15 +276,15 @@ export class DatabaseArchiveService {
 
       const matches = storedChecksum === currentChecksum;
       if (!matches) {
-        logger.error('DatabaseArchiveService', 'Checksum mismatch', {
-          stored: storedChecksum.substring(0, 16) + '...',
-          computed: currentChecksum.substring(0, 16) + '...',
+        logger.error('DatabaseArchiveService', 'Checksum mismatch', undefined, {
+          storedChecksum: storedChecksum.substring(0, 16) + '...',
+          computedChecksum: currentChecksum.substring(0, 16) + '...',
         });
       }
 
       return matches;
     } catch (error) {
-      logger.error('DatabaseArchiveService', 'Verification failed', error as Error);
+      logger.error('DatabaseArchiveService', 'Verification failed', error instanceof Error ? error : new Error(String(error)));
       return false;
     }
   }

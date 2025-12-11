@@ -139,12 +139,22 @@ async function handleRequest(
             state:
               typeof body.state === 'string'
                 ? body.state.toUpperCase().substring(0, 2)
-                : null,
-            city: null,
-            street: null,
-            zip: null,
+                : undefined,
+            verified: false,
           },
-          loctyp: typeof body.type === 'string' ? body.type : null,
+          category: typeof body.type === 'string' ? body.type : undefined,
+          // Required boolean defaults
+          historic: false,
+          favorite: false,
+          project: false,
+          docInterior: false,
+          docExterior: false,
+          docDrone: false,
+          docWebHistory: false,
+          docMapFind: false,
+          locnamVerified: false,
+          akanamVerified: false,
+          isHostOnly: false,
         });
 
         // Notify WebSocket clients about the new location

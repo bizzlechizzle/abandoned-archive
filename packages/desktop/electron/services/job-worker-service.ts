@@ -1026,14 +1026,7 @@ export class JobWorkerService extends EventEmitter {
 
     // OPT-093: Build query filter based on whether this is a sub-location
     // Sub-locations filter by subid, host locations filter by locid with null subid
-    const buildMediaFilter = <T extends { locid: string; subid: string | null }>(
-      query: ReturnType<typeof this.db.selectFrom<'imgs'>>
-    ) => {
-      if (isSubLocation) {
-        return query.where('subid', '=', subid);
-      }
-      return query.where('locid', '=', locid);
-    };
+    // Note: Filter logic is applied inline for each query to maintain type safety
 
     // Count images (excluding hidden)
     let imgQuery = this.db
@@ -1237,13 +1230,15 @@ export class JobWorkerService extends EventEmitter {
         break;
 
       case 'document':
+        // Documents may have additional ExifTool properties
+        const docMeta = meta as any;
         await this.db
           .updateTable('docs')
           .set({
             meta_exiftool: metaJson,
-            meta_author: meta.Author as string ?? null,
-            meta_title: meta.Title as string ?? null,
-            meta_page_count: meta.PageCount as number ?? null,
+            meta_author: docMeta.Author ?? null,
+            meta_title: docMeta.Title ?? null,
+            meta_page_count: docMeta.PageCount ?? null,
           })
           .where('dochash', '=', hash)
           .execute();

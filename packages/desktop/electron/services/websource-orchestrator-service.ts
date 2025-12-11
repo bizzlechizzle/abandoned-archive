@@ -520,7 +520,7 @@ export class WebSourceOrchestrator extends EventEmitter {
       // ADR-046: Look up location data for folder naming
       const location = await this.db
         .selectFrom('locs')
-        .select(['locid', 'locnam', 'type', 'address_state'])
+        .select(['locid', 'locnam', 'category', 'address_state'])
         .where('locid', '=', source.locid)
         .executeTakeFirst();
 

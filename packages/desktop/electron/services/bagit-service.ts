@@ -47,7 +47,7 @@ export interface MediaFile {
 export interface BagLocation {
   locid: string;
   locnam: string;
-  type?: string | null;
+  category?: string | null;
   access?: string | null;
   address_state?: string | null;
   address_city?: string | null;
@@ -76,7 +76,7 @@ export interface BagSubLocation {
   subid: string;
   subnam: string;
   ssubname?: string | null;
-  type?: string | null;
+  category?: string | null;
   status?: string | null;
   gps_lat?: number | null;
   gps_lng?: number | null;
@@ -89,7 +89,7 @@ export interface BagSubLocation {
   // Parent location info (required for path construction)
   parentLocid: string;
   parentLocnam: string;
-  parentType?: string | null;
+  parentCategory?: string | null;
   parentState?: string | null;
 }
 
@@ -565,7 +565,7 @@ export class BagItService {
     ];
 
     // Sub-location metadata (optional fields)
-    if (subLocation.type) lines.push(`SubLocation-Type: ${subLocation.type}`);
+    if (subLocation.category) lines.push(`SubLocation-Category: ${subLocation.category}`);
     if (subLocation.status) lines.push(`SubLocation-Status: ${subLocation.status}`);
 
     // GPS (sub-location may have its own GPS coordinates)
@@ -735,7 +735,7 @@ Tag-File-Character-Encoding: UTF-8
     ];
 
     // Location metadata (optional fields)
-    if (location.type) lines.push(`Location-Type: ${location.type}`);
+    if (location.category) lines.push(`Location-Category: ${location.category}`);
     if (location.access) lines.push(`Location-Access-Status: ${location.access}`);
     if (location.address_state) lines.push(`Location-State: ${location.address_state}`);
     if (location.address_city) lines.push(`Location-City: ${location.address_city}`);

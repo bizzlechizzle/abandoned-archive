@@ -66,7 +66,7 @@ export interface ManifestLocation {
   locid: string;
   locnam: string;
   state: string | null;
-  type: string | null;
+  category: string | null;
   gps?: { lat: number; lng: number } | null;
   address?: {
     street?: string | null;
@@ -108,9 +108,10 @@ export interface ImportManifestData {
     address?: {
       street?: string | null;
       city?: string | null;
+      county?: string | null;
       state?: string | null;
       zipcode?: string | null;
-    };
+    } | null;
   };
 
   // Phase 4 results
@@ -147,10 +148,8 @@ export class ImportManifest {
       location: {
         locid: '',
         locnam: '',
-        slocnam: null,
-        loc12: '',
         state: null,
-        type: null,
+        category: null,
       },
       options: {
         verify_checksums: true,

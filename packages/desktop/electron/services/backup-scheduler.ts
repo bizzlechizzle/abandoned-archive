@@ -236,7 +236,7 @@ export class BackupScheduler {
 
     try {
       if (!existsSync(backup.filePath)) {
-        logger.error('BackupScheduler', 'Backup file missing', { path: backup.filePath });
+        logger.error('BackupScheduler', 'Backup file missing', undefined, { filePath: backup.filePath });
         return false;
       }
 
@@ -248,15 +248,15 @@ export class BackupScheduler {
         await this.saveManifest(manifest);
         logger.info('BackupScheduler', 'Backup verified successfully', { backupId, size: stats.size });
       } else {
-        logger.error('BackupScheduler', 'Backup size mismatch', {
-          expected: backup.size,
-          actual: stats.size
+        logger.error('BackupScheduler', 'Backup size mismatch', undefined, {
+          expectedSize: backup.size,
+          actualSize: stats.size
         });
       }
 
       return sizeMatches;
     } catch (error) {
-      logger.error('BackupScheduler', 'Backup verification failed', error as Error);
+      logger.error('BackupScheduler', 'Backup verification failed', error instanceof Error ? error : new Error(String(error)));
       return false;
     }
   }
@@ -291,7 +291,7 @@ export class BackupScheduler {
         }
       } catch (archiveError) {
         // Non-fatal: internal backup succeeded, archive export is a bonus
-        logger.warn('BackupScheduler', 'Archive export error (non-fatal)', archiveError as Error);
+        logger.warn('BackupScheduler', 'Archive export error (non-fatal)', { message: archiveError instanceof Error ? archiveError.message : String(archiveError) });
       }
     }
     return backup;

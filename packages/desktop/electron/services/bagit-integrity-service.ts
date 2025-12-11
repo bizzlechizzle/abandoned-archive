@@ -118,10 +118,8 @@ export class BagItIntegrityService {
         .selectFrom('locs')
         .select([
           'locid',
-          'loc12',
           'locnam',
-          'slocnam',
-          'type',
+          'category',
           'access',
           'address_state',
           'address_city',
@@ -163,7 +161,7 @@ export class BagItIntegrityService {
           const bagLocation: BagLocation = {
             locid: loc.locid,
             locnam: loc.locnam,
-            type: loc.type,
+            category: loc.category,
             access: loc.access,
             address_state: loc.address_state,
             address_city: loc.address_city,
@@ -261,10 +259,8 @@ export class BagItIntegrityService {
       .selectFrom('locs')
       .select([
         'locid',
-        'loc12',
         'locnam',
-        'slocnam',
-        'type',
+        'category',
         'access',
         'address_state',
         'address_city',
@@ -295,7 +291,7 @@ export class BagItIntegrityService {
     const bagLocation: BagLocation = {
       locid: loc.locid,
       locnam: loc.locnam,
-      type: loc.type,
+      category: loc.category,
       access: loc.access,
       address_state: loc.address_state,
       address_city: loc.address_city,
@@ -334,7 +330,7 @@ export class BagItIntegrityService {
         'subid',
         'subnam',
         'ssubname',
-        'type',
+        'category',
         'status',
         'gps_lat',
         'gps_lng',
@@ -355,7 +351,7 @@ export class BagItIntegrityService {
     // Get parent location info for path construction (ADR-046: removed loc12/slocnam)
     const parentLoc = await this.db
       .selectFrom('locs')
-      .select(['locid', 'locnam', 'type', 'address_state'])
+      .select(['locid', 'locnam', 'category', 'address_state'])
       .where('locid', '=', subloc.locid)
       .executeTakeFirst();
 
@@ -371,7 +367,7 @@ export class BagItIntegrityService {
       subid: subloc.subid,
       subnam: subloc.subnam,
       ssubname: subloc.ssubname,
-      type: subloc.type,
+      category: subloc.category,
       status: subloc.status,
       gps_lat: subloc.gps_lat,
       gps_lng: subloc.gps_lng,
@@ -382,7 +378,7 @@ export class BagItIntegrityService {
       modified_date: subloc.modified_date,
       parentLocid: parentLoc.locid,
       parentLocnam: parentLoc.locnam,
-      parentType: parentLoc.type,
+      parentCategory: parentLoc.category,
       parentState: parentLoc.address_state,
     };
 
@@ -407,7 +403,7 @@ export class BagItIntegrityService {
         'subid',
         'subnam',
         'ssubname',
-        'type',
+        'category',
         'status',
         'gps_lat',
         'gps_lng',
@@ -428,7 +424,7 @@ export class BagItIntegrityService {
     // Get parent location info for path construction (ADR-046: removed loc12/slocnam)
     const parentLoc = await this.db
       .selectFrom('locs')
-      .select(['locid', 'locnam', 'type', 'address_state'])
+      .select(['locid', 'locnam', 'category', 'address_state'])
       .where('locid', '=', subloc.locid)
       .executeTakeFirst();
 
@@ -444,7 +440,7 @@ export class BagItIntegrityService {
       subid: subloc.subid,
       subnam: subloc.subnam,
       ssubname: subloc.ssubname,
-      type: subloc.type,
+      category: subloc.category,
       status: subloc.status,
       gps_lat: subloc.gps_lat,
       gps_lng: subloc.gps_lng,
@@ -455,7 +451,7 @@ export class BagItIntegrityService {
       modified_date: subloc.modified_date,
       parentLocid: parentLoc.locid,
       parentLocnam: parentLoc.locnam,
-      parentType: parentLoc.type,
+      parentCategory: parentLoc.category,
       parentState: parentLoc.address_state,
     };
 
@@ -727,11 +723,8 @@ export class BagItIntegrityService {
       await this.db
         .updateTable('slocs')
         .set({
-          // @ts-expect-error - bag columns may not exist in types yet
           bag_status: result.status,
-          // @ts-expect-error - bag columns may not exist in types yet
           bag_last_verified: new Date().toISOString(),
-          // @ts-expect-error - bag columns may not exist in types yet
           bag_last_error: result.error || null,
         })
         .where('subid', '=', subid)

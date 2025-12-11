@@ -3,7 +3,7 @@
   import type { Location, LocationInput } from '@au-archive/core';
   import AutocompleteInput from './AutocompleteInput.svelte';
   import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
-  import { getTypeForSubtype } from '../lib/type-hierarchy';
+  import { getCategoryForClass } from '../lib/type-hierarchy';
 
   interface Props {
     location: Location;
@@ -14,16 +14,16 @@
   let { location, onSave, onCancel }: Props = $props();
 
   let allLocations = $state<Location[]>([]);
-  let typeSuggestions = $state<string[]>([]);
-  let subtypeSuggestions = $state<string[]>([]);
+  let categorySuggestions = $state<string[]>([]);
+  let classSuggestions = $state<string[]>([]);
   let authorSuggestions = $state<string[]>([]);
   let stateSuggestions = $state<string[]>([]);
 
   let formData = $state({
     locnam: location.locnam,
     akanam: location.akanam || '',
-    type: location.type || '',
-    stype: location.stype || '',
+    category: location.category || '',
+    class: location.class || '',
     // P0: condition and status removed - use access only
     documentation: location.documentation || '',
     access: location.access || '',
@@ -43,12 +43,12 @@
   let saving = $state(false);
   let error = $state<string | null>(null);
 
-  // Auto-fill type when user enters a known sub-type
+  // Auto-fill category when user enters a known class
   $effect(() => {
-    if (formData.stype && !formData.type) {
-      const matchedType = getTypeForSubtype(formData.stype);
-      if (matchedType) {
-        formData.type = matchedType;
+    if (formData.class && !formData.category) {
+      const matchedCategory = getCategoryForClass(formData.class);
+      if (matchedCategory) {
+        formData.category = matchedCategory;
       }
     }
   });
@@ -61,14 +61,14 @@
       allLocations = locations.filter(loc => loc.locid !== location.locid);
 
       // Extract unique values for autocomplete suggestions
-      const types = new Set<string>();
-      const subtypes = new Set<string>();
+      const categories = new Set<string>();
+      const classes = new Set<string>();
       const authors = new Set<string>();
       const states = new Set<string>();
 
       locations.forEach(loc => {
-        if (loc.type) types.add(loc.type);
-        if (loc.stype) subtypes.add(loc.stype);
+        if (loc.category) categories.add(loc.category);
+        if (loc.class) classes.add(loc.class);
         if (loc.auth_imp) authors.add(loc.auth_imp);
         if (loc.address?.state) {
           const code = loc.address.state.toUpperCase();
@@ -89,8 +89,8 @@
       });
       states.forEach(s => allStates.push(s));
 
-      typeSuggestions = Array.from(types).sort();
-      subtypeSuggestions = Array.from(subtypes).sort();
+      categorySuggestions = Array.from(categories).sort();
+      classSuggestions = Array.from(classes).sort();
       authorSuggestions = Array.from(authors).sort();
       stateSuggestions = Array.from(new Set(allStates)).sort();
     } catch (err) {
@@ -106,8 +106,8 @@
       const updates: Partial<LocationInput> = {
         locnam: formData.locnam,
         akanam: formData.akanam || undefined,
-        type: formData.type || undefined,
-        stype: formData.stype || undefined,
+        category: formData.category || undefined,
+        class: formData.class || undefined,
         // P0: condition and status removed - use access only
         documentation: formData.documentation || undefined,
         access: formData.access || undefined,
@@ -271,14 +271,14 @@
       {/if}
 
       <div>
-        <label for="type" class="block text-sm font-medium text-braun-700 mb-1">
-          Type
+        <label for="category" class="block text-sm font-medium text-braun-700 mb-1">
+          Category
         </label>
         <AutocompleteInput
-          bind:value={formData.type}
-          onchange={(val) => formData.type = val}
-          suggestions={typeSuggestions}
-          id="type"
+          bind:value={formData.category}
+          onchange={(val) => formData.category = val}
+          suggestions={categorySuggestions}
+          id="category"
           placeholder="e.g., Hospital, Factory, School..."
           class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
         />
@@ -288,14 +288,14 @@
       </div>
 
       <div>
-        <label for="stype" class="block text-sm font-medium text-braun-700 mb-1">
-          Sub-Type
+        <label for="class" class="block text-sm font-medium text-braun-700 mb-1">
+          Class
         </label>
         <AutocompleteInput
-          bind:value={formData.stype}
-          onchange={(val) => formData.stype = val}
-          suggestions={subtypeSuggestions}
-          id="stype"
+          bind:value={formData.class}
+          onchange={(val) => formData.class = val}
+          suggestions={classSuggestions}
+          id="class"
           placeholder="e.g., Psychiatric, Manufacturing..."
           class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
         />

@@ -164,7 +164,7 @@ export class ImportIntelligenceService {
         {
           id: locid,
           name: candidate.locnam,
-          type: candidate.type,
+          type: candidate.category,
           state: candidate.address_state,
           lat: candidate.gps_lat,
           lng: candidate.gps_lng,
@@ -222,7 +222,7 @@ export class ImportIntelligenceService {
         {
           id: subid,
           name: candidate.subnam,
-          type: candidate.type,
+          type: candidate.category,
           state: null, // Sub-locations don't have state directly
           lat: candidate.gps_lat,
           lng: candidate.gps_lng,

@@ -10,7 +10,7 @@
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
-import type { Database } from '../database';
+import type { Database } from '../database.types';
 import { SQLiteLocationAuthorsRepository } from '../../repositories/sqlite-location-authors-repository';
 import { Blake3IdSchema, UserIdSchema } from '../ipc-validation';
 

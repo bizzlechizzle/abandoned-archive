@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { SQLiteLocationRepository } from '../../repositories/sqlite-location-repository';
-import { createTestDatabase, createTestLocation } from './helpers/test-database';
+import { createTestDatabase, createTestLocation, createLocationInput } from './helpers/test-database';
 import type { Kysely } from 'kysely';
 import type { Database } from '../../main/database.types';
 
@@ -22,37 +22,40 @@ describe('SQLiteLocationRepository Integration', () => {
 
   describe('create', () => {
     it('should create a new location', async () => {
-      const locationData = {
+      const location = await repo.create(createLocationInput({
         locnam: 'Abandoned Factory',
-        gps_lat: 45.5231,
-        gps_lng: -122.6765,
-        address_state: 'OR',
-        type: 'industrial',
-        condition: 'deteriorating',
-      };
-
-      const location = await repo.create(locationData);
+        gps: {
+          lat: 45.5231,
+          lng: -122.6765,
+          source: 'manual',
+          verifiedOnMap: false
+        },
+        address: {
+          verified: false,
+          state: 'OR'
+        },
+        category: 'industrial',
+      }));
 
       expect(location.locid).toBeDefined();
-      expect(location.loc12).toBeDefined();
-      expect(location.locnam).toBe(locationData.locnam);
-      expect(location.gps?.lat).toBe(locationData.gps_lat);
-      expect(location.gps?.lng).toBe(locationData.gps_lng);
-      expect(location.address?.state).toBe(locationData.address_state);
+      expect(location.locnam).toBe('Abandoned Factory');
+      expect(location.gps?.lat).toBe(45.5231);
+      expect(location.gps?.lng).toBe(-122.6765);
+      expect(location.address?.state).toBe('OR');
     });
 
-    it('should generate unique loc12 identifier', async () => {
-      const location1 = await repo.create({ locnam: 'Location 1' });
-      const location2 = await repo.create({ locnam: 'Location 2' });
+    it('should generate unique locid identifiers', async () => {
+      const location1 = await repo.create(createLocationInput({ locnam: 'Location 1' }));
+      const location2 = await repo.create(createLocationInput({ locnam: 'Location 2' }));
 
-      expect(location1.loc12).not.toBe(location2.loc12);
-      expect(location1.loc12).toMatch(/^L-[A-Z0-9]{6}$/);
+      expect(location1.locid).not.toBe(location2.locid);
+      expect(location1.locid).toHaveLength(16);
     });
   });
 
   describe('findById', () => {
     it('should find location by ID', async () => {
-      const created = await repo.create({ locnam: 'Test Location' });
+      const created = await repo.create(createLocationInput({ locnam: 'Test Location' }));
       const found = await repo.findById(created.locid);
 
       expect(found).toBeDefined();
@@ -70,56 +73,58 @@ describe('SQLiteLocationRepository Integration', () => {
 
   describe('findAll', () => {
     it('should return all locations', async () => {
-      await repo.create({ locnam: 'Location 1' });
-      await repo.create({ locnam: 'Location 2' });
-      await repo.create({ locnam: 'Location 3' });
+      await repo.create(createLocationInput({ locnam: 'Location 1' }));
+      await repo.create(createLocationInput({ locnam: 'Location 2' }));
+      await repo.create(createLocationInput({ locnam: 'Location 3' }));
 
       const locations = await repo.findAll();
       expect(locations).toHaveLength(3);
     });
 
     it('should filter by state', async () => {
-      await repo.create({ locnam: 'Oregon Location', address_state: 'OR' });
-      await repo.create({ locnam: 'Washington Location', address_state: 'WA' });
+      await repo.create(createLocationInput({
+        locnam: 'Oregon Location',
+        address: { verified: false, state: 'OR' }
+      }));
+      await repo.create(createLocationInput({
+        locnam: 'Washington Location',
+        address: { verified: false, state: 'WA' }
+      }));
 
       const locations = await repo.findAll({ state: 'OR' });
       expect(locations).toHaveLength(1);
       expect(locations[0].address?.state).toBe('OR');
     });
 
-    it('should filter by type', async () => {
-      await repo.create({ locnam: 'Factory', type: 'industrial' });
-      await repo.create({ locnam: 'House', type: 'residential' });
+    it('should filter by category', async () => {
+      await repo.create(createLocationInput({ locnam: 'Factory', category: 'industrial' }));
+      await repo.create(createLocationInput({ locnam: 'House', category: 'residential' }));
 
-      const locations = await repo.findAll({ type: 'industrial' });
+      const locations = await repo.findAll({ category: 'industrial' });
       expect(locations).toHaveLength(1);
-      expect(locations[0].type).toBe('industrial');
+      expect(locations[0].category).toBe('industrial');
     });
   });
 
   describe('update', () => {
     it('should update location fields', async () => {
-      const created = await repo.create({ locnam: 'Original Name' });
+      const created = await repo.create(createLocationInput({ locnam: 'Original Name' }));
 
       const updated = await repo.update(created.locid, {
         locnam: 'Updated Name',
-        condition: 'ruins',
       });
 
       expect(updated.locnam).toBe('Updated Name');
-      expect(updated.condition).toBe('ruins');
     });
 
     it('should update GPS coordinates', async () => {
-      const created = await repo.create({
+      const created = await repo.create(createLocationInput({
         locnam: 'Test',
-        gps_lat: 45.0,
-        gps_lng: -122.0,
-      });
+        gps: { lat: 45.0, lng: -122.0, source: 'manual', verifiedOnMap: false },
+      }));
 
       const updated = await repo.update(created.locid, {
-        gps_lat: 46.0,
-        gps_lng: -123.0,
+        gps: { lat: 46.0, lng: -123.0, source: 'manual', verifiedOnMap: true },
       });
 
       expect(updated.gps?.lat).toBe(46.0);
@@ -129,7 +134,7 @@ describe('SQLiteLocationRepository Integration', () => {
 
   describe('delete', () => {
     it('should delete location', async () => {
-      const created = await repo.create({ locnam: 'To Delete' });
+      const created = await repo.create(createLocationInput({ locnam: 'To Delete' }));
 
       await repo.delete(created.locid);
 
@@ -146,17 +151,17 @@ describe('SQLiteLocationRepository Integration', () => {
 
   describe('count', () => {
     it('should count all locations', async () => {
-      await repo.create({ locnam: 'Location 1' });
-      await repo.create({ locnam: 'Location 2' });
+      await repo.create(createLocationInput({ locnam: 'Location 1' }));
+      await repo.create(createLocationInput({ locnam: 'Location 2' }));
 
       const count = await repo.count();
       expect(count).toBe(2);
     });
 
     it('should count with filters', async () => {
-      await repo.create({ locnam: 'OR 1', address_state: 'OR' });
-      await repo.create({ locnam: 'OR 2', address_state: 'OR' });
-      await repo.create({ locnam: 'WA 1', address_state: 'WA' });
+      await repo.create(createLocationInput({ locnam: 'OR 1', address: { verified: false, state: 'OR' } }));
+      await repo.create(createLocationInput({ locnam: 'OR 2', address: { verified: false, state: 'OR' } }));
+      await repo.create(createLocationInput({ locnam: 'WA 1', address: { verified: false, state: 'WA' } }));
 
       const count = await repo.count({ state: 'OR' });
       expect(count).toBe(2);
@@ -169,7 +174,7 @@ describe('SQLiteLocationRepository Integration', () => {
 
       try {
         await db.transaction().execute(async (trx) => {
-          // Create location
+          // Create location using raw insert with createTestLocation helper
           const testLoc = createTestLocation();
           await trx.insertInto('locs').values(testLoc).execute();
 

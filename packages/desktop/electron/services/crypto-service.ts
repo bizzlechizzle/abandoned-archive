@@ -78,8 +78,8 @@ async function calculateHashWasm(filePath: string): Promise<string> {
     const BUFFER_SIZE = 1024 * 1024;
     const stream = createReadStream(filePath, { highWaterMark: BUFFER_SIZE });
 
-    stream.on('data', (chunk: Buffer) => {
-      hasher.update(chunk);
+    stream.on('data', (chunk: Buffer | string) => {
+      hasher.update(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     });
 
     stream.on('end', () => {

@@ -9,7 +9,7 @@
   let filters = $state<LocationFilters & { historic?: boolean; gpsVerified?: boolean }>({
     search: '',
     state: '',
-    type: '',
+    category: '',
     hasGPS: undefined,
     documented: undefined,
     historic: undefined,
@@ -17,7 +17,7 @@
   });
 
   let allStates = $state<string[]>([]);
-  let allTypes = $state<string[]>([]);
+  let allCategories = $state<string[]>([]);
 
   // OPT-036: Load filter options using efficient SELECT DISTINCT query
   async function loadFilterOptions() {
@@ -28,7 +28,7 @@
     try {
       const options = await window.electronAPI.locations.getFilterOptions();
       allStates = options.states;
-      allTypes = options.types;
+      allCategories = options.categories;
     } catch (error) {
       console.error('Error loading filter options:', error);
     }
@@ -42,7 +42,7 @@
       const searchFilters: LocationFilters = {
         search: filters.search || undefined,
         state: filters.state || undefined,
-        type: filters.type || undefined,
+        category: filters.category || undefined,
         hasGPS: filters.hasGPS,
         documented: filters.documented,
       };
@@ -69,7 +69,7 @@
     filters = {
       search: '',
       state: '',
-      type: '',
+      category: '',
       hasGPS: undefined,
       documented: undefined,
       historic: undefined,
@@ -118,15 +118,15 @@
       </div>
 
       <div>
-        <label for="type" class="block text-sm font-medium text-braun-700 mb-2">Type</label>
+        <label for="category" class="block text-sm font-medium text-braun-700 mb-2">Category</label>
         <select
-          id="type"
-          bind:value={filters.type}
+          id="category"
+          bind:value={filters.category}
           class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
         >
-          <option value="">Any Type</option>
-          {#each allTypes as type}
-            <option value={type}>{type}</option>
+          <option value="">Any Category</option>
+          {#each allCategories as category}
+            <option value={category}>{category}</option>
           {/each}
         </select>
       </div>
@@ -201,7 +201,7 @@
                 Name
               </th>
               <th class="px-6 py-3 text-left text-xs font-medium text-braun-500 uppercase tracking-wider">
-                Type
+                Category
               </th>
               <th class="px-6 py-3 text-left text-xs font-medium text-braun-500 uppercase tracking-wider">
                 Location
@@ -221,7 +221,7 @@
                   {/if}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-braun-500">
-                  {location.type || '-'}
+                  {location.category || '-'}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-braun-500">
                   {#if location.address?.city && location.address?.state}

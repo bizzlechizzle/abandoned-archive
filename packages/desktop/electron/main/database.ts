@@ -28,8 +28,8 @@ CREATE TABLE IF NOT EXISTS locs (
   akanam TEXT,
 
   -- Classification
-  type TEXT,
-  stype TEXT,
+  category TEXT,
+  class TEXT,
 
   -- GPS (Primary Source of Truth)
   gps_lat REAL,
@@ -71,12 +71,12 @@ CREATE TABLE IF NOT EXISTS locs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_locs_state ON locs(address_state);
-CREATE INDEX IF NOT EXISTS idx_locs_type ON locs(type);
+CREATE INDEX IF NOT EXISTS idx_locs_category ON locs(category);
 CREATE INDEX IF NOT EXISTS idx_locs_gps ON locs(gps_lat, gps_lng) WHERE gps_lat IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_locs_favorite ON locs(favorite) WHERE favorite = 1;
 -- OPT-043: Covering index for ultra-fast Atlas map queries
 -- Includes all columns needed by findInBoundsForMap to avoid table lookups
-CREATE INDEX IF NOT EXISTS idx_locs_map_bounds ON locs(gps_lat, gps_lng, locid, locnam, type, gps_verified_on_map, address_state, address_city, favorite)
+CREATE INDEX IF NOT EXISTS idx_locs_map_bounds ON locs(gps_lat, gps_lng, locid, locnam, category, gps_verified_on_map, address_state, address_city, favorite)
   WHERE gps_lat IS NOT NULL AND gps_lng IS NOT NULL;
 
 -- Sub-Locations table
@@ -1048,7 +1048,7 @@ function runMigrations(sqlite: Database.Database): void {
       // Recreate indexes
       sqlite.exec(`
         CREATE INDEX IF NOT EXISTS idx_locs_state ON locs(address_state);
-        CREATE INDEX IF NOT EXISTS idx_locs_type ON locs(type);
+        CREATE INDEX IF NOT EXISTS idx_locs_category ON locs(category);
         CREATE INDEX IF NOT EXISTS idx_locs_gps ON locs(gps_lat, gps_lng) WHERE gps_lat IS NOT NULL;
         CREATE INDEX IF NOT EXISTS idx_locs_loc12 ON locs(loc12);
         CREATE INDEX IF NOT EXISTS idx_locs_favorite ON locs(favorite) WHERE favorite = 1;
@@ -2598,6 +2598,38 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 66 completed: Enhanced web source metadata tables created');
     }
 
+    // Migration 67: Rename type/stype to category/class
+    // Renames columns in locs and slocs tables for clearer terminology
+    const locsCols = sqlite.prepare("PRAGMA table_info(locs)").all() as { name: string }[];
+    const hasLocType = locsCols.some(c => c.name === 'type');
+    const hasLocCategory = locsCols.some(c => c.name === 'category');
+
+    if (hasLocType && !hasLocCategory) {
+      console.log('Running migration 67: Renaming type/stype to category/class');
+
+      // Rename locs columns
+      sqlite.exec(`ALTER TABLE locs RENAME COLUMN type TO category`);
+      sqlite.exec(`ALTER TABLE locs RENAME COLUMN stype TO class`);
+
+      // Rename slocs columns
+      sqlite.exec(`ALTER TABLE slocs RENAME COLUMN type TO category`);
+      sqlite.exec(`ALTER TABLE slocs RENAME COLUMN stype TO class`);
+
+      // Recreate indexes with new names
+      sqlite.exec(`DROP INDEX IF EXISTS idx_locs_type`);
+      sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_locs_category ON locs(category)`);
+      sqlite.exec(`DROP INDEX IF EXISTS idx_slocs_type`);
+      sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_slocs_category ON slocs(category)`);
+
+      // Recreate the covering index with renamed column
+      sqlite.exec(`DROP INDEX IF EXISTS idx_locs_map_bounds`);
+      sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_locs_map_bounds ON locs(
+        gps_lat, gps_lng, locid, locnam, category, gps_verified_on_map, address_state, address_city, favorite
+      ) WHERE gps_lat IS NOT NULL AND gps_lng IS NOT NULL`);
+
+      console.log('Migration 67 completed: type/stype renamed to category/class');
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;
@@ -2614,7 +2646,7 @@ function ensureCriticalIndices(sqlite: Database.Database): void {
     {
       name: 'idx_locs_map_bounds',
       sql: `CREATE INDEX IF NOT EXISTS idx_locs_map_bounds ON locs(
-        gps_lat, gps_lng, locid, locnam, type, gps_verified_on_map, address_state, address_city, favorite
+        gps_lat, gps_lng, locid, locnam, category, gps_verified_on_map, address_state, address_city, favorite
       ) WHERE gps_lat IS NOT NULL AND gps_lng IS NOT NULL`,
       description: 'Covering index for Atlas findInBoundsForMap queries'
     },

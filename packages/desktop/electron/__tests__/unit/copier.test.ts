@@ -56,8 +56,11 @@ describe('Copier', () => {
       extension: '.jpg',
       size: 12, // 'test content' = 12 bytes
       mediaType: 'image',
+      isSidecar: false,
+      isRaw: false,
       shouldSkip: false,
       shouldHide: false,
+      baseName: 'test',
       hash: 'a7f3b2c1e9d4f086',
       hashError: null,
       isDuplicate: false,

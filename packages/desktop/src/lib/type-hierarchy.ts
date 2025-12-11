@@ -1,11 +1,11 @@
 /**
- * Type Hierarchy Map
+ * Category Hierarchy Map
  *
- * Defines the relationship between location types and their sub-types.
- * Used for auto-filling the type field when user enters a known sub-type.
+ * Defines the relationship between location categories and their classes.
+ * Used for auto-filling the category field when user enters a known class.
  */
 
-export const TYPE_HIERARCHY: Record<string, string[]> = {
+export const CATEGORY_HIERARCHY: Record<string, string[]> = {
   'Faith': ['Church', 'Chapel', 'Monastery', 'Temple', 'Synagogue', 'Mosque', 'Cathedral', 'Convent', 'Abbey', 'Shrine'],
   'Medical': ['Hospital', 'Sanatorium', 'Asylum', 'Psychiatric', 'Clinic', 'Infirmary', 'Nursing Home', 'Sanitarium'],
   'Industrial': ['Factory', 'Mill', 'Foundry', 'Warehouse', 'Power Plant', 'Refinery', 'Mine', 'Quarry', 'Smelter'],
@@ -19,38 +19,38 @@ export const TYPE_HIERARCHY: Record<string, string[]> = {
   'Agricultural': ['Farm', 'Barn', 'Silo', 'Granary', 'Dairy', 'Greenhouse'],
 };
 
-// Build reverse lookup: subtype (lowercase) → type
-const SUBTYPE_TO_TYPE: Record<string, string> = {};
-for (const [type, subtypes] of Object.entries(TYPE_HIERARCHY)) {
-  for (const subtype of subtypes) {
-    SUBTYPE_TO_TYPE[subtype.toLowerCase()] = type;
+// Build reverse lookup: class (lowercase) → category
+const CLASS_TO_CATEGORY: Record<string, string> = {};
+for (const [category, classes] of Object.entries(CATEGORY_HIERARCHY)) {
+  for (const cls of classes) {
+    CLASS_TO_CATEGORY[cls.toLowerCase()] = category;
   }
 }
 
 /**
- * Get the parent type for a given sub-type.
- * Returns null if sub-type is not in the hierarchy.
+ * Get the parent category for a given class.
+ * Returns null if class is not in the hierarchy.
  *
  * @example
- * getTypeForSubtype('church') // Returns 'Faith'
- * getTypeForSubtype('hospital') // Returns 'Medical'
- * getTypeForSubtype('unknown') // Returns null
+ * getCategoryForClass('church') // Returns 'Faith'
+ * getCategoryForClass('hospital') // Returns 'Medical'
+ * getCategoryForClass('unknown') // Returns null
  */
-export function getTypeForSubtype(subtype: string): string | null {
-  if (!subtype) return null;
-  return SUBTYPE_TO_TYPE[subtype.toLowerCase().trim()] || null;
+export function getCategoryForClass(cls: string): string | null {
+  if (!cls) return null;
+  return CLASS_TO_CATEGORY[cls.toLowerCase().trim()] || null;
 }
 
 /**
- * Get all known types.
+ * Get all known categories.
  */
-export function getAllTypes(): string[] {
-  return Object.keys(TYPE_HIERARCHY);
+export function getAllCategories(): string[] {
+  return Object.keys(CATEGORY_HIERARCHY);
 }
 
 /**
- * Get all known sub-types for a given type.
+ * Get all known classes for a given category.
  */
-export function getSubtypesForType(type: string): string[] {
-  return TYPE_HIERARCHY[type] || [];
+export function getClassesForCategory(category: string): string[] {
+  return CATEGORY_HIERARCHY[category] || [];
 }

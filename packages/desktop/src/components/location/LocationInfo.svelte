@@ -35,25 +35,25 @@
   }
 
   // Migration 32: SubLocation type for edit mode
-  // Migration 65: Added stype for sub-location sub-type
+  // Migration 65: Added class for sub-location class
   interface SubLocationData {
     subid: string;
     subnam: string;
     ssubname: string | null;
-    type: string | null;
-    stype: string | null;
+    category: string | null;
+    class: string | null;
     status: string | null;
     is_primary: boolean;
     akanam: string | null;
   }
 
   // Migration 32: SubLocation update input (historicalName removed)
-  // Migration 65: Added stype for sub-location sub-type
+  // Migration 65: Added class for sub-location class
   interface SubLocationUpdates {
     subnam?: string;
     ssubname?: string | null;
-    type?: string | null;
-    stype?: string | null;
+    category?: string | null;
+    class?: string | null;
     status?: string | null;
     is_primary?: boolean;
     akanam?: string | null;
@@ -105,9 +105,9 @@
   let convertError = $state('');
   let converting = $state(false);
 
-  // Autocomplete options for Type/Sub-Type
-  let typeOptions = $state<string[]>([]);
-  let stypeOptions = $state<string[]>([]);
+  // Autocomplete options for Category/Class
+  let categoryOptions = $state<string[]>([]);
+  let classOptions = $state<string[]>([]);
 
   // Authors from location_authors table
   let authors = $state<LocationAuthor[]>([]);
@@ -117,23 +117,23 @@
   onMount(async () => {
     try {
       // Determine which API to use based on mode
-      const typePromise = isSubLocationMode
-        ? window.electronAPI?.sublocations?.getDistinctTypes?.() || []
-        : window.electronAPI?.locations?.getDistinctTypes?.() || [];
-      const stypePromise = isSubLocationMode
-        ? window.electronAPI?.sublocations?.getDistinctSubTypes?.() || []
-        : window.electronAPI?.locations?.getDistinctSubTypes?.() || [];
+      const categoryPromise = isSubLocationMode
+        ? window.electronAPI?.sublocations?.getDistinctCategories?.() || []
+        : window.electronAPI?.locations?.getDistinctCategories?.() || [];
+      const classPromise = isSubLocationMode
+        ? window.electronAPI?.sublocations?.getDistinctClasses?.() || []
+        : window.electronAPI?.locations?.getDistinctClasses?.() || [];
 
-      const [types, stypes, locationAuthors] = await Promise.all([
-        typePromise,
-        stypePromise,
+      const [categories, classes, locationAuthors] = await Promise.all([
+        categoryPromise,
+        classPromise,
         window.electronAPI?.locationAuthors?.findByLocation?.(location.locid) || [],
       ]);
-      typeOptions = types;
-      stypeOptions = stypes;
+      categoryOptions = categories;
+      classOptions = classes;
       authors = locationAuthors;
     } catch (err) {
-      console.error('Error loading type options:', err);
+      console.error('Error loading category options:', err);
     }
   });
 
@@ -150,8 +150,8 @@
     builtType: 'year' as 'year' | 'range' | 'date',
     abandonedYear: '',
     abandonedType: 'year' as 'year' | 'range' | 'date',
-    type: '',             // Type (locs.type or slocs.type for Building Type)
-    stype: '',            // Sub-Type (Migration 65: now supported for both host and sub-locations)
+    category: '',         // Category (locs.category or slocs.category for Building Category)
+    class: '',            // Class (Migration 65: now supported for both host and sub-locations)
     historic: false,
     favorite: false,
     project: false,
@@ -175,7 +175,7 @@
     location.docInterior || location.docExterior || location.docDrone || location.docWebHistory || location.docMapFind
   );
   const hasBuiltOrAbandoned = $derived(!!location.builtYear || !!location.abandonedYear);
-  const hasType = $derived(!!location.type);
+  const hasCategory = $derived(!!location.category);
   const hasFlags = $derived(location.historic || location.favorite || location.project);
   const hasAuthor = $derived(!!location.auth_imp);  // Original author field
   const hasAuthors = $derived(authors.length > 0);  // Tracked contributors from location_authors
@@ -317,9 +317,9 @@
         akanam: currentSubLocation.akanam || '',
         akanamVerified: false, // Not used for sub-locations
         access: currentSubLocation.status || '', // slocs.status
-        type: currentSubLocation.type || '', // Building Type
-        // Migration 65: Sub-location sub-type (now supported)
-        stype: currentSubLocation.stype || '',
+        category: currentSubLocation.category || '', // Building Category
+        // Migration 65: Sub-location class (now supported)
+        class: currentSubLocation.class || '',
         is_primary: currentSubLocation.is_primary || false,
         // Campus-level fields from host location
         builtYear: location.builtYear || '',
@@ -349,8 +349,8 @@
         builtType: location.builtType || 'year',
         abandonedYear: location.abandonedYear || '',
         abandonedType: location.abandonedType || 'year',
-        type: location.type || '',
-        stype: location.stype || '',
+        category: location.category || '',
+        class: location.class || '',
         historic: location.historic || false,
         favorite: location.favorite || false,
         project: location.project || false,
@@ -376,9 +376,9 @@
         // Sub-location mode: save to subloc and flags to host location
         const subUpdates: SubLocationUpdates = {
           subnam: editForm.locnam,
-          type: editForm.type || null, // Building Type
-          // Migration 65: Sub-location sub-type (separate from host location stype)
-          stype: editForm.stype || null,
+          category: editForm.category || null, // Building Category
+          // Migration 65: Sub-location class (separate from host location class)
+          class: editForm.class || null,
           status: editForm.access || null,
           is_primary: editForm.is_primary,
           akanam: editForm.akanam || null,
@@ -405,8 +405,8 @@
           akanamVerified: editForm.akanamVerified,
           access: editForm.access || undefined,
           statusChangedAt: statusChangedAt,
-          type: editForm.type || undefined,
-          stype: editForm.stype || undefined,
+          category: editForm.category || undefined,
+          class: editForm.class || undefined,
           historic: editForm.historic,
           favorite: editForm.favorite,
           project: editForm.project,
@@ -522,24 +522,24 @@
             {/if}
           </div>
           <div>
-            <h3 class="section-title mb-1">Type</h3>
-            {#if hasType}
+            <h3 class="section-title mb-1">Category</h3>
+            {#if hasCategory}
               <p class="text-base">
                 <button
-                  onclick={() => onNavigateFilter('type', location.type!)}
+                  onclick={() => onNavigateFilter('category', location.category!)}
                   class="text-braun-900 hover:underline"
-                  title="View all {location.type} locations"
+                  title="View all {location.category} locations"
                 >
-                  {location.type}
+                  {location.category}
                 </button>
-                {#if location.stype}
+                {#if location.class}
                   <span class="text-braun-400"> / </span>
                   <button
-                    onclick={() => onNavigateFilter('stype', location.stype!)}
+                    onclick={() => onNavigateFilter('class', location.class!)}
                     class="text-braun-900 hover:underline"
-                    title="View all {location.stype} locations"
+                    title="View all {location.class} locations"
                   >
-                    {location.stype}
+                    {location.class}
                   </button>
                 {/if}
               </p>
@@ -719,20 +719,20 @@
           </select>
         </div>
 
-        <!-- Type / Sub-Type with autocomplete (or Building Type for sub-locations) -->
+        <!-- Category / Class with autocomplete (or Building Category for sub-locations) -->
         {#if isSubLocationMode}
-          <!-- Sub-location: Building Type only -->
+          <!-- Sub-location: Building Category only -->
           <div>
-            <label class="form-label">Building Type</label>
+            <label class="form-label">Building Category</label>
             <input
               type="text"
-              list="type-options"
-              bind:value={editForm.type}
+              list="category-options"
+              bind:value={editForm.category}
               class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
               placeholder="e.g., Administration, Dormitory, Chapel"
             />
-            <datalist id="type-options">
-              {#each typeOptions as option}
+            <datalist id="category-options">
+              {#each categoryOptions as option}
                 <option value={option} />
               {/each}
             </datalist>
@@ -749,34 +749,34 @@
             <span class="text-xs text-braun-500">(main building on campus)</span>
           </label>
         {:else}
-          <!-- Host location: Type + Sub-Type -->
+          <!-- Host location: Category + Class -->
           <div class="grid grid-cols-2 gap-4">
             <div>
-              <label class="form-label">Type</label>
+              <label class="form-label">Category</label>
               <input
                 type="text"
-                list="type-options"
-                bind:value={editForm.type}
+                list="category-options"
+                bind:value={editForm.category}
                 class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
                 placeholder="e.g., Hospital, Factory"
               />
-              <datalist id="type-options">
-                {#each typeOptions as option}
+              <datalist id="category-options">
+                {#each categoryOptions as option}
                   <option value={option} />
                 {/each}
               </datalist>
             </div>
             <div>
-              <label class="form-label">Sub-Type</label>
+              <label class="form-label">Class</label>
               <input
                 type="text"
-                list="stype-options"
-                bind:value={editForm.stype}
+                list="class-options"
+                bind:value={editForm.class}
                 class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
                 placeholder="e.g., Psychiatric, Textile"
               />
-              <datalist id="stype-options">
-                {#each stypeOptions as option}
+              <datalist id="class-options">
+                {#each classOptions as option}
                   <option value={option} />
                 {/each}
               </datalist>

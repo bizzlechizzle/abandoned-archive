@@ -45,8 +45,8 @@
     heroThumbPath?: string;
   }
 
-  interface TypeStat {
-    type: string;
+  interface CategoryStat {
+    category: string;
     count: number;
   }
 
@@ -74,7 +74,7 @@
   let projects = $state<LocationWithHero[]>([]);
   let recentLocations = $state<LocationWithHero[]>([]);
   let recentImports = $state<ImportRecord[]>([]);
-  let topTypes = $state<TypeStat[]>([]);
+  let topCategories = $state<CategoryStat[]>([]);
   let topStates = $state<StateStat[]>([]);
 
   let loading = $state(true);
@@ -136,9 +136,9 @@
     }
 
     try {
-      topTypes = await window.electronAPI.stats.topTypes(5);
+      topCategories = await window.electronAPI.stats.topCategories(5);
     } catch (e) {
-      console.error('Failed to load top types:', e);
+      console.error('Failed to load top categories:', e);
     }
 
     try {
@@ -402,19 +402,19 @@
       <!-- Top Type -->
       <div class="bg-white border border-braun-300 rounded p-8">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="section-label mb-0">Top Type</h3>
+          <h3 class="section-label mb-0">Top Category</h3>
           <button onclick={() => router.navigate('/locations')} class="text-xs text-braun-600 hover:text-braun-900 hover:underline font-medium">
             show all
           </button>
         </div>
-        {#if topTypes.length > 0}
+        {#if topCategories.length > 0}
           <div class="space-y-2">
-            {#each topTypes as stat}
+            {#each topCategories as stat}
               <button
-                onclick={() => router.navigate('/locations', undefined, { type: stat.type })}
+                onclick={() => router.navigate('/locations', undefined, { category: stat.category })}
                 class="flex items-center justify-between w-full text-left px-2 py-2 rounded hover:bg-braun-100 transition"
               >
-                <span class="text-sm text-braun-900 font-medium truncate">{stat.type}</span>
+                <span class="text-sm text-braun-900 font-medium truncate">{stat.category}</span>
                 <span class="text-xs text-braun-500">{stat.count}</span>
               </button>
             {/each}

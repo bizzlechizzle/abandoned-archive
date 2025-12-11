@@ -176,9 +176,9 @@ const api = {
     // DECISION-018: Region data management
     updateRegionData: (id, regionData) => invokeAuto("location:updateRegionData")(id, regionData),
     backfillRegions: () => invokeAuto("location:backfillRegions")(),
-    // Autocomplete helpers for Type/Sub-Type
-    getDistinctTypes: () => invokeAuto("location:getDistinctTypes")(),
-    getDistinctSubTypes: () => invokeAuto("location:getDistinctSubTypes")(),
+    // Autocomplete helpers for Category/Class
+    getDistinctCategories: () => invokeAuto("location:getDistinctCategories")(),
+    getDistinctClasses: () => invokeAuto("location:getDistinctClasses")(),
     // OPT-036: Get all filter options in one efficient call
     getFilterOptions: () => invokeAuto("location:getFilterOptions")(),
     // Migration 34: View tracking
@@ -198,9 +198,9 @@ const api = {
 
   stats: {
     topStates: (limit) => invokeAuto("stats:topStates")(limit),
-    topTypes: (limit) => invokeAuto("stats:topTypes")(limit),
-    // Dashboard: Top types/states with hero thumbnails
-    topTypesWithHero: (limit) => invokeAuto("stats:topTypesWithHero")(limit),
+    topCategories: (limit) => invokeAuto("stats:topCategories")(limit),
+    // Dashboard: Top categories/states with hero thumbnails
+    topCategoriesWithHero: (limit) => invokeAuto("stats:topCategoriesWithHero")(limit),
     topStatesWithHero: (limit) => invokeAuto("stats:topStatesWithHero")(limit),
   },
 
@@ -365,9 +365,9 @@ const api = {
     clearGps: (subid) => invokeAuto("sublocation:clearGps")(subid),
     verifyGps: (subid) => invokeAuto("sublocation:verifyGps")(subid),
     findWithGps: (locid) => invokeAuto("sublocation:findWithGps")(locid),
-    // Migration 65: Sub-location type/subtype (separate taxonomy from host locations)
-    getDistinctTypes: () => invokeAuto("sublocation:getDistinctTypes")(),
-    getDistinctSubTypes: () => invokeAuto("sublocation:getDistinctSubTypes")(),
+    // Migration 65: Sub-location category/class (separate taxonomy from host locations)
+    getDistinctCategories: () => invokeAuto("sublocation:getDistinctCategories")(),
+    getDistinctClasses: () => invokeAuto("sublocation:getDistinctClasses")(),
   },
 
   projects: {

@@ -52,17 +52,17 @@ export function createTestDatabase(): {
 
 /**
  * Create test location data with all required fields per database.types.ts
+ * Use this for direct database inserts via Kysely
  */
 // ADR-046: Generate BLAKE3-like 16-char hex ID for testing
 function generateTestBlake3Id(): string {
   return Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
 }
 
-export function createTestLocation(overrides: Partial<any> = {}) {
+export function createTestLocation(overrides: Record<string, unknown> = {}) {
   return {
     // Identity - ADR-046: locid is BLAKE3 16-char hex
     locid: generateTestBlake3Id(),
-    loc12: `L-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
     locnam: 'Test Location',
 
     // GPS verification flags (required numbers)
@@ -93,8 +93,22 @@ export function createTestLocation(overrides: Partial<any> = {}) {
     historical_name_verified: 0,
     akanam_verified: 0,
 
+    // Hero focal point (required numbers)
+    hero_focal_x: 0.5,
+    hero_focal_y: 0.5,
+
+    // Host only flag
+    is_host_only: 0,
+
     // View tracking (required number)
     view_count: 0,
+
+    // Media counts (required numbers)
+    img_count: 0,
+    vid_count: 0,
+    doc_count: 0,
+    map_count: 0,
+    total_size_bytes: 0,
 
     // Timestamps
     locadd: new Date().toISOString(),
@@ -105,20 +119,43 @@ export function createTestLocation(overrides: Partial<any> = {}) {
 }
 
 /**
- * Create test image data with all required fields per database.types.ts
+ * Create valid LocationInput for repository.create() calls
+ * This matches the LocationInputSchema from @au-archive/core
+ */
+export function createLocationInput(overrides: Record<string, any> = {}) {
+  return {
+    locnam: overrides.locnam || 'Test Location',
+    historic: false,
+    favorite: false,
+    project: false,
+    docInterior: false,
+    docExterior: false,
+    docDrone: false,
+    docWebHistory: false,
+    docMapFind: false,
+    locnamVerified: false,
+    akanamVerified: false,
+    isHostOnly: false,
+    ...overrides,
+  };
+}
+
+/**
+ * Create test image data for mediaRepo.createImage() calls
+ * Does NOT include imgadd - repository handles that
  * ADR-049: Uses 16-char hex IDs
  */
-export function createTestImage(locid: string, overrides: Partial<any> = {}) {
-  const hash = generateTestBlake3Id();
+export function createTestImage(locid: string, overrides: Record<string, unknown> = {}) {
+  const hash = (overrides.imghash as string) || generateTestBlake3Id();
+  const imgnam = (overrides.imgnam as string) || `${hash}.jpg`;
   return {
     // Identity
     imghash: hash,
-    imgnam: `${hash}.jpg`,
+    imgnam,
     imgnamo: 'test-image.jpg',
     imgloc: `/archive/images/${hash}.jpg`,
     imgloco: '/original/path/test-image.jpg',
     locid,
-    imgadd: new Date().toISOString(),
     auth_imp: 'Test User',
 
     // Required number flags
@@ -127,7 +164,18 @@ export function createTestImage(locid: string, overrides: Partial<any> = {}) {
     hidden: 0,
     is_live_photo: 0,
     is_contributed: 0,
+    extracted_from_web: 0,
 
     ...overrides,
+  };
+}
+
+/**
+ * Create test image data for direct Kysely insert (includes imgadd)
+ */
+export function createTestImageForInsert(locid: string, overrides: Record<string, unknown> = {}) {
+  return {
+    ...createTestImage(locid, overrides),
+    imgadd: new Date().toISOString(),
   };
 }

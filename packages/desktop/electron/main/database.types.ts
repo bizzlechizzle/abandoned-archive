@@ -52,8 +52,8 @@ export interface LocsTable {
   akanam: string | null;
 
   // Classification
-  type: string | null;
-  stype: string | null;
+  category: string | null;
+  class: string | null;
 
   // GPS (Primary Source of Truth)
   gps_lat: number | null;
@@ -194,9 +194,9 @@ export interface SlocsTable {
   ssubname: string | null;
 
   // Migration 28: Enhanced sub-location fields
-  type: string | null;
-  // Migration 65: Sub-location sub-type (separate taxonomy from host locations)
-  stype: string | null;
+  category: string | null;
+  // Migration 65: Sub-location class (separate taxonomy from host locations)
+  class: string | null;
   status: string | null;
   hero_imghash: string | null;
   hero_focal_x: number;           // 0-1 horizontal position (0.5 = center)

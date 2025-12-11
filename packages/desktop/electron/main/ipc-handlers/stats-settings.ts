@@ -7,7 +7,7 @@
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
-import type { Database } from '../database';
+import type { Database } from '../database.types';
 import { validate, LimitSchema, SettingKeySchema, UserIdSchema } from '../ipc-validation';
 import { SQLiteLocationAuthorsRepository } from '../../repositories/sqlite-location-authors-repository';
 
@@ -24,7 +24,7 @@ export function registerStatsHandlers(db: Kysely<Database>) {
         .where('address_state', 'is not', null)
         .groupBy('address_state')
         .orderBy('count', 'desc')
-        .limit(validatedLimit)
+        .limit(validatedLimit ?? 5)
         .execute();
       return result;
     } catch (error) {
@@ -34,49 +34,49 @@ export function registerStatsHandlers(db: Kysely<Database>) {
     }
   });
 
-  ipcMain.handle('stats:topTypes', async (_event, limit: unknown = 5) => {
+  ipcMain.handle('stats:topCategories', async (_event, limit: unknown = 5) => {
     try {
       const validatedLimit = validate(LimitSchema, limit);
       const result = await db
         .selectFrom('locs')
-        .select(['type', (eb) => eb.fn.count('locid').as('count')])
-        .where('type', 'is not', null)
-        .groupBy('type')
+        .select(['category', (eb) => eb.fn.count('locid').as('count')])
+        .where('category', 'is not', null)
+        .groupBy('category')
         .orderBy('count', 'desc')
-        .limit(validatedLimit)
+        .limit(validatedLimit ?? 5)
         .execute();
       return result;
     } catch (error) {
-      console.error('Error getting top types:', error);
+      console.error('Error getting top categories:', error);
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(message);
     }
   });
 
   /**
-   * Dashboard: Top types with hero thumbnail from a representative location
+   * Dashboard: Top categories with hero thumbnail from a representative location
    */
-  ipcMain.handle('stats:topTypesWithHero', async (_event, limit: unknown = 5) => {
+  ipcMain.handle('stats:topCategoriesWithHero', async (_event, limit: unknown = 5) => {
     try {
       const validatedLimit = validate(LimitSchema, limit);
-      // Get top types with count
-      const types = await db
+      // Get top categories with count
+      const categories = await db
         .selectFrom('locs')
-        .select(['type', (eb) => eb.fn.count('locid').as('count')])
-        .where('type', 'is not', null)
-        .groupBy('type')
+        .select(['category', (eb) => eb.fn.count('locid').as('count')])
+        .where('category', 'is not', null)
+        .groupBy('category')
         .orderBy('count', 'desc')
-        .limit(validatedLimit)
+        .limit(validatedLimit ?? 5)
         .execute();
 
-      // For each type, get a representative location's hero image
+      // For each category, get a representative location's hero image
       const results = await Promise.all(
-        types.map(async (t) => {
-          // Find a location with hero image for this type
+        categories.map(async (c) => {
+          // Find a location with hero image for this category
           const loc = await db
             .selectFrom('locs')
             .select(['locid', 'hero_imghash'])
-            .where('type', '=', t.type)
+            .where('category', '=', c.category)
             .where('hero_imghash', 'is not', null)
             .limit(1)
             .executeTakeFirst();
@@ -92,8 +92,8 @@ export function registerStatsHandlers(db: Kysely<Database>) {
           }
 
           return {
-            type: t.type,
-            count: Number(t.count),
+            category: c.category,
+            count: Number(c.count),
             heroThumbPath,
           };
         })
@@ -101,7 +101,7 @@ export function registerStatsHandlers(db: Kysely<Database>) {
 
       return results;
     } catch (error) {
-      console.error('Error getting top types with hero:', error);
+      console.error('Error getting top categories with hero:', error);
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(message);
     }
@@ -120,7 +120,7 @@ export function registerStatsHandlers(db: Kysely<Database>) {
         .where('address_state', 'is not', null)
         .groupBy('address_state')
         .orderBy('count', 'desc')
-        .limit(validatedLimit)
+        .limit(validatedLimit ?? 5)
         .execute();
 
       // For each state, get a representative location's hero image
@@ -229,7 +229,7 @@ export function registerStatsHandlers(db: Kysely<Database>) {
         .where('users.is_active', '=', 1)
         .groupBy(['users.user_id', 'users.username', 'users.display_name'])
         .orderBy('count', 'desc')
-        .limit(validatedLimit)
+        .limit(validatedLimit ?? 10)
         .execute();
 
       // Get top documenters
@@ -246,7 +246,7 @@ export function registerStatsHandlers(db: Kysely<Database>) {
         .where('users.is_active', '=', 1)
         .groupBy(['users.user_id', 'users.username', 'users.display_name'])
         .orderBy('count', 'desc')
-        .limit(validatedLimit)
+        .limit(validatedLimit ?? 10)
         .execute();
 
       // Get top media importers (by total media count)
@@ -263,7 +263,7 @@ export function registerStatsHandlers(db: Kysely<Database>) {
         .groupBy(['users.user_id', 'users.username', 'users.display_name'])
         .having((eb) => eb.fn.count('imgs.imghash'), '>', 0)
         .orderBy('count', 'desc')
-        .limit(validatedLimit)
+        .limit(validatedLimit ?? 10)
         .execute();
 
       return {

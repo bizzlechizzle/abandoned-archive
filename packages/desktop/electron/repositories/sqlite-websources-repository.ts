@@ -1,6 +1,10 @@
-import { Kysely, sql } from 'kysely';
+import { Kysely, sql, Selectable } from 'kysely';
 import { generateId } from '../main/ipc-validation';
 import type { Database, WebSourcesTable, WebSourceVersionsTable, WebSourceImagesTable, WebSourceVideosTable } from '../main/database.types';
+
+// Type aliases for selected rows (strips Generated<> wrapper)
+export type WebSourceImageRow = Selectable<WebSourceImagesTable>;
+export type WebSourceVideoRow = Selectable<WebSourceVideosTable>;
 import { calculateHashBuffer } from '../services/crypto-service';
 
 // =============================================================================
@@ -972,7 +976,7 @@ export class SQLiteWebSourcesRepository {
   /**
    * Get all images for a web source
    */
-  async findImages(sourceId: string): Promise<WebSourceImagesTable[]> {
+  async findImages(sourceId: string): Promise<WebSourceImageRow[]> {
     return await this.db
       .selectFrom('web_source_images')
       .selectAll()
@@ -984,7 +988,7 @@ export class SQLiteWebSourcesRepository {
   /**
    * Get all videos for a web source
    */
-  async findVideos(sourceId: string): Promise<WebSourceVideosTable[]> {
+  async findVideos(sourceId: string): Promise<WebSourceVideoRow[]> {
     return await this.db
       .selectFrom('web_source_videos')
       .selectAll()

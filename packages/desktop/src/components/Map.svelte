@@ -233,7 +233,7 @@
   interface MapLocation {
     locid: string;
     locnam: string;
-    type?: string;
+    category?: string;
     gps_lat: number;
     gps_lng: number;
     gps_accuracy?: number;
@@ -907,8 +907,8 @@
               ? `<div style="margin-top: 4px; padding: 6px 12px; background: #4A8C5E; color: white; border-radius: 4px; font-size: 11px; text-align: center;">Location Verified</div>`
               : '';
 
-          const typeHtml = popupMode === 'full'
-            ? `<span style="color: #666; font-size: 12px;">${escapeHtml(location.type) || 'Unknown Type'}</span><br/>`
+          const categoryHtml = popupMode === 'full'
+            ? `<span style="color: #666; font-size: 12px;">${escapeHtml(location.category) || 'Unknown Category'}</span><br/>`
             : '';
           const addressHtml = popupMode === 'full'
             ? `<span style="color: #888; font-size: 11px;">${city ? `${escapeHtml(city)}, ` : ''}${escapeHtml(state) || ''}</span><br/>`
@@ -917,7 +917,7 @@
           const popupContent = `
             <div class="location-popup" style="min-width: 180px;">
               <strong style="font-size: 14px;">${escapeHtml(location.locnam)}</strong><br/>
-              ${typeHtml}${addressHtml}<button data-location-id="${location.locid}" class="view-details-btn" style="margin-top: 8px; padding: 6px 12px; background: #1C1C1A; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">View Details</button>
+              ${categoryHtml}${addressHtml}<button data-location-id="${location.locid}" class="view-details-btn" style="margin-top: 8px; padding: 6px 12px; background: #1C1C1A; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">View Details</button>
               ${verifyButtonHtml}
             </div>
           `;
@@ -1028,8 +1028,8 @@
           ? `<div style="margin-top: 4px; padding: 6px 12px; background: #4A8C5E; color: white; border-radius: 4px; font-size: 11px; text-align: center;">Location Verified</div>`
           : '';
 
-      const typeHtml = popupMode === 'full'
-        ? `<span style="color: #666; font-size: 12px;">${escapeHtml(loc.type) || 'Unknown Type'}</span><br/>`
+      const categoryHtml = popupMode === 'full'
+        ? `<span style="color: #666; font-size: 12px;">${escapeHtml(loc.category) || 'Unknown Category'}</span><br/>`
         : '';
       const addressHtml = popupMode === 'full'
         ? `<span style="color: #888; font-size: 11px;">${city ? `${escapeHtml(city)}, ` : ''}${escapeHtml(state) || ''}</span><br/>`
@@ -1038,7 +1038,7 @@
       const popupContent = `
         <div class="location-popup" style="min-width: 180px;">
           <strong style="font-size: 14px;">${escapeHtml(loc.locnam)}</strong><br/>
-          ${typeHtml}${addressHtml}<button data-location-id="${loc.locid}" class="view-details-btn" style="margin-top: 8px; padding: 6px 12px; background: #1C1C1A; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">View Details</button>
+          ${categoryHtml}${addressHtml}<button data-location-id="${loc.locid}" class="view-details-btn" style="margin-top: 8px; padding: 6px 12px; background: #1C1C1A; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">View Details</button>
           ${verifyButtonHtml}
         </div>
       `;
@@ -1199,8 +1199,8 @@
             : '';
 
         // Build popup content based on popupMode
-        const typeHtml = popupMode === 'full'
-          ? `<span style="color: #666; font-size: 12px;">${escapeHtml(location.type) || 'Unknown Type'}</span><br/>`
+        const categoryHtml = popupMode === 'full'
+          ? `<span style="color: #666; font-size: 12px;">${escapeHtml(location.category) || 'Unknown Category'}</span><br/>`
           : '';
         const addressHtml = popupMode === 'full'
           ? `<span style="color: #888; font-size: 11px;">${city ? `${escapeHtml(city)}, ` : ''}${escapeHtml(state) || ''}</span><br/>`
@@ -1209,7 +1209,7 @@
         const popupContent = `
           <div class="location-popup" style="min-width: 180px;">
             <strong style="font-size: 14px;">${escapeHtml(location.locnam)}</strong><br/>
-            ${typeHtml}${addressHtml}<button
+            ${categoryHtml}${addressHtml}<button
               data-location-id="${location.locid}"
               class="view-details-btn"
               style="margin-top: 8px; padding: 6px 12px; background: #1C1C1A; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;"

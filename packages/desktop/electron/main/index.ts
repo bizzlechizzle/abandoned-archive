@@ -283,7 +283,7 @@ async function startupOrchestrator(): Promise<void> {
       }
     } catch (gpsCheckError) {
       // Non-fatal: log warning but continue startup
-      logger.warn('Main', 'GPS/address consistency check failed', gpsCheckError as Error);
+      logger.warn('Main', 'GPS/address consistency check failed', { message: (gpsCheckError as Error).message, stack: (gpsCheckError as Error).stack });
     }
 
     // Step 5: Register IPC handlers
@@ -302,7 +302,7 @@ async function startupOrchestrator(): Promise<void> {
       logger.info('Main', 'Bookmark API Server started successfully');
     } catch (error) {
       // Non-fatal: log warning but continue startup (research browser feature may not work)
-      logger.warn('Main', 'Failed to start Bookmark API Server', error as Error);
+      logger.warn('Main', 'Failed to start Bookmark API Server', { message: (error as Error).message, stack: (error as Error).stack });
     }
 
     // Step 5c: Start WebSocket Server for real-time extension updates
@@ -312,7 +312,7 @@ async function startupOrchestrator(): Promise<void> {
       logger.info('Main', 'WebSocket Server started successfully');
     } catch (error) {
       // Non-fatal: extension will work without real-time updates
-      logger.warn('Main', 'Failed to start WebSocket Server', error as Error);
+      logger.warn('Main', 'Failed to start WebSocket Server', { message: (error as Error).message, stack: (error as Error).stack });
     }
 
     // FIX 5.1: Step 6 - Auto backup on startup (if enabled)
@@ -329,7 +329,7 @@ async function startupOrchestrator(): Promise<void> {
         }
       } catch (backupError) {
         // Non-fatal: log warning but continue startup
-        logger.warn('Main', 'Failed to create startup backup', backupError as Error);
+        logger.warn('Main', 'Failed to create startup backup', { message: (backupError as Error).message, stack: (backupError as Error).stack });
       }
     } else {
       logger.info('Main', 'Step 6/7: Startup backup skipped (disabled in config)');

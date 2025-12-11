@@ -5,6 +5,7 @@
 import { ipcMain, dialog } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
+import { sql } from 'kysely';
 import { getDatabasePath, getDefaultDbPath, closeDatabase, getDatabase } from '../database';
 import {
   getCustomDatabasePath,
@@ -221,11 +222,11 @@ export function registerDatabaseHandlers() {
       const db = getDatabase();
       const scheduler = getBackupScheduler();
 
-      // Check database integrity
+      // Check database integrity using raw SQL
       let integrityOk = true;
       try {
-        const result = db.pragma('integrity_check') as Array<{ integrity_check: string }>;
-        integrityOk = result.length === 1 && result[0].integrity_check === 'ok';
+        const result = await sql<{ integrity_check: string }>`PRAGMA integrity_check`.execute(db);
+        integrityOk = result.rows.length === 1 && result.rows[0].integrity_check === 'ok';
       } catch {
         integrityOk = false;
       }

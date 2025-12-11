@@ -293,6 +293,7 @@ export class Finalizer {
             contribution_source: null,
             preview_quality: null,
             file_size_bytes: file.size,
+            extracted_from_web: 0,
           })
           .execute();
         return file.hash!;
@@ -337,6 +338,7 @@ export class Finalizer {
             contribution_source: null,
             file_size_bytes: file.size,
             srt_telemetry: null,
+            extracted_from_web: 0,
           })
           .execute();
         return file.hash!;
@@ -475,6 +477,7 @@ export class Finalizer {
       contribution_source: null,
       preview_quality: null,
       file_size_bytes: file.size,
+      extracted_from_web: 0,
     }));
 
     // Single batch insert
@@ -553,6 +556,7 @@ export class Finalizer {
       contribution_source: null,
       file_size_bytes: file.size,
       srt_telemetry: null,
+      extracted_from_web: 0,
     }));
 
     // Single batch insert

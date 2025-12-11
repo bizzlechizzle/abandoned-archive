@@ -91,11 +91,8 @@ describe('Finalizer', () => {
   let insertedJobs: any[] = [];
 
   const testLocation: LocationInfo = {
-    locid: 'test-loc-123',
-    loc12: 'ABC123',
+    locid: 'a1b2c3d4e5f67890', // 16-char BLAKE3 hex
     address_state: 'NY',
-    type: 'Factory',
-    slocnam: 'old-factory',
     subid: null,
   };
 

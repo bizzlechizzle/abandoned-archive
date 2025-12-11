@@ -201,7 +201,7 @@ function locationToBagLocation(loc: any): BagLocation {
   return {
     locid: loc.locid,
     locnam: loc.locnam,
-    type: loc.type,
+    category: loc.category,
     access: loc.access,
     address_state: loc.address_state,
     address_city: loc.address_city,

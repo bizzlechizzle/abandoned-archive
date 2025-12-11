@@ -116,6 +116,7 @@ const ArchiveCompleteOptionsSchema = z.object({
 });
 
 const VersionOptionsSchema = z.object({
+  archive_path: z.string(),
   screenshot_path: z.string().nullable().optional(),
   pdf_path: z.string().nullable().optional(),
   html_path: z.string().nullable().optional(),
@@ -390,7 +391,7 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
         const validatedId = SourceIdSchema.parse(source_id);
         const validatedComponentStatus = ComponentStatusSchema.parse(component_status) as ComponentStatus;
         const validatedPath = z.string().parse(archive_path);
-        return await webSourcesRepo.markPartial(validatedId, validatedComponentStatus, validatedPath);
+        return await webSourcesRepo.markPartial(validatedId, validatedComponentStatus, { archive_path: validatedPath });
       } catch (error) {
         console.error('Error marking web source as partial:', error);
         if (error instanceof z.ZodError) {

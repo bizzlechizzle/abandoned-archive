@@ -226,13 +226,16 @@ export class Logger {
               }
             }
 
-            return {
+            const entry: LogEntry = {
               timestamp,
               level: level as LogLevel,
               component,
               message,
-              context,
             };
+            if (context) {
+              entry.context = context;
+            }
+            return entry;
           } catch {
             return null;
           }

@@ -41,7 +41,7 @@
   let loading = $state(false); // OPT-038: Start false, set true only during actual fetch
   let showFilters = $state(false);
   let filterState = $state('');
-  let filterType = $state('');
+  let filterCategory = $state('');
   // Reference map layer toggle
   let showRefMapLayer = $state(false);
   let refMapPoints = $state<RefMapPoint[]>([]);
@@ -140,8 +140,8 @@
   let filteredLocations = $derived(() => {
     return locations.filter((loc) => {
       const matchesState = !filterState || loc.address_state === filterState;
-      const matchesType = !filterType || loc.type === filterType;
-      return matchesState && matchesType && isMappable(loc);
+      const matchesCategory = !filterCategory || loc.category === filterCategory;
+      return matchesState && matchesCategory && isMappable(loc);
     });
   });
 
@@ -152,9 +152,9 @@
   });
 
   // OPT-043: Updated to work with MapLocation type
-  let uniqueTypes = $derived(() => {
-    const types = new Set(locations.filter(isMappable).map(l => l.type).filter(Boolean));
-    return Array.from(types).sort();
+  let uniqueCategories = $derived(() => {
+    const categories = new Set(locations.filter(isMappable).map(l => l.category).filter(Boolean));
+    return Array.from(categories).sort();
   });
 
   /**
@@ -186,7 +186,7 @@
           locations = boundsLocations.map(loc => ({
             locid: loc.locid,
             locnam: loc.locnam,
-            type: loc.type,
+            category: loc.category,
             gps_lat: loc.gps?.lat ?? 0,
             gps_lng: loc.gps?.lng ?? 0,
             gps_accuracy: loc.gps?.accuracy,
@@ -287,7 +287,7 @@
       locations = allLocations.map(loc => ({
         locid: loc.locid,
         locnam: loc.locnam,
-        type: loc.type,
+        category: loc.category,
         gps_lat: loc.gps?.lat ?? 0,
         gps_lng: loc.gps?.lng ?? 0,
         gps_accuracy: loc.gps?.accuracy,
@@ -530,15 +530,15 @@
         </div>
 
         <div>
-          <label for="atlas-type" class="block text-xs font-medium text-braun-700 mb-1">Type</label>
+          <label for="atlas-category" class="block text-xs font-medium text-braun-700 mb-1">Category</label>
           <select
-            id="atlas-type"
-            bind:value={filterType}
+            id="atlas-category"
+            bind:value={filterCategory}
             class="w-full px-3 py-1.5 text-sm border border-braun-300 rounded focus:outline-none focus:border-braun-600"
           >
-            <option value="">All Types</option>
-            {#each uniqueTypes() as type}
-              <option value={type}>{type}</option>
+            <option value="">All Categories</option>
+            {#each uniqueCategories() as category}
+              <option value={category}>{category}</option>
             {/each}
           </select>
         </div>

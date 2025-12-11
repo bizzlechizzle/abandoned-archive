@@ -12,7 +12,7 @@ import { Blake3IdSchema } from '../ipc-validation';
 import fs from 'fs/promises';
 import path from 'path';
 import type { Kysely } from 'kysely';
-import type { Database } from '../database';
+import type { Database } from '../database.types';
 import { SQLiteMediaRepository } from '../../repositories/sqlite-media-repository';
 import { SQLiteImportRepository } from '../../repositories/sqlite-import-repository';
 import { SQLiteLocationRepository } from '../../repositories/sqlite-location-repository';
@@ -457,7 +457,7 @@ export function registerMediaImportHandlers(
                 locid: loc.locid,
                 locnam: loc.locnam,
                 address_state: loc.address?.state || null,
-                type: loc.type || null,
+                category: loc.category || null,
               }, mediaFiles);
               console.log(`[BagIt] Updated manifest for location: ${loc.locnam} (${mediaFiles.length} files)`);
             }
@@ -573,7 +573,7 @@ export function registerMediaImportHandlers(
                 locid: loc.locid,
                 locnam: loc.locnam,
                 address_state: loc.address?.state || null,
-                type: loc.type || null,
+                category: loc.category || null,
               }, mediaFiles);
               console.log(`[BagIt] Updated manifest for location: ${loc.locnam} (${mediaFiles.length} files)`);
             }

@@ -155,9 +155,10 @@ export class Copier {
     const dest = createWriteStream(tempPath, { highWaterMark: BUFFER_SIZE });
 
     // Hash bytes as they stream through
-    source.on('data', (chunk: Buffer) => {
-      hasher.update(chunk);
-      bytesCopied += chunk.length;
+    source.on('data', (chunk: Buffer | string) => {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      hasher.update(buf);
+      bytesCopied += buf.length;
     });
 
     // Use pipeline for proper backpressure handling

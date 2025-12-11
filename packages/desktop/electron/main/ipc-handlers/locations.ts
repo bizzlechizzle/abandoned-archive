@@ -11,7 +11,7 @@ import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
 import { Blake3IdSchema } from '../ipc-validation';
-import type { Database } from '../database';
+import type { Database } from '../database.types';
 import { SQLiteLocationRepository } from '../../repositories/sqlite-location-repository';
 import { SQLiteLocationAuthorsRepository } from '../../repositories/sqlite-location-authors-repository';
 import { SQLiteLocationViewsRepository } from '../../repositories/sqlite-location-views-repository';
@@ -92,7 +92,7 @@ export function registerLocationHandlers(db: Kysely<Database>) {
             await bagItService.initializeBag({
               locid: location.locid,
               locnam: location.locnam,
-              type: location.type || null,
+              category: location.category || null,
               access: null,
               address_state: location.address?.state || null,
               address_city: location.address?.city || null,
@@ -159,7 +159,7 @@ export function registerLocationHandlers(db: Kysely<Database>) {
             await bagItService.updateBagInfo({
               locid: location.locid,
               locnam: location.locnam,
-              type: location.type || null,
+              category: location.category || null,
               access: null,
               address_state: location.address?.state || null,
               address_city: location.address?.city || null,
@@ -535,21 +535,21 @@ export function registerLocationHandlers(db: Kysely<Database>) {
     }
   });
 
-  // Get distinct types for autocomplete
-  ipcMain.handle('location:getDistinctTypes', async () => {
+  // Get distinct categories for autocomplete
+  ipcMain.handle('location:getDistinctCategories', async () => {
     try {
-      const types = await db
+      const categories = await db
         .selectFrom('locs')
-        .select('type')
+        .select('category')
         .distinct()
-        .where('type', 'is not', null)
-        .where('type', '!=', '')
-        .orderBy('type')
+        .where('category', 'is not', null)
+        .where('category', '!=', '')
+        .orderBy('category')
         .execute();
 
-      return types.map(r => r.type).filter(Boolean) as string[];
+      return categories.map(r => r.category).filter(Boolean) as string[];
     } catch (error) {
-      console.error('Error getting distinct types:', error);
+      console.error('Error getting distinct categories:', error);
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(message);
     }
@@ -570,21 +570,21 @@ export function registerLocationHandlers(db: Kysely<Database>) {
     }
   });
 
-  // Get distinct sub-types for autocomplete
-  ipcMain.handle('location:getDistinctSubTypes', async () => {
+  // Get distinct classes for autocomplete
+  ipcMain.handle('location:getDistinctClasses', async () => {
     try {
-      const stypes = await db
+      const classes = await db
         .selectFrom('locs')
-        .select('stype')
+        .select('class')
         .distinct()
-        .where('stype', 'is not', null)
-        .where('stype', '!=', '')
-        .orderBy('stype')
+        .where('class', 'is not', null)
+        .where('class', '!=', '')
+        .orderBy('class')
         .execute();
 
-      return stypes.map(r => r.stype).filter(Boolean) as string[];
+      return classes.map(r => r.class).filter(Boolean) as string[];
     } catch (error) {
-      console.error('Error getting distinct sub-types:', error);
+      console.error('Error getting distinct classes:', error);
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(message);
     }

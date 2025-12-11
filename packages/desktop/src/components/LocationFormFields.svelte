@@ -8,7 +8,7 @@
   // Field names that can be shown
   export type FieldName =
     | 'name' | 'akaName' | 'shortName'
-    | 'state' | 'type' | 'subType'
+    | 'state' | 'category' | 'class'
     | 'documentation' | 'access' | 'historic'
     | 'street' | 'city' | 'county' | 'zipcode'
     | 'gps' | 'gpsSource' | 'gpsVerified'
@@ -21,8 +21,8 @@
     values: Record<string, any>;
     onValueChange: (field: string, value: any) => void;
     suggestions?: {
-      types?: string[];
-      subTypes?: string[];
+      categories?: string[];
+      classes?: string[];
       authors?: string[];
       cities?: string[];
       counties?: string[];
@@ -277,34 +277,34 @@
     </div>
   {/if}
 
-  <!-- Type Field -->
-  {#if showField('type')}
+  <!-- Category Field -->
+  {#if showField('category')}
     <div>
-      <label for="{idPrefix}-type" class="block text-sm font-medium text-braun-700 mb-1">
-        Type {#if isRequired('type')}<span class="text-red-500">*</span>{/if}
+      <label for="{idPrefix}-category" class="block text-sm font-medium text-braun-700 mb-1">
+        Category {#if isRequired('category')}<span class="text-red-500">*</span>{/if}
       </label>
       <AutocompleteInput
-        value={values.type || ''}
-        onchange={(val) => onValueChange('type', val)}
-        suggestions={suggestions.types || []}
-        id="{idPrefix}-type"
+        value={values.category || ''}
+        onchange={(val) => onValueChange('category', val)}
+        suggestions={suggestions.categories || []}
+        id="{idPrefix}-category"
         placeholder="e.g., Factory, Hospital, School"
         class={inputClass}
       />
     </div>
   {/if}
 
-  <!-- Sub-Type Field -->
-  {#if showField('subType')}
+  <!-- Class Field -->
+  {#if showField('class')}
     <div>
-      <label for="{idPrefix}-subtype" class="block text-sm font-medium text-braun-700 mb-1">
-        Sub-Type
+      <label for="{idPrefix}-class" class="block text-sm font-medium text-braun-700 mb-1">
+        Class
       </label>
       <AutocompleteInput
-        value={values.subType || ''}
-        onchange={(val) => onValueChange('subType', val)}
-        suggestions={suggestions.subTypes || []}
-        id="{idPrefix}-subtype"
+        value={values.class || ''}
+        onchange={(val) => onValueChange('class', val)}
+        suggestions={suggestions.classes || []}
+        id="{idPrefix}-class"
         placeholder="e.g., Textile Mill, Asylum"
         class={inputClass}
       />

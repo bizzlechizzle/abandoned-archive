@@ -109,7 +109,7 @@ export function registerHealthHandlers() {
   ipcMain.handle('health:runMaintenance', async () => {
     try {
       const maintenanceScheduler = getMaintenanceScheduler();
-      return await maintenanceScheduler.runFullMaintenance('manual');
+      return await maintenanceScheduler.runFullMaintenance();
     } catch (error) {
       console.error('Error running maintenance:', error);
       const message = error instanceof Error ? error.message : String(error);
@@ -120,7 +120,8 @@ export function registerHealthHandlers() {
   ipcMain.handle('health:getMaintenanceSchedule', async () => {
     try {
       const maintenanceScheduler = getMaintenanceScheduler();
-      return maintenanceScheduler.getSchedule();
+      // MaintenanceScheduler is manual-only, return basic status
+      return { mode: 'manual', enabled: true };
     } catch (error) {
       console.error('Error getting maintenance schedule:', error);
       const message = error instanceof Error ? error.message : String(error);
@@ -131,7 +132,8 @@ export function registerHealthHandlers() {
   ipcMain.handle('health:getRecoveryState', async () => {
     try {
       const recoverySystem = getRecoverySystem();
-      return recoverySystem.getState();
+      const needsRecovery = await recoverySystem.checkNeedsRecovery();
+      return { needsRecovery, status: needsRecovery ? 'needs_recovery' : 'healthy' };
     } catch (error) {
       console.error('Error getting recovery state:', error);
       const message = error instanceof Error ? error.message : String(error);
@@ -142,7 +144,7 @@ export function registerHealthHandlers() {
   ipcMain.handle('health:attemptRecovery', async () => {
     try {
       const recoverySystem = getRecoverySystem();
-      return await recoverySystem.attemptRecovery();
+      return await recoverySystem.offerRecovery();
     } catch (error) {
       console.error('Error attempting recovery:', error);
       const message = error instanceof Error ? error.message : String(error);

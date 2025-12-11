@@ -11,6 +11,7 @@ import { SQLiteMediaRepository } from '../../repositories/sqlite-media-repositor
 import { MediaPathService } from '../../services/media-path-service';
 import { ThumbnailService } from '../../services/thumbnail-service';
 import { CryptoService } from '../../services/crypto-service';
+import { createLocationInput } from './helpers/test-database';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -123,16 +124,17 @@ describe('Kanye7 Integration Test - Full Import Flow', () => {
     mediaRepo = new SQLiteMediaRepository(db);
 
     // Create test location - DW Winkleman
-    const location = await locationRepo.create({
+    const location = await locationRepo.create(createLocationInput({
       locnam: 'DW Winkleman Co Inc',
-      type: 'Industrial',
-      stype: 'Warehouse',
+      category: 'Industrial',
+      class: 'Warehouse',
       address: {
+        verified: false,
         city: 'Syracuse',
         state: 'NY'
       },
       documentation: 'Full Visit'
-    });
+    }));
     testLocationId = location.locid;
 
     console.log(`[Kanye7 Test] Created test location: ${location.locnam} (${testLocationId})`);
@@ -176,7 +178,14 @@ describe('Kanye7 Integration Test - Full Import Flow', () => {
         imgloco: sourcePath,
         locid: testLocationId,
         imgadd: new Date().toISOString(),
-        auth_imp: 'kanye7-test'
+        auth_imp: 'kanye7-test',
+        // Required columns from schema
+        preview_extracted: 0,
+        xmp_synced: 0,
+        hidden: 0,
+        is_live_photo: 0,
+        is_contributed: 0,
+        extracted_from_web: 0
       }).execute();
 
       imported++;
@@ -257,7 +266,7 @@ describe('Kanye7 Integration Test - Full Import Flow', () => {
     console.log('========================================');
     console.log(`Location: ${location?.locnam}`);
     console.log(`Location ID: ${testLocationId}`);
-    console.log(`Type: ${location?.type} / ${location?.stype}`);
+    console.log(`Category: ${location?.category} / ${location?.class}`);
     console.log(`Address: ${location?.address?.city}, ${location?.address?.state}`);
     console.log(`Images Imported: ${images.length}`);
     console.log(`Hero Image Set: ${location?.hero_imghash ? 'YES' : 'NO'}`);

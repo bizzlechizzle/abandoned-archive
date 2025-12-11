@@ -18,7 +18,7 @@ import { generateLocationId } from '../services/crypto-service';
 export interface MapLocation {
   locid: string;
   locnam: string;
-  type?: string;
+  category?: string;
   gps_lat: number;
   gps_lng: number;
   gps_accuracy?: number;
@@ -109,8 +109,8 @@ export class SQLiteLocationRepository implements LocationRepository {
         locnam: input.locnam,
         slocnam,
         akanam: input.akanam || null,
-        type: input.type || null,
-        stype: input.stype || null,
+        category: input.category || null,
+        class: input.class || null,
         gps_lat: input.gps?.lat || null,
         gps_lng: input.gps?.lng || null,
         gps_accuracy: input.gps?.accuracy || null,
@@ -155,7 +155,19 @@ export class SQLiteLocationRepository implements LocationRepository {
         status_changed_at: input.statusChangedAt || null,
         // DECISION-019: Information Box overhaul fields (historicalName removed)
         locnam_verified: input.locnamVerified ? 1 : 0,
+        historical_name_verified: 0,
         akanam_verified: input.akanamVerified ? 1 : 0,
+        // Hero image defaults (Kanye6)
+        hero_focal_x: 0.5,
+        hero_focal_y: 0.5,
+        // View tracking defaults (Migration 33)
+        view_count: 0,
+        // Media stats defaults
+        img_count: 0,
+        vid_count: 0,
+        doc_count: 0,
+        map_count: 0,
+        total_size_bytes: 0,
         sublocs: null,
         is_host_only: input.isHostOnly ? 1 : 0,
         locadd,
@@ -229,8 +241,8 @@ export class SQLiteLocationRepository implements LocationRepository {
       query = query.where('address_state', '=', filters.state);
     }
 
-    if (filters?.type) {
-      query = query.where('type', '=', filters.type);
+    if (filters?.category) {
+      query = query.where('category', '=', filters.category);
     }
 
     if (filters?.hasGPS) {
@@ -267,8 +279,8 @@ export class SQLiteLocationRepository implements LocationRepository {
       query = query.where('address_county', '=', filters.county);
     }
 
-    if (filters?.stype) {
-      query = query.where('stype', '=', filters.stype);
+    if (filters?.class) {
+      query = query.where('class', '=', filters.class);
     }
 
     if (filters?.access) {
@@ -310,8 +322,8 @@ export class SQLiteLocationRepository implements LocationRepository {
    */
   async getFilterOptions(): Promise<{
     states: string[];
-    types: string[];
-    stypes: string[];
+    categories: string[];
+    classes: string[];
     cities: string[];
     counties: string[];
     censusRegions: string[];
@@ -321,8 +333,8 @@ export class SQLiteLocationRepository implements LocationRepository {
     // Run all SELECT DISTINCT queries in parallel for maximum performance
     const [
       statesResult,
-      typesResult,
-      stypesResult,
+      categoriesResult,
+      classesResult,
       citiesResult,
       countiesResult,
       censusRegionsResult,
@@ -330,8 +342,8 @@ export class SQLiteLocationRepository implements LocationRepository {
       culturalRegionsResult,
     ] = await Promise.all([
       this.db.selectFrom('locs').select('address_state').distinct().where('address_state', 'is not', null).orderBy('address_state').execute(),
-      this.db.selectFrom('locs').select('type').distinct().where('type', 'is not', null).orderBy('type').execute(),
-      this.db.selectFrom('locs').select('stype').distinct().where('stype', 'is not', null).orderBy('stype').execute(),
+      this.db.selectFrom('locs').select('category').distinct().where('category', 'is not', null).orderBy('category').execute(),
+      this.db.selectFrom('locs').select('class').distinct().where('class', 'is not', null).orderBy('class').execute(),
       this.db.selectFrom('locs').select('address_city').distinct().where('address_city', 'is not', null).orderBy('address_city').execute(),
       this.db.selectFrom('locs').select('address_county').distinct().where('address_county', 'is not', null).orderBy('address_county').execute(),
       this.db.selectFrom('locs').select('census_region').distinct().where('census_region', 'is not', null).orderBy('census_region').execute(),
@@ -341,8 +353,8 @@ export class SQLiteLocationRepository implements LocationRepository {
 
     return {
       states: statesResult.map(r => r.address_state!).filter(Boolean),
-      types: typesResult.map(r => r.type!).filter(Boolean),
-      stypes: stypesResult.map(r => r.stype!).filter(Boolean),
+      categories: categoriesResult.map(r => r.category!).filter(Boolean),
+      classes: classesResult.map(r => r.class!).filter(Boolean),
       cities: citiesResult.map(r => r.address_city!).filter(Boolean),
       counties: countiesResult.map(r => r.address_county!).filter(Boolean),
       censusRegions: censusRegionsResult.map(r => r.census_region!).filter(Boolean),
@@ -373,8 +385,8 @@ export class SQLiteLocationRepository implements LocationRepository {
     if (input.locnam !== undefined) updates.locnam = input.locnam;
     if (input.slocnam !== undefined) updates.slocnam = input.slocnam;
     if (input.akanam !== undefined) updates.akanam = input.akanam;
-    if (input.type !== undefined) updates.type = input.type;
-    if (input.stype !== undefined) updates.stype = input.stype;
+    if (input.category !== undefined) updates.category = input.category;
+    if (input.class !== undefined) updates.class = input.class;
 
     if (input.gps !== undefined) {
       updates.gps_lat = input.gps.lat;
@@ -627,7 +639,7 @@ export class SQLiteLocationRepository implements LocationRepository {
       locid: id,
       locnam: location.locnam,
       state: location.address?.state,
-      type: location.type,
+      category: location.category,
       media_count: mediaHashes.length,
       video_proxies: proxyPaths.length,
       deleted_at: new Date().toISOString(),
@@ -720,8 +732,8 @@ export class SQLiteLocationRepository implements LocationRepository {
       query = query.where('address_state', '=', filters.state);
     }
 
-    if (filters?.type) {
-      query = query.where('type', '=', filters.type);
+    if (filters?.category) {
+      query = query.where('category', '=', filters.category);
     }
 
     if (filters?.hasGPS) {
@@ -755,8 +767,8 @@ export class SQLiteLocationRepository implements LocationRepository {
       query = query.where('address_county', '=', filters.county);
     }
 
-    if (filters?.stype) {
-      query = query.where('stype', '=', filters.stype);
+    if (filters?.class) {
+      query = query.where('class', '=', filters.class);
     }
 
     if (filters?.access) {
@@ -777,8 +789,8 @@ export class SQLiteLocationRepository implements LocationRepository {
       locnam: row.locnam,
       slocnam: row.slocnam ?? undefined,
       akanam: row.akanam ?? undefined,
-      type: row.type ?? undefined,
-      stype: row.stype ?? undefined,
+      category: row.category ?? undefined,
+      class: row.class ?? undefined,
       // GPS: Use explicit null check to handle coordinates at 0 (equator/prime meridian)
       gps:
         row.gps_lat !== null && row.gps_lat !== undefined &&
@@ -1066,7 +1078,7 @@ export class SQLiteLocationRepository implements LocationRepository {
   static readonly MAP_LOCATION_FIELDS = [
     'locid',
     'locnam',
-    'type',
+    'category',
     'gps_lat',
     'gps_lng',
     'gps_accuracy',
@@ -1098,7 +1110,7 @@ export class SQLiteLocationRepository implements LocationRepository {
       .select([
         'locid',
         'locnam',
-        'type',
+        'category',
         'gps_lat',
         'gps_lng',
         'gps_accuracy',
@@ -1133,7 +1145,7 @@ export class SQLiteLocationRepository implements LocationRepository {
     return rows.map((row) => ({
       locid: row.locid,
       locnam: row.locnam,
-      type: row.type ?? undefined,
+      category: row.category ?? undefined,
       gps_lat: row.gps_lat!,
       gps_lng: row.gps_lng!,
       gps_accuracy: row.gps_accuracy ?? undefined,

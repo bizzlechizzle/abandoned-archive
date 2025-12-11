@@ -70,13 +70,13 @@ describe('SQLiteMediaRepository - OPT-094 Subid Filtering', () => {
       mockQueryBuilder.execute.mockResolvedValue(mockImages);
 
       // Simulate the repository method logic
-      let query = mockQueryBuilder;
-      query = query.selectFrom('imgs');
-      query = query.selectAll();
-      query = query.where('locid', '=', locid);
+      let query: MockQueryBuilder = mockQueryBuilder;
+      query = query.selectFrom('imgs') as MockQueryBuilder;
+      query = query.selectAll() as MockQueryBuilder;
+      query = query.where('locid', '=', locid) as MockQueryBuilder;
       // No subid filter applied when options is undefined
-      query = query.orderBy('imgadd', 'desc');
-      const result = await query.execute();
+      query = query.orderBy('imgadd', 'desc') as MockQueryBuilder;
+      const result = await query.execute() as typeof mockImages;
 
       // Assert
       expect(result).toEqual(mockImages);
@@ -92,14 +92,14 @@ describe('SQLiteMediaRepository - OPT-094 Subid Filtering', () => {
       mockQueryBuilder.execute.mockResolvedValue(mockHostImages);
 
       // Simulate the repository method logic with subid: null
-      let query = mockQueryBuilder;
-      query = query.selectFrom('imgs');
-      query = query.selectAll();
-      query = query.where('locid', '=', locid);
+      let query: MockQueryBuilder = mockQueryBuilder;
+      query = query.selectFrom('imgs') as MockQueryBuilder;
+      query = query.selectAll() as MockQueryBuilder;
+      query = query.where('locid', '=', locid) as MockQueryBuilder;
       // subid: null should add WHERE subid IS NULL
-      query = query.where('subid', 'is', null);
-      query = query.orderBy('imgadd', 'desc');
-      const result = await query.execute();
+      query = query.where('subid', 'is', null) as MockQueryBuilder;
+      query = query.orderBy('imgadd', 'desc') as MockQueryBuilder;
+      const result = await query.execute() as typeof mockHostImages;
 
       // Assert
       expect(result).toEqual(mockHostImages);
@@ -117,14 +117,14 @@ describe('SQLiteMediaRepository - OPT-094 Subid Filtering', () => {
       mockQueryBuilder.execute.mockResolvedValue(mockSubImages);
 
       // Simulate the repository method logic with subid: 'uuid'
-      let query = mockQueryBuilder;
-      query = query.selectFrom('imgs');
-      query = query.selectAll();
-      query = query.where('locid', '=', locid);
+      let query: MockQueryBuilder = mockQueryBuilder;
+      query = query.selectFrom('imgs') as MockQueryBuilder;
+      query = query.selectAll() as MockQueryBuilder;
+      query = query.where('locid', '=', locid) as MockQueryBuilder;
       // subid: 'uuid' should add WHERE subid = 'uuid'
-      query = query.where('subid', '=', subid);
-      query = query.orderBy('imgadd', 'desc');
-      const result = await query.execute();
+      query = query.where('subid', '=', subid) as MockQueryBuilder;
+      query = query.orderBy('imgadd', 'desc') as MockQueryBuilder;
+      const result = await query.execute() as typeof mockSubImages;
 
       // Assert
       expect(result).toEqual(mockSubImages);
@@ -190,13 +190,13 @@ describe('SQLiteMediaRepository - OPT-094 Subid Filtering', () => {
       const mockVideos = [{ vidhash: 'vid1', subid: null }];
       mockQueryBuilder.execute.mockResolvedValue(mockVideos);
 
-      let query = mockQueryBuilder;
-      query = query.selectFrom('vids');
-      query = query.selectAll();
-      query = query.where('locid', '=', locid);
-      query = query.where('subid', 'is', null);
-      query = query.orderBy('vidadd', 'desc');
-      const result = await query.execute();
+      let query: MockQueryBuilder = mockQueryBuilder;
+      query = query.selectFrom('vids') as MockQueryBuilder;
+      query = query.selectAll() as MockQueryBuilder;
+      query = query.where('locid', '=', locid) as MockQueryBuilder;
+      query = query.where('subid', 'is', null) as MockQueryBuilder;
+      query = query.orderBy('vidadd', 'desc') as MockQueryBuilder;
+      const result = await query.execute() as typeof mockVideos;
 
       expect(result).toEqual(mockVideos);
     });
@@ -208,13 +208,13 @@ describe('SQLiteMediaRepository - OPT-094 Subid Filtering', () => {
       const mockDocs = [{ dochash: 'doc1', subid: null }];
       mockQueryBuilder.execute.mockResolvedValue(mockDocs);
 
-      let query = mockQueryBuilder;
-      query = query.selectFrom('docs');
-      query = query.selectAll();
-      query = query.where('locid', '=', locid);
-      query = query.where('subid', 'is', null);
-      query = query.orderBy('docadd', 'desc');
-      const result = await query.execute();
+      let query: MockQueryBuilder = mockQueryBuilder;
+      query = query.selectFrom('docs') as MockQueryBuilder;
+      query = query.selectAll() as MockQueryBuilder;
+      query = query.where('locid', '=', locid) as MockQueryBuilder;
+      query = query.where('subid', 'is', null) as MockQueryBuilder;
+      query = query.orderBy('docadd', 'desc') as MockQueryBuilder;
+      const result = await query.execute() as typeof mockDocs;
 
       expect(result).toEqual(mockDocs);
     });
@@ -252,12 +252,12 @@ describe('SQLiteMediaRepository - OPT-094 Subid Filtering', () => {
       const mockImages = [{ imghash: 'img1', imgloc: '/path/to/img', preview_path: null }];
       mockQueryBuilder.execute.mockResolvedValue(mockImages);
 
-      let query = mockQueryBuilder;
-      query = query.selectFrom('imgs');
-      query = query.select(['imghash', 'imgloc', 'preview_path']);
-      query = query.where('locid', '=', locid);
-      query = query.where('subid', 'is', null);
-      const result = await query.execute();
+      let query: MockQueryBuilder = mockQueryBuilder;
+      query = query.selectFrom('imgs') as MockQueryBuilder;
+      query = query.select(['imghash', 'imgloc', 'preview_path']) as MockQueryBuilder;
+      query = query.where('locid', '=', locid) as MockQueryBuilder;
+      query = query.where('subid', 'is', null) as MockQueryBuilder;
+      const result = await query.execute() as typeof mockImages;
 
       expect(result).toEqual(mockImages);
     });
@@ -269,12 +269,12 @@ describe('SQLiteMediaRepository - OPT-094 Subid Filtering', () => {
       const mockVideos = [{ vidhash: 'vid1', vidloc: '/path/to/vid' }];
       mockQueryBuilder.execute.mockResolvedValue(mockVideos);
 
-      let query = mockQueryBuilder;
-      query = query.selectFrom('vids');
-      query = query.select(['vidhash', 'vidloc']);
-      query = query.where('locid', '=', locid);
-      query = query.where('subid', 'is', null);
-      const result = await query.execute();
+      let query: MockQueryBuilder = mockQueryBuilder;
+      query = query.selectFrom('vids') as MockQueryBuilder;
+      query = query.select(['vidhash', 'vidloc']) as MockQueryBuilder;
+      query = query.where('locid', '=', locid) as MockQueryBuilder;
+      query = query.where('subid', 'is', null) as MockQueryBuilder;
+      const result = await query.execute() as typeof mockVideos;
 
       expect(result).toEqual(mockVideos);
     });
@@ -286,12 +286,12 @@ describe('SQLiteMediaRepository - OPT-094 Subid Filtering', () => {
       const mockFiles = [{ imghash: 'img1', imgnamo: 'IMG_1234.HEIC' }];
       mockQueryBuilder.execute.mockResolvedValue(mockFiles);
 
-      let query = mockQueryBuilder;
-      query = query.selectFrom('imgs');
-      query = query.select(['imghash', 'imgnamo']);
-      query = query.where('locid', '=', locid);
-      query = query.where('subid', 'is', null);
-      const result = await query.execute();
+      let query: MockQueryBuilder = mockQueryBuilder;
+      query = query.selectFrom('imgs') as MockQueryBuilder;
+      query = query.select(['imghash', 'imgnamo']) as MockQueryBuilder;
+      query = query.where('locid', '=', locid) as MockQueryBuilder;
+      query = query.where('subid', 'is', null) as MockQueryBuilder;
+      const result = await query.execute() as typeof mockFiles;
 
       expect(result).toEqual(mockFiles);
     });
@@ -303,12 +303,12 @@ describe('SQLiteMediaRepository - OPT-094 Subid Filtering', () => {
       const mockFiles = [{ vidhash: 'vid1', vidnamo: 'IMG_1234.MOV' }];
       mockQueryBuilder.execute.mockResolvedValue(mockFiles);
 
-      let query = mockQueryBuilder;
-      query = query.selectFrom('vids');
-      query = query.select(['vidhash', 'vidnamo']);
-      query = query.where('locid', '=', locid);
-      query = query.where('subid', 'is', null);
-      const result = await query.execute();
+      let query: MockQueryBuilder = mockQueryBuilder;
+      query = query.selectFrom('vids') as MockQueryBuilder;
+      query = query.select(['vidhash', 'vidnamo']) as MockQueryBuilder;
+      query = query.where('locid', '=', locid) as MockQueryBuilder;
+      query = query.where('subid', 'is', null) as MockQueryBuilder;
+      const result = await query.execute() as typeof mockFiles;
 
       expect(result).toEqual(mockFiles);
     });

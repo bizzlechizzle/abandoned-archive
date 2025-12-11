@@ -10,8 +10,8 @@
   let totalCount = $state(0);
   let searchQuery = $state('');
   let filterState = $state('');
-  let filterType = $state('');
-  let filterStype = $state('');
+  let filterCategory = $state('');
+  let filterClass = $state('');
   let filterCondition = $state('');
   let filterStatus = $state('');
   let filterCity = $state('');
@@ -34,8 +34,8 @@
   // OPT-036: Filter options loaded via efficient SELECT DISTINCT (not from full location array)
   let filterOptions = $state<{
     states: string[];
-    types: string[];
-    stypes: string[];
+    categories: string[];
+    classes: string[];
     cities: string[];
     counties: string[];
     censusRegions: string[];
@@ -43,8 +43,8 @@
     culturalRegions: string[];
   }>({
     states: [],
-    types: [],
-    stypes: [],
+    categories: [],
+    classes: [],
     cities: [],
     counties: [],
     censusRegions: [],
@@ -103,8 +103,8 @@
     // Apply URL query params to filters
     if (q.filter) specialFilter = q.filter;
     if (q.state) filterState = q.state;
-    if (q.type) filterType = q.type;
-    if (q.stype) filterStype = q.stype;
+    if (q.category) filterCategory = q.category;
+    if (q.class) filterClass = q.class;
     if (q.condition) filterCondition = q.condition;
     if (q.status) filterStatus = q.status;
     if (q.city) filterCity = q.city;
@@ -129,7 +129,7 @@
 
     // Count active filters
     activeFilterCount = [
-      filterState, filterType, filterStype, filterCondition, filterStatus,
+      filterState, filterCategory, filterClass, filterCondition, filterStatus,
       filterCity, filterCounty, filterDocumentation, filterAccess, filterAuthor,
       filterAuthorId, filterCensusRegion, filterCensusDivision, filterCulturalRegion,
       filterStateDirection, specialFilter
@@ -171,8 +171,8 @@
       const filters: Record<string, any> = {};
 
       if (filterState) filters.state = filterState;
-      if (filterType) filters.type = filterType;
-      if (filterStype) filters.stype = filterStype;
+      if (filterCategory) filters.category = filterCategory;
+      if (filterClass) filters.class = filterClass;
       if (filterCounty) filters.county = filterCounty;
       if (filterAccess) filters.access = filterAccess;
       if (searchQuery) filters.search = searchQuery;
@@ -233,7 +233,7 @@
 
   // OPT-036: Use memoized filter options instead of computing from locations
   let uniqueStates = $derived(() => filterOptions.states);
-  let uniqueTypes = $derived(() => filterOptions.types);
+  let uniqueCategories = $derived(() => filterOptions.categories);
   let uniqueCensusRegions = $derived(() => filterOptions.censusRegions);
   let uniqueCensusDivisions = $derived(() => filterOptions.censusDivisions);
   let uniqueCulturalRegions = $derived(() => filterOptions.culturalRegions);
@@ -241,8 +241,8 @@
   function clearAllFilters() {
     specialFilter = '';
     filterState = '';
-    filterType = '';
-    filterStype = '';
+    filterCategory = '';
+    filterClass = '';
     filterCondition = '';
     filterStatus = '';
     filterCity = '';
@@ -268,8 +268,8 @@
     switch (filterName) {
       case 'filter': specialFilter = ''; break;
       case 'state': filterState = ''; break;
-      case 'type': filterType = ''; break;
-      case 'stype': filterStype = ''; break;
+      case 'category': filterCategory = ''; break;
+      case 'class': filterClass = ''; break;
       case 'condition': filterCondition = ''; break;
       case 'status': filterStatus = ''; break;
       case 'city': filterCity = ''; break;
@@ -288,8 +288,8 @@
     const newQuery: Record<string, string> = {};
     if (specialFilter) newQuery.filter = specialFilter;
     if (filterState) newQuery.state = filterState;
-    if (filterType) newQuery.type = filterType;
-    if (filterStype) newQuery.stype = filterStype;
+    if (filterCategory) newQuery.category = filterCategory;
+    if (filterClass) newQuery.class = filterClass;
     if (filterCondition) newQuery.condition = filterCondition;
     if (filterStatus) newQuery.status = filterStatus;
     if (filterCity) newQuery.city = filterCity;
@@ -313,8 +313,8 @@
     const filters: Array<{ key: string; label: string; value: string }> = [];
     if (specialFilter) filters.push({ key: 'filter', label: 'Filter', value: specialFilter });
     if (filterState) filters.push({ key: 'state', label: 'State', value: filterState });
-    if (filterType) filters.push({ key: 'type', label: 'Type', value: filterType });
-    if (filterStype) filters.push({ key: 'stype', label: 'Sub-Type', value: filterStype });
+    if (filterCategory) filters.push({ key: 'category', label: 'Category', value: filterCategory });
+    if (filterClass) filters.push({ key: 'class', label: 'Class', value: filterClass });
     if (filterCondition) filters.push({ key: 'condition', label: 'Condition', value: filterCondition });
     if (filterStatus) filters.push({ key: 'status', label: 'Status', value: filterStatus });
     if (filterCity) filters.push({ key: 'city', label: 'City', value: filterCity });
@@ -423,16 +423,16 @@
       </div>
 
       <div>
-        <label for="type" class="form-label">Type</label>
+        <label for="category" class="form-label">Category</label>
         <select
-          id="type"
-          bind:value={filterType}
+          id="category"
+          bind:value={filterCategory}
           onchange={handleFilterChange}
           class="w-full px-4 py-3 bg-white border border-braun-400 rounded text-sm text-braun-900 focus:outline-none focus:border-braun-600 transition-colors"
         >
-          <option value="">All Types</option>
-          {#each uniqueTypes() as type}
-            <option value={type}>{type}</option>
+          <option value="">All Categories</option>
+          {#each uniqueCategories() as category}
+            <option value={category}>{category}</option>
           {/each}
         </select>
       </div>
@@ -495,7 +495,7 @@
       <!-- Header skeleton -->
       <div class="grid grid-cols-[1fr_150px_200px_80px] bg-braun-50 border-b border-braun-300">
         <div class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-braun-500">Name</div>
-        <div class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-braun-500">Type</div>
+        <div class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-braun-500">Category</div>
         <div class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-braun-500">Location</div>
         <div class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-braun-500">GPS</div>
       </div>
@@ -511,7 +511,7 @@
           Name
         </div>
         <div class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-braun-500">
-          Type
+          Category
         </div>
         <div class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-braun-500">
           Location
@@ -544,7 +544,7 @@
                 {/if}
               </div>
               <div class="px-6 py-4 flex items-center text-sm text-braun-600 truncate">
-                {location.type || '-'}
+                {location.category || '-'}
               </div>
               <div class="px-6 py-4 flex items-center text-sm text-braun-600 truncate">
                 {#if location.address?.city && location.address?.state}

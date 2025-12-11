@@ -3,7 +3,7 @@
   import { type Location, LocationEntity } from '@au-archive/core';
   import AutocompleteInput from './AutocompleteInput.svelte';
   import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
-  import { getTypeForSubtype } from '../lib/type-hierarchy';
+  import { getCategoryForClass } from '../lib/type-hierarchy';
   import { importProgress as storeImportProgress, isImporting as storeIsImporting, importStore } from '../stores/import-store';
 
   interface Props {
@@ -78,15 +78,15 @@
   let isPrimarySubLocation = $state(false);
 
   // Classification
-  let newType = $state('');
-  let newSubType = $state('');
+  let newCategory = $state('');
+  let newClass = $state('');
 
-  // Auto-fill type when user enters a known sub-type
+  // Auto-fill category when user enters a known class
   $effect(() => {
-    if (newSubType && !newType) {
-      const matchedType = getTypeForSubtype(newSubType);
-      if (matchedType) {
-        newType = matchedType;
+    if (newClass && !newCategory) {
+      const matchedCategory = getCategoryForClass(newClass);
+      if (matchedCategory) {
+        newCategory = matchedCategory;
       }
     }
   });
@@ -118,20 +118,20 @@
   });
 
   // Autocomplete suggestions derived from existing locations
-  function getTypeSuggestions(): string[] {
-    const types = new Set<string>();
+  function getCategorySuggestions(): string[] {
+    const categories = new Set<string>();
     locations.forEach(loc => {
-      if (loc.type) types.add(loc.type);
+      if (loc.category) categories.add(loc.category);
     });
-    return Array.from(types).sort();
+    return Array.from(categories).sort();
   }
 
-  function getSubtypeSuggestions(): string[] {
-    const subtypes = new Set<string>();
+  function getClassSuggestions(): string[] {
+    const classes = new Set<string>();
     locations.forEach(loc => {
-      if (loc.stype) subtypes.add(loc.stype);
+      if (loc.class) classes.add(loc.class);
     });
-    return Array.from(subtypes).sort();
+    return Array.from(classes).sort();
   }
 
   function getCitySuggestions(): string[] {
@@ -245,8 +245,8 @@
       locnam: newLocName.trim(),
       slocnam: newShortName.trim() || undefined,
       akanam: newAkaName.trim() || undefined,
-      type: newType.trim() || undefined,
-      stype: newSubType.trim() || undefined,
+      category: newCategory.trim() || undefined,
+      class: newClass.trim() || undefined,
       documentation: newDocumentation || undefined,
       access: newAccess || undefined,
       historic: newHistoric,
@@ -367,7 +367,7 @@
                 {location.locnam}
                 {location.address?.city ? `, ${location.address.city}` : ''}
                 {location.address?.state ? ` (${location.address.state})` : ''}
-                {location.type ? ` - ${location.type}` : ''}
+                {location.category ? ` - ${location.category}` : ''}
               </option>
             {/each}
           </select>
@@ -504,28 +504,28 @@
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label for="new-type" class="block text-sm font-medium text-braun-700 mb-1">
-                Type
+              <label for="new-category" class="block text-sm font-medium text-braun-700 mb-1">
+                Category
               </label>
               <AutocompleteInput
-                bind:value={newType}
-                onchange={(val) => newType = val}
-                suggestions={getTypeSuggestions()}
-                id="new-type"
+                bind:value={newCategory}
+                onchange={(val) => newCategory = val}
+                suggestions={getCategorySuggestions()}
+                id="new-category"
                 placeholder="Hospital, Factory, School, Church..."
                 class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
               />
             </div>
 
             <div>
-              <label for="new-subtype" class="block text-sm font-medium text-braun-700 mb-1">
-                Sub-Type
+              <label for="new-class" class="block text-sm font-medium text-braun-700 mb-1">
+                Class
               </label>
               <AutocompleteInput
-                bind:value={newSubType}
-                onchange={(val) => newSubType = val}
-                suggestions={getSubtypeSuggestions()}
-                id="new-subtype"
+                bind:value={newClass}
+                onchange={(val) => newClass = val}
+                suggestions={getClassSuggestions()}
+                id="new-class"
                 placeholder="Psychiatric, Textile Mill, Sanatorium..."
                 class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
               />

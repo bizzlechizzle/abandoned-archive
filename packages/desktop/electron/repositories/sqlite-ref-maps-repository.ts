@@ -145,7 +145,9 @@ export class SqliteRefMapsRepository {
           state: point.state,
           category: point.category,
           rawMetadata: point.rawMetadata,
-          akaNames: null
+          akaNames: null,
+          linkedLocid: null,
+          linkedAt: null
         });
       }
     });

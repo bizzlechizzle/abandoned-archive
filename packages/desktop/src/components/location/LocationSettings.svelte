@@ -7,7 +7,7 @@
   import type { Location } from '@au-archive/core';
   import { router } from '../../stores/router';
   import AutocompleteInput from '../AutocompleteInput.svelte';
-  import { getTypeForSubtype } from '../../lib/type-hierarchy';
+  import { getCategoryForClass } from '../../lib/type-hierarchy';
 
   interface Props {
     location: Location;
@@ -23,13 +23,13 @@
   let fixingVideos = $state(false);
   let fixMessage = $state('');
 
-  // Edit Type modal state
-  let showEditType = $state(false);
-  let editType = $state('');
-  let editSubType = $state('');
-  let savingType = $state(false);
-  let typeSuggestions = $state<string[]>([]);
-  let subTypeSuggestions = $state<string[]>([]);
+  // Edit Category modal state
+  let showEditCategory = $state(false);
+  let editCategory = $state('');
+  let editClass = $state('');
+  let savingCategory = $state(false);
+  let categorySuggestions = $state<string[]>([]);
+  let classSuggestions = $state<string[]>([]);
 
   // Edit Name modal state
   let showEditName = $state(false);
@@ -44,7 +44,7 @@
 
   // Load suggestions when opened
   $effect(() => {
-    if (isOpen && typeSuggestions.length === 0) {
+    if (isOpen && categorySuggestions.length === 0) {
       loadSuggestions();
     }
   });
@@ -52,14 +52,14 @@
   async function loadSuggestions() {
     try {
       const locations = await window.electronAPI?.locations?.findAll() || [];
-      const types = new Set<string>();
-      const subTypes = new Set<string>();
+      const categories = new Set<string>();
+      const classes = new Set<string>();
       locations.forEach((loc: Location) => {
-        if (loc.type) types.add(loc.type);
-        if (loc.stype) subTypes.add(loc.stype);
+        if (loc.category) categories.add(loc.category);
+        if (loc.class) classes.add(loc.class);
       });
-      typeSuggestions = Array.from(types).sort();
-      subTypeSuggestions = Array.from(subTypes).sort();
+      categorySuggestions = Array.from(categories).sort();
+      classSuggestions = Array.from(classes).sort();
     } catch (err) {
       console.warn('[LocationSettings] Failed to load suggestions:', err);
     }
@@ -129,41 +129,41 @@
     }
   }
 
-  // Open Edit Type modal
-  function openEditType() {
-    editType = location.type || '';
-    editSubType = location.stype || '';
-    showEditType = true;
+  // Open Edit Category modal
+  function openEditCategory() {
+    editCategory = location.category || '';
+    editClass = location.class || '';
+    showEditCategory = true;
   }
 
-  // Auto-fill type when sub-type changes
-  function handleSubTypeChange(value: string) {
-    editSubType = value;
-    if (value && !editType) {
-      const matchedType = getTypeForSubtype(value);
-      if (matchedType) {
-        editType = matchedType;
+  // Auto-fill category when class changes
+  function handleClassChange(value: string) {
+    editClass = value;
+    if (value && !editCategory) {
+      const matchedCategory = getCategoryForClass(value);
+      if (matchedCategory) {
+        editCategory = matchedCategory;
       }
     }
   }
 
-  // Save type changes
-  async function saveType() {
+  // Save category changes
+  async function saveCategory() {
     if (!window.electronAPI?.locations?.update) return;
 
     try {
-      savingType = true;
+      savingCategory = true;
       await window.electronAPI.locations.update(location.locid, {
-        type: editType || undefined,
-        stype: editSubType || undefined,
+        category: editCategory || undefined,
+        class: editClass || undefined,
       });
-      showEditType = false;
+      showEditCategory = false;
       onLocationUpdated?.();
     } catch (err) {
-      console.error('Save type failed:', err);
-      alert('Failed to save type');
+      console.error('Save category failed:', err);
+      alert('Failed to save category');
     } finally {
-      savingType = false;
+      savingCategory = false;
     }
   }
 
@@ -298,10 +298,10 @@
         <p class="text-xs font-semibold text-braun-400 uppercase mb-2">Edit Location</p>
         <div class="flex flex-wrap items-center gap-2">
           <button
-            onclick={openEditType}
+            onclick={openEditCategory}
             class="px-3 py-1 text-sm bg-braun-600 text-white rounded hover:bg-braun-500 transition"
           >
-            Edit Type
+            Edit Category
           </button>
           <button
             onclick={openEditName}
@@ -328,13 +328,13 @@
   {/if}
 </div>
 
-<!-- Edit Type Modal -->
-{#if showEditType}
-<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onclick={() => showEditType = false}>
+<!-- Edit Category Modal -->
+{#if showEditCategory}
+<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onclick={() => showEditCategory = false}>
   <div class="bg-white rounded border border-braun-300 p-6 w-full max-w-md mx-4" onclick={(e) => e.stopPropagation()}>
     <div class="flex justify-between items-center mb-4">
-      <h3 class="text-lg font-semibold">Edit Type</h3>
-      <button onclick={() => showEditType = false} class="text-braun-400 hover:text-braun-600">
+      <h3 class="text-lg font-semibold">Edit Category</h3>
+      <button onclick={() => showEditCategory = false} class="text-braun-400 hover:text-braun-600">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
         </svg>
@@ -342,22 +342,22 @@
     </div>
     <div class="space-y-4">
       <div>
-        <label for="edit-type" class="block text-sm font-medium text-braun-700 mb-1">Type</label>
+        <label for="edit-category" class="block text-sm font-medium text-braun-700 mb-1">Category</label>
         <AutocompleteInput
-          bind:value={editType}
-          suggestions={typeSuggestions}
-          id="edit-type"
+          bind:value={editCategory}
+          suggestions={categorySuggestions}
+          id="edit-category"
           placeholder="e.g., Industrial, Medical..."
           class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
         />
       </div>
       <div>
-        <label for="edit-subtype" class="block text-sm font-medium text-braun-700 mb-1">Sub-Type</label>
+        <label for="edit-class" class="block text-sm font-medium text-braun-700 mb-1">Class</label>
         <AutocompleteInput
-          bind:value={editSubType}
-          onchange={handleSubTypeChange}
-          suggestions={subTypeSuggestions}
-          id="edit-subtype"
+          bind:value={editClass}
+          onchange={handleClassChange}
+          suggestions={classSuggestions}
+          id="edit-class"
           placeholder="e.g., Factory, Hospital..."
           class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
         />
@@ -365,17 +365,17 @@
     </div>
     <div class="flex justify-end gap-3 mt-6">
       <button
-        onclick={() => showEditType = false}
+        onclick={() => showEditCategory = false}
         class="px-4 py-2 bg-braun-200 text-braun-700 rounded hover:bg-braun-300 transition"
       >
         Cancel
       </button>
       <button
-        onclick={saveType}
-        disabled={savingType}
+        onclick={saveCategory}
+        disabled={savingCategory}
         class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
       >
-        {savingType ? 'Saving...' : 'Save'}
+        {savingCategory ? 'Saving...' : 'Save'}
       </button>
     </div>
   </div>

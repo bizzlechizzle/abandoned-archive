@@ -7,7 +7,7 @@
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
-import type { Database } from '../database';
+import type { Database } from '../database.types';
 import { SQLiteProjectsRepository } from '../../repositories/sqlite-projects-repository';
 import { validate, LimitSchema, Blake3IdSchema, ProjectIdSchema } from '../ipc-validation';
 

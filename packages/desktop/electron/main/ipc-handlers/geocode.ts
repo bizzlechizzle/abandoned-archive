@@ -6,7 +6,7 @@
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
-import type { Database } from '../database';
+import type { Database } from '../database.types';
 import { GeocodingService } from '../../services/geocoding-service';
 import { AddressService, type NormalizedAddress } from '../../services/address-service';
 

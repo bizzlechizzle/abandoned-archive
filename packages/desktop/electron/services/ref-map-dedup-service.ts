@@ -17,6 +17,7 @@
 
 import type { Kysely } from 'kysely';
 import type { Database } from '../main/database.types';
+import { generateId } from '../main/ipc-validation';
 import { normalizedSimilarity, normalizeName, isSmartMatch, getAdjustedThreshold } from './jaro-winkler-service';
 import { haversineDistance } from './geo-utils';
 import { DUPLICATE_CONFIG } from '../../src/lib/constants';
@@ -43,7 +44,7 @@ function normalizeState(state: string | null | undefined): string | null {
 /**
  * Types for import preview and deduplication
  */
-export type MatchConfidence = 'gps' | 'name_gps' | 'name_state' | 'exact_name';
+export type MatchConfidence = 'gps' | 'name_gps' | 'name_state' | 'exact_name' | 'name_only';
 
 export interface DuplicateMatch {
   type: 'catalogued' | 'reference';
