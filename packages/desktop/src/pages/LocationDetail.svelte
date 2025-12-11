@@ -22,6 +22,7 @@
     type GpsWarning, type FailedFile
   } from '../components/location';
   import type { Location, LocationInput } from '@au-archive/core';
+  import { ACCESS_OPTIONS } from '../constants/location-enums';
 
   interface Props {
     locationId: string;
@@ -76,6 +77,18 @@
   let isDragging = $state(false);
   let verifyingGps = $state(false);
   let togglingFavorite = $state(false);
+
+  // Verify Location modal state (one-off modal for new imports)
+  let showVerifyModal = $state(false);
+  let verifyForm = $state({
+    locnam: '',
+    type: '',
+    stype: '',
+    access: '',
+  });
+  let verifyTypeOptions = $state<string[]>([]);
+  let verifyStypeOptions = $state<string[]>([]);
+  let savingVerify = $state(false);
 
   // Derived: Are we viewing a sub-location?
   const isViewingSubLocation = $derived(!!subId && !!currentSubLocation);
@@ -398,6 +411,49 @@
     } catch (err) {
       console.error('Error saving sub-location:', err);
       throw err;
+    }
+  }
+
+  // Verify Location modal handlers
+  async function openVerifyModal() {
+    if (!location) return;
+    // Populate form with current values
+    verifyForm = {
+      locnam: location.locnam || '',
+      type: location.type || '',
+      stype: location.stype || '',
+      access: location.access || '',
+    };
+    // Load type/stype options
+    try {
+      const [types, stypes] = await Promise.all([
+        window.electronAPI?.locations?.getDistinctTypes?.() || [],
+        window.electronAPI?.locations?.getDistinctSubTypes?.() || [],
+      ]);
+      verifyTypeOptions = types;
+      verifyStypeOptions = stypes;
+    } catch (err) {
+      console.error('Error loading type options:', err);
+    }
+    showVerifyModal = true;
+  }
+
+  async function handleVerifySave() {
+    if (!location || savingVerify) return;
+    savingVerify = true;
+    try {
+      await window.electronAPI.locations.update(location.locid, {
+        locnam: verifyForm.locnam,
+        type: verifyForm.type || undefined,
+        stype: verifyForm.stype || undefined,
+        access: verifyForm.access || undefined,
+      });
+      await loadLocation();
+      showVerifyModal = false;
+    } catch (err) {
+      console.error('Error saving verification:', err);
+    } finally {
+      savingVerify = false;
     }
   }
 
@@ -1006,7 +1062,7 @@
                 {#if location.access}{location.access}{/if}
                 {#if location.access && location.stype} {/if}
                 {#if location.stype}{location.stype}{/if}
-                {#if !location.access && !location.stype}<span class="text-braun-400 italic">No status set</span>{/if}
+                {#if !location.access && !location.stype}<button onclick={openVerifyModal} class="text-error hover:underline cursor-pointer">verify location</button>{/if}
               </p>
 
               <!-- Built / Abandoned -->
@@ -1399,6 +1455,118 @@
             class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {addingBuilding ? 'Adding...' : 'Add Building'}
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Verify Location Modal (Braun: 8pt grid, 4px radius, functional minimalism) -->
+  {#if showVerifyModal}
+    <div
+      class="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]"
+      onclick={() => showVerifyModal = false}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="verify-modal-title"
+    >
+      <div
+        class="bg-white rounded border border-braun-300 w-full max-w-md mx-4"
+        onclick={(e) => e.stopPropagation()}
+      >
+        <!-- Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-braun-200">
+          <h2 id="verify-modal-title" class="text-xl font-semibold text-braun-900">Verify Location</h2>
+          <button
+            onclick={() => showVerifyModal = false}
+            class="p-1 text-braun-400 hover:text-braun-600 transition"
+            aria-label="Close"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Form: 2x2 Grid -->
+        <div class="p-6">
+          <div class="grid grid-cols-2 gap-4">
+            <!-- Row 1: Name | Type -->
+            <div>
+              <label for="verify-name" class="block text-xs font-semibold text-braun-500 uppercase tracking-wider mb-1">Name</label>
+              <input
+                id="verify-name"
+                type="text"
+                bind:value={verifyForm.locnam}
+                class="w-full px-3 py-2 border border-braun-300 rounded text-sm focus:outline-none focus:border-braun-600"
+                placeholder="Location name"
+              />
+            </div>
+            <div>
+              <label for="verify-type" class="block text-xs font-semibold text-braun-500 uppercase tracking-wider mb-1">Type</label>
+              <input
+                id="verify-type"
+                type="text"
+                list="verify-type-options"
+                bind:value={verifyForm.type}
+                class="w-full px-3 py-2 border border-braun-300 rounded text-sm focus:outline-none focus:border-braun-600"
+                placeholder="e.g., Hospital"
+              />
+              <datalist id="verify-type-options">
+                {#each verifyTypeOptions as option}
+                  <option value={option} />
+                {/each}
+              </datalist>
+            </div>
+
+            <!-- Row 2: Status | Sub-Type -->
+            <div>
+              <label for="verify-status" class="block text-xs font-semibold text-braun-500 uppercase tracking-wider mb-1">Status</label>
+              <select
+                id="verify-status"
+                bind:value={verifyForm.access}
+                class="w-full px-3 py-2 border border-braun-300 rounded text-sm focus:outline-none focus:border-braun-600"
+              >
+                <option value="">Select status...</option>
+                {#each ACCESS_OPTIONS as option}
+                  <option value={option}>{option}</option>
+                {/each}
+              </select>
+            </div>
+            <div>
+              <label for="verify-stype" class="block text-xs font-semibold text-braun-500 uppercase tracking-wider mb-1">Sub-Type</label>
+              <input
+                id="verify-stype"
+                type="text"
+                list="verify-stype-options"
+                bind:value={verifyForm.stype}
+                class="w-full px-3 py-2 border border-braun-300 rounded text-sm focus:outline-none focus:border-braun-600"
+                placeholder="e.g., Psychiatric"
+              />
+              <datalist id="verify-stype-options">
+                {#each verifyStypeOptions as option}
+                  <option value={option} />
+                {/each}
+              </datalist>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 py-4 border-t border-braun-200 flex justify-end gap-3">
+          <button
+            onclick={() => showVerifyModal = false}
+            disabled={savingVerify}
+            class="px-4 py-2 text-braun-600 bg-braun-100 rounded hover:bg-braun-200 transition text-sm disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onclick={handleVerifySave}
+            disabled={savingVerify || !verifyForm.locnam.trim()}
+            class="px-6 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {savingVerify ? 'Saving...' : 'Save'}
           </button>
         </div>
       </div>
