@@ -1062,7 +1062,7 @@
                 {#if location.access}{location.access}{/if}
                 {#if location.access && location.class} {/if}
                 {#if location.class}{location.class}{/if}
-                {#if !location.access && !location.class}<button onclick={openVerifyModal} class="text-error hover:underline cursor-pointer">verify location</button>{/if}
+                {#if !location.access && !location.class && !location.category}<button onclick={openVerifyModal} class="text-error hover:underline cursor-pointer">verify location</button>{/if}
               </p>
 
               <!-- Built / Abandoned -->

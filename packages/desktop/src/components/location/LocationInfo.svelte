@@ -176,7 +176,19 @@
   );
   const hasBuiltOrAbandoned = $derived(!!location.builtYear || !!location.abandonedYear);
   const hasCategory = $derived(!!location.category);
+  const hasClass = $derived(!!location.class);
   const hasFlags = $derived(location.historic || location.favorite || location.project);
+
+  // Verification scoring: Information complete when has Category, Class, AND Status
+  const isInfoComplete = $derived(hasStatus && hasCategory && hasClass);
+
+  // Dynamic edit button state: "add" (red) when incomplete, "edit" (gray) when complete
+  const editButtonState = $derived<{ text: string; colorClass: string }>(() => {
+    if (!isInfoComplete) {
+      return { text: 'add', colorClass: 'text-gps-low hover:text-braun-900' };
+    }
+    return { text: 'edit', colorClass: 'text-braun-500 hover:text-braun-900' };
+  });
   const hasAuthor = $derived(!!location.auth_imp);  // Original author field
   const hasAuthors = $derived(authors.length > 0);  // Tracked contributors from location_authors
 
@@ -480,10 +492,10 @@
     {#if onSave || onSubLocationSave}
       <button
         onclick={openEditModal}
-        class="text-sm text-braun-500 hover:text-braun-900 hover:underline"
+        class="text-sm {editButtonState.colorClass} hover:underline"
         title="Edit information"
       >
-        edit
+        {editButtonState.text}
       </button>
     {/if}
   </div>
