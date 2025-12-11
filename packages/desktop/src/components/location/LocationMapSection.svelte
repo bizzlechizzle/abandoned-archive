@@ -272,9 +272,16 @@
 </script>
 
 <div class="bg-white rounded border border-braun-300 flex-1 flex flex-col">
-  <!-- Header: Location (edit button moved to bottom) -->
-  <div class="px-8 pt-6 pb-4">
+  <!-- Header with edit button -->
+  <div class="px-8 pt-6 pb-4 flex items-center justify-between">
     <h2 class="text-2xl font-semibold text-braun-900 leading-none">Location</h2>
+    <button
+      onclick={handleEditClick}
+      class="text-sm {editButtonState().colorClass} hover:underline"
+      title={subLocation ? 'Edit building GPS' : 'Edit location'}
+    >
+      {editButtonState().text}
+    </button>
   </div>
 
   <!-- SECTION 1: Address (moved above GPS) -->
@@ -457,17 +464,6 @@
       </p>
     </div>
   {/if}
-
-  <!-- Edit button at bottom (right-justified) - Dynamic text/color based on verification status -->
-  <div class="px-8 pb-6 text-right">
-    <button
-      onclick={handleEditClick}
-      class="text-sm {editButtonState().colorClass} hover:underline"
-      title={subLocation ? 'Edit building GPS' : 'Edit location'}
-    >
-      {editButtonState().text}
-    </button>
-  </div>
 </div>
 
 <!-- Edit Modal (Host Location) -->

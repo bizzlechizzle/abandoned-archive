@@ -373,7 +373,7 @@
 
       // Migration 32: Split save based on sub-location mode
       if (isSubLocationMode && onSubLocationSave) {
-        // Sub-location mode: save to both subloc and host location
+        // Sub-location mode: save to subloc and flags to host location
         const subUpdates: SubLocationUpdates = {
           subnam: editForm.locnam,
           type: editForm.type || null, // Building Type
@@ -384,21 +384,11 @@
           akanam: editForm.akanam || null,
         };
 
-        // Campus-level fields go to host location
+        // Only flags go to host location (years, documentation, author edited elsewhere)
         const locUpdates: Partial<LocationInput> = {
-          builtYear: editForm.builtYear || undefined,
-          builtType: editForm.builtYear ? editForm.builtType : undefined,
-          abandonedYear: editForm.abandonedYear || undefined,
-          abandonedType: editForm.abandonedYear ? editForm.abandonedType : undefined,
           historic: editForm.historic,
           favorite: editForm.favorite,
           project: editForm.project,
-          docInterior: editForm.docInterior,
-          docExterior: editForm.docExterior,
-          docDrone: editForm.docDrone,
-          docWebHistory: editForm.docWebHistory,
-          docMapFind: editForm.docMapFind,
-          auth_imp: editForm.auth_imp || undefined,
         };
 
         await onSubLocationSave(subUpdates, locUpdates);
@@ -407,6 +397,7 @@
         const statusChanged = editForm.access !== originalStatus;
         const statusChangedAt = statusChanged ? new Date().toISOString() : undefined;
 
+        // Save only fields editable in this modal (years, documentation, author edited elsewhere)
         await onSave({
           locnam: editForm.locnam,
           locnamVerified: editForm.locnamVerified,
@@ -414,21 +405,11 @@
           akanamVerified: editForm.akanamVerified,
           access: editForm.access || undefined,
           statusChangedAt: statusChangedAt,
-          builtYear: editForm.builtYear || undefined,
-          builtType: editForm.builtYear ? editForm.builtType : undefined,
-          abandonedYear: editForm.abandonedYear || undefined,
-          abandonedType: editForm.abandonedYear ? editForm.abandonedType : undefined,
           type: editForm.type || undefined,
           stype: editForm.stype || undefined,
           historic: editForm.historic,
           favorite: editForm.favorite,
           project: editForm.project,
-          docInterior: editForm.docInterior,
-          docExterior: editForm.docExterior,
-          docDrone: editForm.docDrone,
-          docWebHistory: editForm.docWebHistory,
-          docMapFind: editForm.docMapFind,
-          auth_imp: editForm.auth_imp || undefined,
         });
       }
       showEditModal = false;
@@ -493,9 +474,18 @@
 
 <!-- DECISION-019: Information Box styled to match LocationMapSection -->
 <div class="bg-white rounded border border-braun-300 flex-1 flex flex-col">
-  <!-- Header (no edit button - moved to bottom) -->
-  <div class="px-8 pt-6 pb-4">
+  <!-- Header with edit button -->
+  <div class="px-8 pt-6 pb-4 flex items-center justify-between">
     <h2 class="text-2xl font-semibold text-braun-900 leading-none">Information</h2>
+    {#if onSave || onSubLocationSave}
+      <button
+        onclick={openEditModal}
+        class="text-sm text-braun-500 hover:text-braun-900 hover:underline"
+        title="Edit information"
+      >
+        edit
+      </button>
+    {/if}
   </div>
 
   <!-- Content sections - PUEA: Only show sections that have data -->
@@ -638,19 +628,6 @@
       <p class="text-braun-500 text-sm italic">No information added yet</p>
     {/if}
   </div>
-
-  <!-- Edit button at bottom (right-justified) -->
-  {#if onSave || onSubLocationSave}
-    <div class="px-8 pb-6 text-right">
-      <button
-        onclick={openEditModal}
-        class="text-sm text-braun-500 hover:text-braun-900 hover:underline"
-        title="Edit information"
-      >
-        edit
-      </button>
-    </div>
-  {/if}
 </div>
 
 <!-- DECISION-019: Edit Modal -->
@@ -771,11 +748,6 @@
             <span class="text-sm font-medium text-braun-700">Primary Building</span>
             <span class="text-xs text-braun-500">(main building on campus)</span>
           </label>
-
-          <!-- Campus Info divider -->
-          <div class="border-t border-braun-200 pt-4 -mx-1 px-1">
-            <h3 class="text-sm font-medium text-braun-500 mb-4">Campus Info</h3>
-          </div>
         {:else}
           <!-- Host location: Type + Sub-Type -->
           <div class="grid grid-cols-2 gap-4">
@@ -812,97 +784,7 @@
           </div>
         {/if}
 
-        <!-- Built -->
-        <div>
-          <label class="form-label">Built</label>
-          <div class="flex gap-2">
-            <select
-              bind:value={editForm.builtType}
-              class="px-2 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 text-sm"
-            >
-              <option value="year">Year</option>
-              <option value="range">Range</option>
-              <option value="date">Date</option>
-            </select>
-            <input
-              type="text"
-              bind:value={editForm.builtYear}
-              placeholder={editForm.builtType === 'year' ? '1920' : editForm.builtType === 'range' ? '1920-1925' : '1920-05-15'}
-              class="flex-1 px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
-            />
-          </div>
-        </div>
-
-        <!-- Abandoned -->
-        <div>
-          <label class="form-label">Abandoned</label>
-          <div class="flex gap-2">
-            <select
-              bind:value={editForm.abandonedType}
-              class="px-2 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 text-sm"
-            >
-              <option value="year">Year</option>
-              <option value="range">Range</option>
-              <option value="date">Date</option>
-            </select>
-            <input
-              type="text"
-              bind:value={editForm.abandonedYear}
-              placeholder={editForm.abandonedType === 'year' ? '2005' : editForm.abandonedType === 'range' ? '2005-2010' : '2005-03-20'}
-              class="flex-1 px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
-            />
-          </div>
-        </div>
-
-        <!-- Documentation checkboxes - Drone auto-selects Exterior -->
-        <div>
-          <label class="form-label">Documentation</label>
-          <div class="grid grid-cols-2 gap-2">
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                bind:checked={editForm.docInterior}
-                class="w-4 h-4 text-braun-900 rounded border-braun-300 focus:ring-braun-600"
-              />
-              <span class="text-sm">Interior</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                bind:checked={editForm.docExterior}
-                class="w-4 h-4 text-braun-900 rounded border-braun-300 focus:ring-braun-600"
-              />
-              <span class="text-sm">Exterior</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={editForm.docDrone}
-                onchange={(e) => handleDroneChange(e.currentTarget.checked)}
-                class="w-4 h-4 text-braun-900 rounded border-braun-300 focus:ring-braun-600"
-              />
-              <span class="text-sm">Drone</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                bind:checked={editForm.docMapFind}
-                class="w-4 h-4 text-braun-900 rounded border-braun-300 focus:ring-braun-600"
-              />
-              <span class="text-sm">Map Find</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                bind:checked={editForm.docWebHistory}
-                class="w-4 h-4 text-braun-900 rounded border-braun-300 focus:ring-braun-600"
-              />
-              <span class="text-sm">Web Find</span>
-            </label>
-          </div>
-        </div>
-
-        <!-- Flags - accent color for all -->
+        <!-- Flags -->
         <div>
           <label class="form-label">Flags</label>
           <div class="flex flex-wrap gap-4">
@@ -931,17 +813,6 @@
               <span class="text-sm">Historical</span>
             </label>
           </div>
-        </div>
-
-        <!-- Author -->
-        <div>
-          <label class="form-label">Author</label>
-          <input
-            type="text"
-            bind:value={editForm.auth_imp}
-            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
-            placeholder="Who documented this location"
-          />
         </div>
       </div>
 
