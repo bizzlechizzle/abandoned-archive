@@ -99,29 +99,40 @@
   );
 
   // Verification status for status line (green/yellow/red)
+  // Weighted scoring: Information (70%) + Location (30%)
+  // Colors: 0-80% = red, 80-100% = yellow, 100% = green
   const verificationStatus = $derived.by((): 'green' | 'yellow' | 'red' => {
     if (!location) return 'red';
 
-    // For sub-locations, check sub-location GPS + host address
-    if (isViewingSubLocation && currentSubLocation) {
-      const hasGps = currentSubLocation.gps_lat != null && currentSubLocation.gps_lng != null;
-      const hasAddress = !!(location.address?.city || location.address?.state);
-      const gpsVerified = currentSubLocation.gps_verified_on_map === true;
-      const addressVerified = location.address?.verified === true;
+    // Information score (70% weight) - ALWAYS from host location
+    const infoComplete = !!(location.category && location.class && location.access);
+    const infoScore = infoComplete ? 100 : 0;
 
-      if (gpsVerified && addressVerified) return 'green';
-      if (hasGps && hasAddress) return 'yellow';
-      return 'red';
+    // Location score (30% weight) - GPS from sub-location when viewing building
+    let hasGps: boolean;
+    let gpsVerified: boolean;
+
+    if (isViewingSubLocation && currentSubLocation) {
+      hasGps = currentSubLocation.gps_lat != null && currentSubLocation.gps_lng != null;
+      gpsVerified = currentSubLocation.gps_verified_on_map === true;
+    } else {
+      hasGps = location.gps?.lat != null && location.gps?.lng != null;
+      gpsVerified = location.gps?.verifiedOnMap === true;
     }
 
-    // For host/regular locations
-    const hasGps = location.gps?.lat != null && location.gps?.lng != null;
     const hasAddress = !!(location.address?.city || location.address?.state);
-    const gpsVerified = location.gps?.verifiedOnMap === true;
     const addressVerified = location.address?.verified === true;
 
-    if (gpsVerified && addressVerified) return 'green';
-    if (hasGps && hasAddress) return 'yellow';
+    // Location: 0% if missing data, 80% if has data but unverified, 100% if verified
+    const locationScore = (!hasGps || !hasAddress) ? 0
+      : (!gpsVerified || !addressVerified) ? 80
+      : 100;
+
+    // Weighted total
+    const total = (infoScore * 0.70) + (locationScore * 0.30);
+
+    if (total >= 100) return 'green';
+    if (total >= 80) return 'yellow';
     return 'red';
   });
 
