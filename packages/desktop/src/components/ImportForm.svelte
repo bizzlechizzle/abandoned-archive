@@ -307,8 +307,8 @@
     isSubLocation = false;
     parentLocId = '';
     isPrimarySubLocation = false;
-    newType = '';
-    newSubType = '';
+    newCategory = '';
+    newClass = '';
     newDocumentation = '';
     newAccess = '';
     // P0: newCondition and newStatus removed

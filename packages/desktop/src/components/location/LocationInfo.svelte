@@ -245,7 +245,7 @@
   // Check if we have any info to display at all (historicalName removed)
   const hasAnyInfo = $derived(
     hasAkaName || hasStatus || hasDocumentation ||
-    hasBuiltOrAbandoned || hasType || hasFlags || hasSublocations
+    hasBuiltOrAbandoned || hasCategory || hasFlags || hasSublocations
   );
 
   // Documentation labels for display
@@ -505,7 +505,7 @@
       {/if}
 
       <!-- Status + Type (same row) -->
-      {#if hasStatus || hasType}
+      {#if hasStatus || hasCategory}
         <div class="mb-4 grid grid-cols-2 gap-4">
           <div>
             <h3 class="section-title mb-1">Status</h3>
