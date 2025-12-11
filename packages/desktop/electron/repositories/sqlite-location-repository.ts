@@ -414,6 +414,10 @@ export class SQLiteLocationRepository implements LocationRepository {
       updates.address_normalized = AddressService.format(addressRecord.normalized);
       updates.address_parsed_json = JSON.stringify(addressRecord.parsed);
       updates.address_source = addressRecord.source;
+      // DECISION-010: Address verification flag
+      if (input.address.verified !== undefined) {
+        updates.address_verified = input.address.verified ? 1 : 0;
+      }
     }
 
     // P0: condition and status removed - use access only

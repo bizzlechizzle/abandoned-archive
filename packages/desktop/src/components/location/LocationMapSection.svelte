@@ -10,6 +10,7 @@
   import type { Location, LocationInput } from '@au-archive/core';
   import { GPS_ZOOM_LEVELS, GPS_GEOCODE_TIER_ZOOM } from '../../lib/constants';
   import { getDisplayCity } from '../../lib/display-helpers';
+  import type { RegionSaveData } from './LocationEditModal.svelte';
 
   /**
    * Migration 31: Sub-location GPS interface
@@ -36,7 +37,7 @@
 
   interface Props {
     location: Location;
-    onSave: (updates: Partial<LocationInput>, addressVerified: boolean, gpsVerified: boolean, culturalRegion: string | null) => Promise<void>;
+    onSave: (updates: Partial<LocationInput>, addressVerified: boolean, gpsVerified: boolean, regionData: RegionSaveData) => Promise<void>;
     onNavigateFilter: (type: string, value: string, additionalFilters?: Record<string, string>) => void;
     /** When true, zooms out 1 level more and allows extra zoom-out capability */
     isHostLocation?: boolean;

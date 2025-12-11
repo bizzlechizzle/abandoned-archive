@@ -86,6 +86,33 @@
     sublocations.filter(s => s.gps_lat !== null && s.gps_lng !== null)
   );
 
+  // Verification status for status line (green/yellow/red)
+  const verificationStatus = $derived.by((): 'green' | 'yellow' | 'red' => {
+    if (!location) return 'red';
+
+    // For sub-locations, check sub-location GPS + host address
+    if (isViewingSubLocation && currentSubLocation) {
+      const hasGps = currentSubLocation.gps_lat != null && currentSubLocation.gps_lng != null;
+      const hasAddress = !!(location.address?.city || location.address?.state);
+      const gpsVerified = currentSubLocation.gps_verified_on_map === true;
+      const addressVerified = location.address?.verified === true;
+
+      if (gpsVerified && addressVerified) return 'green';
+      if (hasGps && hasAddress) return 'yellow';
+      return 'red';
+    }
+
+    // For host/regular locations
+    const hasGps = location.gps?.lat != null && location.gps?.lng != null;
+    const hasAddress = !!(location.address?.city || location.address?.state);
+    const gpsVerified = location.gps?.verifiedOnMap === true;
+    const addressVerified = location.address?.verified === true;
+
+    if (gpsVerified && addressVerified) return 'green';
+    if (hasGps && hasAddress) return 'yellow';
+    return 'red';
+  });
+
   // Migration 26: Import attribution modal
   let showAttributionModal = $state(false);
   let pendingImportPaths = $state<string[]>([]);
@@ -926,7 +953,7 @@
   {:else}
     <div class="max-w-6xl mx-auto px-8 pt-12 pb-8">
       <!-- Index Card Header -->
-      <div class="mb-8 py-16">
+      <div class="mb-8">
         <div class="index-card bg-white border border-braun-300 rounded p-6">
           <div class="flex gap-6">
             <!-- Left: Thumbnail (4:1 ratio, grows with content) -->
@@ -1020,27 +1047,21 @@
         </div>
       </div>
 
+      <!-- Verification Status Line -->
+      <div
+        class="h-1 rounded mx-4 mb-8"
+        style="background-color: {verificationStatus === 'green' ? '#4A8C5E' : verificationStatus === 'yellow' ? '#C9A227' : '#B85C4A'};"
+        title={verificationStatus === 'green' ? 'GPS and Address verified' :
+               verificationStatus === 'yellow' ? 'Has GPS and Address (not fully verified)' :
+               'Missing GPS or Address data'}
+      ></div>
+
       {#if isEditing}
         <LocationEditForm {location} onSave={handleSave} onCancel={() => isEditing = false} />
       {:else}
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <LocationInfo
-            {location}
-            {images}
-            {videos}
-            {documents}
-            {allImagesForAuthors}
-            {allVideosForAuthors}
-            {allDocumentsForAuthors}
-            onNavigateFilter={navigateToFilter}
-            onSave={handleSave}
-            {sublocations}
-            isHostLocation={isHostLocation && !isViewingSubLocation}
-            onConvertToHost={isViewingSubLocation ? undefined : handleConvertToHost}
-            currentSubLocation={isViewingSubLocation ? currentSubLocation : null}
-            onSubLocationSave={isViewingSubLocation ? handleSubLocationSave : undefined}
-          />
-          <div class="location-map-section">
+        <!-- LocationMapSection: right-aligned with negative space on left -->
+        <div class="flex justify-end mb-8">
+          <div class="w-full max-w-lg">
             <!-- DECISION-011: Unified location box with verification checkmarks, edit modal -->
             <!-- Migration 31: Pass sub-location GPS props when viewing a sub-location -->
             <LocationMapSection
@@ -1062,6 +1083,24 @@
             />
           </div>
         </div>
+
+        <!-- LocationInfo: full width -->
+        <LocationInfo
+          {location}
+          {images}
+          {videos}
+          {documents}
+          {allImagesForAuthors}
+          {allVideosForAuthors}
+          {allDocumentsForAuthors}
+          onNavigateFilter={navigateToFilter}
+          onSave={handleSave}
+          {sublocations}
+          isHostLocation={isHostLocation && !isViewingSubLocation}
+          onConvertToHost={isViewingSubLocation ? undefined : handleConvertToHost}
+          currentSubLocation={isViewingSubLocation ? currentSubLocation : null}
+          onSubLocationSave={isViewingSubLocation ? handleSubLocationSave : undefined}
+        />
 
         <!-- Sub-Location Grid (only for host locations, hide when viewing a sub-location) -->
         {#if !isViewingSubLocation && isHostLocation}

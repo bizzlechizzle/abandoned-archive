@@ -143,8 +143,12 @@
 
       const updates: Partial<LocationInput> = {};
 
-      // Address updates
-      if (formData.address_street || formData.address_city || formData.address_state) {
+      // Address updates - include if any field has data OR if verification changed
+      const hasAnyAddressData = formData.address_street || formData.address_city ||
+        formData.address_county || formData.address_state || formData.address_zipcode;
+      const addressVerificationChanged = formData.address_verified !== (location.address?.verified || false);
+
+      if (hasAnyAddressData || addressVerificationChanged) {
         updates.address = {
           street: formData.address_street || undefined,
           city: formData.address_city || undefined,
@@ -155,11 +159,14 @@
         };
       }
 
-      // GPS updates
-      if (formData.gps_lat && formData.gps_lng) {
+      // GPS updates - include if coords exist OR if verification changed
+      const hasGpsData = formData.gps_lat && formData.gps_lng;
+      const gpsVerificationChanged = formData.gps_verified !== (location.gps?.verifiedOnMap || false);
+
+      if (hasGpsData || (gpsVerificationChanged && location.gps?.lat && location.gps?.lng)) {
         updates.gps = {
-          lat: parseFloat(formData.gps_lat),
-          lng: parseFloat(formData.gps_lng),
+          lat: parseFloat(formData.gps_lat) || location.gps?.lat || 0,
+          lng: parseFloat(formData.gps_lng) || location.gps?.lng || 0,
           source: 'user_map_click',
           verifiedOnMap: formData.gps_verified,
         };
