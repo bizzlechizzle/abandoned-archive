@@ -18,13 +18,25 @@
 import type { Kysely } from 'kysely';
 import type { Database } from '../main/database.types';
 import { generateId } from '../main/ipc-validation';
-import { normalizedSimilarity, normalizeName, isSmartMatch, getAdjustedThreshold } from './jaro-winkler-service';
+import { normalizedSimilarity, normalizeName } from './jaro-winkler-service';
+import {
+  calculateNameMatch,
+  calculateMultiSignalMatch,
+  isGenericName,
+  hasBlockingConflict,
+  type NameMatchResult,
+} from './token-set-service';
 import { haversineDistance } from './geo-utils';
 import { DUPLICATE_CONFIG } from '../../src/lib/constants';
 import { getStateCodeFromName, isValidStateCode } from './us-state-codes';
 
 // Use centralized constants for duplicate detection
-const { GPS_RADIUS_METERS, NAME_MATCH_RADIUS_METERS, NAME_SIMILARITY_THRESHOLD } = DUPLICATE_CONFIG;
+const {
+  GPS_RADIUS_METERS,
+  NAME_MATCH_RADIUS_METERS,
+  NAME_SIMILARITY_THRESHOLD,
+  GENERIC_NAME_GPS_RADIUS_METERS,
+} = DUPLICATE_CONFIG;
 
 /**
  * Normalize a state value to a 2-letter code for comparison.
@@ -63,6 +75,18 @@ export interface DuplicateMatch {
   distanceMeters?: number;
   mapName?: string;
   needsConfirmation?: boolean; // True for state-based matches that need user review
+  /** Token-based match details */
+  sharedTokens?: string[];
+  /** Confidence tier from multi-signal matching */
+  confidenceTier?: 'high' | 'medium' | 'low' | 'none';
+  /** Total confidence score (0-100) */
+  confidenceScore?: number;
+  /** Whether name match was blocked (different place) */
+  blocked?: boolean;
+  /** Block reason if blocked */
+  blockReason?: string;
+  /** Whether this is a generic name match */
+  isGenericNameMatch?: boolean;
 }
 
 export interface DedupeResult {
@@ -560,16 +584,21 @@ export class RefMapDedupService {
             break; // Found match, move to next point
           }
 
-          // Check name similarity with distance limit (uses smart matching with word-overlap boost)
+          // Check name similarity with distance limit using Token Set Ratio
           if (point.name) {
             const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
 
             let foundMatch = false;
             for (const locName of namesToCheck) {
-              const nameSim = normalizedSimilarity(point.name, locName);
+              // Use Token Set Ratio for word-order independent matching
+              const nameMatch = calculateNameMatch(point.name, locName);
+
+              // Skip blocked matches
+              if (nameMatch.blocked) continue;
+
+              const nameSim = nameMatch.score;
               const isExactMatch = nameSim >= 0.99;
-              // Use smart matching - applies word-overlap boost for cases like "Chevy" vs "Chevrolet"
-              const isSimilarMatch = isSmartMatch(point.name, locName, NAME_SIMILARITY_THRESHOLD) && distance <= NAME_MATCH_RADIUS_METERS;
+              const isSimilarMatch = nameSim >= NAME_SIMILARITY_THRESHOLD && distance <= NAME_MATCH_RADIUS_METERS;
 
               if (isExactMatch || isSimilarMatch) {
                 matches.push({
@@ -596,9 +625,13 @@ export class RefMapDedupService {
 
             let foundMatch = false;
             for (const locName of namesToCheck) {
-              // Use smart matching with word-overlap boost
-              if (isSmartMatch(point.name, locName, NAME_SIMILARITY_THRESHOLD)) {
-                const nameSim = normalizedSimilarity(point.name, locName);
+              // Use Token Set Ratio for word-order independent matching
+              const nameMatch = calculateNameMatch(point.name, locName);
+
+              // Skip blocked matches
+              if (nameMatch.blocked) continue;
+
+              if (nameMatch.score >= NAME_SIMILARITY_THRESHOLD) {
                 // State + name match
                 matches.push({
                   pointId: point.point_id,
@@ -606,7 +639,7 @@ export class RefMapDedupService {
                   mapName: point.map_name,
                   matchedLocid: loc.locid,
                   matchedLocName: loc.locnam,
-                  nameSimilarity: Math.round(nameSim * 100),
+                  nameSimilarity: Math.round(nameMatch.score * 100),
                   distanceMeters: 0, // No GPS, no distance
                 });
                 foundMatch = true;
@@ -690,6 +723,7 @@ export class RefMapDedupService {
     for (const point of points) {
       let isDuplicate = false;
       const pointStateNorm = normalizeState(point.state);
+      const pointIsGeneric = point.name ? isGenericName(point.name) : false;
 
       // Check against catalogued locations (locs table)
       for (const loc of locations) {
@@ -697,14 +731,15 @@ export class RefMapDedupService {
         const locStateNorm = normalizeState(loc.state);
 
         if (locHasGps) {
-          // LOCATION HAS GPS - use distance-based matching
+          // LOCATION HAS GPS - use multi-signal matching
           const distance = haversineDistance(point.lat, point.lng, loc.gps_lat!, loc.gps_lng!);
 
           if (distance <= GPS_RADIUS_METERS) {
             // GPS match - high confidence, auto-skip
-            const nameSim = point.name && loc.locnam
-              ? normalizedSimilarity(point.name, loc.locnam)
-              : 0;
+            const nameMatch = point.name && loc.locnam
+              ? calculateNameMatch(point.name, loc.locnam)
+              : null;
+
             result.cataloguedMatches.push({
               type: 'catalogued',
               matchType: 'gps',
@@ -712,24 +747,49 @@ export class RefMapDedupService {
               existingId: loc.locid,
               existingName: loc.locnam,
               existingState: locStateNorm || undefined,
-              existingHasGps: true, // GPS match means existing has GPS
-              nameSimilarity: Math.round(nameSim * 100),
+              existingHasGps: true,
+              nameSimilarity: nameMatch ? Math.round(nameMatch.score * 100) : 0,
               distanceMeters: Math.round(distance),
               needsConfirmation: false,
+              sharedTokens: nameMatch?.sharedTokens,
+              confidenceTier: 'high',
+              confidenceScore: 90,
             });
             isDuplicate = true;
             break;
           }
 
-          // Check name similarity with distance limit (uses smart matching with word-overlap boost)
+          // Check name similarity with distance limit using Token Set Ratio
           if (point.name) {
             const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
 
             for (const locName of namesToCheck) {
-              const nameSim = normalizedSimilarity(point.name, locName);
+              // Use new multi-signal matching
+              const multiSignal = calculateMultiSignalMatch({
+                name1: point.name,
+                name2: locName,
+                lat1: point.lat,
+                lng1: point.lng,
+                lat2: loc.gps_lat,
+                lng2: loc.gps_lng,
+                state1: pointStateNorm,
+                state2: locStateNorm,
+              });
+
+              // Skip blocked matches (North vs South, Building A vs B)
+              if (multiSignal.nameMatch.blocked) {
+                continue;
+              }
+
+              const nameSim = multiSignal.nameMatch.score;
               const isExactMatch = nameSim >= 0.99;
-              // Use smart matching - applies word-overlap boost for cases like "Chevy" vs "Chevrolet"
-              const isSimilarMatch = isSmartMatch(point.name, locName, NAME_SIMILARITY_THRESHOLD) && distance <= NAME_MATCH_RADIUS_METERS;
+              const isSimilarMatch = nameSim >= NAME_SIMILARITY_THRESHOLD && distance <= NAME_MATCH_RADIUS_METERS;
+
+              // Generic name handling: require close GPS
+              const locIsGeneric = isGenericName(locName);
+              if ((pointIsGeneric || locIsGeneric) && distance > (GENERIC_NAME_GPS_RADIUS_METERS ?? 25)) {
+                continue;
+              }
 
               if (isExactMatch || isSimilarMatch) {
                 result.cataloguedMatches.push({
@@ -739,10 +799,14 @@ export class RefMapDedupService {
                   existingId: loc.locid,
                   existingName: loc.locnam,
                   existingState: locStateNorm || undefined,
-                  existingHasGps: true, // Name+GPS match means existing has GPS
+                  existingHasGps: true,
                   nameSimilarity: Math.round(nameSim * 100),
                   distanceMeters: Math.round(distance),
-                  needsConfirmation: false,
+                  needsConfirmation: multiSignal.nameMatch.requiresUserReview,
+                  sharedTokens: multiSignal.nameMatch.sharedTokens,
+                  confidenceTier: multiSignal.tier,
+                  confidenceScore: multiSignal.totalScore,
+                  isGenericNameMatch: pointIsGeneric || locIsGeneric,
                 });
                 isDuplicate = true;
                 break;
@@ -752,7 +816,6 @@ export class RefMapDedupService {
           }
         } else if (locStateNorm && pointStateNorm) {
           // LOCATION HAS NO GPS BUT HAS STATE - use state-based matching
-          // Skip if this location already has a better match
           if (matchedEnrichmentLocIds.has(loc.locid)) continue;
 
           const sameState = locStateNorm === pointStateNorm;
@@ -761,11 +824,16 @@ export class RefMapDedupService {
             const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
 
             for (const locName of namesToCheck) {
-              // Use smart matching with word-overlap boost
-              if (isSmartMatch(point.name, locName, NAME_SIMILARITY_THRESHOLD)) {
-                const nameSim = normalizedSimilarity(point.name, locName);
+              // Use Token Set Ratio for word-order independent matching
+              const nameMatch = calculateNameMatch(point.name, locName);
+
+              // Skip blocked matches
+              if (nameMatch.blocked) {
+                continue;
+              }
+
+              if (nameMatch.score >= NAME_SIMILARITY_THRESHOLD) {
                 // State + name match - needs user confirmation
-                // This is an ENRICHMENT OPPORTUNITY - existing location has no GPS
                 result.cataloguedMatches.push({
                   type: 'catalogued',
                   matchType: 'name_state',
@@ -773,11 +841,15 @@ export class RefMapDedupService {
                   existingId: loc.locid,
                   existingName: loc.locnam,
                   existingState: locStateNorm,
-                  existingHasGps: false, // State-based match = existing has NO GPS
-                  nameSimilarity: Math.round(nameSim * 100),
-                  needsConfirmation: true, // User must confirm
+                  existingHasGps: false,
+                  nameSimilarity: Math.round(nameMatch.score * 100),
+                  needsConfirmation: true,
+                  sharedTokens: nameMatch.sharedTokens,
+                  confidenceTier: 'medium',
+                  confidenceScore: 50 + Math.round(nameMatch.score * 35),
+                  isGenericNameMatch: pointIsGeneric || isGenericName(locName),
                 });
-                matchedEnrichmentLocIds.add(loc.locid); // Mark location as matched
+                matchedEnrichmentLocIds.add(loc.locid);
                 isDuplicate = true;
                 break;
               }
@@ -786,27 +858,32 @@ export class RefMapDedupService {
           }
         } else if (point.name) {
           // LOCATION HAS NO GPS AND NO STATE - name match for enrichment
-          // Skip if this location already has a better match
           if (matchedEnrichmentLocIds.has(loc.locid)) continue;
 
           const namesToCheck = [loc.locnam, loc.akanam].filter(Boolean) as string[];
 
           for (const locName of namesToCheck) {
-            // Use smart matching with word-overlap boost
-            if (isSmartMatch(point.name, locName, NAME_SIMILARITY_THRESHOLD)) {
-              const nameSim = normalizedSimilarity(point.name, locName);
-              // This is an ENRICHMENT OPPORTUNITY - existing location has no GPS
+            const nameMatch = calculateNameMatch(point.name, locName);
+
+            // Skip blocked matches and generic names without GPS
+            if (nameMatch.blocked) continue;
+            if (pointIsGeneric || isGenericName(locName)) continue; // Generic names need GPS
+
+            if (nameMatch.score >= 0.95) { // Higher threshold for name-only matches
               result.cataloguedMatches.push({
                 type: 'catalogued',
                 matchType: 'name_only',
                 newPoint: { name: point.name, lat: point.lat, lng: point.lng, state: point.state },
                 existingId: loc.locid,
                 existingName: loc.locnam,
-                existingHasGps: false, // Name match = existing has NO GPS
-                nameSimilarity: Math.round(nameSim * 100),
-                needsConfirmation: true, // User must confirm
+                existingHasGps: false,
+                nameSimilarity: Math.round(nameMatch.score * 100),
+                needsConfirmation: true,
+                sharedTokens: nameMatch.sharedTokens,
+                confidenceTier: 'low',
+                confidenceScore: Math.round(nameMatch.score * 35),
               });
-              matchedEnrichmentLocIds.add(loc.locid); // Mark location as matched
+              matchedEnrichmentLocIds.add(loc.locid);
               isDuplicate = true;
               break;
             }
@@ -817,21 +894,30 @@ export class RefMapDedupService {
 
       if (isDuplicate) continue;
 
-      // Check against existing ref_map_points (GPS proximity ~10m)
+      // Check against existing ref_map_points (GPS proximity ~150m now, not 10m)
       for (const refPoint of existingRefPoints) {
-        const roundedNewLat = Math.round(point.lat * 10000) / 10000;
-        const roundedNewLng = Math.round(point.lng * 10000) / 10000;
-        const roundedExistingLat = Math.round(refPoint.lat * 10000) / 10000;
-        const roundedExistingLng = Math.round(refPoint.lng * 10000) / 10000;
+        const distance = haversineDistance(point.lat, point.lng, refPoint.lat, refPoint.lng);
 
-        if (roundedNewLat === roundedExistingLat && roundedNewLng === roundedExistingLng) {
+        // Use consistent 150m threshold for ref point matching too
+        if (distance <= GPS_RADIUS_METERS) {
+          const nameMatch = point.name && refPoint.name
+            ? calculateNameMatch(point.name, refPoint.name)
+            : null;
+
+          // Skip if blocking conflict detected
+          if (nameMatch?.blocked) {
+            continue;
+          }
+
           result.referenceMatches.push({
             type: 'reference',
             newPoint: { name: point.name, lat: point.lat, lng: point.lng },
             existingId: refPoint.point_id,
             existingName: refPoint.name || 'Unnamed',
             mapName: refPoint.map_name,
-            distanceMeters: Math.round(haversineDistance(point.lat, point.lng, refPoint.lat, refPoint.lng)),
+            distanceMeters: Math.round(distance),
+            nameSimilarity: nameMatch ? Math.round(nameMatch.score * 100) : undefined,
+            sharedTokens: nameMatch?.sharedTokens,
           });
           isDuplicate = true;
           break;

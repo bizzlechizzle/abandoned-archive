@@ -133,11 +133,32 @@ export const SUCCESS_MESSAGES = {
   SETTINGS_SAVED: 'Settings saved successfully',
 } as const;
 
-// Migration 38: Duplicate Detection Configuration
+// Migration 38+: Duplicate Detection Configuration
 // ADR: ADR-pin-conversion-duplicate-prevention.md
+// Updated: 2025-12-11 with Token Set Ratio and multi-signal matching
 export const DUPLICATE_CONFIG = {
   GPS_RADIUS_METERS: 150,           // Same site threshold - locations within this distance are definite duplicates
   NAME_MATCH_RADIUS_METERS: 500,    // Max distance for name similarity matches - prevents matching by town name alone
-  NAME_SIMILARITY_THRESHOLD: 0.85,  // 85% Jaro-Winkler - high confidence matches only
+  NAME_SIMILARITY_THRESHOLD: 0.80,  // 80% combined (JW + Token Set Ratio) - catches word reordering
   NEARBY_RADIUS_METERS: 400,        // ~0.25 miles - show "nearby" hint during creation
+  GENERIC_NAME_GPS_RADIUS_METERS: 25, // Generic names (House, Church) require close GPS match
+  TOKEN_SET_WEIGHT: 0.5,            // Weight for Token Set Ratio in combined score (0=JW only, 1=TSR only)
+  AUTO_MERGE_CONFIDENCE: 70,        // Auto-merge threshold for multi-signal confidence (0-100)
+  USER_REVIEW_CONFIDENCE: 50,       // User review threshold for multi-signal confidence (0-100)
+} as const;
+
+// Generic names that require GPS confirmation for duplicate detection
+// These shouldn't match on name alone - too many "House" or "Church" entries
+export const GENERIC_LOCATION_NAMES = new Set([
+  'house', 'church', 'school', 'factory', 'industrial', 'industry',
+  'building', 'farm', 'barn', 'mill', 'warehouse', 'store', 'shop',
+  'hotel', 'motel', 'hospital', 'office', 'station', 'tower', 'plant',
+  'center', 'site', 'place', 'location', 'point', 'cars', 'trains', 'trucks',
+]) as ReadonlySet<string>;
+
+// Blocking words that indicate different places (North vs South, Building A vs B)
+export const BLOCKING_WORDS_CONFIG = {
+  directions: ['north', 'south', 'east', 'west', 'upper', 'lower', 'inner', 'outer'],
+  temporal: ['old', 'new', 'former', 'current', 'original', 'modern', 'historic'],
+  numbered: ['first', 'second', 'third', 'fourth', 'fifth', '1st', '2nd', '3rd', '4th', '5th'],
 } as const;

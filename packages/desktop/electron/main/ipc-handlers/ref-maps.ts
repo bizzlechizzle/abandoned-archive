@@ -655,8 +655,15 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
 
       // Migration 42: Apply enrichments to existing locations
       // Uses centralized enrichment service for GPS + address + region updates
+      // FIX: MAP-AUDIT-001 - Create linked ref_map_points for audit trail
       if (options.enrichments && options.enrichments.length > 0) {
         console.log(`[RefMaps] Processing ${options.enrichments.length} enrichments via centralized service...`);
+
+        // Create a temporary map record for enrichment tracking (if any succeed)
+        // This ensures we have a map_id to link enriched points to
+        let enrichmentMapId: string | null = null;
+        const enrichmentMapName = `${path.basename(filePath, path.extname(filePath))}_enrichments`;
+
         for (const enrichment of options.enrichments) {
           // Validate pointIndex is a number (not boolean or undefined)
           if (typeof enrichment.pointIndex !== 'number') {
@@ -683,6 +690,49 @@ export function registerRefMapsHandlers(db: Kysely<Database>): void {
             // The GPS data is now on the location - no need to also have it as a ref point
             enrichedCoords.add(`${point.lat},${point.lng}`);
             console.log(`[RefMaps] Enriched location ${enrichment.existingLocId}: GPS + address=${enrichResult.updated.address}, regions=${enrichResult.updated.regions} for "${point.name}"`);
+
+            // FIX: MAP-AUDIT-001 - Create linked ref_map_point for audit trail
+            // This records which map point was used to enrich which location
+            try {
+              // Lazy create the enrichment map record on first successful enrichment
+              if (!enrichmentMapId) {
+                const enrichmentMap = await repository.create({
+                  mapName: enrichmentMapName,
+                  filePath: `${filePath}#enrichments`,
+                  fileType: parseResult.fileType,
+                  importedBy: options.importedBy,
+                  points: [], // Empty - we'll add linked points directly
+                });
+                enrichmentMapId = enrichmentMap.mapId;
+                console.log(`[RefMaps] Created enrichment tracking map: ${enrichmentMapId}`);
+              }
+
+              // Create a ref_map_point that's already linked to the location
+              const { generateId } = await import('../ipc-validation');
+              const pointId = generateId();
+              await db
+                .insertInto('ref_map_points')
+                .values({
+                  point_id: pointId,
+                  map_id: enrichmentMapId,
+                  name: point.name,
+                  description: point.description || null,
+                  lat: point.lat,
+                  lng: point.lng,
+                  state: point.state || null,
+                  category: point.category || null,
+                  raw_metadata: point.rawMetadata ? JSON.stringify(point.rawMetadata) : null,
+                  aka_names: null,
+                  linked_locid: enrichment.existingLocId, // FIX: Set linked_locid immediately
+                  linked_at: new Date().toISOString(),
+                })
+                .execute();
+              console.log(`[RefMaps] Created linked ref_map_point ${pointId} → location ${enrichment.existingLocId}`);
+            } catch (linkError) {
+              // Non-fatal - enrichment succeeded, just audit trail failed
+              console.warn(`[RefMaps] Failed to create linked ref_map_point for audit: ${linkError}`);
+            }
+
             // Verification: Warn if GPS applied but regions failed
             if (!enrichResult.updated.regions) {
               console.warn(`[RefMaps] ⚠️ GPS applied but regions NOT updated for ${enrichment.existingLocId} ("${point.name}"). ` +

@@ -4,19 +4,30 @@
  * Provides safety net to prevent duplicate locations in the archive.
  * Checks for matches by:
  * 1. GPS proximity (within 150m = same physical site)
- * 2. Name similarity (≥85% Jaro-Winkler = high confidence match)
+ * 2. Name similarity (≥80% combined score = JW + Token Set Ratio)
+ * 3. Blocking word detection (prevents North/South false positives)
+ * 4. Generic name handling (requires GPS for "House", "Church", etc.)
  *
  * ADR Reference: ADR-pin-conversion-duplicate-prevention.md
+ * Updated: 2025-12-11 with Token Set Ratio and blocking word detection
  */
 
 import type { Kysely } from 'kysely';
 import type { Database } from '../main/database.types';
 import { haversineDistance, getBoundingBox } from './geo-utils';
-import { jaroWinklerSimilarity } from './jaro-winkler-service';
+import {
+  calculateNameMatch,
+  calculateMultiSignalMatch,
+  isGenericName,
+  hasUncertainty,
+  isPlaceholder,
+  type NameMatchResult,
+  type MultiSignalResult,
+} from './token-set-service';
 import { DUPLICATE_CONFIG } from '../../src/lib/constants';
 
 // Use centralized constants for duplicate detection
-const { GPS_RADIUS_METERS, NAME_SIMILARITY_THRESHOLD } = DUPLICATE_CONFIG;
+const { GPS_RADIUS_METERS, NAME_SIMILARITY_THRESHOLD, GENERIC_NAME_GPS_RADIUS_METERS } = DUPLICATE_CONFIG;
 
 /**
  * Input for duplicate check
@@ -43,7 +54,7 @@ export interface DuplicateMatch {
   locnam: string;
   akanam: string | null;
   state: string | null;
-  matchType: 'gps' | 'name';
+  matchType: 'gps' | 'name' | 'combined';
   distanceMeters?: number;
   nameSimilarity?: number;
   matchedField?: 'locnam' | 'akanam';
@@ -51,6 +62,20 @@ export interface DuplicateMatch {
   /** GPS coordinates of the matched location (for map view) */
   lat?: number | null;
   lng?: number | null;
+  /** Token-based match details */
+  sharedTokens?: string[];
+  /** Whether this match was blocked (different place) */
+  blocked?: boolean;
+  /** Block reason if blocked */
+  blockReason?: string;
+  /** Confidence tier from multi-signal matching */
+  confidenceTier?: 'high' | 'medium' | 'low' | 'none';
+  /** Total confidence score (0-100) */
+  confidenceScore?: number;
+  /** Whether user review is recommended */
+  requiresUserReview?: boolean;
+  /** Whether this is a generic name match */
+  isGenericNameMatch?: boolean;
 }
 
 /**
@@ -120,7 +145,13 @@ export class LocationDuplicateService {
   constructor(private db: Kysely<Database>) {}
 
   /**
-   * Check if a new location would be a duplicate of an existing one
+   * Check if a new location would be a duplicate of an existing one.
+   *
+   * Uses multi-signal matching:
+   * 1. GPS proximity (within 150m = same physical site)
+   * 2. Name similarity (Token Set Ratio + Jaro-Winkler)
+   * 3. Blocking word detection (prevents North/South false positives)
+   * 4. Generic name handling (requires GPS for "House", "Church", etc.)
    *
    * @param input - Name and optional GPS coordinates
    * @param exclusions - Previously marked "different" pairs to skip
@@ -133,6 +164,7 @@ export class LocationDuplicateService {
     const normalizedInputName = normalizeName(input.name);
 
     // 1. GPS CHECK (if coordinates provided)
+    // GPS check takes priority - same physical location is always a duplicate
     if (input.lat != null && input.lng != null) {
       const gpsMatch = await this.checkGpsProximity(
         input.lat,
@@ -145,8 +177,15 @@ export class LocationDuplicateService {
       }
     }
 
-    // 2. NAME CHECK (always runs)
-    const nameMatch = await this.checkNameSimilarity(normalizedInputName, exclusions);
+    // 2. NAME CHECK with multi-signal matching
+    // Pass GPS coordinates for combined scoring
+    const nameMatch = await this.checkNameSimilarity(
+      input.name,
+      normalizedInputName,
+      exclusions,
+      input.lat,
+      input.lng
+    );
     if (nameMatch) {
       return { hasDuplicate: true, match: nameMatch };
     }
@@ -216,12 +255,20 @@ export class LocationDuplicateService {
   }
 
   /**
-   * Check for name similarity matches ≥50%
+   * Check for name similarity matches using Token Set Ratio + Jaro-Winkler.
+   * Incorporates blocking word detection and generic name handling.
    */
   private async checkNameSimilarity(
+    inputName: string,
     normalizedInputName: string,
-    exclusions: ExclusionPair[]
+    exclusions: ExclusionPair[],
+    inputLat?: number | null,
+    inputLng?: number | null
   ): Promise<DuplicateMatch | null> {
+    // Check if input name is generic - requires GPS match
+    const inputIsGeneric = isGenericName(inputName);
+    const inputHasUncertainty = hasUncertainty(inputName);
+
     // Query all locations with names
     const locations = await this.db
       .selectFrom('locs')
@@ -232,11 +279,15 @@ export class LocationDuplicateService {
         'state',
         'gps_lat',
         'gps_lng',
+        'address_county',
       ])
       .execute();
 
+    let bestMatch: DuplicateMatch | null = null;
+    let bestScore = 0;
+
     for (const loc of locations) {
-      // Check against each name field (historicalName removed)
+      // Check against each name field
       const namesToCheck: Array<{
         field: 'locnam' | 'akanam';
         value: string | null;
@@ -248,33 +299,78 @@ export class LocationDuplicateService {
       for (const { field, value } of namesToCheck) {
         if (!value) continue;
 
-        const normalizedValue = normalizeName(value);
-        const similarity = jaroWinklerSimilarity(normalizedInputName, normalizedValue);
+        // Check if this pair was previously marked "different"
+        if (isExcluded(inputName, value, exclusions)) continue;
 
-        if (similarity >= NAME_SIMILARITY_THRESHOLD) {
-          // Check if this pair was previously marked "different"
-          if (isExcluded(normalizedInputName, normalizedValue, exclusions)) continue;
+        // Use multi-signal matching for comprehensive score
+        const multiSignal = calculateMultiSignalMatch({
+          name1: inputName,
+          name2: value,
+          lat1: inputLat,
+          lng1: inputLng,
+          lat2: loc.gps_lat,
+          lng2: loc.gps_lng,
+          state1: null, // Input may not have state yet
+          state2: loc.state,
+          county1: null,
+          county2: loc.address_county,
+        });
+
+        // Skip blocked matches (opposite directions, different building IDs, etc.)
+        if (multiSignal.nameMatch.blocked) {
+          continue;
+        }
+
+        // Check name similarity threshold
+        const similarity = multiSignal.nameMatch.score;
+        if (similarity < NAME_SIMILARITY_THRESHOLD) {
+          continue;
+        }
+
+        // Generic name handling: require close GPS for generic names
+        const locIsGeneric = isGenericName(value);
+        const isGenericMatch = inputIsGeneric || locIsGeneric;
+
+        if (isGenericMatch) {
+          // For generic names, require GPS within 25m or skip
+          if (!multiSignal.distanceMeters || multiSignal.distanceMeters > (GENERIC_NAME_GPS_RADIUS_METERS ?? 25)) {
+            continue;
+          }
+        }
+
+        // Calculate effective score (use multi-signal total for ranking)
+        const effectiveScore = multiSignal.totalScore;
+
+        // Keep best match
+        if (effectiveScore > bestScore) {
+          bestScore = effectiveScore;
 
           // Get media count
           const mediaCount = await this.getMediaCount(loc.locid);
 
-          return {
+          bestMatch = {
             locationId: loc.locid,
             locnam: loc.locnam,
             akanam: loc.akanam,
             state: loc.state,
-            matchType: 'name',
+            matchType: multiSignal.distanceMeters !== undefined ? 'combined' : 'name',
             nameSimilarity: Math.round(similarity * 100),
             matchedField: field,
             mediaCount,
             lat: loc.gps_lat,
             lng: loc.gps_lng,
+            distanceMeters: multiSignal.distanceMeters !== undefined ? Math.round(multiSignal.distanceMeters) : undefined,
+            sharedTokens: multiSignal.nameMatch.sharedTokens,
+            confidenceTier: multiSignal.tier,
+            confidenceScore: multiSignal.totalScore,
+            requiresUserReview: multiSignal.nameMatch.requiresUserReview || inputHasUncertainty,
+            isGenericNameMatch: isGenericMatch,
           };
         }
       }
     }
 
-    return null;
+    return bestMatch;
   }
 
   /**

@@ -19,7 +19,7 @@
     locnam: string;
     akanam: string | null;
     state: string | null;
-    matchType: 'gps' | 'name';
+    matchType: 'gps' | 'name' | 'combined';
     distanceMeters?: number;
     nameSimilarity?: number;
     matchedField?: 'locnam' | 'akanam';
@@ -27,6 +27,16 @@
     /** GPS coordinates of the matched location (for map view) */
     lat?: number | null;
     lng?: number | null;
+    /** Token-based match details (new) */
+    sharedTokens?: string[];
+    /** Confidence tier from multi-signal matching */
+    confidenceTier?: 'high' | 'medium' | 'low' | 'none';
+    /** Total confidence score (0-100) */
+    confidenceScore?: number;
+    /** Whether user review is recommended */
+    requiresUserReview?: boolean;
+    /** Whether this is a generic name match */
+    isGenericNameMatch?: boolean;
   }
 
   interface Props {
@@ -204,12 +214,34 @@
                 </svg>
                 {formatDistance(match.distanceMeters)} away
               </span>
+            {:else if match.matchType === 'combined'}
+              <!-- Combined GPS + Name match -->
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-gps-verified/20 text-braun-700 rounded">
+                <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" />
+                </svg>
+                {formatDistance(match.distanceMeters)}
+              </span>
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-braun-200 text-braun-700 rounded">
+                {match.nameSimilarity}% name match
+              </span>
             {:else}
               <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-braun-200 text-braun-700 rounded">
                 <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                   <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd" />
                 </svg>
-                {formatSimilarity(match.nameSimilarity)} {getMatchedFieldLabel(match.matchedField)} match
+                {match.nameSimilarity}% {getMatchedFieldLabel(match.matchedField)} match
+              </span>
+            {/if}
+
+            <!-- Confidence tier badge -->
+            {#if match.confidenceTier}
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded {
+                match.confidenceTier === 'high' ? 'bg-gps-verified/20 text-gps-verified' :
+                match.confidenceTier === 'medium' ? 'bg-gps-medium/20 text-gps-medium' :
+                'bg-gps-low/20 text-gps-low'
+              }">
+                {match.confidenceTier} confidence
               </span>
             {/if}
 
@@ -221,6 +253,24 @@
             <span class="text-braun-400">•</span>
             <span>{match.mediaCount} {match.mediaCount === 1 ? 'file' : 'files'}</span>
           </div>
+
+          <!-- Shared tokens (if available) - helps user understand why it matched -->
+          {#if match.sharedTokens && match.sharedTokens.length > 0}
+            <div class="mt-2 text-xs text-braun-500">
+              <span class="font-medium">Shared words:</span>
+              {match.sharedTokens.join(', ')}
+            </div>
+          {/if}
+
+          <!-- Generic name warning -->
+          {#if match.isGenericNameMatch}
+            <div class="mt-2 text-xs text-gps-medium flex items-center gap-1">
+              <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+              </svg>
+              Generic name - matched by GPS proximity
+            </div>
+          {/if}
         </div>
 
         <!-- Map view (collapsible) -->
@@ -288,8 +338,15 @@
         <p class="text-xs text-braun-500 mt-3">
           {#if match.matchType === 'gps'}
             This location is very close to an existing entry in your archive.
+          {:else if match.matchType === 'combined'}
+            This location is nearby and has a similar name to an existing entry.
+          {:else if match.isGenericNameMatch}
+            Generic names like this require GPS verification to match.
           {:else}
             The name you entered is similar to an existing location.
+          {/if}
+          {#if match.requiresUserReview}
+            <strong>Review recommended</strong> - please verify this is the same place.
           {/if}
         </p>
       </div>

@@ -2630,6 +2630,63 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 67 completed: type/stype renamed to category/class');
     }
 
+    // Migration 68: Merge Audit Log for duplicate detection research provenance
+    // Tracks all auto-merges and user-confirmed merges for audit trail
+    const mergeAuditExists = sqlite.prepare(
+      `SELECT 1 FROM sqlite_master WHERE type='table' AND name='merge_audit_log'`
+    ).get();
+    if (!mergeAuditExists) {
+      sqlite.exec(`
+        CREATE TABLE IF NOT EXISTS merge_audit_log (
+          merge_id TEXT PRIMARY KEY NOT NULL,
+          merged_at TEXT NOT NULL DEFAULT (datetime('now')),
+          merged_by TEXT,
+
+          -- Survivor (kept location)
+          survivor_locid TEXT NOT NULL,
+          survivor_name TEXT NOT NULL,
+
+          -- Merged entity (can be location or ref_map_point)
+          merged_type TEXT NOT NULL CHECK (merged_type IN ('location', 'ref_map_point')),
+          merged_locid TEXT,
+          merged_point_id TEXT,
+          merged_name TEXT,
+
+          -- Match details for research verification
+          match_type TEXT NOT NULL CHECK (match_type IN ('gps', 'name', 'combined', 'name_gps', 'name_state', 'name_only')),
+          gps_distance_meters INTEGER,
+          name_similarity INTEGER,
+          confidence_score INTEGER,
+          confidence_tier TEXT,
+
+          -- Token set details for debugging
+          shared_tokens TEXT,
+          unique_tokens_1 TEXT,
+          unique_tokens_2 TEXT,
+
+          -- Flags
+          was_auto_merged INTEGER NOT NULL DEFAULT 0,
+          was_blocked INTEGER NOT NULL DEFAULT 0,
+          block_reason TEXT,
+          is_generic_name INTEGER NOT NULL DEFAULT 0,
+          required_user_review INTEGER NOT NULL DEFAULT 0,
+
+          -- What fields were updated
+          fields_updated TEXT,
+
+          -- Audit metadata
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+      `);
+
+      // Indices for audit queries
+      sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_merge_audit_survivor ON merge_audit_log(survivor_locid)`);
+      sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_merge_audit_merged_at ON merge_audit_log(merged_at)`);
+      sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_merge_audit_type ON merge_audit_log(match_type)`);
+
+      console.log('Migration 68 completed: merge_audit_log table created');
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;
