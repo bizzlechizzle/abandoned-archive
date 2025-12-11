@@ -47,6 +47,7 @@ import { registerBagItHandlers } from './bagit';
 import { registerImportV2Handlers, initializeJobWorker, shutdownJobWorker } from './import-v2';
 import { registerMonitoringHandlers, setMainWindow as setMonitoringMainWindow } from './monitoring';
 import { registerWebSourcesHandlers } from './websources';
+import { registerTimelineHandlers } from './timeline';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
@@ -117,6 +118,9 @@ export function registerIpcHandlers() {
 
   // Monitoring & Audit System (Migration 51)
   registerMonitoringHandlers(db);
+
+  // Timeline events (Migration 69)
+  registerTimelineHandlers(db);
 
   console.log('IPC handlers registered (modular)');
 }

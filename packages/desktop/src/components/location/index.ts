@@ -17,5 +17,9 @@ export { default as LocationWebSources } from './LocationWebSources.svelte';
 export { default as LocationNerdStats } from './LocationNerdStats.svelte';
 export { default as LocationSettings } from './LocationSettings.svelte';
 export { default as SubLocationGrid } from './SubLocationGrid.svelte';
+// Timeline (Migration 69)
+export { default as LocationTimeline } from './LocationTimeline.svelte';
+export { default as TimelineEventRow } from './TimelineEventRow.svelte';
+export { default as TimelineDateInput } from './TimelineDateInput.svelte';
 
 export * from './types';

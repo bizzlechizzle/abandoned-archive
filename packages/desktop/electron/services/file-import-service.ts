@@ -32,6 +32,8 @@ import {
 import { SQLiteMediaRepository } from '../repositories/sqlite-media-repository';
 import { SQLiteImportRepository } from '../repositories/sqlite-import-repository';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
+// Migration 69: Timeline service for visit event creation on media import
+import { getTimelineService } from '../main/ipc-handlers/timeline';
 import type { ImgsTable, VidsTable, DocsTable } from '../main/database.types';
 import type { Kysely } from 'kysely';
 import type { Database } from '../main/database.types';
@@ -83,6 +85,15 @@ export interface ImportResult {
     width: number;
     height: number;
     rotation?: number | null;
+  } | null;
+  // Migration 69: Timeline data for visit event creation (post-transaction)
+  _timelineData?: {
+    locid: string;
+    subid: string | null;
+    mediaHash: string;
+    dateTaken: string | null;
+    cameraMake: string | null;
+    cameraModel: string | null;
   } | null;
 }
 
@@ -398,6 +409,31 @@ export class FileImportService {
           }).catch(err => {
             logger.warn('FileImport', 'Video proxy generation error (non-fatal)', { error: String(err) });
           });
+        }
+
+        // Migration 69: Create/update visit event for timeline fire-and-forget
+        // CRITICAL: This runs OUTSIDE the transaction to avoid SQLite deadlock
+        // Creates or updates visit events based on media date taken
+        if (result.success && !result.duplicate && result._timelineData) {
+          const timelineData = result._timelineData;
+          const timelineService = getTimelineService();
+          if (timelineService && timelineData.dateTaken) {
+            timelineService.handleMediaImport(
+              timelineData.locid,
+              timelineData.subid,
+              timelineData.mediaHash,
+              timelineData.dateTaken,
+              timelineData.cameraMake,
+              timelineData.cameraModel,
+              file.imported_by_id || undefined
+            ).then(event => {
+              if (event) {
+                logger.info('FileImport', `Timeline visit event ${event.user_approved ? 'created/updated (approved)' : 'pending approval'} for date ${event.date_display}`);
+              }
+            }).catch(err => {
+              logger.warn('FileImport', 'Timeline event creation failed (non-fatal)', { error: String(err) });
+            });
+          }
         }
       } catch (error) {
         logger.error('FileImport', `Error importing file ${file.originalName}`, error instanceof Error ? error : undefined);
@@ -1046,6 +1082,16 @@ export class FileImportService {
       // OPT-059: Return video proxy data for post-transaction generation
       // Fixes SQLite deadlock by moving proxy write outside transaction
       _videoProxyData: videoProxyData,
+      // Migration 69: Timeline data for visit event creation
+      // Only for images/videos with date taken - creates/updates visit events
+      _timelineData: (type === 'image' || type === 'video') ? {
+        locid: file.locid,
+        subid: file.subid || null,
+        mediaHash: hash,
+        dateTaken: metadata?.dateTaken || null,
+        cameraMake: metadata?.cameraMake || null,
+        cameraModel: metadata?.cameraModel || null,
+      } : null,
     };
   }
 

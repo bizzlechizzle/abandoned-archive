@@ -24,6 +24,8 @@ import { LocationDuplicateService } from '../../services/location-duplicate-serv
 import { getCurrentUser } from '../../services/user-service';
 // BagIt: Initialize bag on location creation, update bag-info on metadata changes
 import { getBagItService } from './bagit';
+// Timeline: Initialize timeline events on location creation
+import { getTimelineService } from './timeline';
 
 export function registerLocationHandlers(db: Kysely<Database>) {
   const locationRepo = new SQLiteLocationRepository(db);
@@ -115,6 +117,21 @@ export function registerLocationHandlers(db: Kysely<Database>) {
             console.log(`[BagIt] Initialized bag for new location: ${location.locnam}`);
           }
         } catch (e) { console.warn('[Location IPC] Failed to initialize BagIt bag (non-fatal):', e); }
+      }
+
+      // Timeline: Initialize timeline events for new location (non-blocking)
+      if (location) {
+        try {
+          const timelineService = getTimelineService();
+          if (timelineService) {
+            await timelineService.initializeLocationTimeline(
+              location.locid,
+              location.locadd || null,
+              currentUser?.userId
+            );
+            console.log(`[Timeline] Initialized timeline for new location: ${location.locnam}`);
+          }
+        } catch (e) { console.warn('[Location IPC] Failed to initialize timeline (non-fatal):', e); }
       }
 
       return location;

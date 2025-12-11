@@ -716,6 +716,24 @@ const api = {
       return () => ipcRenderer.removeListener("monitoring:alert", listener);
     },
   },
+
+  // Timeline (Migration 69)
+  timeline: {
+    findByLocation: (locid) => invokeAuto("timeline:findByLocation")(locid),
+    findBySubLocation: (locid, subid) => invokeAuto("timeline:findBySubLocation")(locid, subid),
+    findCombined: (locid) => invokeAuto("timeline:findCombined")(locid),
+    parseDate: (input) => invokeAuto("timeline:parseDate")(input),
+    create: (input, userId) => invokeAuto("timeline:create")(input, userId),
+    update: (eventId, updates, userId) => invokeAuto("timeline:update")(eventId, updates, userId),
+    delete: (eventId) => invokeAuto("timeline:delete")(eventId),
+    approve: (eventId, userId) => invokeAuto("timeline:approve")(eventId, userId),
+    initializeLocation: (locid, locadd, userId) => invokeAuto("timeline:initializeLocation")(locid, locadd, userId),
+    initializeSubLocation: (locid, subid, userId) => invokeAuto("timeline:initializeSubLocation")(locid, subid, userId),
+    getVisitCount: (locid) => invokeAuto("timeline:getVisitCount")(locid),
+    getEstablished: (locid, subid) => invokeAuto("timeline:getEstablished")(locid, subid),
+    updateEstablished: (locid, subid, dateInput, eventSubtype, userId) =>
+      invokeAuto("timeline:updateEstablished")(locid, subid, dateInput, eventSubtype, userId),
+  },
 };
 
 contextBridge.exposeInMainWorld("electronAPI", api);

@@ -1,4 +1,4 @@
-import type { Location, LocationInput, LocationFilters } from '@au-archive/core';
+import type { Location, LocationInput, LocationFilters, TimelineEvent, TimelineEventInput, TimelineEventWithSource, ParsedDate } from '@au-archive/core';
 
 /**
  * OPT-043: Lean location type for map display - only essential fields
@@ -939,6 +939,23 @@ export interface ElectronAPI {
     clearCompleted: (olderThanMs?: number) => Promise<{ cleared: number }>;
     onProgress: (callback: (progress: JobProgress) => void) => () => void;
     onAssetReady: (callback: (event: AssetReadyEvent) => void) => () => void;
+  };
+
+  // Timeline (Migration 69) - Location history and visit tracking
+  timeline: {
+    findByLocation: (locid: string) => Promise<TimelineEvent[]>;
+    findBySubLocation: (locid: string, subid: string) => Promise<TimelineEvent[]>;
+    findCombined: (locid: string) => Promise<TimelineEventWithSource[]>;
+    parseDate: (input: string) => Promise<ParsedDate>;
+    create: (input: TimelineEventInput, userId?: string) => Promise<TimelineEvent>;
+    update: (eventId: string, updates: Partial<TimelineEventInput>, userId?: string) => Promise<TimelineEvent | undefined>;
+    delete: (eventId: string) => Promise<boolean>;
+    approve: (eventId: string, userId: string) => Promise<TimelineEvent | undefined>;
+    initializeLocation: (locid: string, locadd: string | null, userId?: string) => Promise<void>;
+    initializeSubLocation: (locid: string, subid: string, userId?: string) => Promise<void>;
+    getVisitCount: (locid: string) => Promise<number>;
+    getEstablished: (locid: string, subid?: string | null) => Promise<TimelineEvent | undefined>;
+    updateEstablished: (locid: string, subid: string | null, dateInput: string, eventSubtype?: string, userId?: string) => Promise<TimelineEvent | undefined>;
   };
 
 }

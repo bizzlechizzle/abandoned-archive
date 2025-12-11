@@ -39,6 +39,8 @@ export interface Database {
   // Migration 66: OPT-111 Enhanced Web Source Metadata
   web_source_images: WebSourceImagesTable;
   web_source_videos: WebSourceVideosTable;
+  // Migration 69: Timeline events
+  location_timeline: LocationTimelineTable;
 }
 
 // Locations table
@@ -905,4 +907,49 @@ export interface WebSourceVideosTable {
   metadata_json: string | null;
 
   created_at: Generated<string>;
+}
+
+// Migration 69: Timeline events table
+export interface LocationTimelineTable {
+  event_id: string;
+  locid: string;
+  subid: string | null;
+
+  // Event type
+  event_type: string;        // 'established' | 'visit' | 'database_entry' | 'custom'
+  event_subtype: string | null; // For established: 'built'|'opened'|'expanded'|'renovated'|'closed'|'abandoned'|'demolished'
+
+  // Date information (flexible precision)
+  date_start: string | null;
+  date_end: string | null;
+  date_precision: string;    // 'exact'|'month'|'year'|'decade'|'century'|'circa'|'range'|'before'|'after'|'early'|'mid'|'late'|'unknown'
+  date_display: string | null;
+  date_edtf: string | null;
+  date_sort: number | null;
+
+  // Override for wrong EXIF dates
+  date_override: string | null;
+  override_reason: string | null;
+
+  // Source tracking
+  source_type: string | null; // 'exif' | 'manual' | 'web' | 'document' | 'system'
+  source_ref: string | null;  // imghash/vidhash for EXIF, URL for web
+  source_device: string | null;
+
+  // Visit consolidation
+  media_count: number;
+  media_hashes: string | null; // JSON array of imghash/vidhash
+
+  // Verification
+  auto_approved: number;      // 1 if cellphone (auto-trusted)
+  user_approved: number;      // 1 if user verified
+  approved_at: string | null;
+  approved_by: string | null;
+
+  // Audit trail
+  notes: string | null;
+  created_at: string;
+  created_by: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
 }

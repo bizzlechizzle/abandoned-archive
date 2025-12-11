@@ -14,7 +14,7 @@
   import NotesSection from '../components/NotesSection.svelte';
   import MediaViewer from '../components/MediaViewer.svelte';
   import {
-    LocationInfo,
+    LocationInfo, LocationTimeline,
     LocationMapSection, LocationOriginalAssets,
     LocationImportZone, LocationBookmarks, LocationWebSources, LocationNerdStats,
     LocationSettings, SubLocationGrid,
@@ -1218,6 +1218,16 @@
               onCampusSubLocationClick={(subid) => router.navigate(`/location/${locationId}/sub/${subid}`)}
             />
           </div>
+        </div>
+
+        <!-- Timeline Section (Migration 69) -->
+        <div class="mb-8">
+          <LocationTimeline
+            locid={location.locid}
+            subid={isViewingSubLocation && currentSubLocation ? currentSubLocation.subid : null}
+            isHostLocation={isHostLocation && !isViewingSubLocation}
+            onUpdate={loadLocation}
+          />
         </div>
 
         <!-- Sub-Location Grid (only for host locations, hide when viewing a sub-location) -->

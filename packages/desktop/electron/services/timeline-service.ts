@@ -1,0 +1,397 @@
+/**
+ * Timeline Service
+ * Business logic for timeline events - visit consolidation, cellphone detection, date handling
+ */
+
+import { SqliteTimelineRepository } from '../repositories/sqlite-timeline-repository';
+import {
+  parseDate,
+  formatDateDisplay,
+  calculateDateSort,
+  toEdtf,
+} from './date-parser-service';
+import type { ParsedDate } from './date-parser-service';
+import type {
+  TimelineEvent,
+  TimelineEventInput,
+  TimelineEventWithSource,
+} from '@au-archive/core';
+
+// Cellphone manufacturers whose dates can be auto-approved
+// These devices sync time automatically via network
+const CELLPHONE_MAKES = [
+  'apple',
+  'samsung',
+  'google',
+  'pixel',
+  'oneplus',
+  'xiaomi',
+  'huawei',
+  'oppo',
+  'vivo',
+  'motorola',
+  'lg',
+  'sony mobile',
+  'htc',
+  'nokia',
+  'realme',
+  'poco',
+  'asus rog',
+];
+
+// Models that indicate cellphone even if make isn't in list
+const CELLPHONE_MODELS = [
+  'iphone',
+  'galaxy',
+  'pixel',
+];
+
+export class TimelineService {
+  constructor(private repository: SqliteTimelineRepository) {}
+
+  /**
+   * Check if a device is a cellphone (dates can be auto-approved)
+   * Cellphones sync time automatically, so EXIF dates are reliable
+   */
+  isCellphone(make: string | null, model: string | null): boolean {
+    if (!make && !model) return false;
+
+    const makeLower = make?.toLowerCase() || '';
+    const modelLower = model?.toLowerCase() || '';
+
+    // Check make against known cellphone manufacturers
+    if (CELLPHONE_MAKES.some(m => makeLower.includes(m))) {
+      return true;
+    }
+
+    // Check model for known cellphone indicators
+    if (CELLPHONE_MODELS.some(m => modelLower.includes(m))) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Get timeline for a location (host only, excludes sub-location events)
+   */
+  async getTimeline(locid: string): Promise<TimelineEvent[]> {
+    return this.repository.findByLocation(locid);
+  }
+
+  /**
+   * Get timeline for a sub-location
+   */
+  async getSubLocationTimeline(
+    locid: string,
+    subid: string
+  ): Promise<TimelineEvent[]> {
+    return this.repository.findBySubLocation(locid, subid);
+  }
+
+  /**
+   * Get combined timeline for host location
+   * Includes all sub-location events with building names
+   */
+  async getCombinedTimeline(locid: string): Promise<TimelineEventWithSource[]> {
+    return this.repository.findCombined(locid);
+  }
+
+  /**
+   * Parse a date string and return structured date info
+   */
+  parseDateInput(input: string): ParsedDate {
+    return parseDate(input);
+  }
+
+  /**
+   * Create a new timeline event
+   */
+  async createEvent(
+    input: TimelineEventInput,
+    userId?: string
+  ): Promise<TimelineEvent> {
+    // Calculate derived fields if not provided
+    if (input.date_sort === undefined || input.date_sort === null) {
+      input.date_sort = calculateDateSort(
+        input.date_precision,
+        input.date_start ?? null,
+        input.date_end ?? null
+      );
+    }
+
+    if (!input.date_display) {
+      input.date_display = formatDateDisplay(
+        input.date_precision,
+        input.date_start ?? null,
+        input.date_end ?? null
+      );
+    }
+
+    if (!input.date_edtf) {
+      input.date_edtf = toEdtf(
+        input.date_precision,
+        input.date_start ?? null,
+        input.date_end ?? null
+      );
+    }
+
+    return this.repository.create(input, userId);
+  }
+
+  /**
+   * Update an existing event
+   */
+  async updateEvent(
+    eventId: string,
+    updates: Partial<TimelineEventInput>,
+    userId?: string
+  ): Promise<TimelineEvent | undefined> {
+    // Recalculate derived fields if date fields changed
+    if (
+      updates.date_precision !== undefined ||
+      updates.date_start !== undefined ||
+      updates.date_end !== undefined
+    ) {
+      const existing = await this.repository.findById(eventId);
+      if (existing) {
+        const precision = updates.date_precision ?? existing.date_precision;
+        const dateStart = updates.date_start !== undefined ? updates.date_start : existing.date_start;
+        const dateEnd = updates.date_end !== undefined ? updates.date_end : existing.date_end;
+
+        updates.date_sort = calculateDateSort(
+          precision as any,
+          dateStart,
+          dateEnd
+        );
+        updates.date_display = formatDateDisplay(
+          precision as any,
+          dateStart,
+          dateEnd
+        );
+        updates.date_edtf = toEdtf(precision as any, dateStart, dateEnd);
+      }
+    }
+
+    return this.repository.update(eventId, updates, userId);
+  }
+
+  /**
+   * Delete an event
+   */
+  async deleteEvent(eventId: string): Promise<boolean> {
+    return this.repository.delete(eventId);
+  }
+
+  /**
+   * Approve an event (user verification)
+   */
+  async approveEvent(
+    eventId: string,
+    userId: string
+  ): Promise<TimelineEvent | undefined> {
+    return this.repository.approve(eventId, userId);
+  }
+
+  /**
+   * Handle media import - create or update visit event
+   * Consolidates multiple photos from the same day into one visit
+   */
+  async handleMediaImport(
+    locid: string,
+    subid: string | null,
+    mediaHash: string,
+    dateTaken: string | null,
+    cameraMake: string | null,
+    cameraModel: string | null,
+    userId?: string
+  ): Promise<TimelineEvent | undefined> {
+    if (!dateTaken) return undefined;
+
+    // Extract just the date part (YYYY-MM-DD) from ISO timestamp
+    const dateOnly = dateTaken.split('T')[0];
+    if (!dateOnly || dateOnly.length < 10) return undefined;
+
+    // Check for existing visit on this date
+    const existingVisit = await this.repository.findVisitByDate(
+      locid,
+      subid,
+      dateOnly
+    );
+
+    if (existingVisit) {
+      // Add media to existing visit
+      return this.repository.addMediaToVisit(existingVisit.event_id, mediaHash, userId);
+    }
+
+    // Create new visit event
+    const isCellphoneDate = this.isCellphone(cameraMake, cameraModel);
+    const device = cameraMake && cameraModel
+      ? `${cameraMake} ${cameraModel}`.trim()
+      : (cameraMake || cameraModel || null);
+
+    return this.createEvent(
+      {
+        locid,
+        subid: subid ?? undefined,
+        event_type: 'visit',
+        date_start: dateOnly,
+        date_precision: 'exact',
+        source_type: 'exif',
+        source_ref: mediaHash,
+        source_device: device,
+        media_count: 1,
+        media_hashes: JSON.stringify([mediaHash]),
+        auto_approved: isCellphoneDate ? 1 : 0,
+      },
+      userId
+    );
+  }
+
+  /**
+   * Handle media deletion - update or remove visit
+   */
+  async handleMediaDelete(
+    mediaHash: string,
+    userId?: string
+  ): Promise<void> {
+    const visit = await this.repository.findVisitByMediaHash(mediaHash);
+    if (visit) {
+      await this.repository.removeMediaFromVisit(visit.event_id, mediaHash, userId);
+    }
+  }
+
+  /**
+   * Initialize timeline for a new location
+   * Creates established (blank) and database_entry events
+   */
+  async initializeLocationTimeline(
+    locid: string,
+    locadd: string | null,
+    userId?: string
+  ): Promise<void> {
+    // Check if already initialized
+    const existing = await this.repository.getEstablishedEvent(locid);
+    if (existing) return; // Already initialized
+
+    // Create established event (blank)
+    await this.createEvent(
+      {
+        locid,
+        event_type: 'established',
+        event_subtype: 'built',
+        date_precision: 'unknown',
+      },
+      userId
+    );
+
+    // Create database_entry event
+    if (locadd) {
+      const dateOnly = locadd.split('T')[0];
+      const parsed = parseDate(dateOnly);
+      await this.createEvent(
+        {
+          locid,
+          event_type: 'database_entry',
+          date_start: dateOnly,
+          date_precision: 'exact',
+          date_display: parsed.display,
+          date_sort: parsed.dateSort,
+          source_type: 'system',
+        },
+        userId
+      );
+    }
+  }
+
+  /**
+   * Initialize timeline for a new sub-location
+   * Creates established (blank) event
+   */
+  async initializeSubLocationTimeline(
+    locid: string,
+    subid: string,
+    userId?: string
+  ): Promise<void> {
+    // Check if already initialized
+    const existing = await this.repository.getEstablishedEvent(locid, subid);
+    if (existing) return; // Already initialized
+
+    // Create established event (blank)
+    await this.createEvent(
+      {
+        locid,
+        subid,
+        event_type: 'established',
+        event_subtype: 'built',
+        date_precision: 'unknown',
+      },
+      userId
+    );
+  }
+
+  /**
+   * Get visit count for a location
+   */
+  async getVisitCount(locid: string): Promise<number> {
+    return this.repository.getVisitCount(locid);
+  }
+
+  /**
+   * Get the established event for a location
+   */
+  async getEstablishedEvent(locid: string, subid?: string | null): Promise<TimelineEvent | undefined> {
+    return this.repository.getEstablishedEvent(locid, subid ?? undefined);
+  }
+
+  /**
+   * Update established date for a location
+   * Parses natural language input and updates the event
+   */
+  async updateEstablishedDate(
+    locid: string,
+    subid: string | null,
+    dateInput: string,
+    eventSubtype: string = 'built',
+    userId?: string
+  ): Promise<TimelineEvent | undefined> {
+    const parsed = parseDate(dateInput);
+    const event = await this.repository.getEstablishedEvent(locid, subid ?? undefined);
+
+    if (!event) {
+      // Create if doesn't exist
+      return this.createEvent(
+        {
+          locid,
+          subid: subid ?? undefined,
+          event_type: 'established',
+          event_subtype: eventSubtype,
+          date_start: parsed.dateStart,
+          date_end: parsed.dateEnd,
+          date_precision: parsed.precision,
+          date_display: parsed.display,
+          date_edtf: parsed.edtf,
+          date_sort: parsed.dateSort,
+          source_type: 'manual',
+        },
+        userId
+      );
+    }
+
+    // Update existing
+    return this.repository.update(
+      event.event_id,
+      {
+        event_subtype: eventSubtype,
+        date_start: parsed.dateStart,
+        date_end: parsed.dateEnd,
+        date_precision: parsed.precision,
+        date_display: parsed.display,
+        date_edtf: parsed.edtf,
+        date_sort: parsed.dateSort,
+        source_type: 'manual',
+      },
+      userId
+    );
+  }
+}

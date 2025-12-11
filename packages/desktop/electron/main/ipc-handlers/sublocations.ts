@@ -8,6 +8,8 @@ import { z } from 'zod';
 import type { Kysely } from 'kysely';
 import type { Database } from '../database.types';
 import { SQLiteSubLocationRepository } from '../../repositories/sqlite-sublocation-repository';
+// Timeline: Initialize timeline events on sub-location creation
+import { getTimelineService } from './timeline';
 
 // ADR-046: BLAKE3 16-char hex ID validator
 const Blake3IdSchema = z.string().length(16).regex(/^[a-f0-9]+$/, 'Must be 16-char lowercase hex');
@@ -29,7 +31,24 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
         created_by: z.string().nullable().optional(),
       });
       const validatedInput = CreateSchema.parse(input);
-      return await sublocRepo.create(validatedInput);
+      const sublocation = await sublocRepo.create(validatedInput);
+
+      // Timeline: Initialize timeline events for new sub-location (non-blocking)
+      if (sublocation) {
+        try {
+          const timelineService = getTimelineService();
+          if (timelineService) {
+            await timelineService.initializeSubLocationTimeline(
+              sublocation.locid,
+              sublocation.subid,
+              validatedInput.created_by ?? undefined
+            );
+            console.log(`[Timeline] Initialized timeline for new sub-location: ${sublocation.subnam}`);
+          }
+        } catch (e) { console.warn('[SubLocation IPC] Failed to initialize timeline (non-fatal):', e); }
+      }
+
+      return sublocation;
     } catch (error) {
       console.error('Error creating sub-location:', error);
       if (error instanceof z.ZodError) {

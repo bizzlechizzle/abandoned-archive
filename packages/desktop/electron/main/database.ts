@@ -2687,6 +2687,104 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 68 completed: merge_audit_log table created');
     }
 
+    // Migration 69: Timeline events table for location history
+    const hasTimelineTable = sqlite.prepare(`
+      SELECT name FROM sqlite_master WHERE type='table' AND name='location_timeline'
+    `).get();
+
+    if (!hasTimelineTable) {
+      sqlite.exec(`
+        CREATE TABLE location_timeline (
+          event_id TEXT PRIMARY KEY,
+          locid TEXT NOT NULL REFERENCES locs(locid) ON DELETE CASCADE,
+          subid TEXT REFERENCES slocs(subid) ON DELETE CASCADE,
+          event_type TEXT NOT NULL,
+          event_subtype TEXT,
+          date_start TEXT,
+          date_end TEXT,
+          date_precision TEXT NOT NULL,
+          date_display TEXT,
+          date_edtf TEXT,
+          date_sort INTEGER,
+          date_override TEXT,
+          override_reason TEXT,
+          source_type TEXT,
+          source_ref TEXT,
+          source_device TEXT,
+          media_count INTEGER DEFAULT 0,
+          media_hashes TEXT,
+          auto_approved INTEGER DEFAULT 0,
+          user_approved INTEGER DEFAULT 0,
+          approved_at TEXT,
+          approved_by TEXT,
+          notes TEXT,
+          created_at TEXT NOT NULL,
+          created_by TEXT,
+          updated_at TEXT,
+          updated_by TEXT
+        );
+
+        CREATE INDEX idx_timeline_locid ON location_timeline(locid);
+        CREATE INDEX idx_timeline_subid ON location_timeline(subid);
+        CREATE INDEX idx_timeline_type ON location_timeline(event_type);
+        CREATE INDEX idx_timeline_date ON location_timeline(date_sort);
+      `);
+      console.log('[Migration 69] Created location_timeline table');
+
+      // Backfill: Create database_entry events from existing locadd
+      const locsWithAdd = sqlite.prepare(`SELECT locid, locadd FROM locs WHERE locadd IS NOT NULL`).all() as { locid: string; locadd: string }[];
+      for (const loc of locsWithAdd) {
+        const dateStr = loc.locadd.split('T')[0];
+        const dateSort = dateStr ? parseInt(dateStr.replace(/-/g, '')) : 99999999;
+        sqlite.prepare(`
+          INSERT INTO location_timeline (
+            event_id, locid, event_type, date_start, date_precision,
+            date_display, date_sort, source_type, created_at
+          ) VALUES (?, ?, 'database_entry', ?, 'exact', ?, ?, 'system', datetime('now'))
+        `).run(
+          Math.random().toString(36).substring(2, 18).padEnd(16, '0').substring(0, 16),
+          loc.locid,
+          dateStr,
+          loc.locadd,
+          dateSort
+        );
+      }
+      console.log(`[Migration 69] Backfilled ${locsWithAdd.length} database_entry events`);
+
+      // Backfill: Create blank established events for all locations
+      const allLocs = sqlite.prepare(`SELECT locid FROM locs`).all() as { locid: string }[];
+      for (const loc of allLocs) {
+        sqlite.prepare(`
+          INSERT INTO location_timeline (
+            event_id, locid, event_type, event_subtype, date_precision,
+            date_display, date_sort, source_type, created_at
+          ) VALUES (?, ?, 'established', 'built', 'unknown', '—', 99999999, 'manual', datetime('now'))
+        `).run(
+          Math.random().toString(36).substring(2, 18).padEnd(16, '0').substring(0, 16),
+          loc.locid
+        );
+      }
+      console.log(`[Migration 69] Backfilled ${allLocs.length} established events for locations`);
+
+      // Backfill: Create blank established events for all sub-locations
+      const allSlocs = sqlite.prepare(`SELECT subid, locid FROM slocs`).all() as { subid: string; locid: string }[];
+      for (const sloc of allSlocs) {
+        sqlite.prepare(`
+          INSERT INTO location_timeline (
+            event_id, locid, subid, event_type, event_subtype, date_precision,
+            date_display, date_sort, source_type, created_at
+          ) VALUES (?, ?, ?, 'established', 'built', 'unknown', '—', 99999999, 'manual', datetime('now'))
+        `).run(
+          Math.random().toString(36).substring(2, 18).padEnd(16, '0').substring(0, 16),
+          sloc.locid,
+          sloc.subid
+        );
+      }
+      console.log(`[Migration 69] Backfilled ${allSlocs.length} established events for sub-locations`);
+
+      console.log('Migration 69 completed: location_timeline table created with backfill');
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;
