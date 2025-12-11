@@ -182,12 +182,14 @@
   // Verification scoring: Information complete when has Category, Class, AND Status
   const isInfoComplete = $derived(hasStatus && hasCategory && hasClass);
 
-  // Dynamic edit button state: "add" (red) when incomplete, "edit" (gray) when complete
+  // Dynamic edit button state: "add" (red) when incomplete, "edit" (green) when complete
+  // Red = 0% (missing any of Category, Class, Status)
+  // Green = 100% (has all three)
   const editButtonState = $derived<{ text: string; colorClass: string }>(() => {
     if (!isInfoComplete) {
       return { text: 'add', colorClass: 'text-gps-low hover:text-braun-900' };
     }
-    return { text: 'edit', colorClass: 'text-braun-500 hover:text-braun-900' };
+    return { text: 'edit', colorClass: 'text-gps-verified hover:text-braun-900' };
   });
   const hasAuthor = $derived(!!location.auth_imp);  // Original author field
   const hasAuthors = $derived(authors.length > 0);  // Tracked contributors from location_authors
@@ -492,10 +494,10 @@
     {#if onSave || onSubLocationSave}
       <button
         onclick={openEditModal}
-        class="text-sm {editButtonState.colorClass} hover:underline"
+        class="text-sm {editButtonState().colorClass} hover:underline"
         title="Edit information"
       >
-        {editButtonState.text}
+        {editButtonState().text}
       </button>
     {/if}
   </div>
