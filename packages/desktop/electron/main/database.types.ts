@@ -214,9 +214,8 @@ export interface SlocsTable {
   gps_verified_on_map: number;  // 0 or 1
   gps_captured_at: string | null;
 
-  // Migration 32: AKA and historical name for sub-locations
+  // Migration 32: AKA name (historicalName removed)
   akanam: string | null;
-  historicalName: string | null;
 
   // Migration 56 (OPT-093): Sub-location stats
   img_count: number;

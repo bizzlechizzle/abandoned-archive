@@ -125,12 +125,11 @@ const api = {
         locationId: string;
         locnam: string;
         akanam: string | null;
-        historicalName: string | null;
         state: string | null;
         matchType: 'gps' | 'name';
         distanceMeters?: number;
         nameSimilarity?: number;
-        matchedField?: 'locnam' | 'akanam' | 'historicalName';
+        matchedField?: 'locnam' | 'akanam';
         mediaCount: number;
       };
     }> =>
@@ -666,7 +665,6 @@ const api = {
       modified_date: string | null;
       modified_by: string | null;
       akanam: string | null;
-      historicalName: string | null;
     } | null> =>
       ipcRenderer.invoke('sublocation:findById', subid),
     findByLocation: (locid: string): Promise<Array<{
@@ -683,7 +681,6 @@ const api = {
       modified_date: string | null;
       modified_by: string | null;
       akanam: string | null;
-      historicalName: string | null;
     }>> =>
       ipcRenderer.invoke('sublocation:findByLocation', locid),
     findWithHeroImages: (locid: string): Promise<Array<{
@@ -701,7 +698,6 @@ const api = {
       modified_by: string | null;
       hero_thumb_path?: string;
       akanam: string | null;
-      historicalName: string | null;
     }>> =>
       ipcRenderer.invoke('sublocation:findWithHeroImages', locid),
     update: (subid: string, updates: {
@@ -713,7 +709,6 @@ const api = {
       is_primary?: boolean;
       modified_by?: string | null;
       akanam?: string | null;
-      historicalName?: string | null;
     }): Promise<{
       subid: string;
       locid: string;
@@ -728,7 +723,6 @@ const api = {
       modified_date: string | null;
       modified_by: string | null;
       akanam: string | null;
-      historicalName: string | null;
     } | null> =>
       ipcRenderer.invoke('sublocation:update', subid, updates),
     delete: (subid: string): Promise<void> =>

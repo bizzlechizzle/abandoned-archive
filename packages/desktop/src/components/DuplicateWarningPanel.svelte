@@ -18,12 +18,11 @@
     locationId: string;
     locnam: string;
     akanam: string | null;
-    historicalName: string | null;
     state: string | null;
     matchType: 'gps' | 'name';
     distanceMeters?: number;
     nameSimilarity?: number;
-    matchedField?: 'locnam' | 'akanam' | 'historicalName';
+    matchedField?: 'locnam' | 'akanam';
     mediaCount: number;
     /** GPS coordinates of the matched location (for map view) */
     lat?: number | null;
@@ -128,12 +127,11 @@
     return `${Math.round(similarity * 100)}%`;
   }
 
-  // Get matched field display name
+  // Get matched field display name (historicalName removed)
   function getMatchedFieldLabel(field: string | undefined): string {
     switch (field) {
       case 'locnam': return 'primary name';
       case 'akanam': return 'AKA name';
-      case 'historicalName': return 'historical name';
       default: return 'name';
     }
   }
@@ -193,9 +191,6 @@
               <p class="font-semibold text-braun-900 truncate">{match.locnam}</p>
               {#if match.akanam}
                 <p class="text-xs text-braun-500 truncate">AKA: {match.akanam}</p>
-              {/if}
-              {#if match.historicalName}
-                <p class="text-xs text-braun-500 truncate">Historical: {match.historicalName}</p>
               {/if}
             </div>
           </div>

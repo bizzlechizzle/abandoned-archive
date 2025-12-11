@@ -460,7 +460,7 @@ export interface ElectronAPI {
   // Migration 28: Sub-location API
   // ADR-046: Updated to remove sub12 (subid is BLAKE3 16-char hash now)
   // Migration 31: Added GPS fields
-  // Migration 32: Added akanam/historicalName
+  // Migration 32: Added akanam (historicalName removed)
   // Migration 65: Added stype and getDistinctTypes/getDistinctSubTypes
   sublocations: {
     create: (input: {
@@ -495,7 +495,6 @@ export interface ElectronAPI {
       gps_verified_on_map: boolean;
       gps_captured_at: string | null;
       akanam: string | null;
-      historicalName: string | null;
     }>;
     findById: (subid: string) => Promise<{
       subid: string;
@@ -520,7 +519,6 @@ export interface ElectronAPI {
       gps_verified_on_map: boolean;
       gps_captured_at: string | null;
       akanam: string | null;
-      historicalName: string | null;
     } | null>;
     findByLocation: (locid: string) => Promise<Array<{
       subid: string;
@@ -545,7 +543,6 @@ export interface ElectronAPI {
       gps_verified_on_map: boolean;
       gps_captured_at: string | null;
       akanam: string | null;
-      historicalName: string | null;
     }>>;
     findWithHeroImages: (locid: string) => Promise<Array<{
       subid: string;
@@ -570,7 +567,6 @@ export interface ElectronAPI {
       gps_verified_on_map: boolean;
       gps_captured_at: string | null;
       akanam: string | null;
-      historicalName: string | null;
       hero_thumb_path?: string;
       asset_count?: number;
     }>>;
@@ -586,7 +582,6 @@ export interface ElectronAPI {
       is_primary?: boolean;
       modified_by?: string | null;
       akanam?: string | null;
-      historicalName?: string | null;
     }) => Promise<{
       subid: string;
       locid: string;
@@ -610,7 +605,6 @@ export interface ElectronAPI {
       gps_verified_on_map: boolean;
       gps_captured_at: string | null;
       akanam: string | null;
-      historicalName: string | null;
     } | null>;
     delete: (subid: string) => Promise<void>;
     setPrimary: (locid: string, subid: string) => Promise<void>;

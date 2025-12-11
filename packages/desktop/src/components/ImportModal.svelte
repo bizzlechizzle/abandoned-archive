@@ -55,18 +55,17 @@
   let matchesDismissed = $state(false);
   let matchSearchTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  // Migration 38: Duplicate detection state
+  // Migration 38: Duplicate detection state (historicalName removed)
   // ADR: ADR-pin-conversion-duplicate-prevention.md
   interface DuplicateMatch {
     locationId: string;
     locnam: string;
     akanam: string | null;
-    historicalName: string | null;
     state: string | null;
     matchType: 'gps' | 'name';
     distanceMeters?: number;
     nameSimilarity?: number;
-    matchedField?: 'locnam' | 'akanam' | 'historicalName';
+    matchedField?: 'locnam' | 'akanam';
     mediaCount: number;
   }
   let duplicateMatch = $state<DuplicateMatch | null>(null);

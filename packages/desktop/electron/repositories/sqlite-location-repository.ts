@@ -153,10 +153,8 @@ export class SQLiteLocationRepository implements LocationRepository {
         doc_web_history: input.docWebHistory ? 1 : 0,
         doc_map_find: input.docMapFind ? 1 : 0,
         status_changed_at: input.statusChangedAt || null,
-        // DECISION-019: Information Box overhaul fields
-        historical_name: input.historicalName || null,
+        // DECISION-019: Information Box overhaul fields (historicalName removed)
         locnam_verified: input.locnamVerified ? 1 : 0,
-        historical_name_verified: input.historicalNameVerified ? 1 : 0,
         akanam_verified: input.akanamVerified ? 1 : 0,
         sublocs: null,
         is_host_only: input.isHostOnly ? 1 : 0,
@@ -441,10 +439,8 @@ export class SQLiteLocationRepository implements LocationRepository {
     if (input.docWebHistory !== undefined) updates.doc_web_history = input.docWebHistory ? 1 : 0;
     if (input.docMapFind !== undefined) updates.doc_map_find = input.docMapFind ? 1 : 0;
     if (input.statusChangedAt !== undefined) updates.status_changed_at = input.statusChangedAt;
-    // DECISION-019: Information Box overhaul fields
-    if (input.historicalName !== undefined) updates.historical_name = input.historicalName;
+    // DECISION-019: Information Box overhaul fields (historicalName removed)
     if (input.locnamVerified !== undefined) updates.locnam_verified = input.locnamVerified ? 1 : 0;
-    if (input.historicalNameVerified !== undefined) updates.historical_name_verified = input.historicalNameVerified ? 1 : 0;
     if (input.akanamVerified !== undefined) updates.akanam_verified = input.akanamVerified ? 1 : 0;
     // OPT-062: Host-only location flag
     if (input.isHostOnly !== undefined) updates.is_host_only = input.isHostOnly ? 1 : 0;
@@ -849,10 +845,8 @@ export class SQLiteLocationRepository implements LocationRepository {
       localCulturalRegionVerified: row.local_cultural_region_verified === 1,
       country: row.country ?? 'United States',
       continent: row.continent ?? 'North America',
-      // DECISION-019: Information Box overhaul fields
-      historicalName: row.historical_name ?? undefined,
+      // DECISION-019: Information Box overhaul fields (historicalName removed)
       locnamVerified: row.locnam_verified === 1,
-      historicalNameVerified: row.historical_name_verified === 1,
       akanamVerified: row.akanam_verified === 1,
       // Migration 25: Activity tracking
       createdById: row.created_by_id ?? undefined,

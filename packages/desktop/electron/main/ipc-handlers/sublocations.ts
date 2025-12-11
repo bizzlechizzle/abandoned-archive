@@ -97,9 +97,8 @@ export function registerSubLocationHandlers(db: Kysely<Database>) {
         hero_focal_y: z.number().min(0).max(1).optional(),  // OPT-095: Hero focal point Y
         is_primary: z.boolean().optional(),
         modified_by: z.string().nullable().optional(),
-        // Migration 32: AKA and historical name
+        // Migration 32: AKA name (historicalName removed)
         akanam: z.string().nullable().optional(),
-        historicalName: z.string().nullable().optional(),
       });
       const validatedUpdates = UpdateSchema.parse(updates);
       return await sublocRepo.update(validatedId, validatedUpdates);

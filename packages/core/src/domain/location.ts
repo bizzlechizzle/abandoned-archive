@@ -93,10 +93,8 @@ export const LocationInputSchema = z.object({
   hero_focal_x: z.number().min(0).max(1).optional(),  // OPT-095: Hero focal point X (0-1)
   hero_focal_y: z.number().min(0).max(1).optional(),  // OPT-095: Hero focal point Y (0-1)
   auth_imp: z.string().optional(),
-  // DECISION-019: Information Box overhaul fields
-  historicalName: z.string().optional(),       // Historical/original name of location
+  // DECISION-019: Information Box overhaul fields (historicalName removed)
   locnamVerified: z.boolean().default(false),  // User verified location name is correct
-  historicalNameVerified: z.boolean().default(false), // User verified historical name is correct
   akanamVerified: z.boolean().default(false),  // User verified AKA name is correct
   // Migration 25: Activity tracking (optional on input, set by system)
   created_by_id: z.string().length(16).regex(/^[a-f0-9]+$/).optional(),

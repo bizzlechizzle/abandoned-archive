@@ -23,9 +23,8 @@ const baseLocation = {
   localCulturalRegionVerified: false,
   country: 'United States',
   continent: 'North America',
-  // DECISION-019: Information Box overhaul verification fields
+  // DECISION-019: Information Box overhaul verification fields (historicalName removed)
   locnamVerified: false,
-  historicalNameVerified: false,
   akanamVerified: false,
   // Per-user view tracking
   viewCount: 0,

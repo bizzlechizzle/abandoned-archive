@@ -45,10 +45,9 @@
     status: string | null;
     is_primary: boolean;
     akanam: string | null;
-    historicalName: string | null;
   }
 
-  // Migration 32: SubLocation update input
+  // Migration 32: SubLocation update input (historicalName removed)
   // Migration 65: Added stype for sub-location sub-type
   interface SubLocationUpdates {
     subnam?: string;
@@ -58,7 +57,6 @@
     status?: string | null;
     is_primary?: boolean;
     akanam?: string | null;
-    historicalName?: string | null;
   }
 
   interface Props {
@@ -139,14 +137,12 @@
     }
   });
 
-  // Edit form state - DECISION-019: All information fields
+  // Edit form state - DECISION-019: All information fields (historicalName removed)
   // Migration 32: Extended to support sub-location editing
   let editForm = $state({
     // Location/Building name (locnam or subnam depending on mode)
     locnam: '',
     locnamVerified: false,
-    historicalName: '',
-    historicalNameVerified: false,
     akanam: '',
     akanamVerified: false,
     access: '',           // Status (locs.access or slocs.status)
@@ -172,8 +168,7 @@
   // Track original status for change detection
   let originalStatus = $state('');
 
-  // PUEA: Check if we have data to display for each section
-  const hasHistoricalName = $derived(!!location.historicalName);
+  // PUEA: Check if we have data to display for each section (historicalName removed)
   const hasAkaName = $derived(!!location.akanam);
   const hasStatus = $derived(!!location.access);
   const hasDocumentation = $derived(
@@ -244,15 +239,12 @@
     location.akanam ? location.akanam.split(',').map(s => s.trim()).filter(Boolean) : []
   );
 
-  // Hide AKA if only 1 name and it matches Historical Name (duplicate)
-  const shouldShowAka = $derived(
-    hasAkaName &&
-    !(displayAkaNames.length === 1 && displayAkaNames[0] === location.historicalName)
-  );
+  // Show AKA if we have any alias names (historicalName removed)
+  const shouldShowAka = $derived(hasAkaName);
 
-  // Check if we have any info to display at all
+  // Check if we have any info to display at all (historicalName removed)
   const hasAnyInfo = $derived(
-    hasHistoricalName || hasAkaName || hasStatus || hasDocumentation ||
+    hasAkaName || hasStatus || hasDocumentation ||
     hasBuiltOrAbandoned || hasType || hasFlags || hasSublocations
   );
 
@@ -322,8 +314,6 @@
         // Sub-location specific fields
         locnam: currentSubLocation.subnam || '',
         locnamVerified: false, // Not used for sub-locations
-        historicalName: currentSubLocation.historicalName || '',
-        historicalNameVerified: false, // Not used for sub-locations
         akanam: currentSubLocation.akanam || '',
         akanamVerified: false, // Not used for sub-locations
         access: currentSubLocation.status || '', // slocs.status
@@ -352,8 +342,6 @@
       editForm = {
         locnam: location.locnam || '',
         locnamVerified: location.locnamVerified || false,
-        historicalName: location.historicalName || '',
-        historicalNameVerified: location.historicalNameVerified || false,
         akanam: location.akanam || '',
         akanamVerified: location.akanamVerified || false,
         access: location.access || '',
@@ -394,7 +382,6 @@
           status: editForm.access || null,
           is_primary: editForm.is_primary,
           akanam: editForm.akanam || null,
-          historicalName: editForm.historicalName || null,
         };
 
         // Campus-level fields go to host location
@@ -423,8 +410,6 @@
         await onSave({
           locnam: editForm.locnam,
           locnamVerified: editForm.locnamVerified,
-          historicalName: editForm.historicalName || undefined,
-          historicalNameVerified: editForm.historicalNameVerified,
           akanam: editForm.akanam || undefined,
           akanamVerified: editForm.akanamVerified,
           access: editForm.access || undefined,
@@ -647,13 +632,7 @@
         </div>
       {/if}
 
-      <!-- Historical Name (show only if exists) -->
-      {#if hasHistoricalName}
-        <div class="mb-4">
-          <h3 class="section-title mb-1">Historical Name</h3>
-          <span class="px-2 py-0.5 bg-braun-100 text-braun-900 rounded text-sm">{location.historicalName}</span>
-        </div>
-      {/if}
+      <!-- Historical Name removed -->
 
     {:else}
       <p class="text-braun-500 text-sm italic">No information added yet</p>
@@ -747,19 +726,7 @@
           />
         </div>
 
-        <!-- Historical Name - dropdown from AKA values -->
-        <div>
-          <label class="form-label">Historical Name</label>
-          <select
-            bind:value={editForm.historicalName}
-            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
-          >
-            <option value="">Select from AKA names...</option>
-            {#each akaNames as name}
-              <option value={name}>{name}</option>
-            {/each}
-          </select>
-        </div>
+        <!-- Historical Name removed -->
 
         <!-- Status - dropdown -->
         <div>

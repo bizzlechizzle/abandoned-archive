@@ -50,9 +50,8 @@
     gps_source: string | null;
     gps_verified_on_map: boolean;
     gps_captured_at: string | null;
-    // Migration 32: AKA and historical name
+    // Migration 32: AKA name (historicalName removed)
     akanam: string | null;
-    historicalName: string | null;
   }
 
   // State
@@ -383,7 +382,6 @@
     status?: string | null;
     is_primary?: boolean;
     akanam?: string | null;
-    historicalName?: string | null;
   }
 
   async function handleSubLocationSave(subUpdates: SubLocationUpdates, locUpdates: Partial<LocationInput>) {

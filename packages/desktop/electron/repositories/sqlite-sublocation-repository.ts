@@ -34,9 +34,8 @@ export interface SubLocation {
   gps_source: string | null;
   gps_verified_on_map: boolean;
   gps_captured_at: string | null;
-  // Migration 32: AKA and historical name
+  // Migration 32: AKA name (historicalName removed)
   akanam: string | null;
-  historicalName: string | null;
 }
 
 /**
@@ -79,9 +78,8 @@ export interface UpdateSubLocationInput {
   hero_focal_y?: number;
   is_primary?: boolean;
   modified_by?: string | null;
-  // Migration 32: AKA and historical name
+  // Migration 32: AKA name (historicalName removed)
   akanam?: string | null;
-  historicalName?: string | null;
 }
 
 /**
@@ -141,9 +139,8 @@ export class SQLiteSubLocationRepository {
           gps_source: null,
           gps_verified_on_map: 0,
           gps_captured_at: null,
-          // Migration 32: AKA and historical name (null on creation)
+          // Migration 32: AKA name (historicalName removed)
           akanam: null,
-          historicalName: null,
           // Migration 56 (OPT-093): Sub-location stats (all start at 0)
           img_count: 0,
           vid_count: 0,
@@ -202,9 +199,8 @@ export class SQLiteSubLocationRepository {
       gps_source: null,
       gps_verified_on_map: false,
       gps_captured_at: null,
-      // Migration 32: AKA and historical name
+      // Migration 32: AKA name (historicalName removed)
       akanam: null,
-      historicalName: null,
     };
   }
 
@@ -261,7 +257,7 @@ export class SQLiteSubLocationRepository {
     if (input.hero_focal_y !== undefined) updateValues.hero_focal_y = input.hero_focal_y;
     if (input.is_primary !== undefined) updateValues.is_primary = input.is_primary ? 1 : 0;
     if (input.akanam !== undefined) updateValues.akanam = input.akanam;
-    if (input.historicalName !== undefined) updateValues.historicalName = input.historicalName;
+    // historicalName removed
 
     await this.db
       .updateTable('slocs')
@@ -735,9 +731,8 @@ export class SQLiteSubLocationRepository {
       gps_source: row.gps_source || null,
       gps_verified_on_map: row.gps_verified_on_map === 1,
       gps_captured_at: row.gps_captured_at || null,
-      // Migration 32: AKA and historical name
+      // Migration 32: AKA name (historicalName removed)
       akanam: row.akanam || null,
-      historicalName: row.historicalName || null,
     };
   }
 

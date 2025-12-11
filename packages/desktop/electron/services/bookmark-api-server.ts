@@ -225,9 +225,8 @@ async function handleRequest(
         for (const subloc of sublocs) {
           const matchesName = subloc.subnam.toLowerCase().includes(query);
           const matchesAka = subloc.akanam?.toLowerCase().includes(query);
-          const matchesHistorical = subloc.historicalName?.toLowerCase().includes(query);
 
-          if (matchesName || matchesAka || matchesHistorical) {
+          if (matchesName || matchesAka) {
             subLocationResults.push({
               type: 'sublocation',
               locid: loc.locid,

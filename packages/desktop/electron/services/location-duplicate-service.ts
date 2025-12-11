@@ -42,12 +42,11 @@ export interface DuplicateMatch {
   locationId: string;
   locnam: string;
   akanam: string | null;
-  historicalName: string | null;
   state: string | null;
   matchType: 'gps' | 'name';
   distanceMeters?: number;
   nameSimilarity?: number;
-  matchedField?: 'locnam' | 'akanam' | 'historicalName';
+  matchedField?: 'locnam' | 'akanam';
   mediaCount: number;
   /** GPS coordinates of the matched location (for map view) */
   lat?: number | null;
@@ -203,7 +202,6 @@ export class LocationDuplicateService {
           locationId: loc.locid,
           locnam: loc.locnam,
           akanam: loc.akanam,
-          historicalName: loc.historical_name,
           state: loc.state,
           matchType: 'gps',
           distanceMeters: Math.round(distance),
@@ -231,7 +229,6 @@ export class LocationDuplicateService {
         'locid',
         'locnam',
         'akanam',
-        'historical_name',
         'state',
         'gps_lat',
         'gps_lng',
@@ -239,14 +236,13 @@ export class LocationDuplicateService {
       .execute();
 
     for (const loc of locations) {
-      // Check against each name field
+      // Check against each name field (historicalName removed)
       const namesToCheck: Array<{
-        field: 'locnam' | 'akanam' | 'historicalName';
+        field: 'locnam' | 'akanam';
         value: string | null;
       }> = [
         { field: 'locnam', value: loc.locnam },
         { field: 'akanam', value: loc.akanam },
-        { field: 'historicalName', value: loc.historical_name },
       ];
 
       for (const { field, value } of namesToCheck) {
@@ -266,7 +262,6 @@ export class LocationDuplicateService {
             locationId: loc.locid,
             locnam: loc.locnam,
             akanam: loc.akanam,
-            historicalName: loc.historical_name,
             state: loc.state,
             matchType: 'name',
             nameSimilarity: Math.round(similarity * 100),
