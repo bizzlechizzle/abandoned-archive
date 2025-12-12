@@ -150,7 +150,7 @@ async function launchBrowser(): Promise<Browser> {
 
   const options: LaunchOptions = {
     executablePath,
-    headless: 'new', // Use new headless mode (less detectable than old headless)
+    headless: true as unknown as boolean, // Use headless mode (TypeScript workaround for 'new' mode)
     userDataDir, // Use Research Browser's cookies
     args: [
       '--no-sandbox',
@@ -178,11 +178,31 @@ async function launchBrowser(): Promise<Browser> {
 }
 
 /**
+ * Check if a Chrome/Chromium profile is locked (browser is running)
+ * Chrome creates lock files when running to prevent concurrent access
+ * OPT-113: Added to detect when Research Browser is open
+ */
+export function isProfileLocked(profilePath: string): boolean {
+  const lockFiles = [
+    path.join(profilePath, 'SingletonLock'),  // Linux/macOS
+    path.join(profilePath, 'lockfile'),       // Alternative
+    path.join(profilePath, 'Local State.lock'), // Some versions
+  ];
+
+  for (const lockFile of lockFiles) {
+    if (fs.existsSync(lockFile)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Get the path to the Research Browser's profile directory
  * This uses the ACTUAL Chromium profile with cookies from manual browsing
  *
- * IMPORTANT: The Research Browser must NOT be running when archiving,
- * as Chrome locks its profile directory.
+ * OPT-113: Now detects if browser is running and falls back to app profile
+ * This allows auto-archiving even when Research Browser is open
  */
 export function getResearchBrowserProfilePath(): string {
   const platform = process.platform;
@@ -199,14 +219,19 @@ export function getResearchBrowserProfilePath(): string {
     profilePath = path.join(process.env.LOCALAPPDATA || '', 'Chromium', 'User Data');
   }
 
-  // If Research Browser profile exists, use it (has cookies from manual browsing)
+  // Check if profile exists AND is not locked by running browser
   if (fs.existsSync(profilePath)) {
-    console.log('[WebSource] Using Research Browser profile:', profilePath);
-    return profilePath;
+    if (!isProfileLocked(profilePath)) {
+      console.log('[WebSource] Using Research Browser profile:', profilePath);
+      return profilePath;
+    }
+    // Profile exists but is locked - browser is running
+    console.log('[WebSource] Research Browser profile LOCKED (browser running), using fallback');
+  } else {
+    console.log('[WebSource] Research Browser profile not found, using fallback');
   }
 
-  // Fallback: Create our own profile directory
-  console.log('[WebSource] Research Browser profile not found, using app profile');
+  // Fallback: Create/use app-managed profile directory
   const { app } = require('electron');
   const fallbackDir = path.join(app.getPath('userData'), 'browser-profile');
   if (!fs.existsSync(fallbackDir)) {

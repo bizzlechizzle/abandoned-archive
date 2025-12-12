@@ -232,6 +232,12 @@
   let archiveExporting = $state(false);
   let archiveExportMessage = $state('');
 
+  // OPT-113: Web Source Archive state
+  let webSourcesExpanded = $state(false);
+  let pendingWebSourceCount = $state(0);
+  let archivingWebSources = $state(false);
+  let webSourceArchiveMessage = $state('');
+
   async function loadSettings() {
     try {
       loading = true;
@@ -1792,6 +1798,41 @@
     }
   }
 
+  // OPT-113: Load pending web source count
+  async function loadPendingWebSourceCount() {
+    if (!window.electronAPI?.websources?.countPending) return;
+    try {
+      pendingWebSourceCount = await window.electronAPI.websources.countPending();
+    } catch (error) {
+      console.error('Failed to load pending web source count:', error);
+    }
+  }
+
+  // OPT-113: Archive all pending web sources
+  async function archiveAllPendingWebSources() {
+    if (!window.electronAPI?.websources?.archiveAllPending || archivingWebSources) return;
+
+    try {
+      archivingWebSources = true;
+      webSourceArchiveMessage = 'Queueing archives...';
+
+      const result = await window.electronAPI.websources.archiveAllPending();
+
+      if (result.queued === 0) {
+        webSourceArchiveMessage = 'No pending sources to archive';
+      } else {
+        webSourceArchiveMessage = `Queued ${result.queued} sources for archiving`;
+      }
+
+      setTimeout(() => { webSourceArchiveMessage = ''; }, 5000);
+    } catch (error) {
+      console.error('Failed to archive web sources:', error);
+      webSourceArchiveMessage = 'Failed to queue archives';
+    } finally {
+      archivingWebSources = false;
+    }
+  }
+
   onMount(() => {
     loadSettings();
     loadProxyCacheStats();
@@ -1800,6 +1841,19 @@
     loadDatabaseHealth();
     loadBagSummary();
     loadArchiveExportStatus();
+    loadPendingWebSourceCount();
+
+    // OPT-113: Listen for archive completion to update pending count
+    let cleanupArchiveListener: (() => void) | undefined;
+    if (window.electronAPI?.websources?.onArchiveComplete) {
+      cleanupArchiveListener = window.electronAPI.websources.onArchiveComplete(async () => {
+        await loadPendingWebSourceCount();
+      });
+    }
+
+    return () => {
+      cleanupArchiveListener?.();
+    };
   });
 </script>
 
@@ -2455,6 +2509,64 @@
 
               <p class="text-xs text-braun-400 mt-3">
                 Self-documenting archive per BagIt RFC 8493. Weekly automatic validation.
+              </p>
+            </div>
+            {/if}
+          </div>
+
+          <!-- OPT-113: Web Sources Sub-Accordion -->
+          <div>
+            <button
+              onclick={() => webSourcesExpanded = !webSourcesExpanded}
+              class="w-full flex items-center justify-between py-2 border-b border-braun-100 text-left hover:bg-braun-50 transition-colors"
+            >
+              <span class="text-sm font-medium text-braun-700">Web Sources</span>
+              <svg
+                class="w-4 h-4 text-braun-900 transition-transform duration-200 {webSourcesExpanded ? 'rotate-180' : ''}"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {#if webSourcesExpanded}
+            <div class="py-3">
+              <!-- Pending count -->
+              <div class="bg-braun-50 rounded p-3 mb-3">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <span class="text-sm text-braun-600">Pending archives:</span>
+                    <span class="ml-2 font-medium text-braun-900">{pendingWebSourceCount}</span>
+                  </div>
+                  {#if pendingWebSourceCount === 0}
+                    <span class="text-xs text-success">All archived</span>
+                  {/if}
+                </div>
+              </div>
+
+              <!-- Actions -->
+              <div class="flex flex-wrap gap-2">
+                <button
+                  onclick={archiveAllPendingWebSources}
+                  disabled={archivingWebSources || pendingWebSourceCount === 0}
+                  class="px-3 py-1.5 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
+                >
+                  {#if archivingWebSources}
+                    Queueing...
+                  {:else}
+                    Archive All ({pendingWebSourceCount})
+                  {/if}
+                </button>
+              </div>
+
+              {#if webSourceArchiveMessage}
+                <p class="text-sm text-braun-600 mt-2">{webSourceArchiveMessage}</p>
+              {/if}
+
+              <p class="text-xs text-braun-400 mt-3">
+                Web sources are automatically archived when saved. Use this to archive any pending sources.
               </p>
             </div>
             {/if}

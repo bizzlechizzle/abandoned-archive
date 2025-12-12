@@ -693,6 +693,9 @@ export const IMPORT_QUEUES = {
   SRT_TELEMETRY: 'srt-telemetry',
   LOCATION_STATS: 'location-stats',
   BAGIT: 'bagit',
+
+  // OPT-113: Web source archiving (lower priority, runs in background)
+  WEBSOURCE_ARCHIVE: 'websource-archive',
 } as const;
 
 /**

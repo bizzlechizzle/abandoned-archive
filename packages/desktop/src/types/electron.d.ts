@@ -975,6 +975,9 @@ export interface ElectronAPI {
     count: () => Promise<number>;
     countByLocation: (locid: string) => Promise<number>;
     countBySubLocation: (subid: string) => Promise<number>;
+    // OPT-113: Pending counts for Archive All buttons
+    countPending: () => Promise<number>;
+    countPendingByLocation: (locid: string) => Promise<number>;
 
     // Migration
     migrateFromBookmarks: () => Promise<{ migrated: number; failed: number }>;
@@ -985,11 +988,17 @@ export interface ElectronAPI {
     rearchive: (sourceId: string, options?: ArchiveOptions) => Promise<ArchiveResult>;
     cancelArchive: () => Promise<void>;
     archiveStatus: () => Promise<{ isProcessing: boolean; currentSourceId: string | null }>;
+    // OPT-113: Batch archive all pending sources
+    archiveAllPending: (limit?: number) => Promise<{ queued: number; total: number }>;
+    archivePendingByLocation: (locid: string, limit?: number) => Promise<{ queued: number; total: number }>;
 
     // OPT-111: Enhanced Metadata Access
     getImages: (sourceId: string) => Promise<WebSourceImage[]>;
     getVideos: (sourceId: string) => Promise<WebSourceVideo[]>;
     getDetail: (sourceId: string) => Promise<WebSourceDetail | null>;
+
+    // OPT-113: Event listener for archive completion
+    onArchiveComplete: (callback: (result: { sourceId: string; success: boolean; error?: string }) => void) => () => void;
   };
 
 }

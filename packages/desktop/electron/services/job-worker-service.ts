@@ -121,6 +121,10 @@ export class JobWorkerService extends EventEmitter {
     // BagIt manifest updates - RFC 8493 compliance
     this.registerQueue(IMPORT_QUEUES.BAGIT, hw.bagitWorkers, this.handleBagItJob.bind(this) as JobHandler);
 
+    // OPT-113: Web source archiving - runs with concurrency 1 (one archive at a time)
+    // Lower priority than media imports, background operation
+    this.registerQueue(IMPORT_QUEUES.WEBSOURCE_ARCHIVE, 1, this.handleWebSourceArchiveJob.bind(this) as JobHandler);
+
     // Log configuration
     logger.info('JobWorker', 'Queue configuration (hardware-scaled)', {
       // Per-file
@@ -134,6 +138,8 @@ export class JobWorkerService extends EventEmitter {
       srtTelemetry: hw.srtTelemetryWorkers,
       locationStats: hw.locationStatsWorkers,
       bagit: hw.bagitWorkers,
+      // Web archiving
+      websourceArchive: 1,
     });
   }
 
@@ -1196,6 +1202,97 @@ export class JobWorkerService extends EventEmitter {
     };
 
     return { stats };
+  }
+
+  /**
+   * OPT-113: Handle web source archive job
+   * Archives a web source in the background after bookmark save
+   *
+   * - Checks if source still exists (user may have deleted)
+   * - Checks if already archived (skip duplicate work)
+   * - Calls orchestrator to run full archive pipeline
+   * - Emits completion event for UI reactivity
+   */
+  private async handleWebSourceArchiveJob(
+    payload: { sourceId: string },
+    emit: (event: string, data: unknown) => void
+  ): Promise<{ success: boolean; skipped?: boolean; reason?: string; error?: string }> {
+    const { sourceId } = payload;
+
+    emit('progress', { progress: 0, message: 'Starting web source archive...' });
+
+    try {
+      // Check if source still exists
+      const source = await this.db
+        .selectFrom('web_sources')
+        .select(['source_id', 'status', 'url'])
+        .where('source_id', '=', sourceId)
+        .executeTakeFirst();
+
+      if (!source) {
+        logger.info('JobWorker', `Web source ${sourceId} no longer exists, skipping archive`);
+        return { success: true, skipped: true, reason: 'Source deleted' };
+      }
+
+      // Check if already archived
+      if (source.status === 'complete') {
+        logger.info('JobWorker', `Web source ${sourceId} already archived, skipping`);
+        return { success: true, skipped: true, reason: 'Already archived' };
+      }
+
+      emit('progress', { progress: 10, message: `Archiving ${source.url}...` });
+
+      // Lazy load orchestrator to avoid circular dependencies
+      const { getOrchestrator } = await import('./websource-orchestrator-service');
+      const orchestrator = getOrchestrator(this.db);
+
+      // Run the archive
+      const result = await orchestrator.archiveSource(sourceId);
+
+      emit('progress', { progress: 100, message: 'Archive complete' });
+
+      // Emit completion event for UI reactivity
+      const { BrowserWindow } = await import('electron');
+      const windows = BrowserWindow.getAllWindows();
+      for (const win of windows) {
+        win.webContents.send('websources:archive-complete', {
+          sourceId,
+          success: result.success,
+          error: result.error,
+        });
+      }
+
+      if (result.success) {
+        logger.info('JobWorker', `Web source ${sourceId} archived successfully`);
+      } else {
+        logger.warn('JobWorker', `Web source ${sourceId} archive failed: ${result.error}`);
+      }
+
+      return {
+        success: result.success,
+        error: result.error,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('JobWorker', `Web source archive job failed: ${message}`);
+
+      // Still emit event so UI knows it failed
+      try {
+        const { BrowserWindow } = await import('electron');
+        const windows = BrowserWindow.getAllWindows();
+        for (const win of windows) {
+          win.webContents.send('websources:archive-complete', {
+            sourceId,
+            success: false,
+            error: message,
+          });
+        }
+      } catch {
+        // Ignore emission failures
+      }
+
+      return { success: false, error: message };
+    }
   }
 
   // ============ Helper Methods ============

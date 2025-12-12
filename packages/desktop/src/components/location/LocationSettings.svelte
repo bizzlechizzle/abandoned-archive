@@ -23,6 +23,11 @@
   let fixingVideos = $state(false);
   let fixMessage = $state('');
 
+  // OPT-113: Web source archive state
+  let pendingSourceCount = $state(0);
+  let archivingSources = $state(false);
+  let archiveMessage = $state('');
+
   // Edit Category modal state
   let showEditCategory = $state(false);
   let editCategory = $state('');
@@ -46,6 +51,13 @@
   $effect(() => {
     if (isOpen && categorySuggestions.length === 0) {
       loadSuggestions();
+    }
+  });
+
+  // OPT-113: Load pending source count when opened
+  $effect(() => {
+    if (isOpen) {
+      loadPendingSourceCount();
     }
   });
 
@@ -126,6 +138,41 @@
       fixMessage = 'Failed';
     } finally {
       fixingVideos = false;
+    }
+  }
+
+  // OPT-113: Load pending web source count for this location
+  async function loadPendingSourceCount() {
+    if (!window.electronAPI?.websources?.countPendingByLocation) return;
+    try {
+      pendingSourceCount = await window.electronAPI.websources.countPendingByLocation(location.locid);
+    } catch (err) {
+      console.error('Failed to load pending source count:', err);
+    }
+  }
+
+  // OPT-113: Archive pending sources for this location
+  async function archivePendingSources() {
+    if (!window.electronAPI?.websources?.archivePendingByLocation || archivingSources) return;
+
+    try {
+      archivingSources = true;
+      archiveMessage = 'Queueing archives...';
+
+      const result = await window.electronAPI.websources.archivePendingByLocation(location.locid);
+
+      if (result.queued === 0) {
+        archiveMessage = 'No pending sources';
+      } else {
+        archiveMessage = `Queued ${result.queued} sources`;
+      }
+
+      setTimeout(() => { archiveMessage = ''; }, 5000);
+    } catch (err) {
+      console.error('Archive sources failed:', err);
+      archiveMessage = 'Failed';
+    } finally {
+      archivingSources = false;
     }
   }
 
@@ -291,6 +338,28 @@
           {/if}
         </div>
         <p class="text-xs text-braun-400 mt-1">Regenerate missing thumbnails and proxies</p>
+      </div>
+
+      <!-- OPT-113: Web Sources Section -->
+      <div>
+        <p class="text-xs font-semibold text-braun-400 uppercase mb-2">Web Sources</p>
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            onclick={archivePendingSources}
+            disabled={archivingSources || pendingSourceCount === 0}
+            class="px-3 py-1 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
+          >
+            {#if archivingSources}
+              Queueing...
+            {:else}
+              Archive Pending ({pendingSourceCount})
+            {/if}
+          </button>
+          {#if archiveMessage}
+            <span class="text-sm text-braun-600">{archiveMessage}</span>
+          {/if}
+        </div>
+        <p class="text-xs text-braun-400 mt-1">Archive any pending web sources for this location</p>
       </div>
 
       <!-- Edit Section -->

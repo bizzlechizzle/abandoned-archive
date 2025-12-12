@@ -427,6 +427,9 @@ const api = {
     count: () => invokeAuto("websources:count")(),
     countByLocation: (locid) => invokeAuto("websources:countByLocation")(locid),
     countBySubLocation: (subid) => invokeAuto("websources:countBySubLocation")(subid),
+    // OPT-113: Pending counts for Archive All buttons
+    countPending: () => invokeAuto("websources:countPending")(),
+    countPendingByLocation: (locid) => invokeAuto("websources:countPendingByLocation")(locid),
 
     // Migration
     migrateFromBookmarks: () => invokeAuto("websources:migrateFromBookmarks")(),
@@ -437,11 +440,21 @@ const api = {
     rearchive: (sourceId, options) => invokeLong("websources:rearchive")(sourceId, options),
     cancelArchive: () => invokeAuto("websources:cancelArchive")(),
     archiveStatus: () => invokeAuto("websources:archiveStatus")(),
+    // OPT-113: Batch archive all pending sources
+    archiveAllPending: (limit) => invokeAuto("websources:archiveAllPending")(limit),
+    archivePendingByLocation: (locid, limit) => invokeAuto("websources:archivePendingByLocation")(locid, limit),
 
     // OPT-111: Enhanced Metadata Access
     getImages: (sourceId) => invokeAuto("websources:getImages")(sourceId),
     getVideos: (sourceId) => invokeAuto("websources:getVideos")(sourceId),
     getDetail: (sourceId) => invokeAuto("websources:getDetail")(sourceId),
+
+    // OPT-113: Event listener for archive completion
+    onArchiveComplete: (callback) => {
+      const handler = (_event, result) => callback(result);
+      ipcRenderer.on("websources:archive-complete", handler);
+      return () => ipcRenderer.removeListener("websources:archive-complete", handler);
+    },
   },
 
   users: {

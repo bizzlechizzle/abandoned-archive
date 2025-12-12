@@ -3,6 +3,7 @@
  * Handles websources:* IPC channels for the OPT-109 Web Archiving feature
  * Replaces bookmarks:* handlers with comprehensive web source management
  * ADR-046: Updated locid/subid validation from UUID to BLAKE3 16-char hex
+ * OPT-113: Added auto-archive on create - queues archive job immediately after save
  */
 import { ipcMain } from 'electron';
 import { z } from 'zod';
@@ -17,6 +18,7 @@ import {
   ComponentStatus,
 } from '../../repositories/sqlite-websources-repository';
 import { validate, LimitSchema, Blake3IdSchema } from '../ipc-validation';
+import { JobQueue, IMPORT_QUEUES } from '../../services/job-queue';
 
 // =============================================================================
 // Validation Schemas
@@ -139,6 +141,7 @@ const SearchOptionsSchema = z.object({
 
 export function registerWebSourcesHandlers(db: Kysely<Database>) {
   const webSourcesRepo = new SQLiteWebSourcesRepository(db);
+  const jobQueue = new JobQueue(db);
 
   // ---------------------------------------------------------------------------
   // Core CRUD Operations
@@ -146,11 +149,40 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
 
   /**
    * Create a new web source
+   * OPT-113: Auto-queues archive job immediately after creation
    */
   ipcMain.handle('websources:create', async (_event, input: unknown) => {
     try {
       const validatedInput = WebSourceInputSchema.parse(input) as WebSourceInput;
-      return await webSourcesRepo.create(validatedInput);
+      const source = await webSourcesRepo.create(validatedInput);
+
+      // OPT-113: Auto-queue archive job (non-blocking)
+      try {
+        // Check if job already exists for this source (duplicate prevention)
+        const existingJobs = await db
+          .selectFrom('jobs')
+          .select('job_id')
+          .where('queue', '=', IMPORT_QUEUES.WEBSOURCE_ARCHIVE)
+          .where('status', 'in', ['pending', 'processing'])
+          .where('payload', 'like', `%"sourceId":"${source.source_id}"%`)
+          .execute();
+
+        if (existingJobs.length === 0) {
+          await jobQueue.addJob({
+            queue: IMPORT_QUEUES.WEBSOURCE_ARCHIVE,
+            payload: { sourceId: source.source_id },
+            priority: 5, // Lower priority than media imports (default 10)
+          });
+          console.log(`[WebSources] Auto-queued archive job for ${source.source_id}`);
+        } else {
+          console.log(`[WebSources] Archive job already queued for ${source.source_id}`);
+        }
+      } catch (queueError) {
+        // Don't fail create if queue fails - just log and continue
+        console.error('[WebSources] Failed to queue archive job:', queueError);
+      }
+
+      return source;
     } catch (error) {
       console.error('Error creating web source:', error);
       if (error instanceof z.ZodError) {
@@ -868,6 +900,145 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
       };
     } catch (error) {
       console.error('Error getting web source detail:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // OPT-113: Archive Queue Operations
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get count of pending web sources (global)
+   */
+  ipcMain.handle('websources:countPending', async () => {
+    try {
+      const result = await db
+        .selectFrom('web_sources')
+        .select(db.fn.count('source_id').as('count'))
+        .where('status', '=', 'pending')
+        .executeTakeFirst();
+
+      return Number(result?.count || 0);
+    } catch (error) {
+      console.error('Error counting pending web sources:', error);
+      return 0;
+    }
+  });
+
+  /**
+   * Get count of pending web sources for a specific location
+   */
+  ipcMain.handle('websources:countPendingByLocation', async (_event, locid: unknown) => {
+    try {
+      const validatedLocid = Blake3IdSchema.parse(locid);
+
+      const result = await db
+        .selectFrom('web_sources')
+        .select(db.fn.count('source_id').as('count'))
+        .where('locid', '=', validatedLocid)
+        .where('status', '=', 'pending')
+        .executeTakeFirst();
+
+      return Number(result?.count || 0);
+    } catch (error) {
+      console.error('Error counting pending web sources for location:', error);
+      return 0;
+    }
+  });
+
+  /**
+   * Queue all pending web sources for archiving (global)
+   * Returns count of newly queued jobs
+   */
+  ipcMain.handle('websources:archiveAllPending', async (_event, limit: unknown = 100) => {
+    try {
+      const validatedLimit = validate(LimitSchema, limit) ?? 100;
+
+      // Find pending sources
+      const pendingSources = await db
+        .selectFrom('web_sources')
+        .select('source_id')
+        .where('status', '=', 'pending')
+        .limit(validatedLimit)
+        .execute();
+
+      let queued = 0;
+
+      for (const source of pendingSources) {
+        // Check if job already exists (duplicate prevention)
+        const existing = await db
+          .selectFrom('jobs')
+          .select('job_id')
+          .where('queue', '=', IMPORT_QUEUES.WEBSOURCE_ARCHIVE)
+          .where('status', 'in', ['pending', 'processing'])
+          .where('payload', 'like', `%"sourceId":"${source.source_id}"%`)
+          .execute();
+
+        if (existing.length === 0) {
+          await jobQueue.addJob({
+            queue: IMPORT_QUEUES.WEBSOURCE_ARCHIVE,
+            payload: { sourceId: source.source_id },
+            priority: 5,
+          });
+          queued++;
+        }
+      }
+
+      console.log(`[WebSources] Queued ${queued} of ${pendingSources.length} pending sources for archiving`);
+      return { queued, total: pendingSources.length };
+    } catch (error) {
+      console.error('Error archiving all pending:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
+    }
+  });
+
+  /**
+   * Queue pending web sources for a specific location
+   * Returns count of newly queued jobs
+   */
+  ipcMain.handle('websources:archivePendingByLocation', async (_event, locid: unknown, limit: unknown = 50) => {
+    try {
+      const validatedLocid = Blake3IdSchema.parse(locid);
+      const validatedLimit = validate(LimitSchema, limit) ?? 50;
+
+      // Find pending sources for this location
+      const pendingSources = await db
+        .selectFrom('web_sources')
+        .select('source_id')
+        .where('locid', '=', validatedLocid)
+        .where('status', '=', 'pending')
+        .limit(validatedLimit)
+        .execute();
+
+      let queued = 0;
+
+      for (const source of pendingSources) {
+        // Check if job already exists (duplicate prevention)
+        const existing = await db
+          .selectFrom('jobs')
+          .select('job_id')
+          .where('queue', '=', IMPORT_QUEUES.WEBSOURCE_ARCHIVE)
+          .where('status', 'in', ['pending', 'processing'])
+          .where('payload', 'like', `%"sourceId":"${source.source_id}"%`)
+          .execute();
+
+        if (existing.length === 0) {
+          await jobQueue.addJob({
+            queue: IMPORT_QUEUES.WEBSOURCE_ARCHIVE,
+            payload: { sourceId: source.source_id },
+            priority: 5,
+          });
+          queued++;
+        }
+      }
+
+      console.log(`[WebSources] Queued ${queued} of ${pendingSources.length} pending sources for location ${validatedLocid}`);
+      return { queued, total: pendingSources.length };
+    } catch (error) {
+      console.error('Error archiving pending by location:', error);
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(message);
     }
