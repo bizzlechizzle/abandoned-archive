@@ -1,7 +1,8 @@
 # OPT-112: Web Source Metadata Extraction Overhaul
 
-**Status**: Implementation
+**Status**: COMPLETE ✅
 **Created**: 2025-12-12
+**Completed**: 2025-12-12
 **Author**: Claude Code
 
 ---
@@ -9,6 +10,8 @@
 ## Problem Statement
 
 The web archiving feature captures pages (screenshot, PDF, HTML, WARC) but fails to extract and store comprehensive metadata. The database schema (`web_source_images`, `web_source_videos`, page-level metadata columns) and UI (`WebSourceDetailModal.svelte`) are ready for rich metadata - the extraction pipeline simply doesn't populate it.
+
+**Additional Issue Discovered**: Protected sites (Zillow, etc.) return CAPTCHA pages instead of real content due to bot detection (PerimeterX, Cloudflare, etc.).
 
 ---
 
@@ -152,3 +155,51 @@ Note: metascraper considered but adds complexity; using direct DOM extraction in
 ## Rollback Plan
 
 All changes are additive - existing archive functionality preserved. New metadata fields have NULL defaults. Repository methods use INSERT ON CONFLICT DO NOTHING for safety.
+
+---
+
+## Phase 6: Bot Detection Bypass (Added during implementation)
+
+### Problem
+Zillow and other sites use PerimeterX/Cloudflare bot detection. Initial test showed:
+- HTTP 403 Forbidden
+- 14 words captured (CAPTCHA message only)
+- 0 images (CAPTCHA has no listing photos)
+
+### Solution
+Modified `websource-capture-service.ts` to use:
+
+1. **puppeteer-extra-plugin-stealth** - Hides automation fingerprints
+2. **Research Browser profile sharing** - Uses `~/Library/Application Support/Chromium/`
+   - Cookies from manual browsing sessions transfer to archiver
+   - User visits site once in Research Browser, archiver inherits session
+3. **headless: 'new'** - Chrome's new headless mode (less detectable)
+4. **Anti-fingerprinting flags** - Canvas/WebGL/automation markers disabled
+
+### Test Results (After fix)
+| Metric | Before | After |
+|--------|--------|-------|
+| HTTP Status | 403 | 200 |
+| Words | 14 | 1865 |
+| Images | 0 | 50 |
+| Content | CAPTCHA | Real listing |
+
+### Dependencies Added
+| Package | Version | License |
+|---------|---------|---------|
+| puppeteer-extra | ^3.3.6 | MIT |
+| puppeteer-extra-plugin-stealth | ^2.11.2 | MIT |
+
+### Usage Note
+Research Browser must be CLOSED when archiving (Chrome locks its profile directory while running).
+
+---
+
+## Commits
+
+1. `578d9b3` - feat(websources): comprehensive metadata extraction
+2. `ca93094` - fix(websources): lazy-loading + text extraction fixes
+3. `ad62317` - fix(dashboard): bookmarks.count() → websources.count()
+4. `e3210ae` - feat(websources): cookie banner dismissal
+5. `e3cf01e` - feat(websources): anti-bot detection and persistent cookies
+6. `60c7e22` - feat(websources): stealth plugin + Research Browser cookies
