@@ -17,16 +17,27 @@ import { fileURLToPath } from 'url';
 import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
 import puppeteerCore, { Browser, Page, LaunchOptions, CDPSession, HTTPRequest, HTTPResponse } from 'puppeteer-core';
-import puppeteerExtra from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { calculateHash } from './crypto-service';
 
-// Configure puppeteer-extra with stealth plugin
-// This helps bypass bot detection (Cloudflare, PerimeterX, DataDome, etc.)
-puppeteerExtra.use(StealthPlugin());
+// Lazy-load puppeteer-extra with stealth plugin
+// Applied on first getBrowser() call to ensure correct initialization in bundled context
+let stealthPuppeteer: typeof puppeteerCore | null = null;
 
-// Use puppeteer-extra for launching (it wraps puppeteer-core)
-const puppeteer = puppeteerExtra;
+async function getStealthPuppeteer() {
+  if (!stealthPuppeteer) {
+    // Dynamic import to ensure proper loading in Electron context
+    const puppeteerExtra = await import('puppeteer-extra');
+    const StealthPlugin = await import('puppeteer-extra-plugin-stealth');
+
+    // Apply stealth plugin - this MUST happen before first launch
+    puppeteerExtra.default.use(StealthPlugin.default());
+
+    // Cast to puppeteer-core type (puppeteer-extra extends it)
+    stealthPuppeteer = puppeteerExtra.default as unknown as typeof puppeteerCore;
+    console.log('[WebSource] Stealth plugin initialized');
+  }
+  return stealthPuppeteer;
+}
 
 const execPromise = promisify(exec);
 
@@ -174,6 +185,8 @@ async function launchBrowser(): Promise<Browser> {
     ignoreDefaultArgs: ['--enable-automation'], // Hide automation flag
   };
 
+  // Use lazy-loaded stealth puppeteer for bot detection bypass
+  const puppeteer = await getStealthPuppeteer();
   return puppeteer.launch(options) as Promise<Browser>;
 }
 
