@@ -1,11 +1,13 @@
 /**
  * Web Source Extraction Service
  * OPT-109: Extracts images, videos, and text from web pages
+ * OPT-112: Enhanced with comprehensive metadata extraction
  *
  * Features:
- * - Image extraction with hi-res upgrade logic
- * - Video extraction via yt-dlp
+ * - Image extraction with hi-res upgrade logic and DOM context metadata
+ * - Video extraction via yt-dlp with full platform metadata
  * - Text extraction via Python (Trafilatura + BeautifulSoup)
+ * - EXIF extraction from downloaded images
  */
 
 import * as fs from 'fs';
@@ -15,6 +17,7 @@ import { promisify } from 'util';
 import { fileURLToPath } from 'url';
 import puppeteer, { Browser, Page } from 'puppeteer-core';
 import { calculateHash } from './crypto-service';
+import { ImageDomContext } from './websource-metadata-service';
 import https from 'https';
 import http from 'http';
 import { URL } from 'url';
@@ -29,6 +32,9 @@ const __dirname = path.dirname(__filename);
 // Types and Interfaces
 // =============================================================================
 
+/**
+ * OPT-112: Enhanced image metadata for web_source_images table
+ */
 export interface ExtractedImage {
   url: string;
   localPath: string;
@@ -38,8 +44,21 @@ export interface ExtractedImage {
   size: number;
   alt: string | null;
   isHiRes: boolean;
+  // OPT-112: Enhanced metadata
+  originalFilename: string | null;
+  caption: string | null;
+  credit: string | null;
+  attribution: string | null;
+  srcsetVariants: string[];
+  contextHtml: string | null;
+  linkUrl: string | null;
+  isHero: boolean;
+  exifData: Record<string, unknown> | null;
 }
 
+/**
+ * OPT-112: Enhanced video metadata for web_source_videos table
+ */
 export interface ExtractedVideo {
   url: string;
   localPath: string;
@@ -48,6 +67,18 @@ export interface ExtractedVideo {
   duration: number | null;
   size: number;
   platform: string;
+  // OPT-112: Enhanced metadata from yt-dlp
+  description: string | null;
+  uploader: string | null;
+  uploaderUrl: string | null;
+  uploadDate: string | null;
+  viewCount: number | null;
+  likeCount: number | null;
+  tags: string[];
+  categories: string[];
+  thumbnailUrl: string | null;
+  thumbnailPath: string | null;
+  metadataJson: string | null;
 }
 
 export interface ExtractedText {
@@ -91,6 +122,78 @@ export interface ExtractionOptions {
   maxVideos?: number;
   minImageWidth?: number;
   minImageHeight?: number;
+  // OPT-112: Pre-extracted DOM context for images
+  imageDomContext?: ImageDomContext[];
+}
+
+// =============================================================================
+// EXIF Extraction (OPT-112)
+// =============================================================================
+
+/**
+ * Extract EXIF/IPTC/XMP metadata from an image file
+ * Uses exiftool-vendored which is already a project dependency
+ */
+async function extractExifData(imagePath: string): Promise<Record<string, unknown> | null> {
+  try {
+    // Use exiftool-vendored for EXIF extraction
+    const { exiftool } = await import('exiftool-vendored');
+    const tags = await exiftool.read(imagePath);
+
+    // Return relevant fields
+    return {
+      make: tags.Make || null,
+      model: tags.Model || null,
+      dateTime: tags.DateTimeOriginal || tags.CreateDate || null,
+      gpsLatitude: tags.GPSLatitude || null,
+      gpsLongitude: tags.GPSLongitude || null,
+      gpsAltitude: tags.GPSAltitude || null,
+      focalLength: tags.FocalLength || null,
+      aperture: tags.Aperture || tags.FNumber || null,
+      shutterSpeed: tags.ShutterSpeed || tags.ExposureTime || null,
+      iso: tags.ISO || null,
+      software: tags.Software || null,
+      artist: tags.Artist || null,
+      copyright: tags.Copyright || null,
+      description: tags.ImageDescription || tags.Description || null,
+      keywords: tags.Keywords || tags.Subject || null,
+      rating: tags.Rating || null,
+      orientation: tags.Orientation || null,
+      width: tags.ImageWidth || null,
+      height: tags.ImageHeight || null,
+      colorSpace: tags.ColorSpace || null,
+      lens: tags.LensModel || tags.Lens || null,
+    };
+  } catch {
+    // EXIF extraction failed (not an image or no EXIF data)
+    return null;
+  }
+}
+
+/**
+ * Parse srcset into array of available resolutions
+ */
+function parseSrcsetVariants(srcset: string | null): string[] {
+  if (!srcset) return [];
+
+  return srcset.split(',').map((part) => {
+    const trimmed = part.trim();
+    const [url, descriptor] = trimmed.split(/\s+/);
+    return descriptor ? `${descriptor}` : url;
+  }).filter(Boolean);
+}
+
+/**
+ * Extract filename from URL
+ */
+function extractFilenameFromUrl(url: string): string | null {
+  try {
+    const pathname = new URL(url).pathname;
+    const filename = pathname.split('/').pop();
+    return filename || null;
+  } catch {
+    return null;
+  }
 }
 
 // =============================================================================
@@ -161,6 +264,7 @@ async function getBrowser(): Promise<Browser> {
 
 /**
  * Extract images from a web page
+ * OPT-112: Enhanced with DOM context metadata and EXIF extraction
  * Implements hi-res upgrade logic: tries srcset, data-src, and original-size variants
  */
 export async function extractImages(options: ExtractionOptions): Promise<ImageExtractionResult> {
@@ -186,59 +290,150 @@ export async function extractImages(options: ExtractionOptions): Promise<ImageEx
     // Scroll to load lazy images
     await autoScroll(page);
 
-    // Extract image URLs with hi-res detection
-    const imageData = await page.evaluate(
-      (minWidth: number, minHeight: number) => {
-        const images: Array<{
-          src: string;
-          srcset: string | null;
-          dataSrc: string | null;
-          width: number;
-          height: number;
-          alt: string | null;
-        }> = [];
+    // OPT-112: Use pre-extracted DOM context if available, otherwise extract basic data
+    let imageData: Array<{
+      src: string;
+      srcset: string | null;
+      dataSrc: string | null;
+      width: number;
+      height: number;
+      alt: string | null;
+      caption: string | null;
+      credit: string | null;
+      attribution: string | null;
+      contextHtml: string | null;
+      linkUrl: string | null;
+      isHero: boolean;
+    }>;
 
-        document.querySelectorAll('img').forEach((img) => {
-          const width = img.naturalWidth || img.width || 0;
-          const height = img.naturalHeight || img.height || 0;
+    if (options.imageDomContext && options.imageDomContext.length > 0) {
+      // Use pre-extracted DOM context from metadata service
+      imageData = options.imageDomContext
+        .filter((ctx) => ctx.width >= (options.minImageWidth || 100) && ctx.height >= (options.minImageHeight || 100))
+        .map((ctx) => ({
+          src: ctx.src,
+          srcset: ctx.srcset,
+          dataSrc: ctx.dataSrc,
+          width: ctx.width,
+          height: ctx.height,
+          alt: ctx.alt,
+          caption: ctx.caption,
+          credit: ctx.credit,
+          attribution: ctx.attribution,
+          contextHtml: ctx.contextHtml,
+          linkUrl: ctx.linkUrl,
+          isHero: ctx.isHero,
+        }));
+    } else {
+      // Fallback: Extract basic image data (original behavior + enhanced context)
+      imageData = await page.evaluate(
+        (minWidth: number, minHeight: number) => {
+          const images: Array<{
+            src: string;
+            srcset: string | null;
+            dataSrc: string | null;
+            width: number;
+            height: number;
+            alt: string | null;
+            caption: string | null;
+            credit: string | null;
+            attribution: string | null;
+            contextHtml: string | null;
+            linkUrl: string | null;
+            isHero: boolean;
+          }> = [];
 
-          // Skip small images (likely icons)
-          if (width < minWidth || height < minHeight) return;
+          document.querySelectorAll('img').forEach((img, index) => {
+            const width = img.naturalWidth || img.width || 0;
+            const height = img.naturalHeight || img.height || 0;
 
-          images.push({
-            src: img.src,
-            srcset: img.srcset || null,
-            dataSrc: img.getAttribute('data-src') || img.getAttribute('data-original') || null,
-            width,
-            height,
-            alt: img.alt || null,
-          });
-        });
+            // Skip small images (likely icons)
+            if (width < minWidth || height < minHeight) return;
 
-        // Also check for background images in galleries
-        document
-          .querySelectorAll('[style*="background-image"], [data-background]')
-          .forEach((el) => {
-            const style = window.getComputedStyle(el);
-            const bgImage = style.backgroundImage;
-            const match = bgImage.match(/url\(['"]?(.+?)['"]?\)/);
-            if (match) {
-              images.push({
-                src: match[1],
-                srcset: null,
-                dataSrc: el.getAttribute('data-background') || null,
-                width: 0,
-                height: 0,
-                alt: null,
-              });
+            // Find caption
+            let caption: string | null = null;
+            const figure = img.closest('figure');
+            if (figure) {
+              const figcaption = figure.querySelector('figcaption');
+              if (figcaption) caption = figcaption.textContent?.trim() || null;
             }
+            if (!caption) {
+              const parent = img.parentElement?.parentElement;
+              const captionEl = parent?.querySelector('[class*="caption"], [class*="Caption"]');
+              if (captionEl) caption = captionEl.textContent?.trim() || null;
+            }
+
+            // Find credit
+            let credit: string | null = null;
+            const creditEl = figure?.querySelector('[class*="credit"], [class*="Credit"], [class*="byline"]') ||
+                             img.parentElement?.querySelector('[class*="credit"]');
+            if (creditEl) credit = creditEl.textContent?.trim() || null;
+
+            // Find attribution
+            const attribution = img.getAttribute('data-credit') || img.getAttribute('data-attribution') ||
+                               img.getAttribute('data-source') || null;
+
+            // Get context HTML
+            let contextHtml: string | null = null;
+            const contextEl = img.closest('figure, picture');
+            if (contextEl) contextHtml = contextEl.outerHTML.substring(0, 2000);
+
+            // Check if wrapped in link
+            const linkWrapper = img.closest('a');
+            const linkUrl = linkWrapper?.getAttribute('href') || null;
+
+            // Determine if hero image
+            const isHero = index === 0 ||
+                           img.classList.toString().toLowerCase().includes('hero') ||
+                           img.closest('[class*="hero"], [class*="Hero"]') !== null;
+
+            images.push({
+              src: img.src,
+              srcset: img.srcset || null,
+              dataSrc: img.getAttribute('data-src') || img.getAttribute('data-original') || null,
+              width,
+              height,
+              alt: img.alt || null,
+              caption,
+              credit,
+              attribution,
+              contextHtml,
+              linkUrl,
+              isHero,
+            });
           });
 
-        return images;
-      },
-      options.minImageWidth || 100,
-      options.minImageHeight || 100
-    );
+          // Also check for background images in galleries
+          document
+            .querySelectorAll('[style*="background-image"], [data-background]')
+            .forEach((el) => {
+              const style = window.getComputedStyle(el);
+              const bgImage = style.backgroundImage;
+              const match = bgImage.match(/url\(['"]?(.+?)['"]?\)/);
+              if (match) {
+                images.push({
+                  src: match[1],
+                  srcset: null,
+                  dataSrc: el.getAttribute('data-background') || null,
+                  width: 0,
+                  height: 0,
+                  alt: null,
+                  caption: null,
+                  credit: null,
+                  attribution: null,
+                  contextHtml: null,
+                  linkUrl: null,
+                  isHero: false,
+                });
+              }
+            });
+
+          return images;
+        },
+        options.minImageWidth || 100,
+        options.minImageHeight || 100
+      );
+    }
 
     // Create images directory
     const imagesDir = path.join(options.outputDir, 'images');
@@ -254,6 +449,7 @@ export async function extractImages(options: ExtractionOptions): Promise<ImageEx
       try {
         // Try to get hi-res version
         let imageUrl = imgData.src;
+        const originalSrc = imgData.src;
 
         // Check srcset for larger version
         if (imgData.srcset) {
@@ -269,13 +465,21 @@ export async function extractImages(options: ExtractionOptions): Promise<ImageEx
         // Resolve relative URLs
         imageUrl = new URL(imageUrl, options.url).href;
 
+        // Determine file extension from URL
+        const urlFilename = extractFilenameFromUrl(imageUrl);
+        const ext = urlFilename?.split('.').pop()?.toLowerCase() || 'jpg';
+        const safeExt = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'].includes(ext) ? ext : 'jpg';
+
         // Download the image
-        const imagePath = path.join(imagesDir, `${options.sourceId}_img_${downloadedCount}.jpg`);
+        const imagePath = path.join(imagesDir, `${options.sourceId}_img_${downloadedCount}.${safeExt}`);
         const downloadResult = await downloadFile(imageUrl, imagePath);
 
         if (downloadResult.success) {
           const hash = await calculateHash(imagePath);
           const stats = await fs.promises.stat(imagePath);
+
+          // OPT-112: Extract EXIF data from downloaded image
+          const exifData = await extractExifData(imagePath);
 
           extractedImages.push({
             url: imageUrl,
@@ -285,7 +489,17 @@ export async function extractImages(options: ExtractionOptions): Promise<ImageEx
             height: imgData.height,
             size: stats.size,
             alt: imgData.alt,
-            isHiRes: imageUrl !== imgData.src,
+            isHiRes: imageUrl !== originalSrc,
+            // OPT-112: Enhanced metadata
+            originalFilename: urlFilename,
+            caption: imgData.caption,
+            credit: imgData.credit,
+            attribution: imgData.attribution,
+            srcsetVariants: parseSrcsetVariants(imgData.srcset),
+            contextHtml: imgData.contextHtml,
+            linkUrl: imgData.linkUrl,
+            isHero: imgData.isHero,
+            exifData,
           });
 
           downloadedCount++;
@@ -496,10 +710,21 @@ export async function extractVideos(options: ExtractionOptions): Promise<VideoEx
           const hash = await calculateHash(videoPath);
           const stats = await fs.promises.stat(videoPath);
 
-          // Try to read info JSON for metadata
+          // OPT-112: Parse full yt-dlp metadata
           let title: string | null = null;
           let duration: number | null = null;
           let platform = 'unknown';
+          let description: string | null = null;
+          let uploader: string | null = null;
+          let uploaderUrl: string | null = null;
+          let uploadDate: string | null = null;
+          let viewCount: number | null = null;
+          let likeCount: number | null = null;
+          let tags: string[] = [];
+          let categories: string[] = [];
+          let thumbnailUrl: string | null = null;
+          let thumbnailPath: string | null = null;
+          let metadataJson: string | null = null;
 
           const infoFile = files.find(
             (f) =>
@@ -509,13 +734,43 @@ export async function extractVideos(options: ExtractionOptions): Promise<VideoEx
 
           if (infoFile) {
             try {
-              const info = JSON.parse(
-                await fs.promises.readFile(path.join(videosDir, infoFile), 'utf-8')
-              );
+              const infoPath = path.join(videosDir, infoFile);
+              const infoRaw = await fs.promises.readFile(infoPath, 'utf-8');
+              const info = JSON.parse(infoRaw);
+
+              // OPT-112: Extract comprehensive metadata
               title = info.title || null;
               duration = info.duration || null;
-              platform = info.extractor || 'unknown';
-            } catch {}
+              platform = info.extractor || info.extractor_key || 'unknown';
+              description = info.description || null;
+              uploader = info.uploader || info.channel || null;
+              uploaderUrl = info.uploader_url || info.channel_url || null;
+              uploadDate = info.upload_date || null;
+              viewCount = info.view_count || null;
+              likeCount = info.like_count || null;
+              tags = Array.isArray(info.tags) ? info.tags : [];
+              categories = Array.isArray(info.categories) ? info.categories : [];
+              thumbnailUrl = info.thumbnail || null;
+
+              // Store the full JSON for future-proofing
+              metadataJson = infoRaw;
+
+              // Download thumbnail if available
+              if (thumbnailUrl) {
+                try {
+                  const thumbExt = thumbnailUrl.split('.').pop()?.split('?')[0] || 'jpg';
+                  const thumbPath = path.join(videosDir, `${options.sourceId}_vid_${downloadedCount}_thumb.${thumbExt}`);
+                  const thumbResult = await downloadFile(thumbnailUrl, thumbPath);
+                  if (thumbResult.success) {
+                    thumbnailPath = thumbPath;
+                  }
+                } catch {
+                  // Thumbnail download failed, not critical
+                }
+              }
+            } catch {
+              // Info JSON parsing failed, continue with basic metadata
+            }
           }
 
           extractedVideos.push({
@@ -526,6 +781,18 @@ export async function extractVideos(options: ExtractionOptions): Promise<VideoEx
             duration,
             size: stats.size,
             platform,
+            // OPT-112: Enhanced metadata
+            description,
+            uploader,
+            uploaderUrl,
+            uploadDate,
+            viewCount,
+            likeCount,
+            tags,
+            categories,
+            thumbnailUrl,
+            thumbnailPath,
+            metadataJson,
           });
 
           downloadedCount++;

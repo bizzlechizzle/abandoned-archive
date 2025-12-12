@@ -70,8 +70,9 @@ let browserLaunchPromise: Promise<Browser> | null = null;
 /**
  * Get or create a shared browser instance
  * Reuses browser to avoid cold start overhead on each capture
+ * OPT-112: Exported for use by orchestrator's metadata extraction
  */
-async function getBrowser(): Promise<Browser> {
+export async function getBrowser(): Promise<Browser> {
   if (browserInstance?.isConnected()) {
     return browserInstance;
   }

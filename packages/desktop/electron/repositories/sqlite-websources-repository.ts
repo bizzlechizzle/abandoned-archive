@@ -1040,6 +1040,123 @@ export class SQLiteWebSourcesRepository {
   }
 
   /**
+   * OPT-112: Batch insert images with full metadata
+   * Clears existing images first, then inserts all new ones
+   */
+  async insertSourceImages(sourceId: string, images: Array<{
+    url: string;
+    localPath?: string;
+    hash?: string;
+    width?: number;
+    height?: number;
+    size?: number;
+    originalFilename?: string;
+    alt?: string;
+    caption?: string;
+    credit?: string;
+    attribution?: string;
+    srcsetVariants?: string[];
+    contextHtml?: string;
+    linkUrl?: string;
+    exifData?: Record<string, unknown>;
+    isHiRes?: boolean;
+    isHero?: boolean;
+  }>): Promise<void> {
+    if (images.length === 0) return;
+
+    // Clear existing images for this source
+    await this.deleteImages(sourceId);
+
+    // Insert all images
+    for (let i = 0; i < images.length; i++) {
+      const img = images[i];
+      await this.insertImage(sourceId, i, {
+        url: img.url,
+        localPath: img.localPath,
+        hash: img.hash,
+        width: img.width,
+        height: img.height,
+        size: img.size,
+        originalFilename: img.originalFilename,
+        alt: img.alt,
+        caption: img.caption,
+        credit: img.credit,
+        attribution: img.attribution,
+        srcsetVariants: img.srcsetVariants,
+        contextHtml: img.contextHtml,
+        linkUrl: img.linkUrl,
+        exif: img.exifData,
+        isHiRes: img.isHiRes,
+        isHero: img.isHero,
+      });
+    }
+  }
+
+  /**
+   * OPT-112: Batch insert videos with full metadata
+   * Clears existing videos first, then inserts all new ones
+   */
+  async insertSourceVideos(sourceId: string, videos: Array<{
+    url: string;
+    localPath?: string;
+    hash?: string;
+    title?: string;
+    description?: string;
+    duration?: number;
+    size?: number;
+    platform?: string;
+    uploader?: string;
+    uploaderUrl?: string;
+    uploadDate?: string;
+    viewCount?: number;
+    likeCount?: number;
+    tags?: string[];
+    categories?: string[];
+    thumbnailUrl?: string;
+    thumbnailPath?: string;
+    metadataJson?: string;
+  }>): Promise<void> {
+    if (videos.length === 0) return;
+
+    // Clear existing videos for this source
+    await this.deleteVideos(sourceId);
+
+    // Insert all videos
+    for (let i = 0; i < videos.length; i++) {
+      const vid = videos[i];
+      await this.insertVideo(sourceId, i, {
+        url: vid.url,
+        localPath: vid.localPath,
+        hash: vid.hash,
+        title: vid.title,
+        description: vid.description,
+        duration: vid.duration,
+        size: vid.size,
+        platform: vid.platform,
+        uploader: vid.uploader,
+        uploaderUrl: vid.uploaderUrl,
+        uploadDate: vid.uploadDate,
+        viewCount: vid.viewCount,
+        likeCount: vid.likeCount,
+        tags: vid.tags,
+        categories: vid.categories,
+        thumbnailUrl: vid.thumbnailUrl,
+        thumbnailPath: vid.thumbnailPath,
+        metadata: vid.metadataJson ? JSON.parse(vid.metadataJson) : undefined,
+      });
+    }
+  }
+
+  /**
+   * OPT-112: Clear all media for a source (images + videos)
+   * Used before re-archiving
+   */
+  async clearSourceMedia(sourceId: string): Promise<void> {
+    await this.deleteImages(sourceId);
+    await this.deleteVideos(sourceId);
+  }
+
+  /**
    * Update page-level metadata fields
    */
   async updatePageMetadata(sourceId: string, data: {

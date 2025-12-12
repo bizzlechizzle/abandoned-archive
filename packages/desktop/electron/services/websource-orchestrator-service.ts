@@ -1,11 +1,13 @@
 /**
  * Web Source Orchestrator Service
  * OPT-109: Coordinates the complete web archiving pipeline
+ * OPT-112: Enhanced with comprehensive metadata extraction
  *
  * This service orchestrates:
  * - Page capture (Screenshot, PDF, HTML, WARC)
  * - Content extraction (Images, Videos, Text)
- * - Metadata extraction
+ * - Metadata extraction (Open Graph, Schema.org, Dublin Core)
+ * - Per-image and per-video metadata storage
  * - Repository updates
  * - Provenance hash generation
  * - Media linking to locations
@@ -31,6 +33,7 @@ import {
   extractMetadata,
   CaptureOptions,
   closeBrowser,
+  getBrowser,
 } from './websource-capture-service';
 import {
   extractImages,
@@ -41,6 +44,12 @@ import {
   ExtractedImage,
   ExtractedVideo,
 } from './websource-extraction-service';
+import {
+  extractPageMetadata,
+  consolidateMetadata,
+  PageMetadata,
+  ImageDomContext,
+} from './websource-metadata-service';
 import { calculateHash, calculateHashBuffer } from './crypto-service';
 
 // =============================================================================
@@ -155,9 +164,52 @@ export class WebSourceOrchestrator extends EventEmitter {
       // Initialize component status
       const componentStatus: ComponentStatus = {};
 
-      // Phase 1: Extract metadata
-      this.emitProgress(sourceId, source.url, 'metadata', undefined, 10, 'Extracting metadata...');
+      // Phase 1: Extract metadata (basic from capture service)
+      this.emitProgress(sourceId, source.url, 'metadata', undefined, 5, 'Extracting basic metadata...');
       const metadata = await extractMetadata(source.url, opts.timeout);
+
+      // OPT-112: Extract comprehensive page metadata using dedicated service
+      let pageMetadata: PageMetadata | null = null;
+      let imageDomContext: ImageDomContext[] = [];
+      try {
+        this.emitProgress(sourceId, source.url, 'metadata', undefined, 10, 'Extracting structured metadata...');
+        // We need a browser page to extract DOM metadata
+        const browser = await getBrowser();
+        const page = await browser.newPage();
+
+        try {
+          const response = await page.goto(source.url, {
+            waitUntil: 'networkidle2',
+            timeout: opts.timeout || 30000,
+          });
+
+          // Capture HTTP headers and status
+          const responseHeaders: Record<string, string> = {};
+          const headers = response?.headers() || {};
+          for (const [key, value] of Object.entries(headers)) {
+            responseHeaders[key] = String(value);
+          }
+          const responseStatus = response?.status() || null;
+
+          // Extract comprehensive metadata from DOM
+          pageMetadata = await extractPageMetadata(page, source.url, responseHeaders, responseStatus || undefined);
+          imageDomContext = pageMetadata.images;
+
+          // Consolidate to get best values
+          const consolidated = consolidateMetadata(pageMetadata);
+
+          // Override basic metadata with better extracted values
+          if (consolidated.title) metadata.title = consolidated.title;
+          if (consolidated.author) metadata.author = consolidated.author;
+          if (consolidated.publishDate) metadata.date = consolidated.publishDate;
+          if (consolidated.publisher) metadata.publisher = consolidated.publisher;
+        } finally {
+          await page.close().catch(() => {});
+        }
+      } catch (err) {
+        console.error('OPT-112: Page metadata extraction failed, continuing with basic metadata:', err);
+        // Continue with basic metadata - this is not a critical failure
+      }
 
       // Phase 2: Capture page in various formats
       let screenshotPath: string | null = null;
@@ -237,6 +289,7 @@ export class WebSourceOrchestrator extends EventEmitter {
       }
 
       // Phase 3: Extract content
+      // OPT-112: Pass DOM context for enhanced image metadata extraction
       const extractionOptions: ExtractionOptions = {
         url: source.url,
         outputDir: archivePath,
@@ -245,6 +298,7 @@ export class WebSourceOrchestrator extends EventEmitter {
         timeout: opts.timeout,
         maxImages: opts.maxImages,
         maxVideos: opts.maxVideos,
+        imageDomContext: imageDomContext.length > 0 ? imageDomContext : undefined,
       };
 
       let extractedImages: ExtractedImage[] = [];
@@ -299,8 +353,95 @@ export class WebSourceOrchestrator extends EventEmitter {
 
       // Phase 4: Link extracted media to location
       if (opts.linkMedia && source.locid && extractedImages.length > 0) {
-        this.emitProgress(sourceId, source.url, 'linking', undefined, 90, 'Linking media to location...');
+        this.emitProgress(sourceId, source.url, 'linking', undefined, 85, 'Linking media to location...');
         await this.linkExtractedMedia(source.locid, source.subid, sourceId, extractedImages, extractedVideos);
+      }
+
+      // OPT-112: Store per-image metadata in web_source_images table
+      // Note: Convert null to undefined for repository method compatibility
+      if (extractedImages.length > 0) {
+        this.emitProgress(sourceId, source.url, 'linking', undefined, 88, 'Storing image metadata...');
+        try {
+          await this.repository.insertSourceImages(sourceId, extractedImages.map(img => ({
+            url: img.url,
+            localPath: img.localPath,
+            hash: img.hash,
+            width: img.width,
+            height: img.height,
+            size: img.size,
+            originalFilename: img.originalFilename || undefined,
+            alt: img.alt || undefined,
+            caption: img.caption || undefined,
+            credit: img.credit || undefined,
+            attribution: img.attribution || undefined,
+            srcsetVariants: img.srcsetVariants,
+            contextHtml: img.contextHtml || undefined,
+            linkUrl: img.linkUrl || undefined,
+            exifData: img.exifData || undefined,
+            isHiRes: img.isHiRes,
+            isHero: img.isHero,
+          })));
+        } catch (err) {
+          console.error('OPT-112: Failed to store image metadata:', err);
+        }
+      }
+
+      // OPT-112: Store per-video metadata in web_source_videos table
+      // Note: Convert null to undefined for repository method compatibility
+      if (extractedVideos.length > 0) {
+        this.emitProgress(sourceId, source.url, 'linking', undefined, 90, 'Storing video metadata...');
+        try {
+          await this.repository.insertSourceVideos(sourceId, extractedVideos.map(vid => ({
+            url: vid.url,
+            localPath: vid.localPath,
+            hash: vid.hash,
+            title: vid.title || undefined,
+            description: vid.description || undefined,
+            duration: vid.duration || undefined,
+            size: vid.size,
+            platform: vid.platform,
+            uploader: vid.uploader || undefined,
+            uploaderUrl: vid.uploaderUrl || undefined,
+            uploadDate: vid.uploadDate || undefined,
+            viewCount: vid.viewCount || undefined,
+            likeCount: vid.likeCount || undefined,
+            tags: vid.tags,
+            categories: vid.categories,
+            thumbnailUrl: vid.thumbnailUrl || undefined,
+            thumbnailPath: vid.thumbnailPath || undefined,
+            metadataJson: vid.metadataJson || undefined,
+          })));
+        } catch (err) {
+          console.error('OPT-112: Failed to store video metadata:', err);
+        }
+      }
+
+      // OPT-112: Store page-level metadata (Open Graph, Schema.org, etc.)
+      if (pageMetadata) {
+        this.emitProgress(sourceId, source.url, 'linking', undefined, 92, 'Storing page metadata...');
+        try {
+          await this.repository.updatePageMetadata(sourceId, {
+            domain: this.extractDomain(source.url),
+            extractedLinks: pageMetadata.links,
+            pageMetadata: {
+              openGraph: pageMetadata.openGraph,
+              schemaOrg: pageMetadata.schemaOrg,
+              dublinCore: pageMetadata.dublinCore,
+              twitterCards: pageMetadata.twitterCards,
+              meta: {
+                description: pageMetadata.metaDescription,
+                keywords: pageMetadata.metaKeywords,
+                robots: pageMetadata.metaRobots,
+                author: pageMetadata.metaAuthor,
+              },
+            },
+            httpHeaders: pageMetadata.httpHeaders,
+            canonicalUrl: pageMetadata.canonicalUrl || undefined,
+            language: pageMetadata.language || undefined,
+          });
+        } catch (err) {
+          console.error('OPT-112: Failed to store page metadata:', err);
+        }
       }
 
       // Calculate provenance hash (hash of all component hashes)
