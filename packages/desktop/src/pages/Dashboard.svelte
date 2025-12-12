@@ -68,7 +68,7 @@
   let totalImages = $state(0);
   let totalVideos = $state(0);
   let totalDocuments = $state(0);
-  let totalBookmarks = $state(0);
+  let totalWebSources = $state(0);
 
   // Format large numbers with "k" suffix (e.g., 3024 → "3k", 3150 → "3.2k")
   function formatCount(n: number): string {
@@ -117,9 +117,9 @@
     }
 
     try {
-      totalBookmarks = await window.electronAPI.bookmarks.count();
+      totalWebSources = await window.electronAPI.websources.count();
     } catch (e) {
-      console.error('Failed to load bookmark count:', e);
+      console.error('Failed to load web sources count:', e);
     }
 
     try {
@@ -245,7 +245,7 @@
           <div class="text-[11px] uppercase tracking-wider text-braun-500">documents</div>
         </div>
         <div class="text-center">
-          <div class="text-2xl font-bold text-braun-900">{formatCount(totalBookmarks)}</div>
+          <div class="text-2xl font-bold text-braun-900">{formatCount(totalWebSources)}</div>
           <div class="text-[11px] uppercase tracking-wider text-braun-500">bookmarks</div>
         </div>
       </div>

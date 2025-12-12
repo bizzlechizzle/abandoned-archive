@@ -936,6 +936,62 @@ export interface ElectronAPI {
     updateEstablished: (locid: string, subid: string | null, dateInput: string, eventSubtype?: string, userId?: string) => Promise<TimelineEvent | undefined>;
   };
 
+  // OPT-109: Web Sources Archiving (replacement for bookmarks)
+  websources: {
+    // Core CRUD
+    create: (input: WebSourceInput) => Promise<WebSource>;
+    findById: (sourceId: string) => Promise<WebSource | null>;
+    findByUrl: (url: string) => Promise<WebSource | null>;
+    findByLocation: (locid: string) => Promise<WebSource[]>;
+    findBySubLocation: (subid: string) => Promise<WebSource[]>;
+    findByStatus: (status: WebSourceStatus) => Promise<WebSource[]>;
+    findPendingForArchive: (limit?: number) => Promise<WebSource[]>;
+    findRecent: (limit?: number) => Promise<WebSource[]>;
+    findAll: () => Promise<WebSource[]>;
+    update: (sourceId: string, updates: WebSourceUpdate) => Promise<WebSource>;
+    delete: (sourceId: string) => Promise<void>;
+
+    // Archive Status Management
+    markArchiving: (sourceId: string) => Promise<void>;
+    markComplete: (sourceId: string, options: ArchiveCompleteOptions) => Promise<void>;
+    markPartial: (sourceId: string, componentStatus: ComponentStatus, archivePath: string) => Promise<void>;
+    markFailed: (sourceId: string, error: string) => Promise<void>;
+    resetToPending: (sourceId: string) => Promise<void>;
+    updateComponentStatus: (sourceId: string, componentStatus: ComponentStatus) => Promise<void>;
+
+    // Version Management
+    createVersion: (sourceId: string, options: VersionOptions) => Promise<WebSourceVersion>;
+    findVersions: (sourceId: string) => Promise<WebSourceVersion[]>;
+    findVersionByNumber: (sourceId: string, versionNumber: number) => Promise<WebSourceVersion | null>;
+    findLatestVersion: (sourceId: string) => Promise<WebSourceVersion | null>;
+    countVersions: (sourceId: string) => Promise<number>;
+
+    // Full-Text Search
+    search: (query: string, options?: SearchOptions) => Promise<WebSource[]>;
+
+    // Statistics
+    getStats: () => Promise<WebSourceStats>;
+    getStatsByLocation: (locid: string) => Promise<WebSourceStats>;
+    count: () => Promise<number>;
+    countByLocation: (locid: string) => Promise<number>;
+    countBySubLocation: (subid: string) => Promise<number>;
+
+    // Migration
+    migrateFromBookmarks: () => Promise<{ migrated: number; failed: number }>;
+
+    // Orchestrator (Archive Operations)
+    archive: (sourceId: string, options?: ArchiveOptions) => Promise<ArchiveResult>;
+    archivePending: (limit?: number, options?: ArchiveOptions) => Promise<ArchiveResult[]>;
+    rearchive: (sourceId: string, options?: ArchiveOptions) => Promise<ArchiveResult>;
+    cancelArchive: () => Promise<void>;
+    archiveStatus: () => Promise<{ isProcessing: boolean; currentSourceId: string | null }>;
+
+    // OPT-111: Enhanced Metadata Access
+    getImages: (sourceId: string) => Promise<WebSourceImage[]>;
+    getVideos: (sourceId: string) => Promise<WebSourceVideo[]>;
+    getDetail: (sourceId: string) => Promise<WebSourceDetail | null>;
+  };
+
 }
 
 // Reference Map types
@@ -1245,6 +1301,251 @@ export interface AssetReadyEvent {
   mediaType?: string;
   metadata?: unknown;
   proxyPath?: string;
+}
+
+// =============================================================================
+// OPT-109: Web Sources Types
+// =============================================================================
+
+export type WebSourceStatus = 'pending' | 'archiving' | 'complete' | 'partial' | 'failed';
+export type WebSourceType = 'article' | 'gallery' | 'video' | 'social' | 'map' | 'document' | 'archive' | 'other';
+export type ComponentState = 'pending' | 'done' | 'failed' | 'skipped';
+
+export interface ComponentStatus {
+  screenshot?: ComponentState;
+  pdf?: ComponentState;
+  html?: ComponentState;
+  warc?: ComponentState;
+  images?: ComponentState;
+  videos?: ComponentState;
+  text?: ComponentState;
+}
+
+export interface WebSource {
+  source_id: string;
+  url: string;
+  title: string | null;
+  locid: string | null;
+  subid: string | null;
+  source_type: WebSourceType;
+  status: WebSourceStatus;
+  component_status: ComponentStatus;
+  extracted_title: string | null;
+  extracted_author: string | null;
+  extracted_date: string | null;
+  extracted_publisher: string | null;
+  word_count: number;
+  image_count: number;
+  video_count: number;
+  archive_path: string | null;
+  screenshot_path: string | null;
+  pdf_path: string | null;
+  html_path: string | null;
+  warc_path: string | null;
+  screenshot_hash: string | null;
+  pdf_hash: string | null;
+  html_hash: string | null;
+  warc_hash: string | null;
+  content_hash: string | null;
+  provenance_hash: string | null;
+  domain: string | null;
+  canonical_url: string | null;
+  notes: string | null;
+  archive_error: string | null;
+  retry_count: number;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+  auth_imp: string | null;
+}
+
+export interface WebSourceInput {
+  url: string;
+  title?: string | null;
+  locid?: string | null;
+  subid?: string | null;
+  source_type?: WebSourceType;
+  notes?: string | null;
+  auth_imp?: string | null;
+}
+
+export interface WebSourceUpdate {
+  title?: string | null;
+  locid?: string | null;
+  subid?: string | null;
+  source_type?: WebSourceType;
+  notes?: string | null;
+  status?: WebSourceStatus;
+  component_status?: ComponentStatus;
+  extracted_title?: string | null;
+  extracted_author?: string | null;
+  extracted_date?: string | null;
+  extracted_publisher?: string | null;
+  word_count?: number;
+  image_count?: number;
+  video_count?: number;
+  archive_path?: string | null;
+  screenshot_path?: string | null;
+  pdf_path?: string | null;
+  html_path?: string | null;
+  warc_path?: string | null;
+  screenshot_hash?: string | null;
+  pdf_hash?: string | null;
+  html_hash?: string | null;
+  warc_hash?: string | null;
+  content_hash?: string | null;
+  provenance_hash?: string | null;
+  archive_error?: string | null;
+  retry_count?: number;
+  archived_at?: string | null;
+}
+
+export interface ArchiveCompleteOptions {
+  archive_path: string;
+  screenshot_path?: string | null;
+  pdf_path?: string | null;
+  html_path?: string | null;
+  warc_path?: string | null;
+  screenshot_hash?: string | null;
+  pdf_hash?: string | null;
+  html_hash?: string | null;
+  warc_hash?: string | null;
+  content_hash?: string | null;
+  extracted_title?: string | null;
+  extracted_author?: string | null;
+  extracted_date?: string | null;
+  word_count?: number;
+  image_count?: number;
+  video_count?: number;
+}
+
+export interface VersionOptions {
+  archive_path: string;
+  screenshot_hash?: string | null;
+  pdf_hash?: string | null;
+  html_hash?: string | null;
+  warc_hash?: string | null;
+  content_hash?: string | null;
+  notes?: string | null;
+}
+
+export interface WebSourceVersion {
+  version_id: string;
+  source_id: string;
+  version_number: number;
+  archive_path: string;
+  screenshot_hash: string | null;
+  pdf_hash: string | null;
+  html_hash: string | null;
+  warc_hash: string | null;
+  content_hash: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface SearchOptions {
+  status?: WebSourceStatus;
+  locid?: string;
+  limit?: number;
+}
+
+export interface WebSourceStats {
+  total: number;
+  byStatus: Record<WebSourceStatus, number>;
+  byType: Record<WebSourceType, number>;
+  totalImages: number;
+  totalVideos: number;
+  totalWords: number;
+}
+
+export interface ArchiveOptions {
+  captureScreenshot?: boolean;
+  capturePdf?: boolean;
+  captureHtml?: boolean;
+  captureWarc?: boolean;
+  extractImages?: boolean;
+  extractVideos?: boolean;
+  extractText?: boolean;
+  linkMedia?: boolean;
+  timeout?: number;
+  maxImages?: number;
+  maxVideos?: number;
+}
+
+export interface ArchiveResult {
+  success: boolean;
+  sourceId: string;
+  url: string;
+  archivePath: string | null;
+  screenshotPath: string | null;
+  pdfPath: string | null;
+  htmlPath: string | null;
+  warcPath: string | null;
+  extractedImages: number;
+  extractedVideos: number;
+  wordCount: number;
+  error?: string;
+  duration: number;
+}
+
+export interface WebSourceImage {
+  image_id: string;
+  source_id: string;
+  url: string;
+  local_path: string | null;
+  hash: string | null;
+  width: number | null;
+  height: number | null;
+  size: number | null;
+  original_filename: string | null;
+  alt: string | null;
+  caption: string | null;
+  credit: string | null;
+  attribution: string | null;
+  srcset_variants: string | null;
+  context_html: string | null;
+  link_url: string | null;
+  exif_json: string | null;
+  is_hi_res: boolean;
+  is_hero: boolean;
+  created_at: string;
+}
+
+export interface WebSourceVideo {
+  video_id: string;
+  source_id: string;
+  url: string;
+  local_path: string | null;
+  hash: string | null;
+  title: string | null;
+  description: string | null;
+  duration: number | null;
+  size: number | null;
+  platform: string | null;
+  uploader: string | null;
+  uploader_url: string | null;
+  upload_date: string | null;
+  view_count: number | null;
+  like_count: number | null;
+  tags_json: string | null;
+  categories_json: string | null;
+  thumbnail_url: string | null;
+  thumbnail_path: string | null;
+  metadata_json: string | null;
+  created_at: string;
+}
+
+export interface WebSourceDetail extends WebSource {
+  images: WebSourceImage[];
+  videos: WebSourceVideo[];
+  links: string[];
+  pageMetadata: {
+    openGraph?: Record<string, string>;
+    schemaOrg?: unknown[];
+    dublinCore?: Record<string, string>;
+    twitterCards?: Record<string, string>;
+    meta?: Record<string, string>;
+  } | null;
 }
 
 declare global {
