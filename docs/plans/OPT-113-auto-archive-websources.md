@@ -1,6 +1,6 @@
 # OPT-113: Auto-Archive Web Sources on Save
 
-**Status**: APPROVED - READY TO IMPLEMENT
+**Status**: COMPLETE - MERGED TO feature/import-v2 (commit 9c1a3f7)
 **Created**: 2025-12-12
 **Author**: Claude Code
 
