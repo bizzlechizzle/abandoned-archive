@@ -138,12 +138,12 @@
   }
 
   function getEstablishedDisplay(): string {
-    if (!establishedEvent) return 'XXXX-XX-XX - Built';
+    if (!establishedEvent) return '';
     const subtype = establishedEvent.event_subtype || 'built';
     const label = subtypeLabels[subtype] || 'Built';
     const date = establishedEvent.date_display;
-    // DATE - NOTE format; placeholder when no date
-    return date ? `${date} - ${label}` : `XXXX-XX-XX - ${label}`;
+    // DATE - NOTE format; empty if no date (user must edit to add)
+    return date ? `${date} - ${label}` : '';
   }
 
   function formatVisitLine(event: TimelineEvent): string {
@@ -193,37 +193,65 @@
         <!-- Vertical line -->
         <div class="absolute left-[3px] top-2 bottom-2 w-px bg-braun-300"></div>
 
+        <!-- Add established date prompt (only in edit mode when no established event exists) -->
+        {#if editMode && !establishedEvent}
+          <div class="relative pb-4">
+            <div class="absolute -left-5 top-[5px] w-[7px] h-[7px] rounded-full bg-braun-300"></div>
+            {#if editingEstablished}
+              <div class="bg-braun-50 border border-braun-200 rounded p-4">
+                <TimelineDateInput
+                  initialValue=""
+                  initialSubtype="built"
+                  onSave={handleEstablishedUpdate}
+                  onCancel={() => editingEstablished = false}
+                />
+              </div>
+            {:else}
+              <button
+                type="button"
+                onclick={() => editingEstablished = true}
+                class="text-[15px] text-braun-500 hover:text-braun-900 hover:underline cursor-pointer"
+              >
+                Add established date...
+              </button>
+            {/if}
+          </div>
+        {/if}
+
         <!-- Chronological event list (oldest first) -->
         {#each displayEvents() as event, index (event.event_id)}
           {@const isLast = index === displayEvents().length - 1 && hiddenVisitCount === 0}
 
           {#if event.event_type === 'established'}
-            <!-- Established Event -->
-            <div class="relative {isLast ? '' : 'pb-4'}">
-              <!-- Filled dot for established -->
-              <div class="absolute -left-5 top-[5px] w-[7px] h-[7px] rounded-full bg-braun-900"></div>
+            <!-- Established Event - only show if has date or in edit mode -->
+            {@const displayText = getEstablishedDisplay()}
+            {#if displayText || editMode}
+              <div class="relative {isLast ? '' : 'pb-4'}">
+                <!-- Filled dot for established -->
+                <div class="absolute -left-5 top-[5px] w-[7px] h-[7px] rounded-full bg-braun-900"></div>
 
-              {#if editMode && editingEstablished}
-                <!-- Inline edit form -->
-                <div class="bg-braun-50 border border-braun-200 rounded p-4">
-                  <TimelineDateInput
-                    initialValue={establishedEvent?.date_display || ''}
-                    initialSubtype={establishedEvent?.event_subtype || 'built'}
-                    onSave={handleEstablishedUpdate}
-                    onCancel={() => editingEstablished = false}
-                  />
-                </div>
-              {:else}
-                <button
-                  type="button"
-                  onclick={() => editMode && (editingEstablished = true)}
-                  class="text-[15px] text-braun-900 {editMode ? 'hover:underline cursor-pointer' : 'cursor-default'}"
-                  disabled={!editMode}
-                >
-                  {getEstablishedDisplay()}
-                </button>
-              {/if}
-            </div>
+                {#if editMode && editingEstablished}
+                  <!-- Inline edit form -->
+                  <div class="bg-braun-50 border border-braun-200 rounded p-4">
+                    <TimelineDateInput
+                      initialValue={establishedEvent?.date_display || ''}
+                      initialSubtype={establishedEvent?.event_subtype || 'built'}
+                      onSave={handleEstablishedUpdate}
+                      onCancel={() => editingEstablished = false}
+                    />
+                  </div>
+                {:else}
+                  <button
+                    type="button"
+                    onclick={() => editMode && (editingEstablished = true)}
+                    class="text-[15px] text-braun-900 {editMode ? 'hover:underline cursor-pointer' : 'cursor-default'}"
+                    disabled={!editMode}
+                  >
+                    {displayText || 'Add established date...'}
+                  </button>
+                {/if}
+              </div>
+            {/if}
 
           {:else if event.event_type === 'visit'}
             <!-- Visit Event -->

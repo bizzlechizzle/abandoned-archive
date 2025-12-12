@@ -673,29 +673,6 @@ export interface ElectronAPI {
     isLocationInProject: (project_id: string, locid: string) => Promise<boolean>;
   };
 
-  bookmarks: {
-    create: (input: {
-      url: string;
-      title?: string | null;
-      locid?: string | null;
-      auth_imp?: string | null;
-      thumbnail_path?: string | null;
-    }) => Promise<unknown>;
-    findById: (bookmark_id: string) => Promise<unknown>;
-    findByLocation: (locid: string) => Promise<unknown[]>;
-    findRecent: (limit?: number) => Promise<unknown[]>;
-    findAll: () => Promise<unknown[]>;
-    update: (bookmark_id: string, updates: {
-      url?: string;
-      title?: string | null;
-      locid?: string | null;
-      thumbnail_path?: string | null;
-    }) => Promise<unknown>;
-    delete: (bookmark_id: string) => Promise<void>;
-    count: () => Promise<number>;
-    countByLocation: (locid: string) => Promise<number>;
-  };
-
   users: {
     create: (input: {
       username: string;

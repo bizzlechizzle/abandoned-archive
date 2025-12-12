@@ -4,30 +4,34 @@
  * HTTP server that receives bookmark data from the browser extension.
  * Runs on localhost:47123 - only accepts local connections for security.
  *
+ * Migration Note (OPT-109): Now uses web_sources table instead of bookmarks.
+ * HTTP API endpoint names preserved for extension backward compatibility.
+ *
  * Endpoints:
  * - GET  /api/status          - Health check
- * - POST /api/bookmark        - Save a bookmark (with optional subid)
+ * - POST /api/bookmark        - Save a web source (with optional subid)
  * - POST /api/location        - Create a new location
  * - GET  /api/locations       - Search locations
  * - GET  /api/search          - Unified search for locations AND sub-locations
- * - GET  /api/recent          - Recent bookmarks
+ * - GET  /api/recent          - Recent web sources
  * - GET  /api/recent-locations - Recently used locations
  */
 import http from 'http';
 import { URL } from 'url';
 import { getLogger } from './logger-service';
 import {
-  notifyBookmarkSaved,
+  notifyWebSourceSaved,
   notifyLocationsUpdated,
 } from './websocket-server';
-import type { SQLiteBookmarksRepository } from '../repositories/sqlite-bookmarks-repository';
+import { detectSourceType } from './source-type-detector';
+import type { SQLiteWebSourcesRepository, WebSource } from '../repositories/sqlite-websources-repository';
 import type { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
 import type { SQLiteSubLocationRepository } from '../repositories/sqlite-sublocation-repository';
 
 const PORT = 47123;
 const logger = getLogger();
 
-let bookmarksRepository: SQLiteBookmarksRepository | null = null;
+let webSourcesRepository: SQLiteWebSourcesRepository | null = null;
 let locationsRepository: SQLiteLocationRepository | null = null;
 let subLocationsRepository: SQLiteSubLocationRepository | null = null;
 let server: http.Server | null = null;
@@ -64,6 +68,29 @@ function sendJson(res: http.ServerResponse, status: number, data: unknown): void
 }
 
 /**
+ * Map WebSource to legacy bookmark response format for extension compatibility
+ */
+function mapToBookmarkResponse(source: WebSource): {
+  bookmark_id: string;
+  url: string;
+  title: string | null;
+  locid: string | null;
+  subid: string | null;
+  bookmark_date: string;
+  source_type: string;
+} {
+  return {
+    bookmark_id: source.source_id,
+    url: source.url,
+    title: source.title,
+    locid: source.locid,
+    subid: source.subid,
+    bookmark_date: source.created_at,
+    source_type: source.source_type,
+  };
+}
+
+/**
  * Handle incoming HTTP requests
  */
 async function handleRequest(
@@ -85,14 +112,14 @@ async function handleRequest(
   try {
     // GET /api/status - Check if app is running
     if (method === 'GET' && path === '/api/status') {
-      sendJson(res, 200, { running: true, version: '1.0.0' });
+      sendJson(res, 200, { running: true, version: '2.0.0' });
       return;
     }
 
-    // POST /api/bookmark - Save a bookmark
+    // POST /api/bookmark - Save a web source (endpoint name kept for extension compat)
     if (method === 'POST' && path === '/api/bookmark') {
-      if (!bookmarksRepository) {
-        sendJson(res, 500, { error: 'Bookmarks repository not initialized' });
+      if (!webSourcesRepository) {
+        sendJson(res, 500, { error: 'Web sources repository not initialized' });
         return;
       }
 
@@ -103,18 +130,47 @@ async function handleRequest(
         return;
       }
 
-      const bookmark = await bookmarksRepository.create({
-        url: body.url,
-        title: typeof body.title === 'string' ? body.title : null,
-        locid: typeof body.locid === 'string' ? body.locid : null,
-        subid: typeof body.subid === 'string' ? body.subid : null,
-        auth_imp: null,
-      });
+      // Check for duplicate before creating
+      const existingSource = await webSourcesRepository.findByUrl(body.url);
+      if (existingSource) {
+        // Return existing source info with duplicate flag for premium UX
+        sendJson(res, 200, {
+          success: true,
+          duplicate: true,
+          bookmark_id: existingSource.source_id,
+          source_type: existingSource.source_type,
+          message: `Already saved${existingSource.locnam ? ` to ${existingSource.locnam}` : ''}`,
+        });
+        return;
+      }
 
-      // Notify WebSocket clients about the new bookmark
-      notifyBookmarkSaved(bookmark.bookmark_id, bookmark.locid, bookmark.subid);
+      // Auto-detect source type from URL
+      const detectedType = detectSourceType(body.url);
 
-      sendJson(res, 201, { success: true, bookmark_id: bookmark.bookmark_id });
+      try {
+        const source = await webSourcesRepository.create({
+          url: body.url,
+          title: typeof body.title === 'string' ? body.title : null,
+          locid: typeof body.locid === 'string' ? body.locid : null,
+          subid: typeof body.subid === 'string' ? body.subid : null,
+          source_type: detectedType,
+          auth_imp: null,
+        });
+
+        // Notify WebSocket clients about the new web source
+        notifyWebSourceSaved(source.source_id, source.locid, source.subid, source.source_type);
+
+        // Return with backward-compatible field names for extension
+        sendJson(res, 201, {
+          success: true,
+          bookmark_id: source.source_id,
+          source_type: source.source_type,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error('BookmarkAPI', `Create web source error: ${message}`);
+        sendJson(res, 500, { error: message });
+      }
       return;
     }
 
@@ -258,23 +314,24 @@ async function handleRequest(
       return;
     }
 
-    // GET /api/recent?limit=5 - Get recent bookmarks
+    // GET /api/recent?limit=5 - Get recent web sources (endpoint name kept for compat)
     if (method === 'GET' && path === '/api/recent') {
-      if (!bookmarksRepository) {
-        sendJson(res, 500, { error: 'Bookmarks repository not initialized' });
+      if (!webSourcesRepository) {
+        sendJson(res, 500, { error: 'Web sources repository not initialized' });
         return;
       }
 
       const limit = parseInt(url.searchParams.get('limit') || '5', 10);
-      const bookmarks = await bookmarksRepository.findRecent(limit);
+      const sources = await webSourcesRepository.findRecent(limit);
 
-      sendJson(res, 200, { bookmarks });
+      // Map to legacy format for extension compatibility
+      sendJson(res, 200, { bookmarks: sources.map(mapToBookmarkResponse) });
       return;
     }
 
     // GET /api/recent-locations?limit=5 - Get recently used/created locations
     if (method === 'GET' && path === '/api/recent-locations') {
-      if (!bookmarksRepository || !locationsRepository) {
+      if (!webSourcesRepository || !locationsRepository) {
         sendJson(res, 500, { error: 'Repositories not initialized' });
         return;
       }
@@ -283,13 +340,13 @@ async function handleRequest(
       const seenLocids = new Set<string>();
       const recentLocations: Array<{ locid: string; locnam: string; address_state: string | null }> = [];
 
-      // First: Get locations from recent bookmarks (most recently used)
-      const recentBookmarks = await bookmarksRepository.findRecent(50);
-      for (const bookmark of recentBookmarks) {
-        if (bookmark.locid && !seenLocids.has(bookmark.locid)) {
-          seenLocids.add(bookmark.locid);
+      // First: Get locations from recent web sources (most recently used)
+      const recentSources = await webSourcesRepository.findRecent(50);
+      for (const source of recentSources) {
+        if (source.locid && !seenLocids.has(source.locid)) {
+          seenLocids.add(source.locid);
           try {
-            const location = await locationsRepository.findById(bookmark.locid);
+            const location = await locationsRepository.findById(source.locid);
             if (location) {
               recentLocations.push({
                 locid: location.locid,
@@ -335,14 +392,18 @@ async function handleRequest(
 
 /**
  * Start the HTTP server
+ *
+ * @param webSourcesRepo - Web sources repository (OPT-109 replacement for bookmarks)
+ * @param locationsRepo - Locations repository
+ * @param subLocationsRepo - Sub-locations repository
  */
 export function startBookmarkAPIServer(
-  bookmarksRepo: SQLiteBookmarksRepository,
+  webSourcesRepo: SQLiteWebSourcesRepository,
   locationsRepo: SQLiteLocationRepository,
   subLocationsRepo: SQLiteSubLocationRepository
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    bookmarksRepository = bookmarksRepo;
+    webSourcesRepository = webSourcesRepo;
     locationsRepository = locationsRepo;
     subLocationsRepository = subLocationsRepo;
 
@@ -378,7 +439,7 @@ export function stopBookmarkAPIServer(): Promise<void> {
       server.close(() => {
         logger.info('BookmarkAPI', 'Server stopped');
         server = null;
-        bookmarksRepository = null;
+        webSourcesRepository = null;
         locationsRepository = null;
         subLocationsRepository = null;
         resolve();

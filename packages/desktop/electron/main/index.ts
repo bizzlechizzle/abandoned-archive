@@ -16,7 +16,7 @@ import { startBookmarkAPIServer, stopBookmarkAPIServer } from '../services/bookm
 import { startWebSocketServer, stopWebSocketServer } from '../services/websocket-server';
 import { terminateDetachedBrowser } from '../services/detached-browser-service';
 import { getDatabaseArchiveService } from '../services/database-archive-service';
-import { SQLiteBookmarksRepository } from '../repositories/sqlite-bookmarks-repository';
+import { SQLiteWebSourcesRepository } from '../repositories/sqlite-websources-repository';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
 import { SQLiteSubLocationRepository } from '../repositories/sqlite-sublocation-repository';
 
@@ -292,13 +292,14 @@ async function startupOrchestrator(): Promise<void> {
     logger.info('Main', 'IPC handlers registered successfully');
 
     // Step 5b: Start Bookmark API Server for Research Browser extension
+    // OPT-109: Uses WebSourcesRepository (replaces deprecated BookmarksRepository)
     logger.info('Main', 'Starting Bookmark API Server');
     const db = getDatabase();
-    const bookmarksRepo = new SQLiteBookmarksRepository(db);
+    const webSourcesRepo = new SQLiteWebSourcesRepository(db);
     const locationsRepo = new SQLiteLocationRepository(db);
     const subLocationsRepo = new SQLiteSubLocationRepository(db);
     try {
-      await startBookmarkAPIServer(bookmarksRepo, locationsRepo, subLocationsRepo);
+      await startBookmarkAPIServer(webSourcesRepo, locationsRepo, subLocationsRepo);
       logger.info('Main', 'Bookmark API Server started successfully');
     } catch (error) {
       // Non-fatal: log warning but continue startup (research browser feature may not work)

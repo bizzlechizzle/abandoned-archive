@@ -823,89 +823,19 @@ export class SQLiteWebSourcesRepository {
   }
 
   // ===========================================================================
-  // Bookmark Migration
+  // Bookmark Migration (Deprecated)
   // ===========================================================================
 
   /**
    * Migrate existing bookmarks to web sources
-   * Called once during migration 57
+   * @deprecated Migration 57 already performed this migration and dropped the bookmarks table.
+   * This method is preserved for API compatibility but is a no-op.
    */
   async migrateFromBookmarks(): Promise<{ migrated: number; failed: number }> {
-    let migrated = 0;
-    let failed = 0;
-
-    // Get all existing bookmarks
-    const bookmarks = await this.db.selectFrom('bookmarks').selectAll().execute();
-
-    for (const bookmark of bookmarks) {
-      try {
-        const source_id = this.generateSourceId(bookmark.url);
-
-        // Check if already migrated
-        const existing = await this.db
-          .selectFrom('web_sources')
-          .select('source_id')
-          .where('source_id', '=', source_id)
-          .executeTakeFirst();
-
-        if (existing) {
-          continue; // Skip if already exists
-        }
-
-        // Create web source from bookmark
-        const source: WebSourcesTable = {
-          source_id,
-          url: bookmark.url,
-          title: bookmark.title,
-          locid: bookmark.locid,
-          subid: bookmark.subid,
-          source_type: 'article',
-          notes: null,
-          status: 'pending',
-          component_status: null,
-          extracted_title: null,
-          extracted_author: null,
-          extracted_date: null,
-          extracted_publisher: null,
-          extracted_text: null,
-          word_count: 0,
-          image_count: 0,
-          video_count: 0,
-          archive_path: null,
-          screenshot_path: bookmark.thumbnail_path,
-          pdf_path: null,
-          html_path: null,
-          warc_path: null,
-          screenshot_hash: null,
-          pdf_hash: null,
-          html_hash: null,
-          warc_hash: null,
-          content_hash: null,
-          provenance_hash: null,
-          archive_error: null,
-          retry_count: 0,
-          created_at: bookmark.bookmark_date,
-          archived_at: null,
-          auth_imp: bookmark.auth_imp,
-          // OPT-111: Enhanced metadata fields
-          domain: null,
-          extracted_links: null,
-          page_metadata_json: null,
-          http_headers_json: null,
-          canonical_url: null,
-          language: null,
-          favicon_path: null,
-        };
-
-        await this.db.insertInto('web_sources').values(source).execute();
-        migrated++;
-      } catch (error) {
-        console.error(`Failed to migrate bookmark ${bookmark.bookmark_id}:`, error);
-        failed++;
-      }
-    }
-
-    return { migrated, failed };
+    // Migration already completed in database migration 57.
+    // The bookmarks table no longer exists, so this is a no-op.
+    console.log('migrateFromBookmarks: Migration already complete (bookmarks table dropped in migration 57)');
+    return { migrated: 0, failed: 0 };
   }
 
   // ===========================================================================

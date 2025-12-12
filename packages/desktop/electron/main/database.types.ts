@@ -13,7 +13,6 @@ export interface Database {
   notes: NotesTable;
   projects: ProjectsTable;
   project_locations: ProjectLocationsTable;
-  bookmarks: BookmarksTable;
   users: UsersTable;
   location_authors: LocationAuthorsTable;
   location_views: LocationViewsTable;
@@ -493,18 +492,6 @@ export interface ProjectLocationsTable {
   project_id: string;
   locid: string;
   added_date: string;
-}
-
-// Bookmarks table
-export interface BookmarksTable {
-  bookmark_id: string;
-  url: string;
-  title: string | null;
-  locid: string | null;
-  subid: string | null;  // Migration 35: Sub-location support
-  bookmark_date: string;
-  auth_imp: string | null;
-  thumbnail_path: string | null;
 }
 
 // Users table

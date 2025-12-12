@@ -293,7 +293,7 @@ export function notifyLocationsUpdated(): void {
 
 /**
  * Notify all clients that a bookmark was saved
- * Call this after successfully creating a bookmark
+ * @deprecated Use notifyWebSourceSaved instead (OPT-109)
  */
 export function notifyBookmarkSaved(
   bookmarkId: string,
@@ -305,6 +305,32 @@ export function notifyBookmarkSaved(
     bookmark_id: bookmarkId,
     locid,
     subid: subid || null,
+  });
+}
+
+/**
+ * Notify all clients that a web source was saved
+ * OPT-109: Replaces notifyBookmarkSaved with richer payload
+ */
+export function notifyWebSourceSaved(
+  sourceId: string,
+  locid: string | null,
+  subid: string | null,
+  sourceType: string
+): void {
+  broadcast({
+    type: 'websource_saved',
+    source_id: sourceId,
+    locid,
+    subid,
+    source_type: sourceType,
+  });
+  // Also broadcast legacy event for backward compatibility
+  broadcast({
+    type: 'bookmark_saved',
+    bookmark_id: sourceId,
+    locid,
+    subid,
   });
 }
 

@@ -291,30 +291,20 @@ export class TimelineService {
 
   /**
    * Initialize timeline for a new location
-   * Creates established (blank) and database_entry events
+   * Creates database_entry event only (established event created on-demand when user sets date)
    */
   async initializeLocationTimeline(
     locid: string,
     locadd: string | null,
     userId?: string
   ): Promise<void> {
-    // Check if already initialized
-    const existing = await this.repository.getEstablishedEvent(locid);
-    if (existing) return; // Already initialized
-
-    // Create established event (blank)
-    await this.createEvent(
-      {
-        locid,
-        event_type: 'established',
-        event_subtype: 'built',
-        date_precision: 'unknown',
-      },
-      userId
-    );
-
     // Create database_entry event
     if (locadd) {
+      // Check if already has database_entry
+      const events = await this.repository.findByLocation(locid);
+      const hasDbEntry = events.some(e => e.event_type === 'database_entry');
+      if (hasDbEntry) return;
+
       const dateOnly = locadd.split('T')[0]; // YYYY-MM-DD
       const dateSort = parseInt(dateOnly.replace(/-/g, '')); // YYYYMMDD as number
       await this.createEvent(
@@ -334,28 +324,15 @@ export class TimelineService {
 
   /**
    * Initialize timeline for a new sub-location
-   * Creates established (blank) event
+   * No-op: established event created on-demand when user sets date
    */
   async initializeSubLocationTimeline(
-    locid: string,
-    subid: string,
-    userId?: string
+    _locid: string,
+    _subid: string,
+    _userId?: string
   ): Promise<void> {
-    // Check if already initialized
-    const existing = await this.repository.getEstablishedEvent(locid, subid);
-    if (existing) return; // Already initialized
-
-    // Create established event (blank)
-    await this.createEvent(
-      {
-        locid,
-        subid,
-        event_type: 'established',
-        event_subtype: 'built',
-        date_precision: 'unknown',
-      },
-      userId
-    );
+    // Established event created on-demand via updateEstablishedDate
+    // No default "Built" placeholder
   }
 
   /**

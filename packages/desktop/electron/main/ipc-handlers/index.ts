@@ -14,7 +14,7 @@
  * - media-processing.ts: media viewing, thumbnails, cache handlers
  * - notes.ts: notes:* handlers
  * - projects.ts: projects:* handlers
- * - bookmarks.ts: bookmarks:* handlers
+ * - websources.ts: websources:* handlers (OPT-109, replaces bookmarks)
  * - users.ts: users:* handlers
  * - sublocations.ts: sublocation:* handlers
  * - database.ts: database:* handlers
@@ -33,7 +33,6 @@ import { registerMediaImportHandlers } from './media-import';
 import { registerMediaProcessingHandlers } from './media-processing';
 import { registerNotesHandlers } from './notes';
 import { registerProjectsHandlers } from './projects';
-import { registerBookmarksHandlers } from './bookmarks';
 import { registerUsersHandlers } from './users';
 import { registerDatabaseHandlers } from './database';
 import { registerHealthHandlers } from './health';
@@ -75,7 +74,6 @@ export function registerIpcHandlers() {
   // Entity handlers
   registerNotesHandlers(db);
   registerProjectsHandlers(db);
-  registerBookmarksHandlers(db);
   registerUsersHandlers(db);
   registerSubLocationHandlers(db);
 

@@ -385,18 +385,6 @@ const api = {
     isLocationInProject: (projectId, locid) => invokeAuto("projects:isLocationInProject")(projectId, locid),
   },
 
-  bookmarks: {
-    create: (input) => invokeAuto("bookmarks:create")(input),
-    findById: (bookmarkId) => invokeAuto("bookmarks:findById")(bookmarkId),
-    findByLocation: (locid) => invokeAuto("bookmarks:findByLocation")(locid),
-    findRecent: (limit) => invokeAuto("bookmarks:findRecent")(limit),
-    findAll: () => invokeAuto("bookmarks:findAll")(),
-    update: (bookmarkId, updates) => invokeAuto("bookmarks:update")(bookmarkId, updates),
-    delete: (bookmarkId) => invokeAuto("bookmarks:delete")(bookmarkId),
-    count: () => invokeAuto("bookmarks:count")(),
-    countByLocation: (locid) => invokeAuto("bookmarks:countByLocation")(locid),
-  },
-
   // OPT-109: Web Sources Archiving (comprehensive replacement for bookmarks)
   websources: {
     // Core CRUD
