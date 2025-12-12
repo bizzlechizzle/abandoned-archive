@@ -350,6 +350,7 @@ export interface ElectronAPI {
       images: unknown[];
       videos: unknown[];
       documents: unknown[];
+      maps: unknown[]; // MAP-MEDIA-FIX-001
     }>;
     // OPT-039: Paginated image loading for scale
     // OPT-094: Added subid filtering support

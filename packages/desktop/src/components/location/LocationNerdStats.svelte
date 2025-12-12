@@ -10,10 +10,11 @@
     imageCount: number;
     videoCount: number;
     documentCount: number;
+    mapCount?: number; // MAP-MEDIA-FIX-001
     onLocationUpdated?: () => void;
   }
 
-  let { location, imageCount, videoCount, documentCount, onLocationUpdated }: Props = $props();
+  let { location, imageCount, videoCount, documentCount, mapCount = 0, onLocationUpdated }: Props = $props();
 
   let isOpen = $state(false);
   let copiedField = $state<string | null>(null);
@@ -286,8 +287,12 @@
       <span class="ml-2 font-semibold">{documentCount}</span>
     </div>
     <div>
+      <span class="text-braun-500">Maps:</span>
+      <span class="ml-2 font-semibold">{mapCount}</span>
+    </div>
+    <div>
       <span class="text-braun-500">Total Media:</span>
-      <span class="ml-2 font-semibold">{imageCount + videoCount + documentCount}</span>
+      <span class="ml-2 font-semibold">{imageCount + videoCount + documentCount + mapCount}</span>
     </div>
 
     <!-- BagIt Archive (Self-Documenting Archive per RFC 8493) -->

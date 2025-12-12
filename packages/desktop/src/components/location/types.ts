@@ -70,6 +70,25 @@ export interface MediaDocument {
   hidden_reason?: string | null;
 }
 
+/**
+ * MAP-MEDIA-FIX-001: Map media type for GeoTIFF, GPX, KML, GeoJSON, etc.
+ */
+export interface MediaMap {
+  maphash: string;
+  mapnam: string;      // Archive name (hash.ext)
+  mapnamo: string;     // Original name (user's filename)
+  maploc: string;      // Archive path
+  locid: string | null;
+  subid: string | null;
+  meta_gps_lat: number | null;
+  meta_gps_lng: number | null;
+  thumb_path_sm: string | null;
+  thumb_path_lg: string | null;
+  preview_path: string | null;
+  // Author tracking
+  imported_by?: string | null;
+}
+
 export interface Bookmark {
   urlid: string;
   url: string;

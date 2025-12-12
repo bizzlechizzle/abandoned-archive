@@ -117,7 +117,39 @@ export interface MediaDocument {
 }
 
 /**
- * Repository for media files (images, videos, documents)
+ * MAP-MEDIA-FIX-001: Map media interface for GeoTIFF, GPX, KML, GeoJSON, etc.
+ */
+export interface MediaMap {
+  maphash: string;
+  mapnam: string;
+  mapnamo: string;
+  maploc: string;
+  maploco: string;
+  locid: string | null;
+  subid: string | null;
+  auth_imp: string | null;
+  mapadd: string | null;
+  meta_exiftool: string | null;
+  meta_map: string | null;
+  meta_gps_lat: number | null;
+  meta_gps_lng: number | null;
+  reference: string | null;
+  map_states: string | null;
+  map_verified: number;
+  // Multi-tier thumbnails (Migration 9 - Premium Archive)
+  thumb_path_sm: string | null;
+  thumb_path_lg: string | null;
+  preview_path: string | null;
+  // Activity Tracking (Migration 25)
+  imported_by_id: string | null;
+  imported_by: string | null;
+  media_source: string | null;
+  // OPT-047: File size for archive size tracking
+  file_size_bytes: number | null;
+}
+
+/**
+ * Repository for media files (images, videos, documents, maps)
  */
 export class SQLiteMediaRepository {
   constructor(private readonly db: Kysely<Database>) {}
@@ -317,10 +349,79 @@ export class SQLiteMediaRepository {
     return !!result;
   }
 
+  // ==================== MAPS (MAP-MEDIA-FIX-001) ====================
+
+  /**
+   * MAP-MEDIA-FIX-001: Find map by hash
+   */
+  async findMapByHash(maphash: string): Promise<MediaMap> {
+    const row = await this.db
+      .selectFrom('maps')
+      .selectAll()
+      .where('maphash', '=', maphash)
+      .executeTakeFirstOrThrow();
+    return row;
+  }
+
+  /**
+   * MAP-MEDIA-FIX-001: Find maps by location with optional sub-location filtering
+   * Supports GeoTIFF, GPX, KML, GeoJSON, and other map file types
+   */
+  async findMapsByLocation(locid: string, options?: MediaQueryOptions): Promise<MediaMap[]> {
+    let query = this.db
+      .selectFrom('maps')
+      .selectAll()
+      .where('locid', '=', locid);
+
+    // Apply subid filtering (same pattern as images/videos/documents)
+    if (options?.subid === null) {
+      query = query.where('subid', 'is', null);
+    } else if (options?.subid !== undefined) {
+      query = query.where('subid', '=', options.subid);
+    }
+
+    const rows = await query.orderBy('mapadd', 'desc').execute();
+    return rows;
+  }
+
+  /**
+   * MAP-MEDIA-FIX-001: Check if map exists by hash
+   */
+  async mapExists(maphash: string): Promise<boolean> {
+    const result = await this.db
+      .selectFrom('maps')
+      .select('maphash')
+      .where('maphash', '=', maphash)
+      .executeTakeFirst();
+    return !!result;
+  }
+
+  /**
+   * MAP-MEDIA-FIX-001: Delete a map by hash
+   */
+  async deleteMap(maphash: string): Promise<void> {
+    await this.db
+      .deleteFrom('maps')
+      .where('maphash', '=', maphash)
+      .execute();
+  }
+
+  /**
+   * MAP-MEDIA-FIX-001: Move a map to a different sub-location
+   */
+  async moveMapToSubLocation(maphash: string, subid: string | null): Promise<void> {
+    await this.db
+      .updateTable('maps')
+      .set({ subid })
+      .where('maphash', '=', maphash)
+      .execute();
+  }
+
   // ==================== GENERAL ====================
 
   /**
    * OPT-094: Find all media by location with optional sub-location filtering
+   * MAP-MEDIA-FIX-001: Added maps to the response
    * @param locid - Location ID
    * @param options - Optional filtering: undefined=all, null=host only, string=specific sub-location
    */
@@ -328,14 +429,16 @@ export class SQLiteMediaRepository {
     images: MediaImage[];
     videos: MediaVideo[];
     documents: MediaDocument[];
+    maps: MediaMap[];
   }> {
-    const [images, videos, documents] = await Promise.all([
+    const [images, videos, documents, maps] = await Promise.all([
       this.findImagesByLocation(locid, options),
       this.findVideosByLocation(locid, options),
       this.findDocumentsByLocation(locid, options),
+      this.findMapsByLocation(locid, options),
     ]);
 
-    return { images, videos, documents };
+    return { images, videos, documents, maps };
   }
 
   // ==================== THUMBNAIL/PREVIEW OPERATIONS ====================

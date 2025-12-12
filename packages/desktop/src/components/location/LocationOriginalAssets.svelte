@@ -1,33 +1,39 @@
 <script lang="ts">
   /**
    * LocationOriginalAssets - Accordion wrapper for all media types
-   * Contains Images, Videos, Documents sub-accordions
+   * Contains Images, Videos, Documents, Maps sub-accordions
    * Per DECISION-020: Original Assets Accordion Refactor
    * Migration 23: Hidden media filtering with "Show All" toggle
+   * MAP-MEDIA-FIX-001: Added Maps support
    */
   import LocationGallery from './LocationGallery.svelte';
   import LocationVideos from './LocationVideos.svelte';
   import LocationDocuments from './LocationDocuments.svelte';
-  import type { MediaImage, MediaVideo, MediaDocument } from './types';
+  import LocationMaps from './LocationMaps.svelte';
+  import type { MediaImage, MediaVideo, MediaDocument, MediaMap } from './types';
 
   interface Props {
     images: MediaImage[];
     videos: MediaVideo[];
     documents: MediaDocument[];
+    maps: MediaMap[];
     heroImgsha: string | null;
     onOpenImageLightbox: (index: number) => void;
     onOpenVideoLightbox: (index: number) => void;
     onOpenDocument: (path: string) => void;
+    onOpenMap: (path: string) => void;
   }
 
   let {
     images,
     videos,
     documents,
+    maps,
     heroImgsha,
     onOpenImageLightbox,
     onOpenVideoLightbox,
     onOpenDocument,
+    onOpenMap,
   }: Props = $props();
 
   // Outer accordion - collapsed by default (user can expand if wanted)
@@ -67,9 +73,12 @@
   );
   const visibleDocuments = $derived(showHidden ? documents : documents.filter(d => d.hidden !== 1));
 
-  // Calculate total visible media count
-  const visibleCount = $derived(visibleImages.length + visibleVideos.length + visibleDocuments.length);
-  const totalCount = $derived(images.length + videos.length + documents.length);
+  // MAP-MEDIA-FIX-001: Maps are always visible (no hidden support yet)
+  const visibleMaps = $derived(maps);
+
+  // Calculate total visible media count (including maps)
+  const visibleCount = $derived(visibleImages.length + visibleVideos.length + visibleDocuments.length + visibleMaps.length);
+  const totalCount = $derived(images.length + videos.length + documents.length + maps.length);
 
   // OPT-036: Pre-compute index maps for O(1) lookups instead of O(n) findIndex
   const imageIndexMap = $derived(() => {
@@ -175,6 +184,10 @@
       <LocationDocuments
         documents={visibleDocuments}
         onOpenFile={onOpenDocument}
+      />
+      <LocationMaps
+        maps={visibleMaps}
+        onOpenFile={onOpenMap}
       />
     </div>
   {/if}

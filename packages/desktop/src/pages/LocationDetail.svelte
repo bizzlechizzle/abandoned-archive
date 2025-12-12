@@ -18,7 +18,7 @@
     LocationMapSection, LocationOriginalAssets,
     LocationImportZone, LocationBookmarks, LocationWebSources, LocationNerdStats,
     LocationSettings, SubLocationGrid,
-    type MediaImage, type MediaVideo, type MediaDocument, type Bookmark,
+    type MediaImage, type MediaVideo, type MediaDocument, type MediaMap, type Bookmark,
     type GpsWarning, type FailedFile
   } from '../components/location';
   import type { Location, LocationInput } from '@au-archive/core';
@@ -62,6 +62,7 @@
   let images = $state<MediaImage[]>([]);
   let videos = $state<MediaVideo[]>([]);
   let documents = $state<MediaDocument[]>([]);
+  let maps = $state<MediaMap[]>([]); // MAP-MEDIA-FIX-001: Map media support
   // Issue 3: All media for author extraction (includes sub-location media on host view)
   let allImagesForAuthors = $state<MediaImage[]>([]);
   let allVideosForAuthors = $state<MediaVideo[]>([]);
@@ -379,10 +380,12 @@
       // ADR-046: subid is 16-char BLAKE3 hex ID
       // - subid = '<blake3-id>' → returns only that sub-location's media
       // - subid = null → returns only host-level media (subid IS NULL in DB)
+      // MAP-MEDIA-FIX-001: Added maps support
       if (media) {
         images = (media.images as MediaImage[]) || [];
         videos = (media.videos as MediaVideo[]) || [];
         documents = (media.documents as MediaDocument[]) || [];
+        maps = (media.maps as MediaMap[]) || [];
       }
     } catch (err) {
       console.error('Error loading location:', err);
@@ -1261,14 +1264,16 @@
             {images}
             {videos}
             {documents}
+            {maps}
             heroImghash={currentSubLocation?.hero_imghash || location.hero_imghash || null}
             onOpenImageLightbox={(i) => selectedMediaIndex = i}
             onOpenVideoLightbox={(i) => selectedMediaIndex = images.length + i}
             onOpenDocument={openMediaFile}
+            onOpenMap={openMediaFile}
           />
         </div>
         <LocationSettings {location} onLocationUpdated={loadLocation} />
-        <LocationNerdStats {location} imageCount={images.length} videoCount={videos.length} documentCount={documents.length} onLocationUpdated={loadLocation} />
+        <LocationNerdStats {location} imageCount={images.length} videoCount={videos.length} documentCount={documents.length} mapCount={maps.length} onLocationUpdated={loadLocation} />
       {/if}
     </div>
   {/if}
