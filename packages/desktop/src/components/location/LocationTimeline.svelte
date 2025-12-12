@@ -137,7 +137,16 @@
 
   function formatDatabaseEntryDate(): string {
     if (!databaseEntryEvent?.date_display) return '';
-    return `Added to Database · ${databaseEntryEvent.date_display}`;
+    // Handle ISO timestamps (2025-12-11T20:44:27.759Z) -> YYYY/MM/DD
+    const raw = databaseEntryEvent.date_display;
+    let formatted = raw;
+    if (raw.includes('T')) {
+      const datePart = raw.split('T')[0];
+      formatted = datePart.replace(/-/g, '/');
+    } else if (raw.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      formatted = raw.replace(/-/g, '/');
+    }
+    return `Added to Database · ${formatted}`;
   }
 </script>
 
