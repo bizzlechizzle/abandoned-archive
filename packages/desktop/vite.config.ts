@@ -147,8 +147,10 @@ export default defineConfig({
                 // BLAKE3 has native bindings with WASM fallback
                 // Must be external to use the correct CJS/Node entry point
                 'blake3',
-                // Puppeteer-core uses dynamic requires for browser detection
+                // Puppeteer uses dynamic requires for browser detection
                 'puppeteer-core',
+                'puppeteer-extra',
+                'puppeteer-extra-plugin-stealth',
               ],
             },
           },

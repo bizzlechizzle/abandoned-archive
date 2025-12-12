@@ -16,8 +16,17 @@ import * as crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
-import puppeteer, { Browser, Page, LaunchOptions, CDPSession, HTTPRequest, HTTPResponse } from 'puppeteer-core';
+import puppeteerCore, { Browser, Page, LaunchOptions, CDPSession, HTTPRequest, HTTPResponse } from 'puppeteer-core';
+import puppeteerExtra from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { calculateHash } from './crypto-service';
+
+// Configure puppeteer-extra with stealth plugin
+// This helps bypass bot detection (Cloudflare, PerimeterX, DataDome, etc.)
+puppeteerExtra.use(StealthPlugin());
+
+// Use puppeteer-extra for launching (it wraps puppeteer-core)
+const puppeteer = puppeteerExtra;
 
 const execPromise = promisify(exec);
 
@@ -135,14 +144,14 @@ async function launchBrowser(): Promise<Browser> {
     throw new Error('No Chrome/Chromium executable found. Please install Chrome or Chromium.');
   }
 
-  // Get persistent profile directory for cookies/session data
-  // This allows the archiver to share cookies with the Research Browser
-  const userDataDir = getBrowserProfilePath();
+  // Use the Research Browser's actual profile for cookies/session data
+  // This shares cookies from manual browsing sessions
+  const userDataDir = getResearchBrowserProfilePath();
 
   const options: LaunchOptions = {
     executablePath,
-    headless: true,
-    userDataDir, // Persist cookies and session data
+    headless: 'new', // Use new headless mode (less detectable than old headless)
+    userDataDir, // Use Research Browser's cookies
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -153,29 +162,65 @@ async function launchBrowser(): Promise<Browser> {
       // Anti-bot detection measures
       '--disable-blink-features=AutomationControlled',
       '--disable-features=IsolateOrigins,site-per-process',
-      '--disable-web-security',
-      '--allow-running-insecure-content',
+      // Realistic browser settings
+      '--lang=en-US,en',
+      '--disable-extensions-except=',
+      '--disable-default-apps',
+      '--disable-component-update',
+      // Prevent detection via WebGL/Canvas fingerprinting
+      '--disable-reading-from-canvas',
+      '--disable-3d-apis',
     ],
     ignoreDefaultArgs: ['--enable-automation'], // Hide automation flag
   };
 
-  return puppeteer.launch(options);
+  return puppeteer.launch(options) as Promise<Browser>;
 }
 
 /**
- * Get the path to the browser profile directory
- * This allows cookies and session data to persist across archive sessions
+ * Get the path to the Research Browser's profile directory
+ * This uses the ACTUAL Chromium profile with cookies from manual browsing
+ *
+ * IMPORTANT: The Research Browser must NOT be running when archiving,
+ * as Chrome locks its profile directory.
  */
-export function getBrowserProfilePath(): string {
-  const { app } = require('electron');
-  const profileDir = path.join(app.getPath('userData'), 'browser-profile');
+export function getResearchBrowserProfilePath(): string {
+  const platform = process.platform;
+  let profilePath: string;
 
-  // Create directory if it doesn't exist
-  if (!fs.existsSync(profileDir)) {
-    fs.mkdirSync(profileDir, { recursive: true });
+  if (platform === 'darwin') {
+    // macOS: Ungoogled Chromium stores profile here
+    profilePath = path.join(process.env.HOME || '', 'Library', 'Application Support', 'Chromium');
+  } else if (platform === 'linux') {
+    // Linux: ~/.config/chromium
+    profilePath = path.join(process.env.HOME || '', '.config', 'chromium');
+  } else {
+    // Windows: %LOCALAPPDATA%\Chromium\User Data
+    profilePath = path.join(process.env.LOCALAPPDATA || '', 'Chromium', 'User Data');
   }
 
-  return profileDir;
+  // If Research Browser profile exists, use it (has cookies from manual browsing)
+  if (fs.existsSync(profilePath)) {
+    console.log('[WebSource] Using Research Browser profile:', profilePath);
+    return profilePath;
+  }
+
+  // Fallback: Create our own profile directory
+  console.log('[WebSource] Research Browser profile not found, using app profile');
+  const { app } = require('electron');
+  const fallbackDir = path.join(app.getPath('userData'), 'browser-profile');
+  if (!fs.existsSync(fallbackDir)) {
+    fs.mkdirSync(fallbackDir, { recursive: true });
+  }
+  return fallbackDir;
+}
+
+/**
+ * Legacy function for backwards compatibility
+ * @deprecated Use getResearchBrowserProfilePath instead
+ */
+export function getBrowserProfilePath(): string {
+  return getResearchBrowserProfilePath();
 }
 
 /**
