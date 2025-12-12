@@ -161,7 +161,10 @@ async function launchBrowser(): Promise<Browser> {
 
   const options: LaunchOptions = {
     executablePath,
-    headless: true as unknown as boolean, // Use headless mode (TypeScript workaround for 'new' mode)
+    // OPT-114: Use 'shell' headless mode (Chrome 129+) which is undetectable
+    // This mode has identical fingerprint to a visible browser window
+    // Falls back gracefully on older Chrome versions
+    headless: 'shell' as unknown as boolean,
     userDataDir, // Use Research Browser's cookies
     args: [
       '--no-sandbox',
@@ -212,25 +215,20 @@ export function isProfileLocked(profilePath: string): boolean {
 
 /**
  * Get the path to the Research Browser's profile directory
- * This uses the ACTUAL Chromium profile with cookies from manual browsing
+ * OPT-114: CRITICAL FIX - Use the SAME profile path as detached-browser-service.ts
  *
- * OPT-113: Now detects if browser is running and falls back to app profile
- * This allows auto-archiving even when Research Browser is open
+ * Previously this pointed to system Chromium (~/.../Chromium) but our Research Browser
+ * stores its profile in app.getPath('userData')/research-browser. This mismatch meant
+ * the capture service never had access to the user's cookies from the Research Browser.
+ *
+ * OPT-113: Detects if browser is running and falls back to app profile
  */
 export function getResearchBrowserProfilePath(): string {
-  const platform = process.platform;
-  let profilePath: string;
+  const { app } = require('electron');
 
-  if (platform === 'darwin') {
-    // macOS: Ungoogled Chromium stores profile here
-    profilePath = path.join(process.env.HOME || '', 'Library', 'Application Support', 'Chromium');
-  } else if (platform === 'linux') {
-    // Linux: ~/.config/chromium
-    profilePath = path.join(process.env.HOME || '', '.config', 'chromium');
-  } else {
-    // Windows: %LOCALAPPDATA%\Chromium\User Data
-    profilePath = path.join(process.env.LOCALAPPDATA || '', 'Chromium', 'User Data');
-  }
+  // Use the SAME path as detached-browser-service.ts:getProfilePath()
+  // This is where the Research Browser actually stores cookies/logins
+  const profilePath = path.join(app.getPath('userData'), 'research-browser');
 
   // Check if profile exists AND is not locked by running browser
   if (fs.existsSync(profilePath)) {
@@ -241,15 +239,16 @@ export function getResearchBrowserProfilePath(): string {
     // Profile exists but is locked - browser is running
     console.log('[WebSource] Research Browser profile LOCKED (browser running), using fallback');
   } else {
-    console.log('[WebSource] Research Browser profile not found, using fallback');
+    console.log('[WebSource] Research Browser profile not found at:', profilePath);
   }
 
-  // Fallback: Create/use app-managed profile directory
-  const { app } = require('electron');
+  // Fallback: Create/use separate app-managed profile directory
+  // This won't have the user's cookies but allows archiving to proceed
   const fallbackDir = path.join(app.getPath('userData'), 'browser-profile');
   if (!fs.existsSync(fallbackDir)) {
     fs.mkdirSync(fallbackDir, { recursive: true });
   }
+  console.log('[WebSource] Using fallback profile:', fallbackDir);
   return fallbackDir;
 }
 

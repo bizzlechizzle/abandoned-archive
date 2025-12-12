@@ -205,39 +205,14 @@ export async function launchDetachedBrowser(): Promise<{ success: boolean; pid?:
     const pid = browserProcess.pid;
     logger.info('DetachedBrowser', 'Browser launched successfully', { pid });
 
-    // On macOS, send keystroke to open side panel after browser loads
-    if (process.platform === 'darwin') {
-      setTimeout(() => {
-        openSidePanelViaMacOS();
-      }, 2500);
-    }
+    // OPT-114: Removed auto-keystroke for side panel (required Accessibility permission)
+    // Users can open the side panel manually with Alt+Shift+A
 
     return { success: true, pid };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error('DetachedBrowser', 'Launch failed', error as Error);
     return { success: false, error: errorMessage };
-  }
-}
-
-/**
- * Open the AU Archive side panel using macOS AppleScript
- * Chrome's sidePanel.open() requires user gesture - this sends real OS keystrokes
- */
-function openSidePanelViaMacOS(): void {
-  if (process.platform !== 'darwin') return;
-
-  try {
-    // Send Alt+Shift+A keystroke to open the extension side panel
-    execSync(
-      `osascript -e 'tell application "System Events" to keystroke "a" using {option down, shift down}'`,
-      { timeout: 5000 }
-    );
-    logger.info('DetachedBrowser', 'Sent OS keystroke (Alt+Shift+A) to open side panel');
-  } catch (error) {
-    logger.warn('DetachedBrowser', 'Failed to send side panel keystroke', {
-      error: error instanceof Error ? error.message : String(error),
-    });
   }
 }
 
