@@ -146,7 +146,7 @@
     } else if (raw.match(/^\d{4}-\d{2}-\d{2}$/)) {
       formatted = raw.replace(/-/g, '/');
     }
-    return `Added to Database · ${formatted}`;
+    return `${formatted} · Added to Database`;
   }
 </script>
 
