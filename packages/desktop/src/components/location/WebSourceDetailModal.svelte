@@ -28,6 +28,20 @@
     page_metadata_json: string | null;
     archived_at: string | null;
     created_at: string;
+    // OPT-115: Enhanced metadata fields
+    canonical_url: string | null;
+    language: string | null;
+    og_title: string | null;
+    og_description: string | null;
+    og_image: string | null;
+    twitter_card_json: string | null;
+    schema_org_json: string | null;
+    http_status: number | null;
+    capture_method: string | null;
+    extension_captured_at: string | null;
+    puppeteer_captured_at: string | null;
+    extension_screenshot_path: string | null;
+    extension_html_path: string | null;
   }
 
   interface WebSourceImage {
@@ -157,6 +171,37 @@
       return JSON.parse(srcsetJson);
     } catch {
       return [];
+    }
+  }
+
+  // OPT-115: Parse Twitter Card JSON
+  function parseTwitterCard(json: string | null): Record<string, string> | null {
+    if (!json) return null;
+    try {
+      return JSON.parse(json);
+    } catch {
+      return null;
+    }
+  }
+
+  // OPT-115: Parse Schema.org JSON
+  function parseSchemaOrg(json: string | null): unknown[] | null {
+    if (!json) return null;
+    try {
+      const parsed = JSON.parse(json);
+      return Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+      return null;
+    }
+  }
+
+  // OPT-115: Get capture method display name
+  function getCaptureMethodDisplay(method: string | null): string {
+    switch (method) {
+      case 'extension': return 'Browser Extension (Live Session)';
+      case 'puppeteer': return 'Automated Browser';
+      case 'hybrid': return 'Extension + Automated';
+      default: return 'Unknown';
     }
   }
 
@@ -322,6 +367,8 @@
         <section>
           <h3 class="text-xs font-semibold text-braun-500 uppercase tracking-wider mb-3">PAGE INFO</h3>
           <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+            <dt class="text-braun-500">Domain</dt>
+            <dd class="text-braun-900">{source.domain || getDomain(source.url)}</dd>
             {#if source.extracted_author}
               <dt class="text-braun-500">Author</dt>
               <dd class="text-braun-900">{source.extracted_author}</dd>
@@ -334,6 +381,14 @@
               <dt class="text-braun-500">Publisher</dt>
               <dd class="text-braun-900">{source.extracted_publisher}</dd>
             {/if}
+            {#if source.language}
+              <dt class="text-braun-500">Language</dt>
+              <dd class="text-braun-900">{source.language}</dd>
+            {/if}
+            {#if source.http_status}
+              <dt class="text-braun-500">HTTP Status</dt>
+              <dd class="text-braun-900">{source.http_status}</dd>
+            {/if}
             <dt class="text-braun-500">Words</dt>
             <dd class="text-braun-900">{source.word_count?.toLocaleString() || 0}</dd>
             <dt class="text-braun-500">Images</dt>
@@ -342,6 +397,79 @@
             <dd class="text-braun-900">{source.video_count || 0}</dd>
           </dl>
         </section>
+
+        <!-- OPT-115: Open Graph Preview -->
+        {#if source.og_title || source.og_description || source.og_image}
+        <section>
+          <h3 class="text-xs font-semibold text-braun-500 uppercase tracking-wider mb-3">OPEN GRAPH</h3>
+          <div class="bg-white p-3 rounded border border-braun-200">
+            {#if source.og_image}
+              <img
+                src={source.og_image}
+                alt="OG Preview"
+                class="w-full max-h-32 object-cover rounded mb-2"
+                loading="lazy"
+              />
+            {/if}
+            {#if source.og_title}
+              <p class="font-medium text-braun-900 text-sm">{source.og_title}</p>
+            {/if}
+            {#if source.og_description}
+              <p class="text-xs text-braun-600 mt-1 line-clamp-3">{source.og_description}</p>
+            {/if}
+          </div>
+        </section>
+        {/if}
+
+        <!-- OPT-115: Twitter Card -->
+        {#if parseTwitterCard(source.twitter_card_json)}
+          {@const twitter = parseTwitterCard(source.twitter_card_json)}
+          <section>
+            <h3 class="text-xs font-semibold text-braun-500 uppercase tracking-wider mb-3">TWITTER CARD</h3>
+            <dl class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm bg-white p-3 rounded border border-braun-200">
+              {#each Object.entries(twitter || {}) as [key, value]}
+                {#if value}
+                  <dt class="text-braun-500 capitalize">{key.replace(/_/g, ' ')}</dt>
+                  <dd class="text-braun-900 truncate">{value}</dd>
+                {/if}
+              {/each}
+            </dl>
+          </section>
+        {/if}
+
+        <!-- OPT-115: Schema.org Data -->
+        {#if parseSchemaOrg(source.schema_org_json)}
+          {@const schemas = parseSchemaOrg(source.schema_org_json)}
+          <section>
+            <h3 class="text-xs font-semibold text-braun-500 uppercase tracking-wider mb-3">SCHEMA.ORG ({schemas?.length || 0})</h3>
+            <div class="bg-white p-3 rounded border border-braun-200 max-h-48 overflow-y-auto">
+              <pre class="text-xs text-braun-700 whitespace-pre-wrap">{JSON.stringify(schemas, null, 2)}</pre>
+            </div>
+          </section>
+        {/if}
+
+        <!-- OPT-115: Capture Info -->
+        {#if source.capture_method}
+        <section>
+          <h3 class="text-xs font-semibold text-braun-500 uppercase tracking-wider mb-3">CAPTURE INFO</h3>
+          <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+            <dt class="text-braun-500">Method</dt>
+            <dd class="text-braun-900">{getCaptureMethodDisplay(source.capture_method)}</dd>
+            {#if source.extension_captured_at}
+              <dt class="text-braun-500">Extension Capture</dt>
+              <dd class="text-braun-900">{formatDate(source.extension_captured_at)}</dd>
+            {/if}
+            {#if source.puppeteer_captured_at}
+              <dt class="text-braun-500">Automated Capture</dt>
+              <dd class="text-braun-900">{formatDate(source.puppeteer_captured_at)}</dd>
+            {/if}
+            {#if source.canonical_url && source.canonical_url !== source.url}
+              <dt class="text-braun-500">Canonical URL</dt>
+              <dd class="text-braun-900 truncate" title={source.canonical_url}>{source.canonical_url}</dd>
+            {/if}
+          </dl>
+        </section>
+        {/if}
 
         <!-- Archive Files -->
         <section>

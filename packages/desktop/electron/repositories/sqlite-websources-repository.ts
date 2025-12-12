@@ -46,6 +46,7 @@ export interface WebSourceUpdate {
   extracted_author?: string | null;
   extracted_date?: string | null;
   extracted_publisher?: string | null;
+  extracted_text?: string | null;
   word_count?: number;
   image_count?: number;
   video_count?: number;
@@ -63,6 +64,26 @@ export interface WebSourceUpdate {
   archive_error?: string | null;
   retry_count?: number;
   archived_at?: string | null;
+  // OPT-111: Enhanced metadata (Migration 66)
+  domain?: string | null;
+  extracted_links?: string | null;
+  page_metadata_json?: string | null;
+  http_headers_json?: string | null;
+  canonical_url?: string | null;
+  language?: string | null;
+  favicon_path?: string | null;
+  // OPT-115: Enhanced capture tracking (Migration 71)
+  capture_method?: string | null;
+  extension_captured_at?: string | null;
+  puppeteer_captured_at?: string | null;
+  extension_screenshot_path?: string | null;
+  extension_html_path?: string | null;
+  og_title?: string | null;
+  og_description?: string | null;
+  og_image?: string | null;
+  twitter_card_json?: string | null;
+  schema_org_json?: string | null;
+  http_status?: number | null;
 }
 
 export interface WebSource {
@@ -99,6 +120,26 @@ export interface WebSource {
   created_at: string;
   archived_at: string | null;
   auth_imp: string | null;
+  // OPT-111: Enhanced metadata (Migration 66)
+  domain: string | null;
+  extracted_links: string | null;
+  page_metadata_json: string | null;
+  http_headers_json: string | null;
+  canonical_url: string | null;
+  language: string | null;
+  favicon_path: string | null;
+  // OPT-115: Enhanced capture tracking (Migration 71)
+  capture_method: string | null;
+  extension_captured_at: string | null;
+  puppeteer_captured_at: string | null;
+  extension_screenshot_path: string | null;
+  extension_html_path: string | null;
+  og_title: string | null;
+  og_description: string | null;
+  og_image: string | null;
+  twitter_card_json: string | null;
+  schema_org_json: string | null;
+  http_status: number | null;
   // Joined fields
   locnam?: string;
   subnam?: string;
@@ -1167,7 +1208,21 @@ export class SQLiteWebSourcesRepository {
     canonicalUrl?: string;
     language?: string;
     faviconPath?: string;
+    // OPT-115: Enhanced structured metadata
+    ogTitle?: string;
+    ogDescription?: string;
+    ogImage?: string;
+    twitterCardJson?: string;
+    schemaOrgJson?: string;
+    captureMethod?: string;
+    puppeteerCapturedAt?: string;
   }): Promise<void> {
+    // Extract OG data from pageMetadata if not provided directly
+    const pageMetadataObj = data.pageMetadata as Record<string, unknown> | undefined;
+    const ogData = pageMetadataObj?.openGraph as Record<string, unknown> | undefined;
+    const twitterData = pageMetadataObj?.twitterCards as Record<string, unknown> | undefined;
+    const schemaData = pageMetadataObj?.schemaOrg as unknown;
+
     await this.db
       .updateTable('web_sources')
       .set({
@@ -1178,6 +1233,15 @@ export class SQLiteWebSourcesRepository {
         canonical_url: data.canonicalUrl || null,
         language: data.language || null,
         favicon_path: data.faviconPath || null,
+        // OPT-115: Store structured metadata in dedicated columns for queryability
+        og_title: data.ogTitle || (ogData?.title as string) || null,
+        og_description: data.ogDescription || (ogData?.description as string) || null,
+        og_image: data.ogImage || (ogData?.image as string) || null,
+        twitter_card_json: data.twitterCardJson || (twitterData ? JSON.stringify(twitterData) : null),
+        schema_org_json: data.schemaOrgJson || (schemaData ? JSON.stringify(schemaData) : null),
+        // Track capture method (puppeteer for orchestrator-based archiving)
+        capture_method: data.captureMethod || 'puppeteer',
+        puppeteer_captured_at: data.puppeteerCapturedAt || new Date().toISOString(),
       })
       .where('source_id', '=', sourceId)
       .execute();

@@ -157,6 +157,32 @@ Detects platform (macOS/Linux/Windows) and locates config directory accordingly.
 
 ---
 
+### scripts/extract-text.py
+
+- **Path**: `scripts/extract-text.py`
+- **Lines**: ~280
+- **Runtime**: python3
+- **Purpose**: OPT-115 comprehensive text extraction from HTML using Trafilatura, BeautifulSoup, and Readability
+- **Usage**:
+  ```bash
+  python3 scripts/extract-text.py page.html             # Extract from file
+  cat page.html | python3 scripts/extract-text.py --stdin  # Extract from stdin
+  python3 scripts/extract-text.py page.html --output text  # Plain text output
+  python3 scripts/extract-text.py page.html --output all   # All methods comparison
+  ```
+- **Inputs**: HTML file path or stdin
+- **Outputs**: JSON with extracted text, word count, metadata, headings, links
+- **Side Effects**: None (read-only)
+- **Dependencies**: python3, trafilatura, beautifulsoup4, lxml, readability-lxml
+- **Last Verified**: 2025-12-12
+
+Multi-strategy extraction:
+1. Trafilatura (main article content, author, date, categories)
+2. BeautifulSoup (structured: headings, links, images)
+3. Readability (article detection fallback)
+
+---
+
 ## Scripts Exceeding 300 LOC
 
 | Script | Lines | Status | Action |

@@ -299,7 +299,7 @@ async function startupOrchestrator(): Promise<void> {
     const locationsRepo = new SQLiteLocationRepository(db);
     const subLocationsRepo = new SQLiteSubLocationRepository(db);
     try {
-      await startBookmarkAPIServer(webSourcesRepo, locationsRepo, subLocationsRepo);
+      await startBookmarkAPIServer(webSourcesRepo, locationsRepo, subLocationsRepo, db);
       logger.info('Main', 'Bookmark API Server started successfully');
     } catch (error) {
       // Non-fatal: log warning but continue startup (research browser feature may not work)

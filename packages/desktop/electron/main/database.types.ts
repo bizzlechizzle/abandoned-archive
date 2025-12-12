@@ -790,6 +790,21 @@ export interface WebSourcesTable {
   canonical_url: string | null;       // Canonical URL from link tag
   language: string | null;            // Page language from html lang attribute
   favicon_path: string | null;        // Path to downloaded favicon
+
+  // OPT-115: Enhanced capture tracking (Migration 71)
+  capture_method: string | null;            // 'extension' | 'puppeteer' | 'hybrid'
+  extension_captured_at: string | null;     // ISO timestamp of extension capture
+  puppeteer_captured_at: string | null;     // ISO timestamp of puppeteer capture
+  extension_screenshot_path: string | null; // Screenshot from extension (immediate)
+  extension_html_path: string | null;       // HTML from extension (immediate)
+
+  // Structured metadata for queryability (Migration 71)
+  og_title: string | null;
+  og_description: string | null;
+  og_image: string | null;
+  twitter_card_json: string | null;
+  schema_org_json: string | null;
+  http_status: number | null;
 }
 
 // Web Source Versions table - Track changes over time

@@ -2864,6 +2864,37 @@ function runMigrations(sqlite: Database.Database): void {
       console.log(`[Migration 70] Created ${imgDates.length} visit events from existing images`);
     }
 
+    // Migration 71: OPT-115 Enhanced capture tracking for web sources
+    // Track capture method (extension vs puppeteer) and store full structured metadata
+    const wsHasCaptureMethod = sqlite.prepare(`
+      SELECT COUNT(*) as cnt FROM pragma_table_info('web_sources') WHERE name = 'capture_method'
+    `).get() as { cnt: number };
+
+    if (wsHasCaptureMethod.cnt === 0) {
+      console.log('Running migration 71: OPT-115 Enhanced capture tracking');
+
+      // Add capture tracking columns
+      sqlite.exec(`
+        ALTER TABLE web_sources ADD COLUMN capture_method TEXT;
+        ALTER TABLE web_sources ADD COLUMN extension_captured_at TEXT;
+        ALTER TABLE web_sources ADD COLUMN puppeteer_captured_at TEXT;
+        ALTER TABLE web_sources ADD COLUMN extension_screenshot_path TEXT;
+        ALTER TABLE web_sources ADD COLUMN extension_html_path TEXT;
+      `);
+
+      // Add structured metadata columns (separate from page_metadata_json for queryability)
+      sqlite.exec(`
+        ALTER TABLE web_sources ADD COLUMN og_title TEXT;
+        ALTER TABLE web_sources ADD COLUMN og_description TEXT;
+        ALTER TABLE web_sources ADD COLUMN og_image TEXT;
+        ALTER TABLE web_sources ADD COLUMN twitter_card_json TEXT;
+        ALTER TABLE web_sources ADD COLUMN schema_org_json TEXT;
+        ALTER TABLE web_sources ADD COLUMN http_status INTEGER;
+      `);
+
+      console.log('Migration 71 completed: OPT-115 capture tracking columns added');
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

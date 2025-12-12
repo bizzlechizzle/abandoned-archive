@@ -18,23 +18,253 @@
  */
 import http from 'http';
 import { URL } from 'url';
+import path from 'path';
+import fs from 'fs';
+import { app } from 'electron';
 import { getLogger } from './logger-service';
 import {
   notifyWebSourceSaved,
   notifyLocationsUpdated,
 } from './websocket-server';
 import { detectSourceType } from './source-type-detector';
+import { JobQueue, IMPORT_QUEUES } from './job-queue';
+import type { Kysely } from 'kysely';
+import type { Database } from '../main/database.types';
 import type { SQLiteWebSourcesRepository, WebSource } from '../repositories/sqlite-websources-repository';
 import type { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
 import type { SQLiteSubLocationRepository } from '../repositories/sqlite-sublocation-repository';
 
+// OPT-115: Extension capture data structure
+interface ExtensionCapture {
+  url?: string;
+  title?: string;
+  screenshot?: string; // Base64 PNG data URL
+  html?: string;
+  textContent?: string;
+  wordCount?: number;
+  domain?: string;
+  canonicalUrl?: string;
+  language?: string;
+  favicon?: string;
+  openGraph?: {
+    title?: string;
+    description?: string;
+    image?: string;
+    url?: string;
+    type?: string;
+    siteName?: string;
+  };
+  twitterCards?: {
+    card?: string;
+    title?: string;
+    description?: string;
+    image?: string;
+    creator?: string;
+  };
+  meta?: {
+    author?: string;
+    description?: string;
+    keywords?: string;
+    publishDate?: string;
+    modifiedDate?: string;
+    publisher?: string;
+  };
+  schemaOrg?: unknown[];
+  links?: Array<{ url: string; text: string; rel?: string }>;
+  images?: Array<{
+    url: string;
+    srcset?: string;
+    alt?: string;
+    width?: number;
+    height?: number;
+    caption?: string;
+    credit?: string;
+    attribution?: string;
+    isHero?: boolean;
+  }>;
+  imageCount?: number;
+  linkCount?: number;
+  capturedAt?: string;
+}
+
 const PORT = 47123;
 const logger = getLogger();
+
+// Cache for archive base path
+let cachedArchiveBasePath: string | null = null;
+
+/**
+ * Get archive base path from settings or fallback to userData
+ */
+async function getArchiveBasePath(): Promise<string> {
+  if (cachedArchiveBasePath) return cachedArchiveBasePath;
+
+  // Try to get from settings via repository
+  // Fallback to app userData if not set
+  const userData = app.getPath('userData');
+  cachedArchiveBasePath = path.join(userData, 'archive');
+
+  // Ensure directory exists
+  try {
+    await fs.promises.mkdir(cachedArchiveBasePath, { recursive: true });
+  } catch {
+    // Directory might already exist
+  }
+
+  return cachedArchiveBasePath;
+}
+
+/**
+ * OPT-115: Process extension capture data
+ * Saves screenshot and HTML immediately, stores all metadata
+ */
+async function processExtensionCapture(
+  sourceId: string,
+  url: string,
+  capture: ExtensionCapture
+): Promise<void> {
+  if (!webSourcesRepository) {
+    logger.warn('BookmarkAPI', 'Cannot process capture: repository not initialized');
+    return;
+  }
+
+  try {
+    // Get archive base path for storing files
+    const archiveBase = await getArchiveBasePath();
+    const websourcesDir = path.join(archiveBase, '_websources', sourceId);
+
+    // Create directory if it doesn't exist
+    await fs.promises.mkdir(websourcesDir, { recursive: true });
+
+    let extensionScreenshotPath: string | null = null;
+    let extensionHtmlPath: string | null = null;
+
+    // Save screenshot if present
+    if (capture.screenshot && capture.screenshot.startsWith('data:image/')) {
+      try {
+        const screenshotFilename = `${sourceId}_extension_screenshot.png`;
+        const screenshotPath = path.join(websourcesDir, screenshotFilename);
+
+        // Extract base64 data from data URL
+        const base64Data = capture.screenshot.split(',')[1];
+        if (base64Data) {
+          await fs.promises.writeFile(screenshotPath, Buffer.from(base64Data, 'base64'));
+          extensionScreenshotPath = screenshotPath;
+          logger.info('BookmarkAPI', `[OPT-115] Saved extension screenshot: ${screenshotFilename}`);
+        }
+      } catch (err) {
+        logger.error('BookmarkAPI', `Failed to save screenshot: ${err}`);
+      }
+    }
+
+    // Save HTML if present
+    if (capture.html) {
+      try {
+        const htmlFilename = `${sourceId}_extension.html`;
+        const htmlPath = path.join(websourcesDir, htmlFilename);
+        await fs.promises.writeFile(htmlPath, capture.html, 'utf-8');
+        extensionHtmlPath = htmlPath;
+        logger.info('BookmarkAPI', `[OPT-115] Saved extension HTML: ${htmlFilename}`);
+      } catch (err) {
+        logger.error('BookmarkAPI', `Failed to save HTML: ${err}`);
+      }
+    }
+
+    // Build update object with all extracted metadata
+    const updateData: Record<string, unknown> = {
+      capture_method: 'extension',
+      extension_captured_at: capture.capturedAt || new Date().toISOString(),
+      extension_screenshot_path: extensionScreenshotPath,
+      extension_html_path: extensionHtmlPath,
+
+      // Domain
+      domain: capture.domain || null,
+      canonical_url: capture.canonicalUrl || null,
+      language: capture.language || null,
+
+      // Content stats
+      word_count: capture.wordCount || 0,
+      image_count: capture.imageCount || capture.images?.length || 0,
+
+      // Extracted text (for immediate partial archive)
+      extracted_text: capture.textContent?.substring(0, 100000) || null, // Limit to 100KB
+
+      // Open Graph metadata
+      og_title: capture.openGraph?.title || null,
+      og_description: capture.openGraph?.description || null,
+      og_image: capture.openGraph?.image || null,
+
+      // Consolidated extracted fields (from meta tags)
+      extracted_title: capture.openGraph?.title || capture.meta?.author || capture.title || null,
+      extracted_author: capture.meta?.author || null,
+      extracted_date: capture.meta?.publishDate || null,
+      extracted_publisher: capture.meta?.publisher || capture.openGraph?.siteName || null,
+
+      // Full JSON dumps for advanced querying
+      twitter_card_json: capture.twitterCards ? JSON.stringify(capture.twitterCards) : null,
+      schema_org_json: capture.schemaOrg?.length ? JSON.stringify(capture.schemaOrg) : null,
+      extracted_links: capture.links?.length ? JSON.stringify(capture.links) : null,
+      page_metadata_json: JSON.stringify({
+        openGraph: capture.openGraph,
+        twitterCards: capture.twitterCards,
+        meta: capture.meta,
+        schemaOrg: capture.schemaOrg,
+        favicon: capture.favicon,
+        capturedAt: capture.capturedAt,
+        captureMethod: 'extension',
+      }),
+
+      // Mark as partially complete (extension capture done, puppeteer pending)
+      status: 'partial',
+      component_status: JSON.stringify({
+        screenshot: extensionScreenshotPath ? 'done' : 'pending',
+        html: extensionHtmlPath ? 'done' : 'pending',
+        pdf: 'pending',
+        warc: 'pending',
+        images: 'pending',
+        videos: 'pending',
+        text: capture.textContent ? 'done' : 'pending',
+      }),
+    };
+
+    // Update web source with all metadata
+    await webSourcesRepository.update(sourceId, updateData);
+
+    // Store images metadata in web_source_images table
+    if (capture.images && capture.images.length > 0) {
+      try {
+        for (let i = 0; i < capture.images.length; i++) {
+          const img = capture.images[i];
+          await webSourcesRepository.insertImage(sourceId, i, {
+            url: img.url,
+            alt: img.alt || undefined,
+            caption: img.caption || undefined,
+            credit: img.credit || undefined,
+            attribution: img.attribution || undefined,
+            srcsetVariants: img.srcset ? [img.srcset] : undefined,
+            width: img.width || undefined,
+            height: img.height || undefined,
+            isHero: img.isHero,
+          });
+        }
+        logger.info('BookmarkAPI', `[OPT-115] Stored ${capture.images.length} image metadata records`);
+      } catch (err) {
+        logger.error('BookmarkAPI', `Failed to store image metadata: ${err}`);
+      }
+    }
+
+    logger.info('BookmarkAPI', `[OPT-115] Extension capture processed for ${sourceId}`);
+  } catch (err) {
+    logger.error('BookmarkAPI', `[OPT-115] Extension capture processing error: ${err}`);
+  }
+}
 
 let webSourcesRepository: SQLiteWebSourcesRepository | null = null;
 let locationsRepository: SQLiteLocationRepository | null = null;
 let subLocationsRepository: SQLiteSubLocationRepository | null = null;
 let server: http.Server | null = null;
+let jobQueue: JobQueue | null = null;
+let database: Kysely<Database> | null = null;
 
 /**
  * Parse JSON body from incoming request
@@ -117,6 +347,7 @@ async function handleRequest(
     }
 
     // POST /api/bookmark - Save a web source (endpoint name kept for extension compat)
+    // OPT-115: Now handles full page capture from extension
     if (method === 'POST' && path === '/api/bookmark') {
       if (!webSourcesRepository) {
         sendJson(res, 500, { error: 'Web sources repository not initialized' });
@@ -147,6 +378,9 @@ async function handleRequest(
       // Auto-detect source type from URL
       const detectedType = detectSourceType(body.url);
 
+      // OPT-115: Extract capture data from extension
+      const capture = body.capture as ExtensionCapture | undefined;
+
       try {
         const source = await webSourcesRepository.create({
           url: body.url,
@@ -157,6 +391,40 @@ async function handleRequest(
           auth_imp: null,
         });
 
+        // OPT-115: Process extension capture data
+        if (capture) {
+          await processExtensionCapture(source.source_id, body.url, capture);
+        }
+
+        // OPT-115: Auto-queue Puppeteer job for PDF/WARC/full-page screenshot
+        // This runs AFTER extension capture completes to fill in what extension can't do
+        if (jobQueue && database) {
+          try {
+            // Check if job already exists (duplicate prevention)
+            const existingJobs = await database
+              .selectFrom('jobs')
+              .select('job_id')
+              .where('queue', '=', IMPORT_QUEUES.WEBSOURCE_ARCHIVE)
+              .where('status', 'in', ['pending', 'processing'])
+              .where('payload', 'like', `%"sourceId":"${source.source_id}"%`)
+              .execute();
+
+            if (existingJobs.length === 0) {
+              await jobQueue.addJob({
+                queue: IMPORT_QUEUES.WEBSOURCE_ARCHIVE,
+                payload: { sourceId: source.source_id },
+                priority: 5, // Lower priority than media imports (default 10)
+              });
+              logger.info('BookmarkAPI', `[OPT-115] Auto-queued Puppeteer archive job for ${source.source_id}`);
+            } else {
+              logger.info('BookmarkAPI', `[OPT-115] Archive job already queued for ${source.source_id}`);
+            }
+          } catch (queueError) {
+            // Don't fail create if queue fails - just log and continue
+            logger.error('BookmarkAPI', `[OPT-115] Failed to queue archive job: ${queueError}`);
+          }
+        }
+
         // Notify WebSocket clients about the new web source
         notifyWebSourceSaved(source.source_id, source.locid, source.subid, source.source_type);
 
@@ -165,6 +433,7 @@ async function handleRequest(
           success: true,
           bookmark_id: source.source_id,
           source_type: source.source_type,
+          captured: !!capture, // Let extension know capture was processed
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -396,16 +665,25 @@ async function handleRequest(
  * @param webSourcesRepo - Web sources repository (OPT-109 replacement for bookmarks)
  * @param locationsRepo - Locations repository
  * @param subLocationsRepo - Sub-locations repository
+ * @param db - Kysely database instance (OPT-115: needed for job queue)
  */
 export function startBookmarkAPIServer(
   webSourcesRepo: SQLiteWebSourcesRepository,
   locationsRepo: SQLiteLocationRepository,
-  subLocationsRepo: SQLiteSubLocationRepository
+  subLocationsRepo: SQLiteSubLocationRepository,
+  db?: Kysely<Database>
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     webSourcesRepository = webSourcesRepo;
     locationsRepository = locationsRepo;
     subLocationsRepository = subLocationsRepo;
+
+    // OPT-115: Initialize job queue for auto-archiving
+    if (db) {
+      database = db;
+      jobQueue = new JobQueue(db);
+      logger.info('BookmarkAPI', '[OPT-115] Job queue initialized for auto-archiving');
+    }
 
     server = http.createServer((req, res) => {
       handleRequest(req, res).catch((error) => {
@@ -442,6 +720,8 @@ export function stopBookmarkAPIServer(): Promise<void> {
         webSourcesRepository = null;
         locationsRepository = null;
         subLocationsRepository = null;
+        jobQueue = null;
+        database = null;
         resolve();
       });
     } else {

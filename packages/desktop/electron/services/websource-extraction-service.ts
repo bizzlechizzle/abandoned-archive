@@ -840,6 +840,40 @@ export async function extractVideos(options: ExtractionOptions): Promise<VideoEx
 // =============================================================================
 
 /**
+ * OPT-115: Helper to fetch HTML and pipe to Python script stdin
+ */
+function fetchHtmlAndPipe(url: string, pythonProcess: ReturnType<typeof spawn>): void {
+  try {
+    const parsedUrl = new URL(url);
+    const httpModule = parsedUrl.protocol === 'https:' ? https : http;
+
+    const req = httpModule.get(url, { timeout: 30000 }, (res) => {
+      // Follow redirects
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        fetchHtmlAndPipe(res.headers.location, pythonProcess);
+        return;
+      }
+
+      res.pipe(pythonProcess.stdin!);
+      res.on('end', () => {
+        pythonProcess.stdin?.end();
+      });
+    });
+
+    req.on('error', () => {
+      pythonProcess.stdin?.end();
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      pythonProcess.stdin?.end();
+    });
+  } catch {
+    pythonProcess.stdin?.end();
+  }
+}
+
+/**
  * Extract clean text content from a web page
  * Uses Python script with Trafilatura and BeautifulSoup for best results
  */
@@ -868,20 +902,49 @@ export async function extractText(options: ExtractionOptions): Promise<TextExtra
       }
     }
 
-    // Path to our extraction script
-    const scriptPath = path.join(__dirname, '..', '..', 'scripts', 'extract-text.py');
+    // OPT-115: Path to our extraction script - check multiple locations
+    // In dev: PROJECT_ROOT/scripts/extract-text.py
+    // In prod: Same, or bundled with app resources
+    const possiblePaths = [
+      path.join(process.cwd(), 'scripts', 'extract-text.py'),                    // Project root (dev)
+      path.join(__dirname, '..', '..', '..', '..', 'scripts', 'extract-text.py'), // From dist-electron/main/services
+      path.join(__dirname, '..', '..', 'scripts', 'extract-text.py'),             // Alternative structure
+    ];
 
-    // Check if script exists
-    if (!fs.existsSync(scriptPath)) {
+    let scriptPath: string | undefined;
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        scriptPath = p;
+        break;
+      }
+    }
+
+    if (!scriptPath) {
       // Fallback to browser-based extraction
       return await extractTextWithBrowser(options, startTime);
     }
 
+    // OPT-115: Look for captured HTML file (from captureHtml phase)
+    // The HTML should already be saved at outputDir/[sourceId].html
+    const htmlFilePath = path.join(options.outputDir, `${options.sourceId}.html`);
+    const hasHtmlFile = fs.existsSync(htmlFilePath);
+
     // Run the Python extraction script
+    // If HTML file exists, pass it directly; otherwise use --stdin and fetch via browser
     const result = await new Promise<TextExtractionResult>((resolve) => {
-      const python = spawn(pythonPath!, [scriptPath, options.url], {
-        stdio: ['ignore', 'pipe', 'pipe'],
+      const args = hasHtmlFile
+        ? [scriptPath, htmlFilePath]
+        : [scriptPath, '--stdin'];
+
+      const python = spawn(pythonPath!, args, {
+        stdio: hasHtmlFile ? ['ignore', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'],
       });
+
+      // If no HTML file, fetch and pipe via stdin
+      if (!hasHtmlFile) {
+        // Fetch HTML using HTTPS/HTTP and pipe to stdin
+        fetchHtmlAndPipe(options.url, python);
+      }
 
       let stdout = '';
       let stderr = '';
@@ -904,24 +967,34 @@ export async function extractText(options: ExtractionOptions): Promise<TextExtra
         try {
           const extracted = JSON.parse(stdout);
 
+          // OPT-115: Handle extract-text.py output format
+          // Script returns: { success, text, word_count, metadata: { title, author, date }, ... }
+          if (!extracted.success || !extracted.text) {
+            resolve(await extractTextWithBrowser(options, startTime));
+            return;
+          }
+
+          const textContent = extracted.text || '';
+          const metadata = extracted.metadata || {};
+
           // Save text content
           const textDir = path.join(options.outputDir, 'text');
           await fs.promises.mkdir(textDir, { recursive: true });
 
           const textPath = path.join(textDir, `${options.sourceId}_content.txt`);
-          await fs.promises.writeFile(textPath, extracted.content, 'utf-8');
+          await fs.promises.writeFile(textPath, textContent, 'utf-8');
 
           const hash = await calculateHash(textPath);
 
           resolve({
             success: true,
             text: {
-              title: extracted.title || null,
-              author: extracted.author || null,
-              date: extracted.date || null,
-              content: extracted.content,
-              html: extracted.html || '',
-              wordCount: extracted.content.split(/\s+/).filter((w: string) => w.length > 0).length,
+              title: metadata.title || extracted.title_extracted || null,
+              author: metadata.author || null,
+              date: metadata.date || null,
+              content: textContent,
+              html: '', // Not returned by Python script
+              wordCount: extracted.word_count || textContent.split(/\s+/).filter((w: string) => w.length > 0).length,
               hash,
             },
             duration: Date.now() - startTime,

@@ -196,10 +196,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     return;
   }
 
-  // Location-specific save
+  // Location-specific save - OPT-115: Use full capture
   if (typeof menuItemId === 'string' && menuItemId.startsWith(MENU_LOC_PREFIX)) {
     const locid = menuItemId.replace(MENU_LOC_PREFIX, '');
-    const success = await saveBookmark(url, title, locid, tabId);
+    const success = await saveBookmarkWithCapture(url, title, locid, tabId);
     if (success) {
       showSuccessBadge(tabId);
       // Refresh menu - this location should now be at the top
@@ -379,6 +379,10 @@ async function executeBrowserCommand(requestId, command) {
 
       case 'ping':
         response = { type: 'browser:response', requestId, success: true, data: 'pong' };
+        break;
+
+      case 'capturePage':
+        response = await handleCapturePageCommand(requestId, command.tabId);
         break;
 
       default:
@@ -576,3 +580,244 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     tabId,
   });
 });
+
+// ============================================================================
+// OPT-115: Full Page Capture - Extension-First Archiving
+// ============================================================================
+
+/**
+ * Capture complete page state from the user's actual browser session
+ * This captures everything the user sees - no second browser needed
+ */
+async function captureFullPage(tabId) {
+  const tab = await chrome.tabs.get(tabId);
+  if (!tab || !tab.url) {
+    throw new Error('Invalid tab');
+  }
+
+  // Capture screenshot first (viewport)
+  let screenshot = null;
+  try {
+    screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, {
+      format: 'png',
+      quality: 100,
+    });
+  } catch (err) {
+    console.log('[AU Archive] Screenshot capture failed:', err.message);
+  }
+
+  // Execute content script to extract page data
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: extractPageContent,
+  });
+
+  const pageContent = results[0]?.result || {};
+
+  return {
+    url: tab.url,
+    title: tab.title || pageContent.title || '',
+    screenshot,
+    ...pageContent,
+    capturedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Content script function - runs in page context
+ * Extracts all metadata, links, images from the current page
+ */
+function extractPageContent() {
+  // Helper to safely get meta content
+  const getMeta = (selector) => {
+    const el = document.querySelector(selector);
+    return el?.getAttribute('content') || el?.textContent || null;
+  };
+
+  // Extract Open Graph
+  const openGraph = {
+    title: getMeta('meta[property="og:title"]'),
+    description: getMeta('meta[property="og:description"]'),
+    image: getMeta('meta[property="og:image"]'),
+    url: getMeta('meta[property="og:url"]'),
+    type: getMeta('meta[property="og:type"]'),
+    siteName: getMeta('meta[property="og:site_name"]'),
+  };
+
+  // Extract Twitter Cards
+  const twitterCards = {
+    card: getMeta('meta[name="twitter:card"]'),
+    title: getMeta('meta[name="twitter:title"]'),
+    description: getMeta('meta[name="twitter:description"]'),
+    image: getMeta('meta[name="twitter:image"]'),
+    creator: getMeta('meta[name="twitter:creator"]'),
+  };
+
+  // Extract standard meta
+  const meta = {
+    author: getMeta('meta[name="author"]'),
+    description: getMeta('meta[name="description"]'),
+    keywords: getMeta('meta[name="keywords"]'),
+    publishDate: getMeta('meta[property="article:published_time"]') ||
+                 getMeta('meta[name="date"]') ||
+                 getMeta('meta[name="DC.date"]'),
+    modifiedDate: getMeta('meta[property="article:modified_time"]'),
+    publisher: getMeta('meta[property="article:publisher"]') ||
+               getMeta('meta[name="publisher"]'),
+  };
+
+  // Extract Schema.org JSON-LD
+  let schemaOrg = [];
+  document.querySelectorAll('script[type="application/ld+json"]').forEach((script) => {
+    try {
+      schemaOrg.push(JSON.parse(script.textContent));
+    } catch (e) { /* ignore parse errors */ }
+  });
+
+  // Extract all links
+  const links = [];
+  document.querySelectorAll('a[href]').forEach((a) => {
+    const href = a.href;
+    if (href && !href.startsWith('javascript:') && !href.startsWith('#')) {
+      links.push({
+        url: href,
+        text: a.textContent?.trim().substring(0, 200) || '',
+        rel: a.getAttribute('rel') || null,
+      });
+    }
+  });
+
+  // Extract all images with full context
+  const images = [];
+  document.querySelectorAll('img').forEach((img, index) => {
+    const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-original');
+    if (!src || src.startsWith('data:')) return;
+
+    // Find caption from figure/figcaption
+    let caption = null;
+    const figure = img.closest('figure');
+    if (figure) {
+      const figcaption = figure.querySelector('figcaption');
+      caption = figcaption?.textContent?.trim() || null;
+    }
+
+    // Find credit/attribution
+    let credit = null;
+    const creditEl = figure?.querySelector('[class*="credit"], [class*="byline"]') ||
+                     img.closest('[class*="credit"]');
+    if (creditEl) credit = creditEl.textContent?.trim() || null;
+
+    images.push({
+      url: src,
+      srcset: img.srcset || img.getAttribute('data-srcset') || null,
+      alt: img.alt || null,
+      width: img.naturalWidth || parseInt(img.getAttribute('width')) || 0,
+      height: img.naturalHeight || parseInt(img.getAttribute('height')) || 0,
+      caption,
+      credit,
+      attribution: img.getAttribute('data-credit') || img.getAttribute('data-attribution') || null,
+      isHero: index === 0 || img.closest('[class*="hero"]') !== null,
+    });
+  });
+
+  // Get full HTML
+  const html = document.documentElement.outerHTML;
+
+  // Extract main text content
+  const bodyClone = document.body.cloneNode(true);
+  bodyClone.querySelectorAll('script, style, nav, header, footer, aside').forEach(el => el.remove());
+  const textContent = bodyClone.textContent?.replace(/\s+/g, ' ').trim() || '';
+
+  return {
+    title: document.title,
+    html,
+    textContent: textContent.substring(0, 500000), // Limit to 500KB
+    wordCount: textContent.split(/\s+/).filter(w => w.length > 0).length,
+    domain: window.location.hostname.replace(/^www\./, ''),
+    canonicalUrl: document.querySelector('link[rel="canonical"]')?.href || null,
+    language: document.documentElement.lang || null,
+    favicon: document.querySelector('link[rel="icon"]')?.href ||
+             document.querySelector('link[rel="shortcut icon"]')?.href || null,
+    openGraph,
+    twitterCards,
+    meta,
+    schemaOrg,
+    links: links.slice(0, 500), // Limit to 500 links
+    images: images.slice(0, 100), // Limit to 100 images
+    imageCount: images.length,
+    linkCount: links.length,
+  };
+}
+
+/**
+ * Handle page capture command from main app
+ */
+async function handleCapturePageCommand(requestId, tabId) {
+  try {
+    // Use provided tabId or get active tab
+    let targetTabId = tabId;
+    if (!targetTabId) {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab) {
+        return { type: 'browser:response', requestId, success: false, error: 'No active tab' };
+      }
+      targetTabId = tab.id;
+    }
+
+    const capture = await captureFullPage(targetTabId);
+
+    return {
+      type: 'browser:response',
+      requestId,
+      success: true,
+      data: capture,
+    };
+  } catch (error) {
+    return {
+      type: 'browser:response',
+      requestId,
+      success: false,
+      error: error.message || String(error),
+    };
+  }
+}
+
+/**
+ * Enhanced save bookmark with full page capture
+ * OPT-115: Capture page state immediately when user saves
+ */
+async function saveBookmarkWithCapture(url, title, locid = null, tabId = null) {
+  try {
+    let capture = null;
+
+    // Capture full page if we have a tab
+    if (tabId) {
+      try {
+        capture = await captureFullPage(tabId);
+      } catch (err) {
+        console.log('[AU Archive] Full capture failed, falling back to basic:', err.message);
+        // Fall back to screenshot only
+        capture = {
+          screenshot: await captureScreenshot(tabId),
+        };
+      }
+    }
+
+    const res = await fetch(`${API_BASE}/api/bookmark`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url,
+        title,
+        locid,
+        capture, // Full page capture data
+      }),
+    });
+
+    const data = await res.json();
+    return data.success;
+  } catch (error) {
+    console.error('[AU Archive] Failed to save bookmark:', error);
+    return false;
+  }
+}

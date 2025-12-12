@@ -1,6 +1,6 @@
 # OPT-114: IRS-Level Web Archiving Audit
 
-**Status**: PLANNING
+**Status**: COMPLETE - MERGED TO feature/import-v2 (commit 36b41b6)
 **Created**: 2025-12-12
 **Author**: Claude Code
 **Severity**: CRITICAL - Core functionality broken
