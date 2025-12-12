@@ -30,27 +30,47 @@
   let showAllVisits = $state(false);
   let editingEstablished = $state(false);
 
-  // Derived events
+  // Chronological sort: oldest first
+  // Unknown established dates pin to top (inherently oldest - building existed before visits)
+  let sortedEvents = $derived(
+    [...events].sort((a, b) => {
+      const aSort = a.event_type === 'established' && (a.date_sort === null || a.date_sort === 99999999)
+        ? -1
+        : (a.date_sort ?? 99999999);
+      const bSort = b.event_type === 'established' && (b.date_sort === null || b.date_sort === 99999999)
+        ? -1
+        : (b.date_sort ?? 99999999);
+      return aSort - bSort;
+    })
+  );
+
+  // Separate references for edit mode and special handling
   let establishedEvent = $derived(
     events.find(e => e.event_type === 'established')
   );
-  let databaseEntryEvent = $derived(
-    events.find(e => e.event_type === 'database_entry')
-  );
+
+  // Visit events for collapse logic (already in chronological order from sortedEvents)
   let visitEvents = $derived(
-    events.filter(e => e.event_type === 'visit').sort((a, b) =>
-      (b.date_sort ?? 0) - (a.date_sort ?? 0)
-    )
+    sortedEvents.filter(e => e.event_type === 'visit')
   );
 
-  // Collapse visits if more than 5
+  // Collapse visits: show oldest N, hide newer ones
   const VISIBLE_VISITS = 5;
-  let visibleVisits = $derived(
-    showAllVisits ? visitEvents : visitEvents.slice(0, VISIBLE_VISITS)
-  );
   let hiddenVisitCount = $derived(
     visitEvents.length > VISIBLE_VISITS ? visitEvents.length - VISIBLE_VISITS : 0
   );
+
+  // Build display list: all events with visit collapsing applied
+  let displayEvents = $derived(() => {
+    if (showAllVisits || visitEvents.length <= VISIBLE_VISITS) {
+      return sortedEvents;
+    }
+    // Show only first N visits (oldest), hide newer ones
+    const visibleVisitIds = new Set(visitEvents.slice(0, VISIBLE_VISITS).map(e => e.event_id));
+    return sortedEvents.filter(e =>
+      e.event_type !== 'visit' || visibleVisitIds.has(e.event_id)
+    );
+  });
 
   // Subtype labels for established events ("Built", "Opened", etc.)
   const subtypeLabels: Record<string, string> = {
@@ -131,10 +151,10 @@
     return `${date} - Site Visit`;
   }
 
-  function formatDatabaseEntryDate(): string {
-    if (!databaseEntryEvent?.date_display) return '';
+  function formatDatabaseEntryDate(event: TimelineEvent | TimelineEventWithSource): string {
+    if (!event.date_display) return '— - Added to Database';
     // Normalize to ISO 8601: YYYY-MM-DD
-    const raw = databaseEntryEvent.date_display;
+    const raw = event.date_display;
     let formatted = raw;
     if (raw.includes('T')) {
       formatted = raw.split('T')[0];
@@ -173,46 +193,63 @@
         <!-- Vertical line -->
         <div class="absolute left-[3px] top-2 bottom-2 w-px bg-braun-300"></div>
 
-        <!-- Established Event (always first) -->
-        <div class="relative pb-4">
-          <!-- Filled dot for established -->
-          <div class="absolute -left-5 top-[5px] w-[7px] h-[7px] rounded-full bg-braun-900"></div>
+        <!-- Chronological event list (oldest first) -->
+        {#each displayEvents() as event, index (event.event_id)}
+          {@const isLast = index === displayEvents().length - 1 && hiddenVisitCount === 0}
 
-          {#if editMode && editingEstablished}
-            <!-- Inline edit form -->
-            <div class="bg-braun-50 border border-braun-200 rounded p-4">
-              <TimelineDateInput
-                initialValue={establishedEvent?.date_display || ''}
-                initialSubtype={establishedEvent?.event_subtype || 'built'}
-                onSave={handleEstablishedUpdate}
-                onCancel={() => editingEstablished = false}
-              />
+          {#if event.event_type === 'established'}
+            <!-- Established Event -->
+            <div class="relative {isLast ? '' : 'pb-4'}">
+              <!-- Filled dot for established -->
+              <div class="absolute -left-5 top-[5px] w-[7px] h-[7px] rounded-full bg-braun-900"></div>
+
+              {#if editMode && editingEstablished}
+                <!-- Inline edit form -->
+                <div class="bg-braun-50 border border-braun-200 rounded p-4">
+                  <TimelineDateInput
+                    initialValue={establishedEvent?.date_display || ''}
+                    initialSubtype={establishedEvent?.event_subtype || 'built'}
+                    onSave={handleEstablishedUpdate}
+                    onCancel={() => editingEstablished = false}
+                  />
+                </div>
+              {:else}
+                <button
+                  type="button"
+                  onclick={() => editMode && (editingEstablished = true)}
+                  class="text-[15px] text-braun-900 {editMode ? 'hover:underline cursor-pointer' : 'cursor-default'}"
+                  disabled={!editMode}
+                >
+                  {getEstablishedDisplay()}
+                </button>
+              {/if}
             </div>
-          {:else}
-            <button
-              type="button"
-              onclick={() => editMode && (editingEstablished = true)}
-              class="text-[15px] text-braun-900 {editMode ? 'hover:underline cursor-pointer' : 'cursor-default'}"
-              disabled={!editMode}
-            >
-              {getEstablishedDisplay()}
-            </button>
+
+          {:else if event.event_type === 'visit'}
+            <!-- Visit Event -->
+            <div class="relative {isLast ? '' : 'pb-4'}">
+              <!-- Hollow dot for visits -->
+              <div class="absolute -left-5 top-[5px] w-[7px] h-[7px] rounded-full border border-braun-400 bg-white"></div>
+
+              <div class="text-[15px] text-braun-900">
+                {formatVisitLine(event)}
+              </div>
+            </div>
+
+          {:else if event.event_type === 'database_entry'}
+            <!-- Database Entry Event -->
+            <div class="relative {isLast ? '' : 'pb-4'}">
+              <!-- Small square dot for database entry -->
+              <div class="absolute -left-5 top-[5px] w-[5px] h-[5px] bg-braun-400"></div>
+
+              <div class="text-[15px] text-braun-600">
+                {formatDatabaseEntryDate(event)}
+              </div>
+            </div>
           {/if}
-        </div>
-
-        <!-- Visit Events -->
-        {#each visibleVisits as event (event.event_id)}
-          <div class="relative pb-4">
-            <!-- Hollow dot for visits -->
-            <div class="absolute -left-5 top-[5px] w-[7px] h-[7px] rounded-full border border-braun-400 bg-white"></div>
-
-            <div class="text-[15px] text-braun-900">
-              {formatVisitLine(event)}
-            </div>
-          </div>
         {/each}
 
-        <!-- Show more visits button -->
+        <!-- Show more visits button (newer visits hidden) -->
         {#if hiddenVisitCount > 0 && !showAllVisits}
           <div class="relative pb-4">
             <button
@@ -220,20 +257,8 @@
               onclick={() => showAllVisits = true}
               class="text-[13px] text-braun-600 hover:text-braun-900 hover:underline"
             >
-              Show {hiddenVisitCount} earlier visits
+              Show {hiddenVisitCount} more recent visits
             </button>
-          </div>
-        {/if}
-
-        <!-- Database Entry Event (always last) -->
-        {#if databaseEntryEvent}
-          <div class="relative">
-            <!-- Small square dot for database entry -->
-            <div class="absolute -left-5 top-[5px] w-[5px] h-[5px] bg-braun-400"></div>
-
-            <div class="text-[15px] text-braun-600">
-              {formatDatabaseEntryDate()}
-            </div>
           </div>
         {/if}
       </div>
