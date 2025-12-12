@@ -23,7 +23,7 @@
   .drag-region {
     position: fixed;
     top: 0;
-    left: 0;
+    left: 256px; /* Start after navigation sidebar (w-64 = 256px) */
     right: 0;
     height: 32px;
     -webkit-app-region: drag;

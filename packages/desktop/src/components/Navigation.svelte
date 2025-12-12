@@ -48,7 +48,7 @@
 
 <nav class="w-64 h-screen bg-braun-50 text-braun-900 flex flex-col border-r border-braun-300">
   <!-- macOS: Top padding for traffic light buttons (hiddenInset titlebar) -->
-  <div class="pt-8">
+  <div class="pt-8 drag-region-nav">
     <!-- Wordmark: Stacked layout (Braun style) -->
     <div class="p-6 border-b border-braun-300">
       <span class="text-2xl font-bold tracking-tight uppercase text-braun-900 leading-tight block">
@@ -123,3 +123,9 @@
 
 <!-- User Switcher Modal -->
 <UserSwitcher isOpen={showUserSwitcher} onClose={closeUserSwitcher} />
+
+<style>
+  .drag-region-nav {
+    -webkit-app-region: drag;
+  }
+</style>
