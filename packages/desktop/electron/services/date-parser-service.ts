@@ -359,22 +359,15 @@ export function formatDateDisplay(
       return '—';
 
     case 'exact':
-      if (dateStart) {
-        const parts = dateStart.split('-');
-        if (parts.length === 3) {
-          const monthNum = parseInt(parts[1]);
-          const dayNum = parseInt(parts[2]);
-          return `${MONTH_NAMES[monthNum]} ${dayNum}, ${parts[0]}`;
-        }
-      }
-      return '—';
+      // ISO 8601 format: YYYY-MM-DD (archival standard)
+      return dateStart || '—';
 
     case 'month':
+      // ISO 8601 format: YYYY-MM
       if (dateStart) {
         const parts = dateStart.split('-');
         if (parts.length >= 2) {
-          const monthNum = parseInt(parts[1]);
-          return `${MONTH_NAMES[monthNum]} ${parts[0]}`;
+          return `${parts[0]}-${parts[1]}`;
         }
       }
       return '—';
