@@ -2745,7 +2745,7 @@ function runMigrations(sqlite: Database.Database): void {
           Math.random().toString(36).substring(2, 18).padEnd(16, '0').substring(0, 16),
           loc.locid,
           dateStr,
-          loc.locadd,
+          dateStr, // ISO 8601: YYYY-MM-DD
           dateSort
         );
       }
