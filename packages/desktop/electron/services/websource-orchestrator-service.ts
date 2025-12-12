@@ -191,6 +191,21 @@ export class WebSourceOrchestrator extends EventEmitter {
           }
           const responseStatus = response?.status() || null;
 
+          // OPT-112: Check for bot detection / access denied responses
+          if (responseStatus === 403) {
+            const blockInfo = await this.detectBotBlock(page);
+            if (blockInfo.isBlocked) {
+              throw new Error(`ACCESS DENIED (403): ${blockInfo.reason}. The site is blocking automated access. Try visiting the URL in the Research Browser first to establish cookies.`);
+            }
+          }
+
+          // Also check for soft blocks (200 status but captcha/challenge page)
+          const softBlock = await this.detectBotBlock(page);
+          if (softBlock.isBlocked) {
+            console.warn(`OPT-112: Soft block detected: ${softBlock.reason}`);
+            // Don't fail, but log the warning - content may be limited
+          }
+
           // Extract comprehensive metadata from DOM
           pageMetadata = await extractPageMetadata(page, source.url, responseHeaders, responseStatus || undefined);
           imageDomContext = pageMetadata.images;
@@ -635,6 +650,72 @@ export class WebSourceOrchestrator extends EventEmitter {
   // ===========================================================================
   // Private Methods
   // ===========================================================================
+
+  /**
+   * Detect if the page is showing a bot detection challenge
+   * OPT-112: Returns structured info about detected blocks
+   */
+  private async detectBotBlock(page: import('puppeteer-core').Page): Promise<{ isBlocked: boolean; reason: string }> {
+    try {
+      const blockInfo = await page.evaluate(() => {
+        const bodyText = document.body?.innerText?.toLowerCase() || '';
+        const bodyHtml = document.body?.innerHTML?.toLowerCase() || '';
+        const title = document.title?.toLowerCase() || '';
+
+        // Check for common bot detection indicators
+        const indicators = [
+          { pattern: 'access denied', reason: 'Access Denied page' },
+          { pattern: 'forbidden', reason: 'Forbidden response' },
+          { pattern: 'blocked', reason: 'Request blocked' },
+          { pattern: 'captcha', reason: 'CAPTCHA challenge' },
+          { pattern: 'recaptcha', reason: 'reCAPTCHA challenge' },
+          { pattern: 'hcaptcha', reason: 'hCaptcha challenge' },
+          { pattern: 'verify you are human', reason: 'Human verification required' },
+          { pattern: 'please verify', reason: 'Verification required' },
+          { pattern: 'security check', reason: 'Security check required' },
+          { pattern: 'unusual traffic', reason: 'Unusual traffic detected' },
+          { pattern: 'automated access', reason: 'Automated access detected' },
+          { pattern: 'bot detection', reason: 'Bot detection triggered' },
+          { pattern: 'cloudflare', reason: 'Cloudflare protection' },
+          { pattern: 'ddos protection', reason: 'DDoS protection active' },
+          { pattern: 'perimeterx', reason: 'PerimeterX protection' },
+          { pattern: 'distil', reason: 'Distil Networks protection' },
+          { pattern: 'incapsula', reason: 'Incapsula protection' },
+          { pattern: 'datadome', reason: 'DataDome protection' },
+          { pattern: 'please wait while we verify', reason: 'Verification in progress' },
+          { pattern: 'checking your browser', reason: 'Browser check in progress' },
+          { pattern: 'just a moment', reason: 'Cloudflare "Just a moment" challenge' },
+        ];
+
+        for (const { pattern, reason } of indicators) {
+          if (bodyText.includes(pattern) || title.includes(pattern)) {
+            return { isBlocked: true, reason };
+          }
+        }
+
+        // Check for suspiciously short pages (likely error pages)
+        if (bodyText.length < 500 && (
+          bodyText.includes('error') ||
+          bodyText.includes('denied') ||
+          bodyText.includes('forbidden')
+        )) {
+          return { isBlocked: true, reason: 'Suspiciously short error page' };
+        }
+
+        // Check for challenge iframes
+        if (bodyHtml.includes('challenge-form') || bodyHtml.includes('challenge-running')) {
+          return { isBlocked: true, reason: 'Challenge form detected' };
+        }
+
+        return { isBlocked: false, reason: '' };
+      });
+
+      return blockInfo;
+    } catch (error) {
+      // If evaluation fails, assume not blocked
+      return { isBlocked: false, reason: '' };
+    }
+  }
 
   /**
    * Get archive path for a source

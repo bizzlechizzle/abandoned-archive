@@ -135,9 +135,14 @@ async function launchBrowser(): Promise<Browser> {
     throw new Error('No Chrome/Chromium executable found. Please install Chrome or Chromium.');
   }
 
+  // Get persistent profile directory for cookies/session data
+  // This allows the archiver to share cookies with the Research Browser
+  const userDataDir = getBrowserProfilePath();
+
   const options: LaunchOptions = {
     executablePath,
     headless: true,
+    userDataDir, // Persist cookies and session data
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -145,10 +150,32 @@ async function launchBrowser(): Promise<Browser> {
       '--disable-accelerated-2d-canvas',
       '--disable-gpu',
       '--window-size=1920,1080',
+      // Anti-bot detection measures
+      '--disable-blink-features=AutomationControlled',
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--disable-web-security',
+      '--allow-running-insecure-content',
     ],
+    ignoreDefaultArgs: ['--enable-automation'], // Hide automation flag
   };
 
   return puppeteer.launch(options);
+}
+
+/**
+ * Get the path to the browser profile directory
+ * This allows cookies and session data to persist across archive sessions
+ */
+export function getBrowserProfilePath(): string {
+  const { app } = require('electron');
+  const profileDir = path.join(app.getPath('userData'), 'browser-profile');
+
+  // Create directory if it doesn't exist
+  if (!fs.existsSync(profileDir)) {
+    fs.mkdirSync(profileDir, { recursive: true });
+  }
+
+  return profileDir;
 }
 
 /**
