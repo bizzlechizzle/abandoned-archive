@@ -287,6 +287,9 @@ export async function extractImages(options: ExtractionOptions): Promise<ImageEx
       timeout: options.timeout || 30000,
     });
 
+    // Dismiss cookie banners that block content
+    await dismissCookieBanners(page);
+
     // Scroll to load lazy images
     await autoScroll(page);
 
@@ -1089,6 +1092,80 @@ async function extractTextWithBrowser(
 // =============================================================================
 // Utility Functions
 // =============================================================================
+
+/**
+ * Dismiss cookie consent banners that block content extraction
+ * Tries multiple common selectors used by cookie consent libraries
+ */
+async function dismissCookieBanners(page: Page): Promise<void> {
+  const cookieSelectors = [
+    // OneTrust (very common)
+    '#onetrust-accept-btn-handler',
+    '#onetrust-pc-btn-handler',
+    '.onetrust-close-btn-handler',
+    // Cookiebot
+    '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
+    '#CybotCookiebotDialogBodyButtonAccept',
+    // Generic patterns
+    '[data-testid="cookie-accept"]',
+    '[data-testid="accept-cookies"]',
+    'button[aria-label*="accept cookies" i]',
+    'button[aria-label*="accept all" i]',
+    '.cookie-consent-accept',
+    '.cookie-accept',
+    '.accept-cookies',
+    '#accept-cookies',
+    '#cookie-accept',
+    // GDPR consent
+    '.gdpr-consent-accept',
+    '#gdpr-accept',
+    // Common button text patterns (using :has for text matching)
+    'button:has-text("Accept")',
+    'button:has-text("Accept All")',
+    'button:has-text("Accept Cookies")',
+    'button:has-text("I Agree")',
+    'button:has-text("Got it")',
+    'button:has-text("OK")',
+    // Zillow specific
+    '[data-testid="gdpr-accept-btn"]',
+    // Close buttons on modals
+    '.modal-close',
+    '[aria-label="Close"]',
+  ];
+
+  for (const selector of cookieSelectors) {
+    try {
+      // Use a short timeout - don't wait long for each selector
+      const element = await page.$(selector);
+      if (element) {
+        await element.click();
+        // Small delay after clicking to let modal close
+        await new Promise(resolve => setTimeout(resolve, 300));
+        break; // Stop after first successful click
+      }
+    } catch {
+      // Ignore - selector not found or not clickable
+    }
+  }
+
+  // Also try to remove any overlay divs that might block interaction
+  await page.evaluate(() => {
+    const overlaySelectors = [
+      '.modal-backdrop',
+      '.overlay',
+      '[class*="cookie-banner"]',
+      '[class*="consent-banner"]',
+      '[id*="cookie-banner"]',
+      '[id*="consent-banner"]',
+    ];
+
+    overlaySelectors.forEach(selector => {
+      document.querySelectorAll(selector).forEach(el => {
+        (el as HTMLElement).style.display = 'none';
+      });
+    });
+  });
+}
 
 /**
  * Auto-scroll the page to trigger lazy loading
