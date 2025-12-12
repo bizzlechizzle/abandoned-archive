@@ -118,21 +118,17 @@
   }
 
   function getEstablishedDisplay(): string {
-    if (!establishedEvent) return 'Built —';
+    if (!establishedEvent) return 'Built';
     const subtype = establishedEvent.event_subtype || 'built';
     const label = subtypeLabels[subtype] || 'Built';
     const date = establishedEvent.date_display;
-    return date ? `${label} ${date}` : `${label} —`;
+    // DATE - NOTE format when date exists
+    return date ? `${date} - ${label}` : label;
   }
 
-  function formatVisitDate(event: TimelineEvent): string {
-    return event.date_display || '—';
-  }
-
-  function getMediaSummary(event: TimelineEvent): string {
-    const count = event.media_count || 0;
-    if (count === 0) return '';
-    return count === 1 ? '1 photo' : `${count} photos`;
+  function formatVisitLine(event: TimelineEvent): string {
+    const date = event.date_display || '—';
+    return `${date} - Site Visit`;
   }
 
   function formatDatabaseEntryDate(): string {
@@ -143,7 +139,7 @@
     if (raw.includes('T')) {
       formatted = raw.split('T')[0];
     }
-    return `${formatted} · Added to Database`;
+    return `${formatted} - Added to Database`;
   }
 </script>
 
@@ -211,17 +207,7 @@
             <div class="absolute -left-5 top-[5px] w-[7px] h-[7px] rounded-full border border-braun-400 bg-white"></div>
 
             <div class="text-[15px] text-braun-900">
-              {formatVisitDate(event)}
-            </div>
-            <div class="text-[13px] text-braun-600">
-              {#if event.source_device}
-                {event.source_device}
-                {#if getMediaSummary(event)}
-                  · {getMediaSummary(event)}
-                {/if}
-              {:else if getMediaSummary(event)}
-                {getMediaSummary(event)}
-              {/if}
+              {formatVisitLine(event)}
             </div>
           </div>
         {/each}
@@ -243,9 +229,9 @@
         {#if databaseEntryEvent}
           <div class="relative">
             <!-- Small square dot for database entry -->
-            <div class="absolute -left-5 top-[6px] w-[5px] h-[5px] bg-braun-400"></div>
+            <div class="absolute -left-5 top-[5px] w-[5px] h-[5px] bg-braun-400"></div>
 
-            <div class="text-[13px] text-braun-700">
+            <div class="text-[15px] text-braun-600">
               {formatDatabaseEntryDate()}
             </div>
           </div>
