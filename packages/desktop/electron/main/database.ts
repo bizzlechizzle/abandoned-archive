@@ -2758,7 +2758,7 @@ function runMigrations(sqlite: Database.Database): void {
           INSERT INTO location_timeline (
             event_id, locid, event_type, event_subtype, date_precision,
             date_display, date_sort, source_type, created_at
-          ) VALUES (?, ?, 'established', 'built', 'unknown', '—', 99999999, 'manual', datetime('now'))
+          ) VALUES (?, ?, 'established', 'built', 'unknown', NULL, 99999999, 'manual', datetime('now'))
         `).run(
           Math.random().toString(36).substring(2, 18).padEnd(16, '0').substring(0, 16),
           loc.locid
@@ -2773,7 +2773,7 @@ function runMigrations(sqlite: Database.Database): void {
           INSERT INTO location_timeline (
             event_id, locid, subid, event_type, event_subtype, date_precision,
             date_display, date_sort, source_type, created_at
-          ) VALUES (?, ?, ?, 'established', 'built', 'unknown', '—', 99999999, 'manual', datetime('now'))
+          ) VALUES (?, ?, ?, 'established', 'built', 'unknown', NULL, 99999999, 'manual', datetime('now'))
         `).run(
           Math.random().toString(36).substring(2, 18).padEnd(16, '0').substring(0, 16),
           sloc.locid,

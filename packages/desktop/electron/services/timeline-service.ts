@@ -315,16 +315,16 @@ export class TimelineService {
 
     // Create database_entry event
     if (locadd) {
-      const dateOnly = locadd.split('T')[0];
-      const parsed = parseDate(dateOnly);
+      const dateOnly = locadd.split('T')[0]; // YYYY-MM-DD
+      const dateSort = parseInt(dateOnly.replace(/-/g, '')); // YYYYMMDD as number
       await this.createEvent(
         {
           locid,
           event_type: 'database_entry',
           date_start: dateOnly,
           date_precision: 'exact',
-          date_display: parsed.display,
-          date_sort: parsed.dateSort,
+          date_display: dateOnly, // ISO 8601: YYYY-MM-DD (archival standard)
+          date_sort: dateSort,
           source_type: 'system',
         },
         userId
