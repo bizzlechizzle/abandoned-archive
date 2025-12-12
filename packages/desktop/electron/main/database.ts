@@ -2793,7 +2793,14 @@ function runMigrations(sqlite: Database.Database): void {
     if (!hasVisitEvents) {
       console.log('[Migration 70] Backfilling visit events from existing images...');
 
-      // Get distinct date/location combinations from images
+      // Film scanner makes to exclude (dates are scan dates, not capture dates)
+      const filmScannerMakes = [
+        'noritsu', 'pakon', 'frontier', 'imacon', 'flextight', 'plustek',
+        'pacific image', 'reflecta', 'dimage scan', 'coolscan', 'perfection'
+      ];
+      const filmExcludePattern = filmScannerMakes.map(m => `meta_camera_make NOT LIKE '%${m}%'`).join(' AND ');
+
+      // Get distinct date/location combinations from images (excluding film scans)
       const imgDates = sqlite.prepare(`
         SELECT
           locid,
@@ -2806,6 +2813,7 @@ function runMigrations(sqlite: Database.Database): void {
         FROM imgs
         WHERE meta_date_taken IS NOT NULL
           AND locid IS NOT NULL
+          AND (meta_camera_make IS NULL OR (${filmExcludePattern}))
         GROUP BY locid, subid, DATE(meta_date_taken)
         ORDER BY visit_date
       `).all() as Array<{

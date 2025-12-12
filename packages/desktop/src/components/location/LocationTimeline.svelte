@@ -118,12 +118,12 @@
   }
 
   function getEstablishedDisplay(): string {
-    if (!establishedEvent) return 'Built';
+    if (!establishedEvent) return 'XXXX-XX-XX - Built';
     const subtype = establishedEvent.event_subtype || 'built';
     const label = subtypeLabels[subtype] || 'Built';
     const date = establishedEvent.date_display;
-    // DATE - NOTE format when date exists
-    return date ? `${date} - ${label}` : label;
+    // DATE - NOTE format; placeholder when no date
+    return date ? `${date} - ${label}` : `XXXX-XX-XX - ${label}`;
   }
 
   function formatVisitLine(event: TimelineEvent): string {

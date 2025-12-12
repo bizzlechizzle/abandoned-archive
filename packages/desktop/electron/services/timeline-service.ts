@@ -46,6 +46,21 @@ const CELLPHONE_MODELS = [
   'pixel',
 ];
 
+// Film scanner makes - dates are scan dates, not capture dates
+const FILM_SCANNER_MAKES = [
+  'noritsu',
+  'pakon',
+  'frontier',
+  'imacon',
+  'flextight',
+  'plustek',
+  'pacific image',
+  'reflecta',
+  'dimage scan',
+  'coolscan',
+  'perfection',
+];
+
 export class TimelineService {
   constructor(private repository: SqliteTimelineRepository) {}
 
@@ -70,6 +85,16 @@ export class TimelineService {
     }
 
     return false;
+  }
+
+  /**
+   * Check if a device is a film scanner (dates should be excluded)
+   * Film scanner dates are digitization dates, not capture dates
+   */
+  isFilmScanner(make: string | null): boolean {
+    if (!make) return false;
+    const makeLower = make.toLowerCase();
+    return FILM_SCANNER_MAKES.some(m => makeLower.includes(m));
   }
 
   /**
@@ -207,6 +232,9 @@ export class TimelineService {
     userId?: string
   ): Promise<TimelineEvent | undefined> {
     if (!dateTaken) return undefined;
+
+    // Skip film scanner dates (scan dates, not capture dates)
+    if (this.isFilmScanner(cameraMake)) return undefined;
 
     // Extract just the date part (YYYY-MM-DD) from ISO timestamp
     const dateOnly = dateTaken.split('T')[0];
