@@ -14,7 +14,7 @@ import { getBackupScheduler } from '../services/backup-scheduler';
 import { initBrowserViewManager, destroyBrowserViewManager } from '../services/browser-view-manager';
 import { startBookmarkAPIServer, stopBookmarkAPIServer } from '../services/bookmark-api-server';
 import { startWebSocketServer, stopWebSocketServer } from '../services/websocket-server';
-import { closeResearchBrowser } from '../services/research-browser-service';
+import { terminateDetachedBrowser } from '../services/detached-browser-service';
 import { getDatabaseArchiveService } from '../services/database-archive-service';
 import { SQLiteBookmarksRepository } from '../repositories/sqlite-bookmarks-repository';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
@@ -526,9 +526,9 @@ app.on('before-quit', async () => {
     console.error('Failed to export database to archive:', error);
   }
 
-  // Close research browser (external Ungoogled Chromium)
+  // Close research browser (external Ungoogled Chromium - zero-detection mode)
   try {
-    await closeResearchBrowser();
+    await terminateDetachedBrowser();
     console.log('Research browser closed successfully');
   } catch (error) {
     console.error('Failed to close research browser:', error);
