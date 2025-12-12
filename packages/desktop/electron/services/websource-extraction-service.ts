@@ -344,11 +344,26 @@ export async function extractImages(options: ExtractionOptions): Promise<ImageEx
           }> = [];
 
           document.querySelectorAll('img').forEach((img, index) => {
-            const width = img.naturalWidth || img.width || 0;
-            const height = img.naturalHeight || img.height || 0;
+            // Get dimensions - use dataset values as fallback for lazy-loaded images
+            let width = img.naturalWidth || img.width || 0;
+            let height = img.naturalHeight || img.height || 0;
 
-            // Skip small images (likely icons)
-            if (width < minWidth || height < minHeight) return;
+            // For lazy-loaded images, try to get dimensions from attributes
+            if (width === 0 || height === 0) {
+              width = parseInt(img.getAttribute('width') || img.getAttribute('data-width') || '0', 10);
+              height = parseInt(img.getAttribute('height') || img.getAttribute('data-height') || '0', 10);
+            }
+
+            // Get the actual source URL - check data attributes for lazy loading
+            const actualSrc = img.src || img.getAttribute('data-src') || img.getAttribute('data-original') ||
+                              img.getAttribute('data-lazy-src') || img.getAttribute('data-srcset')?.split(' ')[0] || '';
+
+            // Skip images without any source
+            if (!actualSrc || actualSrc.startsWith('data:')) return;
+
+            // Skip only VERY small images (icons) - be more permissive for lazy-loaded
+            // Allow all images if dimensions unknown (will filter during download)
+            if (width > 0 && height > 0 && (width < 50 || height < 50)) return;
 
             // Find caption
             let caption: string | null = null;
@@ -388,9 +403,9 @@ export async function extractImages(options: ExtractionOptions): Promise<ImageEx
                            img.closest('[class*="hero"], [class*="Hero"]') !== null;
 
             images.push({
-              src: img.src,
-              srcset: img.srcset || null,
-              dataSrc: img.getAttribute('data-src') || img.getAttribute('data-original') || null,
+              src: actualSrc, // Use the actual source we found (may be from data-src)
+              srcset: img.srcset || img.getAttribute('data-srcset') || null,
+              dataSrc: img.getAttribute('data-src') || img.getAttribute('data-original') || img.getAttribute('data-lazy-src') || null,
               width,
               height,
               alt: img.alt || null,
@@ -927,6 +942,7 @@ export async function extractText(options: ExtractionOptions): Promise<TextExtra
 /**
  * Fallback text extraction using browser
  * Used when Python/Trafilatura is not available
+ * OPT-112: Enhanced to handle modern SPA sites like Zillow
  */
 async function extractTextWithBrowser(
   options: ExtractionOptions,
@@ -938,43 +954,98 @@ async function extractTextWithBrowser(
     const browser = await getBrowser();
     page = await browser.newPage();
 
+    // Set user agent to avoid bot detection
+    await page.setUserAgent(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    );
+
     await page.goto(options.url, {
       waitUntil: 'networkidle2',
       timeout: options.timeout || 30000,
     });
 
-    // Extract text content
+    // Wait for content to render on JS-heavy sites
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Extract text content - DON'T remove elements from live DOM
     const extracted = await page.evaluate(() => {
-      // Remove scripts, styles, and navigation
-      const elementsToRemove = document.querySelectorAll(
-        'script, style, nav, header, footer, aside, .sidebar, .comments, .ads, .advertisement'
+      // Clone the body to work with, preserving original
+      const bodyClone = document.body.cloneNode(true) as HTMLElement;
+
+      // Remove scripts, styles, and obvious noise from the CLONE
+      const elementsToRemove = bodyClone.querySelectorAll(
+        'script, style, noscript, iframe, svg, [hidden], [aria-hidden="true"]'
       );
       elementsToRemove.forEach((el) => el.remove());
 
-      // Find main content area
-      const main =
-        document.querySelector('main, article, .content, #content, .post, .article') ||
-        document.body;
+      // Try to find main content - expanded selectors for modern sites
+      const contentSelectors = [
+        'main',
+        'article',
+        '[role="main"]',
+        '#main-content',
+        '#content',
+        '.main-content',
+        '.content',
+        '.article',
+        '.post',
+        '.listing-content', // Zillow
+        '.hdp-content', // Zillow home details page
+        '.ds-home-details', // Zillow
+        '[data-testid="home-details"]', // Zillow
+        '.property-info', // Real estate sites
+        '.listing-details', // Real estate sites
+      ];
 
-      // Get text content
-      const content = main.textContent?.replace(/\s+/g, ' ').trim() || '';
+      let main: HTMLElement | null = null;
+      for (const selector of contentSelectors) {
+        main = bodyClone.querySelector(selector);
+        if (main && main.textContent && main.textContent.trim().length > 100) break;
+      }
 
-      // Get title
+      // If no good selector found, use body but exclude obvious navigation
+      if (!main || main.textContent!.trim().length < 100) {
+        main = bodyClone;
+        // Remove navigation/footer only from cloned body
+        main.querySelectorAll('nav, header, footer, aside, .sidebar, .modal').forEach(el => el.remove());
+      }
+
+      // Get text content - preserve some structure
+      let content = '';
+      const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT, null);
+      let node: Node | null;
+      while ((node = walker.nextNode())) {
+        const text = node.textContent?.trim();
+        if (text && text.length > 0) {
+          content += text + ' ';
+        }
+      }
+      content = content.replace(/\s+/g, ' ').trim();
+
+      // Get title from multiple sources
       const title =
+        document.querySelector('meta[property="og:title"]')?.getAttribute('content') ||
         document.querySelector('h1')?.textContent?.trim() ||
         document.querySelector('title')?.textContent?.trim() ||
         null;
 
-      // Get author
+      // Get author from multiple sources
       const author =
-        document.querySelector('[rel="author"], .author, .byline')?.textContent?.trim() || null;
+        document.querySelector('meta[name="author"]')?.getAttribute('content') ||
+        document.querySelector('meta[property="article:author"]')?.getAttribute('content') ||
+        document.querySelector('[rel="author"], .author, .byline, [data-testid="attribution"]')?.textContent?.trim() ||
+        null;
 
-      // Get date
-      const dateEl = document.querySelector('time, .date, .published');
-      const date = dateEl?.getAttribute('datetime') || dateEl?.textContent?.trim() || null;
+      // Get date from multiple sources
+      const dateEl = document.querySelector('time, .date, .published, [data-testid="date"]');
+      const date =
+        document.querySelector('meta[property="article:published_time"]')?.getAttribute('content') ||
+        dateEl?.getAttribute('datetime') ||
+        dateEl?.textContent?.trim() ||
+        null;
 
-      // Get HTML
-      const html = main.innerHTML;
+      // Get outer HTML for archive
+      const html = main.outerHTML;
 
       return { title, author, date, content, html };
     });
@@ -1021,25 +1092,49 @@ async function extractTextWithBrowser(
 
 /**
  * Auto-scroll the page to trigger lazy loading
+ * Enhanced to handle modern JS frameworks and image lazy loading
  */
 async function autoScroll(page: Page): Promise<void> {
   await page.evaluate(async () => {
     await new Promise<void>((resolve) => {
       let totalHeight = 0;
-      const distance = 500;
+      const distance = 400;
+      let scrollAttempts = 0;
+      const maxAttempts = 50; // Max 50 scroll steps to prevent infinite loops
+
       const timer = setInterval(() => {
         const scrollHeight = document.body.scrollHeight;
         window.scrollBy(0, distance);
         totalHeight += distance;
+        scrollAttempts++;
 
-        if (totalHeight >= scrollHeight) {
+        // Trigger any IntersectionObserver-based lazy loaders
+        const lazyImages = document.querySelectorAll('img[data-src], img[data-original], img[loading="lazy"], img[data-lazy-src]');
+        lazyImages.forEach((img) => {
+          // Force the image into viewport detection
+          const rect = img.getBoundingClientRect();
+          if (rect.top < window.innerHeight * 2) {
+            // Try to trigger loading
+            if ((img as HTMLImageElement).loading === 'lazy') {
+              (img as HTMLImageElement).loading = 'eager';
+            }
+          }
+        });
+
+        if (totalHeight >= scrollHeight || scrollAttempts >= maxAttempts) {
           clearInterval(timer);
-          window.scrollTo(0, 0);
-          resolve();
+          // Wait a bit for images to load after scrolling
+          setTimeout(() => {
+            window.scrollTo(0, 0);
+            resolve();
+          }, 1000);
         }
-      }, 100);
+      }, 200); // Slower scroll to let content load
     });
   });
+
+  // Additional wait for dynamic content
+  await new Promise(resolve => setTimeout(resolve, 2000));
 }
 
 /**
