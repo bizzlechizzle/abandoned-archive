@@ -16,6 +16,7 @@
     extracted_author: string | null;
     extracted_date: string | null;
     extracted_publisher: string | null;
+    extracted_text: string | null;
     word_count: number;
     image_count: number;
     video_count: number;
@@ -26,6 +27,7 @@
     domain: string | null;
     extracted_links: string | null;
     page_metadata_json: string | null;
+    http_headers_json: string | null;
     archived_at: string | null;
     created_at: string;
     // OPT-115: Enhanced metadata fields
@@ -96,6 +98,10 @@
   let showLinks = $state(false);
   let showImages = $state(true);
   let showVideos = $state(true);
+  let showFullText = $state(false);
+  let showRawMetadata = $state(false);
+  let showDates = $state(true);
+  let exportingArchive = $state(false);
 
   // Load data on mount
   $effect(() => {
@@ -210,6 +216,196 @@
       return new URL(url).hostname.replace(/^www\./, '');
     } catch {
       return url;
+    }
+  }
+
+  // Parse page_metadata_json for Dublin Core and other metadata
+  function parsePageMetadata(): Record<string, unknown> | null {
+    if (!source?.page_metadata_json) return null;
+    try {
+      return JSON.parse(source.page_metadata_json);
+    } catch {
+      return null;
+    }
+  }
+
+  // Parse HTTP headers
+  function parseHttpHeaders(): Record<string, string> | null {
+    if (!source?.http_headers_json) return null;
+    try {
+      return JSON.parse(source.http_headers_json);
+    } catch {
+      return null;
+    }
+  }
+
+  // Extract all dates found in the archive
+  interface ExtractedDate {
+    value: string;
+    source: string;
+    formatted: string;
+  }
+
+  function extractAllDates(): ExtractedDate[] {
+    const dates: ExtractedDate[] = [];
+    if (!source) return dates;
+
+    // From extracted_date (main publish date)
+    if (source.extracted_date) {
+      dates.push({
+        value: source.extracted_date,
+        source: 'Page Publish Date',
+        formatted: formatDate(source.extracted_date)
+      });
+    }
+
+    // From Schema.org
+    const schemas = parseSchemaOrg(source.schema_org_json);
+    if (schemas) {
+      for (const schema of schemas) {
+        const s = schema as Record<string, unknown>;
+        if (s.datePublished) {
+          dates.push({
+            value: String(s.datePublished),
+            source: 'Schema.org datePublished',
+            formatted: formatDate(String(s.datePublished))
+          });
+        }
+        if (s.dateModified) {
+          dates.push({
+            value: String(s.dateModified),
+            source: 'Schema.org dateModified',
+            formatted: formatDate(String(s.dateModified))
+          });
+        }
+        if (s.dateCreated) {
+          dates.push({
+            value: String(s.dateCreated),
+            source: 'Schema.org dateCreated',
+            formatted: formatDate(String(s.dateCreated))
+          });
+        }
+        if (s.uploadDate) {
+          dates.push({
+            value: String(s.uploadDate),
+            source: 'Schema.org uploadDate',
+            formatted: formatDate(String(s.uploadDate))
+          });
+        }
+      }
+    }
+
+    // From page_metadata_json (Dublin Core, Open Graph dates)
+    const metadata = parsePageMetadata();
+    if (metadata) {
+      // Dublin Core
+      const dc = metadata.dublinCore as Record<string, unknown> | undefined;
+      if (dc?.date) {
+        dates.push({
+          value: String(dc.date),
+          source: 'Dublin Core date',
+          formatted: formatDate(String(dc.date))
+        });
+      }
+      // Open Graph article dates
+      const og = metadata.openGraph as Record<string, unknown> | undefined;
+      if (og?.articlePublishedTime) {
+        dates.push({
+          value: String(og.articlePublishedTime),
+          source: 'Open Graph article:published_time',
+          formatted: formatDate(String(og.articlePublishedTime))
+        });
+      }
+      if (og?.articleModifiedTime) {
+        dates.push({
+          value: String(og.articleModifiedTime),
+          source: 'Open Graph article:modified_time',
+          formatted: formatDate(String(og.articleModifiedTime))
+        });
+      }
+    }
+
+    // Archive dates
+    if (source.archived_at) {
+      dates.push({
+        value: source.archived_at,
+        source: 'Archive Date',
+        formatted: formatDate(source.archived_at)
+      });
+    }
+    if (source.extension_captured_at) {
+      dates.push({
+        value: source.extension_captured_at,
+        source: 'Extension Capture',
+        formatted: formatDate(source.extension_captured_at)
+      });
+    }
+    if (source.puppeteer_captured_at) {
+      dates.push({
+        value: source.puppeteer_captured_at,
+        source: 'Automated Capture',
+        formatted: formatDate(source.puppeteer_captured_at)
+      });
+    }
+
+    // Deduplicate by value
+    const seen = new Set<string>();
+    return dates.filter(d => {
+      if (seen.has(d.value)) return false;
+      seen.add(d.value);
+      return true;
+    });
+  }
+
+  // Download full archive as JSON
+  async function handleDownloadArchive() {
+    if (!source) return;
+    exportingArchive = true;
+
+    try {
+      const archiveData = {
+        exportedAt: new Date().toISOString(),
+        source: {
+          ...source,
+          // Parse JSON fields for readability
+          extracted_links: source.extracted_links ? JSON.parse(source.extracted_links) : null,
+          page_metadata_json: source.page_metadata_json ? JSON.parse(source.page_metadata_json) : null,
+          http_headers_json: source.http_headers_json ? JSON.parse(source.http_headers_json) : null,
+          twitter_card_json: source.twitter_card_json ? JSON.parse(source.twitter_card_json) : null,
+          schema_org_json: source.schema_org_json ? JSON.parse(source.schema_org_json) : null,
+        },
+        images: images.map(img => ({
+          ...img,
+          srcset_variants: img.srcset_variants ? JSON.parse(img.srcset_variants) : null,
+          exif_json: img.exif_json ? JSON.parse(img.exif_json) : null,
+        })),
+        videos: videos.map(vid => ({
+          ...vid,
+          metadata_json: vid.metadata_json ? JSON.parse(vid.metadata_json) : null,
+        })),
+        extractedDates: extractAllDates(),
+        archiveFiles: {
+          screenshot: source.screenshot_path,
+          pdf: source.pdf_path,
+          html: source.html_path,
+          warc: source.warc_path,
+        }
+      };
+
+      // Create downloadable JSON
+      const blob = new Blob([JSON.stringify(archiveData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `archive-${source.source_id}-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export archive:', err);
+    } finally {
+      exportingArchive = false;
     }
   }
 
@@ -351,15 +547,25 @@
             {/if}
           </div>
         </div>
-        <button
-          onclick={onClose}
-          class="p-2 text-braun-400 hover:text-braun-900 transition"
-          aria-label="Close"
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            onclick={handleDownloadArchive}
+            disabled={exportingArchive}
+            class="px-3 py-1.5 text-sm bg-braun-700 text-white rounded hover:bg-braun-800 transition disabled:opacity-50"
+            title="Download full archive as JSON"
+          >
+            {exportingArchive ? 'Exporting...' : 'Export JSON'}
+          </button>
+          <button
+            onclick={onClose}
+            class="p-2 text-braun-400 hover:text-braun-900 transition"
+            aria-label="Close"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
       </header>
 
       <div class="flex-1 overflow-y-auto p-6 space-y-6">
@@ -512,6 +718,132 @@
             {/if}
           </div>
         </section>
+
+        <!-- Dates Found -->
+        {#if extractAllDates().length > 0}
+          <section>
+            <button
+              onclick={() => showDates = !showDates}
+              class="w-full flex items-center justify-between text-xs font-semibold text-braun-500 uppercase tracking-wider mb-3 hover:text-braun-700"
+            >
+              <span>DATES FOUND ({extractAllDates().length})</span>
+              <span class="text-braun-400">{showDates ? '▲' : '▼'}</span>
+            </button>
+            {#if showDates}
+              <div class="bg-white p-3 rounded border border-braun-200">
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr class="text-left text-braun-500">
+                      <th class="pb-2 font-medium">Date</th>
+                      <th class="pb-2 font-medium">Source</th>
+                      <th class="pb-2 font-medium">Raw Value</th>
+                    </tr>
+                  </thead>
+                  <tbody class="text-braun-900">
+                    {#each extractAllDates() as date}
+                      <tr class="border-t border-braun-100">
+                        <td class="py-1.5">{date.formatted}</td>
+                        <td class="py-1.5 text-braun-600">{date.source}</td>
+                        <td class="py-1.5 font-mono text-xs text-braun-500">{date.value}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+            {/if}
+          </section>
+        {/if}
+
+        <!-- Full Text Content -->
+        {#if source.extracted_text}
+          <section>
+            <button
+              onclick={() => showFullText = !showFullText}
+              class="w-full flex items-center justify-between text-xs font-semibold text-braun-500 uppercase tracking-wider mb-3 hover:text-braun-700"
+            >
+              <span>FULL TEXT ({source.word_count?.toLocaleString() || 0} words)</span>
+              <span class="text-braun-400">{showFullText ? '▲' : '▼'}</span>
+            </button>
+            {#if showFullText}
+              <div class="bg-white p-4 rounded border border-braun-200 max-h-96 overflow-y-auto">
+                <p class="text-sm text-braun-700 whitespace-pre-wrap leading-relaxed">{source.extracted_text}</p>
+              </div>
+            {/if}
+          </section>
+        {/if}
+
+        <!-- Raw Metadata (Dublin Core, HTTP Headers, etc.) -->
+        {#if parsePageMetadata() || parseHttpHeaders()}
+          <section>
+            <button
+              onclick={() => showRawMetadata = !showRawMetadata}
+              class="w-full flex items-center justify-between text-xs font-semibold text-braun-500 uppercase tracking-wider mb-3 hover:text-braun-700"
+            >
+              <span>RAW METADATA</span>
+              <span class="text-braun-400">{showRawMetadata ? '▲' : '▼'}</span>
+            </button>
+            {#if showRawMetadata}
+              <div class="space-y-4">
+                {#if parsePageMetadata()}
+                  {@const metadata = parsePageMetadata()}
+                  <!-- Dublin Core -->
+                  {#if metadata?.dublinCore}
+                    <div>
+                      <h4 class="text-xs font-medium text-braun-600 mb-2">Dublin Core</h4>
+                      <dl class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm bg-white p-3 rounded border border-braun-200">
+                        {#each Object.entries(metadata.dublinCore as Record<string, unknown>) as [key, value]}
+                          {#if value}
+                            <dt class="text-braun-500">{key}</dt>
+                            <dd class="text-braun-900 truncate" title={String(value)}>{String(value)}</dd>
+                          {/if}
+                        {/each}
+                      </dl>
+                    </div>
+                  {/if}
+                  <!-- Open Graph (detailed) -->
+                  {#if metadata?.openGraph}
+                    <div>
+                      <h4 class="text-xs font-medium text-braun-600 mb-2">Open Graph (Full)</h4>
+                      <dl class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm bg-white p-3 rounded border border-braun-200">
+                        {#each Object.entries(metadata.openGraph as Record<string, unknown>) as [key, value]}
+                          {#if value}
+                            <dt class="text-braun-500">{key}</dt>
+                            <dd class="text-braun-900 truncate" title={String(value)}>{String(value)}</dd>
+                          {/if}
+                        {/each}
+                      </dl>
+                    </div>
+                  {/if}
+                  <!-- Page Structure -->
+                  {#if metadata?.pageStructure}
+                    <div>
+                      <h4 class="text-xs font-medium text-braun-600 mb-2">Page Structure</h4>
+                      <pre class="text-xs text-braun-700 bg-white p-3 rounded border border-braun-200 max-h-32 overflow-y-auto whitespace-pre-wrap">{JSON.stringify(metadata.pageStructure, null, 2)}</pre>
+                    </div>
+                  {/if}
+                  <!-- Full Metadata JSON -->
+                  <div>
+                    <h4 class="text-xs font-medium text-braun-600 mb-2">Full page_metadata_json</h4>
+                    <pre class="text-xs text-braun-700 bg-white p-3 rounded border border-braun-200 max-h-48 overflow-y-auto whitespace-pre-wrap">{JSON.stringify(metadata, null, 2)}</pre>
+                  </div>
+                {/if}
+
+                {#if parseHttpHeaders()}
+                  {@const headers = parseHttpHeaders()}
+                  <div>
+                    <h4 class="text-xs font-medium text-braun-600 mb-2">HTTP Response Headers</h4>
+                    <dl class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm bg-white p-3 rounded border border-braun-200 max-h-48 overflow-y-auto">
+                      {#each Object.entries(headers || {}) as [key, value]}
+                        <dt class="text-braun-500 font-mono text-xs">{key}</dt>
+                        <dd class="text-braun-900 truncate text-xs" title={value}>{value}</dd>
+                      {/each}
+                    </dl>
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          </section>
+        {/if}
 
         <!-- Extracted Links -->
         {#if parseLinks().length > 0}

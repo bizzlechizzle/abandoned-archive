@@ -3,6 +3,7 @@
    * LocationWebSources - Web source archive management
    * OPT-109: Comprehensive web archiving replacing simple bookmarks
    * OPT-111: Enhanced metadata viewer modal integration
+   * OPT-116: PIN confirmation for destructive delete
    * Per LILBITS: ~300 lines, single responsibility
    */
 
@@ -56,6 +57,14 @@
   // OPT-111: Detail modal state
   let showDetailModal = $state(false);
   let detailSourceId = $state<string | null>(null);
+
+  // OPT-116: Delete confirmation state
+  let showDeleteConfirm = $state(false);
+  let deleteSourceId = $state<string | null>(null);
+  let deleteSourceTitle = $state('');
+  let deletePin = $state('');
+  let deletePinError = $state('');
+  let deleting = $state(false);
 
   // Helper for component status icons
   function getComponentIcon(status: ComponentStatusValue | undefined): string {
@@ -149,14 +158,67 @@
     }
   }
 
-  async function handleDelete(sourceId: string) {
-    if (!confirm('Delete this web source and all its archives?')) return;
+  // OPT-116: Open delete confirmation modal
+  function handleDelete(sourceId: string) {
+    const source = sources.find(s => s.source_id === sourceId);
+    if (!source) return;
+    deleteSourceId = sourceId;
+    deleteSourceTitle = source.title || source.extracted_title || source.url;
+    deletePin = '';
+    deletePinError = '';
+    showDeleteConfirm = true;
+  }
+
+  // OPT-116: Verify PIN and delete
+  async function verifyDeletePin() {
+    if (!deletePin) {
+      deletePinError = 'Please enter your PIN';
+      return;
+    }
+
     try {
-      await window.electronAPI.websources.delete(sourceId);
+      const users = await window.electronAPI?.users?.findAll?.() || [];
+      const currentUser = users[0] as { user_id: string } | undefined;
+
+      if (!currentUser) {
+        deletePinError = 'No user found';
+        return;
+      }
+
+      const result = await window.electronAPI?.users?.verifyPin(currentUser.user_id, deletePin);
+      if (result?.success) {
+        await executeDelete();
+      } else {
+        deletePinError = 'Invalid PIN';
+      }
+    } catch (err) {
+      console.error('PIN verification failed:', err);
+      deletePinError = 'Verification failed';
+    }
+  }
+
+  // OPT-116: Execute the actual deletion
+  async function executeDelete() {
+    if (!deleteSourceId) return;
+    try {
+      deleting = true;
+      await window.electronAPI.websources.delete(deleteSourceId);
+      showDeleteConfirm = false;
       await loadSources();
     } catch (err) {
       console.error('Failed to delete source:', err);
+      deletePinError = 'Delete failed';
+    } finally {
+      deleting = false;
     }
+  }
+
+  function cancelDelete() {
+    showDeleteConfirm = false;
+    deleteSourceId = null;
+    deleteSourceTitle = '';
+    deletePin = '';
+    deletePinError = '';
   }
 
   // OPT-111: Open detail modal for archive viewing
@@ -421,4 +483,58 @@
     onClose={handleCloseDetail}
     onOpenUrl={onOpenSource}
   />
+{/if}
+
+<!-- OPT-116: Delete Confirmation Modal (PIN required) -->
+{#if showDeleteConfirm}
+<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onclick={cancelDelete}>
+  <div class="bg-white rounded border border-braun-300 p-6 w-full max-w-md mx-4" onclick={(e) => e.stopPropagation()}>
+    <div class="flex justify-between items-center mb-4">
+      <h3 class="text-lg font-semibold text-error">Delete Web Source?</h3>
+      <button onclick={cancelDelete} class="text-braun-400 hover:text-braun-600">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+    <p class="text-sm text-braun-600 mb-2 truncate" title={deleteSourceTitle}>{deleteSourceTitle}</p>
+    <div class="bg-braun-100 border border-braun-300 rounded p-4 mb-4">
+      <p class="text-sm text-braun-700 mb-2">This action cannot be undone.</p>
+      <p class="text-sm text-error font-medium">All archived files will be permanently deleted.</p>
+    </div>
+    <div class="mb-4">
+      <label for="delete-pin" class="block text-sm font-medium text-braun-700 mb-1">Enter PIN to confirm</label>
+      <input
+        id="delete-pin"
+        type="password"
+        inputmode="numeric"
+        pattern="[0-9]*"
+        maxlength="6"
+        bind:value={deletePin}
+        placeholder="PIN"
+        onkeydown={(e) => e.key === 'Enter' && verifyDeletePin()}
+        class="w-24 px-3 py-2 text-center border border-braun-300 rounded focus:outline-none focus:border-braun-600"
+      />
+      {#if deletePinError}
+        <p class="text-sm text-error mt-1">{deletePinError}</p>
+      {/if}
+    </div>
+    <div class="flex justify-end gap-3">
+      <button
+        onclick={cancelDelete}
+        disabled={deleting}
+        class="px-4 py-2 bg-braun-200 text-braun-700 rounded hover:bg-braun-300 transition"
+      >
+        Cancel
+      </button>
+      <button
+        onclick={verifyDeletePin}
+        disabled={deleting || !deletePin}
+        class="px-4 py-2 bg-error text-white rounded hover:opacity-90 transition disabled:opacity-50"
+      >
+        {deleting ? 'Deleting...' : 'Delete'}
+      </button>
+    </div>
+  </div>
+</div>
 {/if}

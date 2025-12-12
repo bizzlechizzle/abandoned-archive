@@ -17,6 +17,7 @@ import { fileURLToPath } from 'url';
 import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
 import puppeteerCore, { Browser, Page, LaunchOptions, CDPSession, HTTPRequest, HTTPResponse } from 'puppeteer-core';
+import { app } from 'electron';
 import { calculateHash } from './crypto-service';
 
 // Lazy-load puppeteer-extra with stealth plugin
@@ -224,8 +225,6 @@ export function isProfileLocked(profilePath: string): boolean {
  * OPT-113: Detects if browser is running and falls back to app profile
  */
 export function getResearchBrowserProfilePath(): string {
-  const { app } = require('electron');
-
   // Use the SAME path as detached-browser-service.ts:getProfilePath()
   // This is where the Research Browser actually stores cookies/logins
   const profilePath = path.join(app.getPath('userData'), 'research-browser');

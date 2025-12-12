@@ -1,6 +1,9 @@
 import { Kysely, sql, Selectable } from 'kysely';
+import path from 'path';
+import fs from 'fs/promises';
 import { generateId } from '../main/ipc-validation';
 import type { Database, WebSourcesTable, WebSourceVersionsTable, WebSourceImagesTable, WebSourceVideosTable } from '../main/database.types';
+import { getLogger } from '../services/logger-service';
 
 // Type aliases for selected rows (strips Generated<> wrapper)
 export type WebSourceImageRow = Selectable<WebSourceImagesTable>;
@@ -426,14 +429,69 @@ export class SQLiteWebSourcesRepository {
   }
 
   /**
-   * Delete a web source and all its versions
+   * Delete a web source with full archive file cleanup
+   * OPT-116: Now deletes archive files in addition to DB records
+   *
+   * 1. Query source data for paths
+   * 2. Audit log before deletion
+   * 3. Delete DB records (CASCADE handles images/videos/versions)
+   * 4. Background file cleanup (non-blocking)
    */
   async delete(source_id: string): Promise<void> {
-    // Delete versions first (FK constraint)
-    await this.db.deleteFrom('web_source_versions').where('source_id', '=', source_id).execute();
+    const logger = getLogger();
 
-    // Delete source
+    // 1. Get source data for audit and file cleanup
+    const source = await this.db
+      .selectFrom('web_sources')
+      .select([
+        'source_id',
+        'url',
+        'title',
+        'locid',
+        'archive_path',
+        'screenshot_path',
+        'pdf_path',
+        'html_path',
+        'warc_path',
+      ])
+      .where('source_id', '=', source_id)
+      .executeTakeFirst();
+
+    if (!source) {
+      throw new Error(`Web source not found: ${source_id}`);
+    }
+
+    // 2. Audit log BEFORE deletion
+    logger.info('WebSourcesRepository', `DELETION AUDIT: Deleting web source with files`, {
+      source_id,
+      url: source.url,
+      title: source.title,
+      locid: source.locid,
+      archive_path: source.archive_path,
+      deleted_at: new Date().toISOString(),
+    });
+
+    // 3. Delete DB records (web_source_images/videos/versions cascade)
+    await this.db.deleteFrom('web_source_versions').where('source_id', '=', source_id).execute();
+    await this.db.deleteFrom('web_source_images').where('source_id', '=', source_id).execute();
+    await this.db.deleteFrom('web_source_videos').where('source_id', '=', source_id).execute();
     await this.db.deleteFrom('web_sources').where('source_id', '=', source_id).execute();
+
+    // 4. Background file cleanup (non-blocking for instant UI response)
+    if (source.archive_path) {
+      setImmediate(async () => {
+        try {
+          // Delete the entire archive folder (contains all files)
+          await fs.rm(source.archive_path!, { recursive: true, force: true });
+          logger.info('WebSourcesRepository', `Deleted archive folder: ${source.archive_path}`);
+        } catch (err) {
+          // Folder might not exist if archive failed
+          logger.warn('WebSourcesRepository', `Could not delete archive folder (may not exist): ${source.archive_path}`, {
+            error: err instanceof Error ? err.message : String(err)
+          });
+        }
+      });
+    }
   }
 
   // ===========================================================================
