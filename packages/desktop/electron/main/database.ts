@@ -2785,6 +2785,77 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 69 completed: location_timeline table created with backfill');
     }
 
+    // Migration 70: Backfill visit events from existing images with meta_date_taken
+    const hasVisitEvents = sqlite.prepare(`
+      SELECT 1 FROM location_timeline WHERE event_type = 'visit' LIMIT 1
+    `).get();
+
+    if (!hasVisitEvents) {
+      console.log('[Migration 70] Backfilling visit events from existing images...');
+
+      // Get distinct date/location combinations from images
+      const imgDates = sqlite.prepare(`
+        SELECT
+          locid,
+          subid,
+          DATE(meta_date_taken) as visit_date,
+          meta_camera_make,
+          meta_camera_model,
+          COUNT(*) as photo_count,
+          GROUP_CONCAT(imghash) as hashes
+        FROM imgs
+        WHERE meta_date_taken IS NOT NULL
+          AND locid IS NOT NULL
+        GROUP BY locid, subid, DATE(meta_date_taken)
+        ORDER BY visit_date
+      `).all() as Array<{
+        locid: string;
+        subid: string | null;
+        visit_date: string;
+        meta_camera_make: string | null;
+        meta_camera_model: string | null;
+        photo_count: number;
+        hashes: string;
+      }>;
+
+      // Cellphone makes for auto-approval
+      const cellphoneMakes = ['apple', 'samsung', 'google', 'pixel', 'oneplus', 'xiaomi', 'huawei', 'oppo', 'vivo', 'motorola', 'lg', 'sony mobile', 'htc', 'nokia', 'realme', 'poco', 'asus'];
+
+      for (const visit of imgDates) {
+        const device = visit.meta_camera_make && visit.meta_camera_model
+          ? `${visit.meta_camera_make} ${visit.meta_camera_model}`.trim()
+          : (visit.meta_camera_make || visit.meta_camera_model || null);
+
+        const isCellphone = visit.meta_camera_make
+          ? cellphoneMakes.some(m => visit.meta_camera_make!.toLowerCase().includes(m))
+          : false;
+
+        const dateSort = visit.visit_date ? parseInt(visit.visit_date.replace(/-/g, '')) : 99999999;
+        const hashArray = visit.hashes ? visit.hashes.split(',') : [];
+
+        sqlite.prepare(`
+          INSERT INTO location_timeline (
+            event_id, locid, subid, event_type, date_start, date_precision,
+            date_display, date_sort, source_type, source_device,
+            media_count, media_hashes, auto_approved, created_at
+          ) VALUES (?, ?, ?, 'visit', ?, 'exact', ?, ?, 'exif', ?, ?, ?, ?, datetime('now'))
+        `).run(
+          Math.random().toString(36).substring(2, 18).padEnd(16, '0').substring(0, 16),
+          visit.locid,
+          visit.subid,
+          visit.visit_date,
+          visit.visit_date,
+          dateSort,
+          device,
+          visit.photo_count,
+          JSON.stringify(hashArray),
+          isCellphone ? 1 : 0
+        );
+      }
+
+      console.log(`[Migration 70] Created ${imgDates.length} visit events from existing images`);
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;
