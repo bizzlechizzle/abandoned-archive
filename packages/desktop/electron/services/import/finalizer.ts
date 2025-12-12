@@ -738,6 +738,8 @@ export class Finalizer {
         hash: file.hash!,
         mediaType: file.mediaType,
         archivePath: file.archivePath,
+        locid,  // For timeline event creation
+        subid,  // For timeline event creation
       };
 
       // ExifTool job for all media types

@@ -20,6 +20,7 @@ import { getLogger } from './logger-service';
 import { getMetricsCollector, MetricNames } from './monitoring/metrics-collector';
 import { getTracer, OperationNames } from './monitoring/tracer';
 import { getHardwareProfile, type HardwareProfile } from './hardware-profile';
+import { getTimelineService } from '../main/ipc-handlers/timeline';
 
 const logger = getLogger();
 const metrics = getMetricsCollector();
@@ -370,7 +371,7 @@ export class JobWorkerService extends EventEmitter {
    * ExifTool metadata extraction job
    */
   private async handleExifToolJob(
-    payload: { hash: string; mediaType: string; archivePath: string },
+    payload: { hash: string; mediaType: string; archivePath: string; locid?: string; subid?: string | null },
     emit: (event: string, data: unknown) => void
   ): Promise<{ metadata: unknown }> {
     // Import and instantiate the ExifTool service
@@ -381,6 +382,27 @@ export class JobWorkerService extends EventEmitter {
 
     // Update database with metadata
     await this.updateMediaMetadata(payload.hash, payload.mediaType, metadata);
+
+    // Create timeline visit event for images/videos with date taken
+    const meta = metadata as { dateTaken?: string; cameraMake?: string; cameraModel?: string };
+    if (payload.locid && meta.dateTaken && (payload.mediaType === 'image' || payload.mediaType === 'video')) {
+      const timelineService = getTimelineService();
+      if (timelineService) {
+        try {
+          await timelineService.handleMediaImport(
+            payload.locid,
+            payload.subid ?? null,
+            payload.hash,
+            meta.dateTaken,
+            meta.cameraMake ?? null,
+            meta.cameraModel ?? null
+          );
+          logger.debug('JobWorker', 'Timeline visit event created', { hash: payload.hash, dateTaken: meta.dateTaken });
+        } catch (err) {
+          logger.warn('JobWorker', 'Timeline event creation failed (non-fatal)', { error: String(err) });
+        }
+      }
+    }
 
     // Emit event
     emit('asset:metadata-complete', {

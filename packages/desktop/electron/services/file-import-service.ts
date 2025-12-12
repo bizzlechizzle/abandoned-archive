@@ -417,6 +417,20 @@ export class FileImportService {
         if (result.success && !result.duplicate && result._timelineData) {
           const timelineData = result._timelineData;
           const timelineService = getTimelineService();
+
+          // DEBUG: Log timeline service state
+          if (!timelineService) {
+            logger.warn('FileImport', 'Timeline service not initialized - visit event skipped', {
+              locid: timelineData.locid,
+              dateTaken: timelineData.dateTaken,
+            });
+          } else if (!timelineData.dateTaken) {
+            logger.debug('FileImport', 'No date taken - visit event skipped', {
+              locid: timelineData.locid,
+              mediaHash: timelineData.mediaHash,
+            });
+          }
+
           if (timelineService && timelineData.dateTaken) {
             timelineService.handleMediaImport(
               timelineData.locid,
