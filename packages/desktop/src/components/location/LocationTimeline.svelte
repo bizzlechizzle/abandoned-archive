@@ -248,16 +248,9 @@
             <!-- Small square dot for database entry -->
             <div class="absolute -left-5 top-[6px] w-[5px] h-[5px] bg-braun-400"></div>
 
-            <div class="text-[13px] text-braun-500">
+            <div class="text-[13px] text-braun-700">
               {formatDatabaseEntryDate()}
             </div>
-          </div>
-        {/if}
-
-        <!-- Empty state for no visits -->
-        {#if visitEvents.length === 0 && !loading}
-          <div class="py-2 text-[13px] text-braun-500 italic">
-            Import media to detect visit dates
           </div>
         {/if}
       </div>
