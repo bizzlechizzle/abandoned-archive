@@ -28,6 +28,5 @@
     height: 32px;
     -webkit-app-region: drag;
     z-index: 9999;
-    pointer-events: none;
   }
 </style>
