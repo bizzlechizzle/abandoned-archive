@@ -561,15 +561,24 @@ export class WebSourceOrchestrator extends EventEmitter {
         try {
           const timelineService = getTimelineService();
           if (timelineService) {
+            // Get current user for attribution
+            const userSetting = await this.db
+              .selectFrom('settings')
+              .select('value')
+              .where('key', '=', 'current_user')
+              .executeTakeFirst();
+            const currentUser = userSetting?.value || undefined;
+
             const displayTitle = metadata.title || source.title || 'Web Page';
             await timelineService.createWebPageEvent(
               source.locid,
               source.subid ?? null,
               sourceId,
               metadata.date,
-              displayTitle
+              displayTitle,
+              currentUser
             );
-            console.log(`[WebSource] Created timeline event for ${sourceId} with date ${metadata.date}`);
+            console.log(`[WebSource] Created timeline event for ${sourceId} with date ${metadata.date} by ${currentUser}`);
           }
         } catch (timelineError) {
           // Don't fail the archive if timeline creation fails

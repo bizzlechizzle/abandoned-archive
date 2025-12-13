@@ -395,15 +395,24 @@ export class JobWorkerService extends EventEmitter {
       const timelineService = getTimelineService();
       if (timelineService) {
         try {
+          // Get current user for timeline event attribution
+          const userSetting = await this.db
+            .selectFrom('settings')
+            .select('value')
+            .where('key', '=', 'current_user')
+            .executeTakeFirst();
+          const currentUser = userSetting?.value || undefined;
+
           await timelineService.handleMediaImport(
             payload.locid,
             payload.subid ?? null,
             payload.hash,
             meta.dateTaken,
             meta.cameraMake ?? null,
-            meta.cameraModel ?? null
+            meta.cameraModel ?? null,
+            currentUser
           );
-          logger.debug('JobWorker', 'Timeline visit event created', { hash: payload.hash, dateTaken: meta.dateTaken });
+          logger.debug('JobWorker', 'Timeline visit event created', { hash: payload.hash, dateTaken: meta.dateTaken, user: currentUser });
         } catch (err) {
           logger.warn('JobWorker', 'Timeline event creation failed (non-fatal)', { error: String(err) });
         }
