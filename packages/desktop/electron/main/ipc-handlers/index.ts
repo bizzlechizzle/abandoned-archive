@@ -47,6 +47,11 @@ import { registerImportV2Handlers, initializeJobWorker, shutdownJobWorker } from
 import { registerMonitoringHandlers, setMainWindow as setMonitoringMainWindow } from './monitoring';
 import { registerWebSourcesHandlers } from './websources';
 import { registerTimelineHandlers } from './timeline';
+import { registerImageDownloaderHandlers } from './image-downloader';
+import {
+  initializeBrowserImageCapture,
+  cleanupBrowserImageCapture,
+} from '../../services/image-downloader/browser-image-capture';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
@@ -120,11 +125,24 @@ export function registerIpcHandlers() {
   // Timeline events (Migration 69)
   registerTimelineHandlers(db);
 
+  // Image Downloader (Migration 72 - pHash, URL patterns, staging)
+  registerImageDownloaderHandlers(db);
+
+  // Browser Image Capture (network monitoring, context menu)
+  initializeBrowserImageCapture({
+    filter: {
+      minSize: 5000, // Ignore tiny images
+    },
+  });
+
   console.log('IPC handlers registered (modular)');
 }
 
 // Export job worker shutdown for app cleanup
 export { shutdownJobWorker };
+
+// Export browser capture cleanup for app shutdown
+export { cleanupBrowserImageCapture };
 
 // Export monitoring window setter for alert notifications
 export { setMonitoringMainWindow };

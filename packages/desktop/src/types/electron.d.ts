@@ -936,6 +936,563 @@ export interface ElectronAPI {
     updateEstablished: (locid: string, subid: string | null, dateInput: string, eventSubtype?: string, userId?: string) => Promise<TimelineEvent | undefined>;
   };
 
+  // Image Downloader - Migration 72 (pHash, URL patterns, staging)
+  downloader: {
+    // URL Pattern Transformation
+    transformUrl: (url: string) => Promise<{
+      success: boolean;
+      results?: Array<{
+        transformedUrl: string;
+        patternId: string;
+        patternName: string;
+        confidence: number;
+      }>;
+      error?: string;
+    }>;
+    addPattern: (pattern: {
+      name: string;
+      siteType: 'wordpress' | 'cdn' | 'image_host' | 'custom';
+      matchRegex: string;
+      transformTemplate: string;
+      priority?: number;
+    }) => Promise<{ success: boolean; patternId?: string; error?: string }>;
+    getPatterns: () => Promise<{
+      success: boolean;
+      patterns?: Array<{
+        patternId: string;
+        name: string;
+        siteType: string;
+        matchRegex: string;
+        transformTemplate: string;
+        priority: number;
+        successCount: number;
+        failureCount: number;
+        confidence: number;
+        enabled: boolean;
+      }>;
+      error?: string;
+    }>;
+
+    // URL Validation
+    validateUrl: (url: string) => Promise<{
+      success: boolean;
+      validation?: {
+        url: string;
+        exists: boolean;
+        isImage: boolean;
+        contentType: string | null;
+        contentLength: number | null;
+        redirectUrl: string | null;
+        headers: Record<string, string>;
+      };
+      error?: string;
+    }>;
+    validateUrls: (urls: string[]) => Promise<{
+      success: boolean;
+      results?: Array<{
+        url: string;
+        exists: boolean;
+        isImage: boolean;
+        contentType: string | null;
+        contentLength: number | null;
+      }>;
+      error?: string;
+    }>;
+    findBestUrl: (input: {
+      candidates: Array<{ url: string; confidence: number }>;
+    }) => Promise<{
+      success: boolean;
+      best?: { url: string; confidence: number } | null;
+      error?: string;
+    }>;
+
+    // Smart Image Enhance (recursive suffix stripping to find TRUE originals)
+    enhanceUrl: (input: {
+      url: string;
+      options?: {
+        maxCandidates?: number;
+        headTimeout?: number;
+        preferTraditionalFormats?: boolean;
+        maxDepth?: number;
+        validate?: boolean;
+      };
+    }) => Promise<{
+      success: boolean;
+      originalUrl?: string;
+      bestUrl?: string;
+      bestSize?: number;
+      improvement?: number;
+      candidateCount?: number;
+      validCount?: number;
+      error?: string;
+    }>;
+    enhanceUrls: (input: {
+      urls: string[];
+      options?: {
+        maxCandidates?: number;
+        headTimeout?: number;
+        preferTraditionalFormats?: boolean;
+        maxDepth?: number;
+        validate?: boolean;
+      };
+    }) => Promise<{
+      success: boolean;
+      results?: Array<{
+        originalUrl: string;
+        bestUrl: string;
+        bestSize: number;
+        improvement: number;
+      }>;
+      error?: string;
+    }>;
+
+    // Perceptual Hashing
+    hashFile: (filePath: string) => Promise<{
+      success: boolean;
+      hash?: string;
+      width?: number;
+      height?: number;
+      format?: string;
+      error?: string;
+    }>;
+    pHashDistance: (hash1: string, hash2: string) => Promise<{
+      success: boolean;
+      distance?: number;
+      similar?: boolean;
+      error?: string;
+    }>;
+    findSimilar: (input: {
+      phash: string;
+      threshold?: number;
+      limit?: number;
+    }) => Promise<{
+      success: boolean;
+      similar?: Array<{
+        imghash: string;
+        phash: string;
+        distance: number;
+        imgloc: string;
+      }>;
+      error?: string;
+    }>;
+    checkDuplicate: (phash: string) => Promise<{
+      success: boolean;
+      isDuplicate?: boolean;
+      duplicate?: {
+        imghash: string;
+        phash: string;
+        distance: number;
+        imgloc: string;
+      } | null;
+      error?: string;
+    }>;
+
+    // pHash Backfill
+    getBackfillStatus: () => Promise<{
+      success: boolean;
+      needsBackfill?: number;
+      total?: number;
+      percentComplete?: number;
+      error?: string;
+    }>;
+    runBackfill: (options?: { batchSize?: number }) => Promise<{
+      success: boolean;
+      processed?: number;
+      errors?: number;
+      skipped?: number;
+      durationMs?: number;
+      error?: string;
+    }>;
+    startBackgroundBackfill: () => Promise<{
+      success: boolean;
+      message?: string;
+      error?: string;
+    }>;
+
+    // Download Orchestration
+    processImages: (input: {
+      images: Array<{
+        url: string;
+        alt?: string;
+        srcset?: string[];
+        width?: number;
+        height?: number;
+        context?: {
+          parentElement?: string;
+          caption?: string;
+          linkUrl?: string;
+        };
+      }>;
+      pageUrl: string;
+      options?: {
+        minWidth?: number;
+        minHeight?: number;
+        maxImages?: number;
+        skipThumbnails?: boolean;
+        checkDuplicates?: boolean;
+        duplicateThreshold?: number;
+      };
+    }) => Promise<{
+      success: boolean;
+      result?: {
+        pageUrl: string;
+        images: Array<{
+          originalUrl: string;
+          selectedUrl: string | null;
+          staged: {
+            stagingId: string;
+            url: string;
+            localPath: string;
+            blake3Hash: string;
+            phash: string;
+            width: number;
+            height: number;
+            format: string;
+            fileSize: number;
+          } | null;
+          existingDuplicate: {
+            imghash: string;
+            phash: string;
+            distance: number;
+          } | null;
+          candidateCount: number;
+          stagedCount: number;
+          status: 'staged' | 'duplicate' | 'failed' | 'skipped';
+          error?: string;
+        }>;
+        totalDiscovered: number;
+        totalStaged: number;
+        totalDuplicates: number;
+        totalFailed: number;
+        durationMs: number;
+      };
+      error?: string;
+    }>;
+    importStaged: (input: {
+      stagingId: string;
+      locationId: string;
+    }) => Promise<{
+      success: boolean;
+      imghash?: string;
+      finalPath?: string;
+      error?: string;
+    }>;
+    getPageHistory: (pageUrl: string) => Promise<{
+      success: boolean;
+      history?: Array<{
+        sourceId: string;
+        sourceUrl: string;
+        pageUrl: string;
+        siteDomain: string;
+        status: string;
+      }>;
+      error?: string;
+    }>;
+    getPending: () => Promise<{
+      success: boolean;
+      pending?: Array<{
+        sourceId: string;
+        sourceUrl: string;
+        pageUrl: string;
+        siteDomain: string;
+        status: string;
+      }>;
+      error?: string;
+    }>;
+    getStagingStats: () => Promise<{
+      success: boolean;
+      stats?: {
+        totalStaged: number;
+        totalSize: number;
+        groups: number;
+      };
+      error?: string;
+    }>;
+    cleanupStaging: (maxAgeHours?: number) => Promise<{
+      success: boolean;
+      deleted?: number;
+      error?: string;
+    }>;
+
+    // Event listeners
+    onBackfillProgress: (callback: (progress: {
+      current: number;
+      total: number;
+      currentFile: string;
+      processed: number;
+      errors: number;
+    }) => void) => () => void;
+    onProcessProgress: (callback: (progress: {
+      stage: string;
+      current: number;
+      total: number;
+    }) => void) => () => void;
+    onImageFound: (callback: (data: { url: string }) => void) => () => void;
+    onImageStaged: (callback: (staged: {
+      stagingId: string;
+      url: string;
+      localPath: string;
+      blake3Hash: string;
+      phash: string;
+      width: number;
+      height: number;
+      format: string;
+      fileSize: number;
+    }) => void) => () => void;
+    onEnhanceProgress: (callback: (progress: {
+      current: number;
+      total: number;
+      url: string;
+      bestUrl: string;
+      improvement: number;
+    }) => void) => () => void;
+    onQualityProgress: (callback: (progress: {
+      current: number;
+      total: number;
+      url: string;
+      score: number;
+      rank: number;
+    }) => void) => () => void;
+
+    // Image Source Discovery
+    discoverSources: (input: {
+      html: string;
+      pageUrl: string;
+    }) => Promise<{
+      success: boolean;
+      pageUrl?: string;
+      title?: string;
+      totalSources?: number;
+      groups?: number;
+      sources?: Array<{
+        url: string;
+        width?: number;
+        height?: number;
+        sourceType: 'img' | 'srcset' | 'picture' | 'background' | 'meta' | 'data-attr' | 'link';
+        confidence: number;
+        context?: {
+          nearbyText?: string;
+          parentElement?: string;
+        };
+      }>;
+      imageGroups?: Array<{
+        bestUrl: string;
+        sourceCount: number;
+        description?: string;
+      }>;
+      error?: string;
+    }>;
+    applySitePatterns: (url: string) => Promise<{
+      success: boolean;
+      originalUrl?: string;
+      candidates?: Array<{
+        url: string;
+        confidence: number;
+        source?: string;
+      }>;
+      error?: string;
+    }>;
+    parseSrcset: (input: {
+      srcset: string;
+      baseUrl: string;
+    }) => Promise<{
+      success: boolean;
+      entries?: Array<{
+        url: string;
+        width?: number;
+        density?: number;
+        descriptor?: string;
+      }>;
+      bestEntry?: {
+        url: string;
+        width?: number;
+        density?: number;
+        descriptor?: string;
+      } | null;
+      error?: string;
+    }>;
+    findBestImages: (input: {
+      html: string;
+      pageUrl: string;
+      options?: {
+        maxImages?: number;
+        minWidth?: number;
+        validateAll?: boolean;
+        preferFormats?: string[];
+      };
+    }) => Promise<{
+      success: boolean;
+      pageUrl?: string;
+      title?: string;
+      totalDiscovered?: number;
+      results?: Array<{
+        url: string;
+        size: number;
+        improvement: number;
+        sourceType: string;
+        originalUrl: string;
+      }>;
+      error?: string;
+    }>;
+    onFindProgress: (callback: (progress: {
+      stage: 'discovering' | 'enhancing' | 'ranking';
+      current: number;
+      total: number;
+    }) => void) => () => void;
+
+    // Image Quality Analysis
+    getDimensions: (input: {
+      url: string;
+      full?: boolean;
+      timeout?: number;
+    }) => Promise<{
+      success: boolean;
+      width?: number;
+      height?: number;
+      megapixels?: number;
+      aspectRatio?: number;
+      orientation?: 'landscape' | 'portrait' | 'square';
+      fileSize?: number;
+      format?: string;
+      error?: string;
+    }>;
+    analyzeJpegQuality: (url: string) => Promise<{
+      success: boolean;
+      estimatedQuality?: number;
+      isRecompressed?: boolean;
+      confidence?: number;
+      quantizationAverage?: number;
+      hasSubsampling?: boolean;
+      colorSpace?: string;
+      error?: string;
+    }>;
+    detectWatermark: (url: string) => Promise<{
+      success: boolean;
+      hasWatermark?: boolean;
+      confidence?: number;
+      watermarkType?: 'none' | 'corner' | 'overlay' | 'text' | 'pattern';
+      affectedArea?: number;
+      watermarkRegions?: Array<{
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      }>;
+      error?: string;
+    }>;
+    analyzeQuality: (input: {
+      url: string;
+      timeout?: number;
+    }) => Promise<{
+      success: boolean;
+      report?: {
+        url: string;
+        dimensions: {
+          width: number;
+          height: number;
+          megapixels: number;
+          aspectRatio: number;
+          orientation: 'landscape' | 'portrait' | 'square';
+        };
+        jpegQuality?: {
+          estimatedQuality: number;
+          isRecompressed: boolean;
+          confidence: number;
+        };
+        watermark: {
+          hasWatermark: boolean;
+          confidence: number;
+          watermarkType: 'none' | 'corner' | 'overlay' | 'text' | 'pattern';
+        };
+        format: string;
+        fileSize: number;
+        qualityScore: number;
+        recommendation: 'excellent' | 'good' | 'acceptable' | 'poor' | 'avoid';
+      };
+      error?: string;
+    }>;
+    rankByQuality: (input: {
+      urls: string[];
+      concurrency?: number;
+      timeout?: number;
+    }) => Promise<{
+      success: boolean;
+      results?: Array<{
+        url: string;
+        rank: number;
+        qualityScore: number;
+        recommendation: 'excellent' | 'good' | 'acceptable' | 'poor' | 'avoid';
+        dimensions: {
+          width: number;
+          height: number;
+          megapixels: number;
+        };
+        format: string;
+        fileSize: number;
+        hasWatermark: boolean;
+        jpegQuality?: number;
+      }>;
+      error?: string;
+    }>;
+    similarityHash: (url: string) => Promise<{
+      success: boolean;
+      hash?: string;
+      error?: string;
+    }>;
+    findSimilarByHash: (input: {
+      targetUrl: string;
+      candidateUrls: string[];
+      threshold?: number;
+      limit?: number;
+    }) => Promise<{
+      success: boolean;
+      similar?: Array<{
+        url: string;
+        hash: string;
+        distance: number;
+        similarity: number;
+      }>;
+      count?: number;
+      error?: string;
+    }>;
+
+    // Browser Image Capture
+    getCapturedImages: (pageUrl?: string) => Promise<{
+      success: boolean;
+      images?: Array<{
+        url: string;
+        sourceUrl: string;
+        captureType: 'context_menu' | 'network' | 'xhr' | 'page_scan';
+        contentType?: string;
+        contentLength?: number;
+        timestamp: number;
+      }>;
+      count?: number;
+      error?: string;
+    }>;
+    clearCapturedImages: (maxAgeHours?: number) => Promise<{
+      success: boolean;
+      cleared?: number | 'all';
+      error?: string;
+    }>;
+
+    // Context Menu Events (from right-click on images in research browser)
+    onFindOriginal: (callback: (data: {
+      imageUrl: string;
+      pageUrl: string;
+      timestamp: number;
+    }) => void) => () => void;
+    onAnalyzeQuality: (callback: (data: {
+      imageUrl: string;
+      timestamp: number;
+    }) => void) => () => void;
+    onSaveToArchive: (callback: (data: {
+      imageUrl: string;
+      pageUrl: string;
+      timestamp: number;
+    }) => void) => () => void;
+  };
+
   // OPT-109: Web Sources Archiving (replacement for bookmarks)
   websources: {
     // Core CRUD

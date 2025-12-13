@@ -302,6 +302,9 @@ export interface ImgsTable {
   source_id: string | null;        // FK to web_sources - which web source this was extracted from
   source_url: string | null;       // Original URL where this image was found
   extracted_from_web: number;      // 0/1 - Was this extracted from a web source?
+
+  // Migration 72: Perceptual hash for duplicate detection
+  phash: string | null;            // 16-char hex DCT perceptual hash
 }
 
 // Videos table

@@ -2895,6 +2895,128 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 71 completed: OPT-115 capture tracking columns added');
     }
 
+    // Migration 72: Image Downloader Schema
+    // Perceptual hashing for duplicate detection, download source tracking, URL patterns
+    // Per image-downloader-audit.md: pHash as 16-char hex for BLAKE3 consistency
+    const imgsHasPhash = sqlite.prepare(`
+      SELECT COUNT(*) as cnt FROM pragma_table_info('imgs') WHERE name = 'phash'
+    `).get() as { cnt: number };
+
+    if (imgsHasPhash.cnt === 0) {
+      console.log('Running migration 72: Image Downloader schema');
+
+      // Add perceptual hash column to imgs table
+      sqlite.exec(`
+        ALTER TABLE imgs ADD COLUMN phash TEXT;
+      `);
+
+      // Create index on phash for duplicate detection
+      // Bucket prefix enables efficient Hamming distance pre-filtering
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_imgs_phash ON imgs(phash) WHERE phash IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_imgs_phash_bucket ON imgs(substr(phash, 1, 4)) WHERE phash IS NOT NULL;
+      `);
+
+      // Download sources - provenance tracking for downloaded images
+      sqlite.exec(`
+        CREATE TABLE IF NOT EXISTS download_sources (
+          source_id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+          source_url TEXT NOT NULL,
+          page_url TEXT,
+          site_domain TEXT NOT NULL,
+          discovered_at TEXT NOT NULL DEFAULT (datetime('now')),
+          downloaded_at TEXT,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'downloading', 'staging', 'completed', 'failed', 'duplicate', 'skipped')),
+          imghash TEXT REFERENCES imgs(imghash) ON DELETE SET NULL,
+          original_width INTEGER,
+          original_height INTEGER,
+          file_size INTEGER,
+          format TEXT,
+          phash TEXT,
+          pattern_id TEXT,
+          error_message TEXT,
+          retry_count INTEGER DEFAULT 0,
+          metadata_json TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_download_sources_status ON download_sources(status);
+        CREATE INDEX IF NOT EXISTS idx_download_sources_domain ON download_sources(site_domain);
+        CREATE INDEX IF NOT EXISTS idx_download_sources_phash ON download_sources(phash) WHERE phash IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_download_sources_url ON download_sources(source_url);
+      `);
+
+      // URL transformation patterns (trainable for WordPress, CDNs, etc.)
+      sqlite.exec(`
+        CREATE TABLE IF NOT EXISTS url_patterns (
+          pattern_id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          site_type TEXT NOT NULL DEFAULT 'generic' CHECK (site_type IN ('wordpress', 'cdn', 'hosting', 'generic')),
+          domain_regex TEXT NOT NULL,
+          path_regex TEXT NOT NULL,
+          transform_js TEXT NOT NULL,
+          test_input TEXT,
+          test_expected TEXT,
+          confidence REAL DEFAULT 0.5 CHECK (confidence >= 0 AND confidence <= 1),
+          success_count INTEGER DEFAULT 0,
+          fail_count INTEGER DEFAULT 0,
+          is_enabled INTEGER DEFAULT 1,
+          is_builtin INTEGER DEFAULT 1,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_url_patterns_enabled ON url_patterns(is_enabled) WHERE is_enabled = 1;
+        CREATE INDEX IF NOT EXISTS idx_url_patterns_confidence ON url_patterns(confidence DESC);
+      `);
+
+      // Format preferences for quality comparison (JPG > WebP logic)
+      sqlite.exec(`
+        CREATE TABLE IF NOT EXISTS format_preferences (
+          format TEXT PRIMARY KEY,
+          priority INTEGER NOT NULL,
+          quality_weight REAL DEFAULT 1.0,
+          convert_to TEXT
+        );
+
+        INSERT OR IGNORE INTO format_preferences (format, priority, quality_weight, convert_to) VALUES
+          ('tiff', 1, 1.0, NULL),
+          ('png', 2, 1.0, NULL),
+          ('jpeg', 3, 1.0, NULL),
+          ('jpg', 3, 1.0, NULL),
+          ('webp', 4, 0.9, NULL),
+          ('avif', 5, 0.85, 'jpg'),
+          ('heic', 6, 0.85, 'jpg'),
+          ('gif', 7, 0.5, NULL);
+      `);
+
+      // Download staging queue for candidate comparison
+      sqlite.exec(`
+        CREATE TABLE IF NOT EXISTS download_staging (
+          staging_id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(8)))),
+          source_id TEXT NOT NULL REFERENCES download_sources(source_id) ON DELETE CASCADE,
+          staging_path TEXT NOT NULL,
+          blake3_hash TEXT,
+          phash TEXT,
+          width INTEGER,
+          height INTEGER,
+          file_size INTEGER,
+          format TEXT,
+          quality_score REAL,
+          is_selected INTEGER DEFAULT 0,
+          comparison_group TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_download_staging_group ON download_staging(comparison_group);
+        CREATE INDEX IF NOT EXISTS idx_download_staging_source ON download_staging(source_id);
+        CREATE INDEX IF NOT EXISTS idx_download_staging_selected ON download_staging(is_selected) WHERE is_selected = 1;
+      `);
+
+      console.log('Migration 72 completed: Image Downloader schema created');
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

@@ -20,6 +20,7 @@ import type { ValidatedFile } from './validator';
 import type { ScanResult } from './scanner';
 import { JobQueue, IMPORT_QUEUES, JOB_PRIORITY, type JobInput } from '../job-queue';
 import type { LocationInfo } from './types';
+import { perceptualHashService } from '../image-downloader/perceptual-hash-service';
 
 /**
  * Finalized file with DB record info
@@ -244,6 +245,7 @@ export class Finalizer {
 
   /**
    * Insert a media record into the appropriate table
+   * Calculates perceptual hash (pHash) for images during import
    */
   private async insertMediaRecord(
     trx: Kysely<Database>,
@@ -255,7 +257,19 @@ export class Finalizer {
     const archiveName = `${file.hash}${file.extension}`;
 
     switch (file.mediaType) {
-      case 'image':
+      case 'image': {
+        // Calculate perceptual hash for duplicate detection
+        let phash: string | null = null;
+        if (file.archivePath) {
+          try {
+            const result = await perceptualHashService.hashFile(file.archivePath);
+            phash = result.hash;
+          } catch {
+            // pHash calculation failed - continue without it
+            // Can be backfilled later via phash-backfill-job
+          }
+        }
+
         await trx
           .insertInto('imgs')
           .values({
@@ -294,9 +308,11 @@ export class Finalizer {
             preview_quality: null,
             file_size_bytes: file.size,
             extracted_from_web: 0,
+            phash,
           })
           .execute();
         return file.hash!;
+      }
 
       case 'video':
         await trx
@@ -430,6 +446,7 @@ export class Finalizer {
   /**
    * Batch insert images into the imgs table
    * Uses single INSERT with multiple VALUES for efficiency
+   * Calculates perceptual hash (pHash) for each image during import
    */
   private async batchInsertImages(
     trx: Kysely<Database>,
@@ -441,7 +458,23 @@ export class Finalizer {
     const successful: ValidatedFile[] = [];
     const failed: Array<ValidatedFile & { error: string }> = [];
 
-    // Build batch insert values
+    // Pre-calculate perceptual hashes for all files
+    // pHash calculation is async and may fail for some formats
+    const pHashMap = new Map<string, string | null>();
+    for (const file of files) {
+      if (file.archivePath) {
+        try {
+          const result = await perceptualHashService.hashFile(file.archivePath);
+          pHashMap.set(file.hash!, result.hash);
+        } catch {
+          // pHash calculation failed (unsupported format, corrupted file, etc.)
+          // Continue without pHash - it can be backfilled later
+          pHashMap.set(file.hash!, null);
+        }
+      }
+    }
+
+    // Build batch insert values with pHash
     const insertValues = files.map(file => ({
       imghash: file.hash!,
       imgnam: `${file.hash}${file.extension}`,
@@ -478,6 +511,7 @@ export class Finalizer {
       preview_quality: null,
       file_size_bytes: file.size,
       extracted_from_web: 0,
+      phash: pHashMap.get(file.hash!) ?? null,
     }));
 
     // Single batch insert

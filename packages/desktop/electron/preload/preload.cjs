@@ -95,6 +95,19 @@ const longOperationChannels = [
   "location:backfillRegions",
   "bagit:validateAll",
   "bagit:regenerate",
+  // Image Downloader (Migration 72)
+  "downloader:processImages",
+  "downloader:runBackfill",
+  "downloader:enhanceUrl",
+  "downloader:enhanceUrls",
+  // Image Quality Analysis
+  "downloader:getDimensions",
+  "downloader:analyzeJpegQuality",
+  "downloader:detectWatermark",
+  "downloader:analyzeQuality",
+  "downloader:rankByQuality",
+  "downloader:similarityHash",
+  "downloader:findSimilarByHash",
 ];
 
 const veryLongOperationChannels = [
@@ -715,6 +728,115 @@ const api = {
       const listener = (_event, alert) => callback(alert);
       ipcRenderer.on("monitoring:alert", listener);
       return () => ipcRenderer.removeListener("monitoring:alert", listener);
+    },
+  },
+
+  // Image Downloader (Migration 72 - pHash, URL patterns, staging)
+  downloader: {
+    // URL Pattern Transformation
+    transformUrl: (url) => invokeAuto("downloader:transformUrl")(url),
+    addPattern: (pattern) => invokeAuto("downloader:addPattern")(pattern),
+    getPatterns: () => invokeAuto("downloader:getPatterns")(),
+
+    // URL Validation
+    validateUrl: (url) => invokeAuto("downloader:validateUrl")(url),
+    validateUrls: (urls) => invokeAuto("downloader:validateUrls")(urls),
+    findBestUrl: (input) => invokeAuto("downloader:findBestUrl")(input),
+
+    // Smart Image Enhance (recursive suffix stripping to find TRUE originals)
+    enhanceUrl: (input) => invokeLong("downloader:enhanceUrl")(input),
+    enhanceUrls: (input) => invokeLong("downloader:enhanceUrls")(input),
+
+    // Perceptual Hashing
+    hashFile: (filePath) => invokeAuto("downloader:hashFile")(filePath),
+    pHashDistance: (hash1, hash2) => invokeAuto("downloader:pHashDistance")(hash1, hash2),
+    findSimilar: (input) => invokeAuto("downloader:findSimilar")(input),
+    checkDuplicate: (phash) => invokeAuto("downloader:checkDuplicate")(phash),
+
+    // pHash Backfill
+    getBackfillStatus: () => invokeAuto("downloader:getBackfillStatus")(),
+    runBackfill: (options) => invokeLong("downloader:runBackfill")(options),
+    startBackgroundBackfill: () => invokeAuto("downloader:startBackgroundBackfill")(),
+
+    // Download Orchestration
+    processImages: (input) => invokeLong("downloader:processImages")(input),
+    importStaged: (input) => invokeAuto("downloader:importStaged")(input),
+    getPageHistory: (pageUrl) => invokeAuto("downloader:getPageHistory")(pageUrl),
+    getPending: () => invokeAuto("downloader:getPending")(),
+    getStagingStats: () => invokeAuto("downloader:getStagingStats")(),
+    cleanupStaging: (maxAgeHours) => invokeAuto("downloader:cleanupStaging")(maxAgeHours),
+
+    // Event listeners
+    onBackfillProgress: (callback) => {
+      const listener = (_event, progress) => callback(progress);
+      ipcRenderer.on("downloader:backfillProgress", listener);
+      return () => ipcRenderer.removeListener("downloader:backfillProgress", listener);
+    },
+    onProcessProgress: (callback) => {
+      const listener = (_event, progress) => callback(progress);
+      ipcRenderer.on("downloader:processProgress", listener);
+      return () => ipcRenderer.removeListener("downloader:processProgress", listener);
+    },
+    onImageFound: (callback) => {
+      const listener = (_event, data) => callback(data);
+      ipcRenderer.on("downloader:imageFound", listener);
+      return () => ipcRenderer.removeListener("downloader:imageFound", listener);
+    },
+    onImageStaged: (callback) => {
+      const listener = (_event, staged) => callback(staged);
+      ipcRenderer.on("downloader:imageStaged", listener);
+      return () => ipcRenderer.removeListener("downloader:imageStaged", listener);
+    },
+    onEnhanceProgress: (callback) => {
+      const listener = (_event, progress) => callback(progress);
+      ipcRenderer.on("downloader:enhanceProgress", listener);
+      return () => ipcRenderer.removeListener("downloader:enhanceProgress", listener);
+    },
+    onQualityProgress: (callback) => {
+      const listener = (_event, progress) => callback(progress);
+      ipcRenderer.on("downloader:qualityProgress", listener);
+      return () => ipcRenderer.removeListener("downloader:qualityProgress", listener);
+    },
+
+    // Image Source Discovery
+    discoverSources: (input) => invokeAuto("downloader:discoverSources")(input),
+    applySitePatterns: (url) => invokeAuto("downloader:applySitePatterns")(url),
+    parseSrcset: (input) => invokeAuto("downloader:parseSrcset")(input),
+    findBestImages: (input) => invokeLong("downloader:findBestImages")(input),
+    onFindProgress: (callback) => {
+      const listener = (_event, progress) => callback(progress);
+      ipcRenderer.on("downloader:findProgress", listener);
+      return () => ipcRenderer.removeListener("downloader:findProgress", listener);
+    },
+
+    // Image Quality Analysis
+    getDimensions: (input) => invokeLong("downloader:getDimensions")(input),
+    analyzeJpegQuality: (url) => invokeLong("downloader:analyzeJpegQuality")(url),
+    detectWatermark: (url) => invokeLong("downloader:detectWatermark")(url),
+    analyzeQuality: (input) => invokeLong("downloader:analyzeQuality")(input),
+    rankByQuality: (input) => invokeLong("downloader:rankByQuality")(input),
+    similarityHash: (url) => invokeLong("downloader:similarityHash")(url),
+    findSimilarByHash: (input) => invokeLong("downloader:findSimilarByHash")(input),
+
+    // Browser Image Capture
+    getCapturedImages: (pageUrl) => invokeAuto("downloader:getCapturedImages")(pageUrl),
+    clearCapturedImages: (maxAgeHours) => invokeAuto("downloader:clearCapturedImages")(maxAgeHours),
+
+    // Context Menu Events (from right-click on images in research browser)
+    onFindOriginal: (callback) => {
+      const listener = (_event, data) => callback(data);
+      ipcRenderer.on("image-capture:findOriginal", listener);
+      return () => ipcRenderer.removeListener("image-capture:findOriginal", listener);
+    },
+    onAnalyzeQuality: (callback) => {
+      const listener = (_event, data) => callback(data);
+      ipcRenderer.on("image-capture:analyzeQuality", listener);
+      return () => ipcRenderer.removeListener("image-capture:analyzeQuality", listener);
+    },
+    onSaveToArchive: (callback) => {
+      const listener = (_event, data) => callback(data);
+      ipcRenderer.on("image-capture:saveToArchive", listener);
+      return () => ipcRenderer.removeListener("image-capture:saveToArchive", listener);
     },
   },
 
