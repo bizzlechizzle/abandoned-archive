@@ -15,9 +15,11 @@ import * as path from 'path';
 import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
 import { fileURLToPath } from 'url';
-import puppeteer, { Browser, Page } from 'puppeteer-core';
+import { Page } from 'puppeteer-core';
 import { calculateHash } from './crypto-service';
 import { ImageDomContext } from './websource-metadata-service';
+// OPT-116: Import shared browser instance to avoid profile conflicts
+import { getBrowser, closeBrowser } from './websource-capture-service';
 import https from 'https';
 import http from 'http';
 import { URL } from 'url';
@@ -197,66 +199,10 @@ function extractFilenameFromUrl(url: string): string | null {
 }
 
 // =============================================================================
-// Browser Management (shared with capture service)
+// Browser Management - OPT-116: Now uses shared instance from capture service
 // =============================================================================
-
-let browserInstance: Browser | null = null;
-
-async function getBrowser(): Promise<Browser> {
-  if (browserInstance?.isConnected()) {
-    return browserInstance;
-  }
-
-  // Determine platform-specific browser subfolder
-  const platform = process.platform;
-  const arch = process.arch;
-  let platformFolder = 'mac-arm64';
-  if (platform === 'darwin') {
-    platformFolder = arch === 'arm64' ? 'mac-arm64' : 'mac-x64';
-  } else if (platform === 'linux') {
-    platformFolder = 'linux-x64';
-  } else if (platform === 'win32') {
-    platformFolder = 'win-x64';
-  }
-
-  const executablePaths = [
-    // Development: Bundled Archive Browser (relative to service file)
-    path.join(__dirname, '..', '..', '..', '..', 'resources', 'browsers', 'ungoogled-chromium', platformFolder, 'Archive Browser.app', 'Contents', 'MacOS', 'Chromium'),
-    // Production: Bundled Archive Browser (resources path)
-    path.join(process.resourcesPath || '', 'browsers', 'ungoogled-chromium', platformFolder, 'Archive Browser.app', 'Contents', 'MacOS', 'Chromium'),
-    // Legacy path for backwards compatibility
-    path.join(process.resourcesPath || '', 'browser', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'),
-    // System Chrome (macOS)
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/Applications/Chromium.app/Contents/MacOS/Chromium',
-    // System Chrome (Linux)
-    '/usr/bin/google-chrome',
-    '/usr/bin/chromium',
-    '/usr/bin/chromium-browser',
-    // Snap Chrome (Linux)
-    '/snap/bin/chromium',
-  ];
-
-  let executablePath: string | undefined;
-  for (const p of executablePaths) {
-    if (fs.existsSync(p)) {
-      executablePath = p;
-      break;
-    }
-  }
-
-  if (!executablePath) {
-    throw new Error('No Chrome/Chromium executable found');
-  }
-
-  browserInstance = await puppeteer.launch({
-    executablePath,
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-  });
-
-  return browserInstance;
-}
+// Browser instance is managed by websource-capture-service.ts
+// This avoids profile conflicts when Research Browser is open
 
 // =============================================================================
 // Image Extraction
@@ -457,59 +403,62 @@ export async function extractImages(options: ExtractionOptions): Promise<ImageEx
     const imagesDir = path.join(options.outputDir, 'images');
     await fs.promises.mkdir(imagesDir, { recursive: true });
 
-    // Download images with hi-res upgrade
+    // OPT-117: Download images with enhanced hi-res upgrade logic
     const maxImages = options.maxImages || 50;
     let downloadedCount = 0;
+    let upgradedCount = 0;
 
     for (const imgData of imageData) {
       if (downloadedCount >= maxImages) break;
 
       try {
-        // Try to get hi-res version
-        let imageUrl = imgData.src;
         const originalSrc = imgData.src;
 
-        // Check srcset for larger version
-        if (imgData.srcset) {
-          const hiResUrl = parseHiResSrcset(imgData.srcset);
-          if (hiResUrl) imageUrl = hiResUrl;
-        }
+        // Resolve relative URLs first
+        const resolvedSrc = new URL(imgData.src, options.url).href;
+        const resolvedDataSrc = imgData.dataSrc ? new URL(imgData.dataSrc, options.url).href : null;
+        const resolvedSrcset = imgData.srcset; // srcset URLs resolved during download
 
-        // Check data-src for lazy-loaded original
-        if (imgData.dataSrc && isLargerUrl(imgData.dataSrc, imgData.src)) {
-          imageUrl = imgData.dataSrc;
-        }
-
-        // Resolve relative URLs
-        imageUrl = new URL(imageUrl, options.url).href;
-
-        // Determine file extension from URL
-        const urlFilename = extractFilenameFromUrl(imageUrl);
+        // Determine file extension from URL (may change if we find hi-res version)
+        const urlFilename = extractFilenameFromUrl(resolvedSrc);
         const ext = urlFilename?.split('.').pop()?.toLowerCase() || 'jpg';
-        const safeExt = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif'].includes(ext) ? ext : 'jpg';
+        const safeExt = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'bmp', 'tiff'].includes(ext) ? ext : 'jpg';
 
-        // Download the image
+        // Download path
         const imagePath = path.join(imagesDir, `${options.sourceId}_img_${downloadedCount}.${safeExt}`);
-        const downloadResult = await downloadFile(imageUrl, imagePath);
+
+        // OPT-117: Use enhanced hi-res download logic
+        const downloadResult = await downloadBestResolution(
+          resolvedSrc,
+          imagePath,
+          resolvedSrcset,
+          resolvedDataSrc
+        );
 
         if (downloadResult.success) {
           const hash = await calculateHash(imagePath);
           const stats = await fs.promises.stat(imagePath);
 
+          // Track upgraded images for logging
+          if (downloadResult.isUpgraded) {
+            upgradedCount++;
+            console.log(`[Images] Upgraded: ${originalSrc} → ${downloadResult.url}`);
+          }
+
           // OPT-112: Extract EXIF data from downloaded image
           const exifData = await extractExifData(imagePath);
 
           extractedImages.push({
-            url: imageUrl,
+            url: downloadResult.url,
             localPath: imagePath,
             hash,
             width: imgData.width,
             height: imgData.height,
             size: stats.size,
             alt: imgData.alt,
-            isHiRes: imageUrl !== originalSrc,
+            isHiRes: downloadResult.isUpgraded,
             // OPT-112: Enhanced metadata
-            originalFilename: urlFilename,
+            originalFilename: extractFilenameFromUrl(downloadResult.url),
             caption: imgData.caption,
             credit: imgData.credit,
             attribution: imgData.attribution,
@@ -523,9 +472,11 @@ export async function extractImages(options: ExtractionOptions): Promise<ImageEx
           downloadedCount++;
         }
       } catch (err) {
-        console.error(`Failed to download image:`, err);
+        console.error(`[Images] Failed to download:`, err);
       }
     }
+
+    console.log(`[Images] Downloaded ${downloadedCount} images (${upgradedCount} upgraded to hi-res)`)
 
     return {
       success: true,
@@ -547,20 +498,29 @@ export async function extractImages(options: ExtractionOptions): Promise<ImageEx
 }
 
 /**
- * Parse srcset attribute to find highest resolution URL
+ * OPT-117: Enhanced srcset parsing to find highest resolution URL
+ * Handles both width descriptors (1200w) and pixel density (2x, 3x)
  */
 function parseHiResSrcset(srcset: string): string | null {
   const parts = srcset.split(',').map((s) => s.trim());
-  let maxWidth = 0;
+  let maxScore = 0;
   let maxUrl: string | null = null;
 
   for (const part of parts) {
-    const [url, descriptor] = part.split(/\s+/);
-    if (descriptor) {
-      const width = parseInt(descriptor.replace('w', ''), 10);
-      if (width > maxWidth) {
-        maxWidth = width;
-        maxUrl = url;
+    const match = part.match(/^(.+?)\s+(\d+(?:\.\d+)?)(w|x)$/);
+    if (match) {
+      const [, url, value, unit] = match;
+      // Score: width descriptors directly, density multiplied by 1000
+      const score = unit === 'w' ? parseInt(value, 10) : parseFloat(value) * 1000;
+      if (score > maxScore) {
+        maxScore = score;
+        maxUrl = url.trim();
+      }
+    } else {
+      // No descriptor - might be a fallback URL
+      const cleanUrl = part.trim();
+      if (cleanUrl && !maxUrl) {
+        maxUrl = cleanUrl;
       }
     }
   }
@@ -569,7 +529,192 @@ function parseHiResSrcset(srcset: string): string | null {
 }
 
 /**
+ * OPT-117: Generate hi-res URL variants for common image hosting patterns
+ * This tries to find original/full-size versions by modifying the URL
+ */
+function generateHiResVariants(url: string): string[] {
+  const variants: string[] = [];
+
+  try {
+    const parsed = new URL(url);
+    const pathname = parsed.pathname;
+
+    // WordPress: -150x150, -300x300, -1024x768, -scaled → remove or replace
+    if (pathname.match(/-\d+x\d+\./)) {
+      variants.push(url.replace(/-\d+x\d+\./, '.'));
+    }
+    if (pathname.includes('-scaled')) {
+      variants.push(url.replace('-scaled', ''));
+    }
+
+    // Tumblr: _75sq, _100, _250, _400, _500, _540, _1280 → _1280 or _raw
+    if (pathname.match(/_\d+sq?\./)) {
+      variants.push(url.replace(/_\d+sq?\./, '_1280.'));
+      variants.push(url.replace(/_\d+sq?\./, '_raw.'));
+    }
+
+    // Flickr: _q, _t, _s, _m, _n, _z, _c, _l, _o (original) patterns
+    if (pathname.match(/_[qtsmnzclbo]\./) || pathname.match(/_[qtsmnzclbo]_d\./)) {
+      variants.push(url.replace(/_[qtsmnzclbo](_d)?\./, '_o.'));
+      variants.push(url.replace(/_[qtsmnzclbo](_d)?\./, '_k.')); // 2048px
+      variants.push(url.replace(/_[qtsmnzclbo](_d)?\./, '_h.')); // 1600px
+    }
+
+    // Generic thumbnail patterns: thumb_, small_, medium_, preview_
+    const thumbPatterns = [/thumb_/i, /small_/i, /medium_/i, /preview_/i, /tn_/i];
+    for (const pattern of thumbPatterns) {
+      if (pattern.test(pathname)) {
+        variants.push(url.replace(pattern, ''));
+        variants.push(url.replace(pattern, 'large_'));
+        variants.push(url.replace(pattern, 'full_'));
+      }
+    }
+
+    // Size suffixes: -sm, -md, -lg, -thumb, -preview → -full, -original
+    const sizeSuffixes = [/-sm\./, /-md\./, /-lg\./, /-thumb\./, /-preview\./, /-small\./, /-medium\./];
+    for (const suffix of sizeSuffixes) {
+      if (suffix.test(pathname)) {
+        variants.push(url.replace(suffix, '.'));
+        variants.push(url.replace(suffix, '-full.'));
+        variants.push(url.replace(suffix, '-original.'));
+        variants.push(url.replace(suffix, '-large.'));
+      }
+    }
+
+    // Query param patterns: ?w=300&h=200, ?size=small, ?quality=80
+    if (parsed.search) {
+      // Remove size constraints from query params
+      const cleanUrl = new URL(url);
+      cleanUrl.searchParams.delete('w');
+      cleanUrl.searchParams.delete('h');
+      cleanUrl.searchParams.delete('width');
+      cleanUrl.searchParams.delete('height');
+      cleanUrl.searchParams.delete('size');
+      cleanUrl.searchParams.delete('resize');
+      cleanUrl.searchParams.delete('fit');
+      cleanUrl.searchParams.delete('crop');
+      if (cleanUrl.toString() !== url) {
+        variants.push(cleanUrl.toString());
+      }
+
+      // Also try without any query string
+      const noQuery = url.split('?')[0];
+      if (noQuery !== url) {
+        variants.push(noQuery);
+      }
+    }
+
+    // CDN patterns with dimensions in path: /w_300,h_200/ or /300x200/
+    if (pathname.match(/\/w_\d+,h_\d+\//)) {
+      variants.push(url.replace(/\/w_\d+,h_\d+\//, '/'));
+    }
+    if (pathname.match(/\/\d+x\d+\//)) {
+      variants.push(url.replace(/\/\d+x\d+\//, '/'));
+    }
+
+    // Cloudinary patterns: /c_fill,w_300,h_200/ → remove transformations
+    if (pathname.match(/\/c_[^/]+\//)) {
+      variants.push(url.replace(/\/c_[^/]+\//, '/'));
+    }
+
+    // imgix patterns: ?auto=format&w=300 → remove or maximize
+    if (parsed.hostname.includes('imgix') || parsed.search.includes('auto=')) {
+      const cleanUrl = new URL(url);
+      cleanUrl.searchParams.delete('w');
+      cleanUrl.searchParams.delete('h');
+      cleanUrl.searchParams.delete('fit');
+      cleanUrl.searchParams.delete('crop');
+      variants.push(cleanUrl.toString());
+    }
+
+  } catch {
+    // URL parsing failed, skip
+  }
+
+  // Return unique variants (excluding the original URL)
+  return [...new Set(variants)].filter(v => v !== url);
+}
+
+/**
+ * OPT-117: Try to download the highest resolution version of an image
+ * Attempts multiple URL variants and returns the best one
+ */
+async function downloadBestResolution(
+  baseUrl: string,
+  outputPath: string,
+  srcset: string | null,
+  dataSrc: string | null
+): Promise<{ success: boolean; url: string; path: string; isUpgraded: boolean }> {
+  // Build list of URLs to try, in order of preference (highest res first)
+  const urlsToTry: string[] = [];
+
+  // 1. Highest resolution from srcset
+  if (srcset) {
+    const hiResFromSrcset = parseHiResSrcset(srcset);
+    if (hiResFromSrcset) {
+      urlsToTry.push(hiResFromSrcset);
+    }
+  }
+
+  // 2. data-src variations (often the original)
+  if (dataSrc && dataSrc !== baseUrl) {
+    urlsToTry.push(dataSrc);
+    urlsToTry.push(...generateHiResVariants(dataSrc));
+  }
+
+  // 3. Hi-res variants of the base URL
+  urlsToTry.push(...generateHiResVariants(baseUrl));
+
+  // 4. The original URL as fallback
+  urlsToTry.push(baseUrl);
+
+  // Deduplicate
+  const uniqueUrls = [...new Set(urlsToTry)];
+
+  // Try each URL
+  for (const url of uniqueUrls) {
+    try {
+      // Resolve relative URLs
+      const fullUrl = new URL(url, baseUrl).href;
+      const result = await downloadFile(fullUrl, outputPath);
+
+      if (result.success) {
+        // Verify the file is actually larger than a tiny placeholder
+        const stats = await fs.promises.stat(outputPath);
+        if (stats.size > 5000) { // At least 5KB (not a placeholder)
+          return {
+            success: true,
+            url: fullUrl,
+            path: outputPath,
+            isUpgraded: fullUrl !== baseUrl,
+          };
+        } else {
+          // Too small, might be a placeholder - try next
+          await fs.promises.unlink(outputPath).catch(() => {});
+          continue;
+        }
+      }
+      // Download failed, try next URL
+      continue;
+    } catch {
+      // URL parsing or other error, try next
+      continue;
+    }
+  }
+
+  // All variants failed, try the base URL one more time without size check
+  const result = await downloadFile(baseUrl, outputPath);
+  return {
+    success: result.success,
+    url: baseUrl,
+    path: outputPath,
+    isUpgraded: false,
+  };
+}
+
+/**
  * Check if a URL might be a larger/original version
+ * @deprecated Use generateHiResVariants instead
  */
 function isLargerUrl(url1: string, url2: string): boolean {
   // Common patterns for full-size images
@@ -839,50 +984,64 @@ export async function extractVideos(options: ExtractionOptions): Promise<VideoEx
 // Text Extraction
 // =============================================================================
 
+// NOTE: fetchHtmlAndPipe removed in OPT-117
+// Text extraction now ALWAYS uses the downloaded HTML file from captureHtml phase
+
 /**
- * OPT-115: Helper to fetch HTML and pipe to Python script stdin
+ * OPT-117: Comprehensive text extraction result with all methods
  */
-function fetchHtmlAndPipe(url: string, pythonProcess: ReturnType<typeof spawn>): void {
-  try {
-    const parsedUrl = new URL(url);
-    const httpModule = parsedUrl.protocol === 'https:' ? https : http;
-
-    const req = httpModule.get(url, { timeout: 30000 }, (res) => {
-      // Follow redirects
-      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        fetchHtmlAndPipe(res.headers.location, pythonProcess);
-        return;
-      }
-
-      res.pipe(pythonProcess.stdin!);
-      res.on('end', () => {
-        pythonProcess.stdin?.end();
-      });
-    });
-
-    req.on('error', () => {
-      pythonProcess.stdin?.end();
-    });
-
-    req.on('timeout', () => {
-      req.destroy();
-      pythonProcess.stdin?.end();
-    });
-  } catch {
-    pythonProcess.stdin?.end();
-  }
+export interface ComprehensiveTextResult {
+  success: boolean;
+  text: ExtractedText | null;
+  error?: string;
+  duration: number;
+  // OPT-117: Redundant extractions from multiple tools for research
+  trafilatura?: {
+    text: string;
+    wordCount: number;
+    metadata: Record<string, unknown>;
+  };
+  beautifulsoup?: {
+    text: string;
+    wordCount: number;
+    headings: Array<{ level: number; text: string }>;
+    links: Array<{ url: string; text: string }>;
+    images: Array<{ url: string; alt: string | null }>;
+  };
+  readability?: {
+    text: string;
+    wordCount: number;
+    title: string | null;
+  };
+  // OPT-117: All dates found on the page
+  datesFound?: string[];
+  // Source HTML path used for extraction
+  htmlSourcePath?: string;
 }
 
 /**
  * Extract clean text content from a web page
- * Uses Python script with Trafilatura and BeautifulSoup for best results
+ * OPT-117: ALWAYS uses the downloaded HTML file (from captureHtml phase)
+ * Runs ALL extraction methods (Trafilatura, BeautifulSoup, Readability) for research
  */
 export async function extractText(options: ExtractionOptions): Promise<TextExtractionResult> {
   const startTime = Date.now();
 
   try {
-    // Find Python and our extraction script
-    const pythonPaths = ['/usr/bin/python3', '/usr/local/bin/python3', '/opt/homebrew/bin/python3'];
+    // OPT-117: ALWAYS look for the captured HTML file first
+    // This is the SINGLE SOURCE OF TRUTH for text extraction
+    const htmlFilePath = path.join(options.outputDir, `${options.sourceId}.html`);
+    const hasHtmlFile = fs.existsSync(htmlFilePath);
+
+    if (!hasHtmlFile) {
+      console.warn(`[TextExtract] HTML file not found at ${htmlFilePath}, falling back to browser`);
+      return await extractTextWithBrowser(options, startTime);
+    }
+
+    console.log(`[TextExtract] Using downloaded HTML: ${htmlFilePath}`);
+
+    // Find Python
+    const pythonPaths = ['/opt/homebrew/bin/python3', '/usr/local/bin/python3', '/usr/bin/python3'];
     let pythonPath: string | undefined;
 
     for (const p of pythonPaths) {
@@ -897,18 +1056,16 @@ export async function extractText(options: ExtractionOptions): Promise<TextExtra
         const { stdout } = await execAsync('which python3');
         pythonPath = stdout.trim();
       } catch {
-        // Fallback to browser-based extraction
+        console.warn('[TextExtract] Python not found, falling back to browser');
         return await extractTextWithBrowser(options, startTime);
       }
     }
 
-    // OPT-115: Path to our extraction script - check multiple locations
-    // In dev: PROJECT_ROOT/scripts/extract-text.py
-    // In prod: Same, or bundled with app resources
+    // OPT-117: Path to our extraction script
     const possiblePaths = [
-      path.join(process.cwd(), 'scripts', 'extract-text.py'),                    // Project root (dev)
-      path.join(__dirname, '..', '..', '..', '..', 'scripts', 'extract-text.py'), // From dist-electron/main/services
-      path.join(__dirname, '..', '..', 'scripts', 'extract-text.py'),             // Alternative structure
+      path.join(process.cwd(), 'scripts', 'extract-text.py'),
+      path.join(__dirname, '..', '..', '..', '..', 'scripts', 'extract-text.py'),
+      path.join(__dirname, '..', '..', 'scripts', 'extract-text.py'),
     ];
 
     let scriptPath: string | undefined;
@@ -920,31 +1077,19 @@ export async function extractText(options: ExtractionOptions): Promise<TextExtra
     }
 
     if (!scriptPath) {
-      // Fallback to browser-based extraction
+      console.warn('[TextExtract] extract-text.py not found, falling back to browser');
       return await extractTextWithBrowser(options, startTime);
     }
 
-    // OPT-115: Look for captured HTML file (from captureHtml phase)
-    // The HTML should already be saved at outputDir/[sourceId].html
-    const htmlFilePath = path.join(options.outputDir, `${options.sourceId}.html`);
-    const hasHtmlFile = fs.existsSync(htmlFilePath);
+    console.log(`[TextExtract] Running Python extraction on ${htmlFilePath}`);
 
-    // Run the Python extraction script
-    // If HTML file exists, pass it directly; otherwise use --stdin and fetch via browser
+    // OPT-117: Run with --output all to get ALL extraction methods
     const result = await new Promise<TextExtractionResult>((resolve) => {
-      const args = hasHtmlFile
-        ? [scriptPath, htmlFilePath]
-        : [scriptPath, '--stdin'];
+      const args = [scriptPath!, htmlFilePath, '--output', 'all'];
 
       const python = spawn(pythonPath!, args, {
-        stdio: hasHtmlFile ? ['ignore', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'],
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
-
-      // If no HTML file, fetch and pipe via stdin
-      if (!hasHtmlFile) {
-        // Fetch HTML using HTTPS/HTTP and pipe to stdin
-        fetchHtmlAndPipe(options.url, python);
-      }
 
       let stdout = '';
       let stderr = '';
@@ -959,60 +1104,145 @@ export async function extractText(options: ExtractionOptions): Promise<TextExtra
 
       python.on('close', async (code) => {
         if (code !== 0) {
-          // Fall back to browser extraction
+          console.error(`[TextExtract] Python failed (code ${code}): ${stderr}`);
           resolve(await extractTextWithBrowser(options, startTime));
           return;
         }
 
         try {
-          const extracted = JSON.parse(stdout);
+          const allResults = JSON.parse(stdout);
 
-          // OPT-115: Handle extract-text.py output format
-          // Script returns: { success, text, word_count, metadata: { title, author, date }, ... }
-          if (!extracted.success || !extracted.text) {
+          // OPT-117: Extract best text from preferred method (trafilatura > readability > beautifulsoup)
+          const preferred = allResults.preferred || {};
+          const trafilatura = allResults.trafilatura || {};
+          const beautifulsoup = allResults.beautifulsoup || {};
+          const readability = allResults.readability || {};
+
+          // Use the preferred extraction's text
+          const textContent = preferred.text || trafilatura.text || readability.text || beautifulsoup.text || '';
+          const metadata = preferred.metadata || trafilatura.metadata || {};
+
+          if (!textContent) {
+            console.warn('[TextExtract] All Python methods returned empty, falling back to browser');
             resolve(await extractTextWithBrowser(options, startTime));
             return;
           }
 
-          const textContent = extracted.text || '';
-          const metadata = extracted.metadata || {};
+          console.log(`[TextExtract] Success: trafilatura=${trafilatura.word_count || 0} words, beautifulsoup=${beautifulsoup.word_count || 0} words, readability=${readability.word_count || 0} words`);
 
-          // Save text content
+          // Save ALL extraction results to separate files for research
           const textDir = path.join(options.outputDir, 'text');
           await fs.promises.mkdir(textDir, { recursive: true });
 
+          // Save preferred/combined text
           const textPath = path.join(textDir, `${options.sourceId}_content.txt`);
           await fs.promises.writeFile(textPath, textContent, 'utf-8');
 
+          // OPT-117: Save individual extraction results for research
+          if (trafilatura.text) {
+            const trafPath = path.join(textDir, `${options.sourceId}_trafilatura.txt`);
+            await fs.promises.writeFile(trafPath, trafilatura.text, 'utf-8');
+          }
+          if (beautifulsoup.text) {
+            const bsPath = path.join(textDir, `${options.sourceId}_beautifulsoup.txt`);
+            await fs.promises.writeFile(bsPath, beautifulsoup.text, 'utf-8');
+          }
+          if (readability.text) {
+            const readPath = path.join(textDir, `${options.sourceId}_readability.txt`);
+            await fs.promises.writeFile(readPath, readability.text, 'utf-8');
+          }
+
+          // OPT-117: Save structured extraction data (links, headings, images) as JSON
+          if (beautifulsoup.headings || beautifulsoup.links || beautifulsoup.images) {
+            const structuredPath = path.join(textDir, `${options.sourceId}_structured.json`);
+            await fs.promises.writeFile(structuredPath, JSON.stringify({
+              headings: beautifulsoup.headings || [],
+              links: beautifulsoup.links || [],
+              images: beautifulsoup.images || [],
+              metadata: {
+                trafilatura: trafilatura.metadata || null,
+                title_trafilatura: trafilatura.title_extracted || null,
+                title_readability: readability.title_extracted || null,
+              }
+            }, null, 2), 'utf-8');
+          }
+
           const hash = await calculateHash(textPath);
+
+          // OPT-117: Extract dates found in the text
+          const datesFound = extractDatesFromText(textContent);
+          if (datesFound.length > 0) {
+            const datesPath = path.join(textDir, `${options.sourceId}_dates.json`);
+            await fs.promises.writeFile(datesPath, JSON.stringify(datesFound, null, 2), 'utf-8');
+          }
 
           resolve({
             success: true,
             text: {
-              title: metadata.title || extracted.title_extracted || null,
+              title: metadata.title || preferred.title_extracted || trafilatura.title_extracted || readability.title_extracted || null,
               author: metadata.author || null,
               date: metadata.date || null,
               content: textContent,
-              html: '', // Not returned by Python script
-              wordCount: extracted.word_count || textContent.split(/\s+/).filter((w: string) => w.length > 0).length,
+              html: '',
+              wordCount: preferred.word_count || trafilatura.word_count || textContent.split(/\s+/).filter((w: string) => w.length > 0).length,
               hash,
             },
             duration: Date.now() - startTime,
           });
         } catch (err) {
+          console.error('[TextExtract] Failed to parse Python output:', err);
           resolve(await extractTextWithBrowser(options, startTime));
         }
       });
 
-      python.on('error', async () => {
+      python.on('error', async (err) => {
+        console.error('[TextExtract] Python spawn error:', err);
         resolve(await extractTextWithBrowser(options, startTime));
       });
     });
 
     return result;
   } catch (error) {
+    console.error('[TextExtract] Unexpected error:', error);
     return await extractTextWithBrowser(options, startTime);
   }
+}
+
+/**
+ * OPT-117: Extract all dates mentioned in text
+ * Returns ISO format dates found via regex patterns
+ */
+function extractDatesFromText(text: string): string[] {
+  const dates: Set<string> = new Set();
+
+  // Common date patterns
+  const patterns = [
+    // ISO dates: 2023-12-25
+    /\b(\d{4})-(\d{2})-(\d{2})\b/g,
+    // US format: 12/25/2023 or 12-25-2023
+    /\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b/g,
+    // EU format: 25/12/2023 or 25-12-2023 (detected by day > 12)
+    /\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b/g,
+    // Written: December 25, 2023 or Dec 25, 2023
+    /\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.?\s+(\d{1,2}),?\s+(\d{4})\b/gi,
+    // Written: 25 December 2023
+    /\b(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.?,?\s+(\d{4})\b/gi,
+    // Year-only (for historical research): in 1923, circa 1890, etc.
+    /\b(circa|ca\.?|c\.|in|from|since|until|before|after)\s*(\d{4})\b/gi,
+    // Decade references: 1920s, 1890s
+    /\b(\d{4})s\b/g,
+  ];
+
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      // Try to parse and normalize to ISO format
+      const dateStr = match[0];
+      dates.add(dateStr);
+    }
+  }
+
+  return Array.from(dates).slice(0, 100); // Limit to 100 dates
 }
 
 /**

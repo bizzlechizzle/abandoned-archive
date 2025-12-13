@@ -466,7 +466,7 @@
           {#if selectedImage.local_path}
             <div class="mb-6 bg-braun-200 rounded overflow-hidden flex items-center justify-center" style="max-height: 400px;">
               <img
-                src="au-media://{selectedImage.local_path}"
+                src="media://{selectedImage.local_path}"
                 alt={selectedImage.alt || 'Archived image'}
                 class="max-w-full max-h-96 object-contain"
               />
@@ -895,7 +895,7 @@
                   >
                     {#if img.local_path}
                       <img
-                        src="au-media://{img.local_path}"
+                        src="media://{img.local_path}"
                         alt={img.alt || 'Archived image'}
                         class="w-full h-full object-cover"
                         loading="lazy"

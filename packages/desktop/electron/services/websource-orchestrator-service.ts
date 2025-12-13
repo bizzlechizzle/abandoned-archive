@@ -241,6 +241,8 @@ export class WebSourceOrchestrator extends EventEmitter {
         outputDir: archivePath,
         sourceId,
         timeout: opts.timeout,
+        // Browsertrix-level archiving: run thorough behaviors to expand all content
+        runBehaviors: 'thorough',
       };
 
       // Screenshot capture

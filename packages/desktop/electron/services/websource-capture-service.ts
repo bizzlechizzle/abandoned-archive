@@ -19,6 +19,7 @@ import { promisify } from 'util';
 import puppeteerCore, { Browser, Page, LaunchOptions, CDPSession, HTTPRequest, HTTPResponse } from 'puppeteer-core';
 import { app } from 'electron';
 import { calculateHash } from './crypto-service';
+import { runThoroughBehaviors, runQuickBehaviors, BehaviorResult } from './websource-behaviors';
 
 // Lazy-load puppeteer-extra with stealth plugin
 // Applied on first getBrowser() call to ensure correct initialization in bundled context
@@ -60,6 +61,8 @@ export interface CaptureOptions {
   fullPage?: boolean;
   viewportWidth?: number;
   viewportHeight?: number;
+  /** Run comprehensive behaviors to expand all content (Browsertrix-level) */
+  runBehaviors?: boolean | 'quick' | 'thorough';
 }
 
 export interface CaptureResult {
@@ -110,7 +113,8 @@ export async function getBrowser(): Promise<Browser> {
 }
 
 /**
- * Launch a new browser instance
+ * Launch a new browser instance for headless archiving
+ * OPT-116: Uses dedicated archive profile to avoid conflicts with Research Browser
  */
 async function launchBrowser(): Promise<Browser> {
   // Determine platform-specific browser subfolder
@@ -156,9 +160,16 @@ async function launchBrowser(): Promise<Browser> {
     throw new Error('No Chrome/Chromium executable found. Please install Chrome or Chromium.');
   }
 
-  // Use the Research Browser's actual profile for cookies/session data
-  // This shares cookies from manual browsing sessions
-  const userDataDir = getResearchBrowserProfilePath();
+  // OPT-116: Use DEDICATED archive profile (never conflicts with Research Browser)
+  // Try to sync cookies from Research Browser first (non-blocking)
+  try {
+    await syncCookiesFromResearchBrowser();
+  } catch (err) {
+    console.log('[WebSource] Cookie sync skipped:', err instanceof Error ? err.message : err);
+  }
+
+  const userDataDir = getArchiveBrowserProfilePath();
+  console.log('[WebSource] Launching headless browser with profile:', userDataDir);
 
   const options: LaunchOptions = {
     executablePath,
@@ -166,7 +177,7 @@ async function launchBrowser(): Promise<Browser> {
     // This mode has identical fingerprint to a visible browser window
     // Falls back gracefully on older Chrome versions
     headless: 'shell' as unknown as boolean,
-    userDataDir, // Use Research Browser's cookies
+    userDataDir, // Dedicated archive profile (never shared with Research Browser)
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -215,40 +226,71 @@ export function isProfileLocked(profilePath: string): boolean {
 }
 
 /**
+ * Get the path to the headless archive browser's profile directory
+ * OPT-116: ALWAYS use a SEPARATE profile for headless archiving
+ *
+ * CRITICAL: Never share profile with the visible Research Browser!
+ * Chrome/Chromium cannot have two instances using the same profile.
+ * This was causing "browser is already running" errors when user had Research Browser open.
+ *
+ * The headless profile is completely separate. If cookies are needed,
+ * we copy them from Research Browser profile to the archive profile.
+ */
+export function getArchiveBrowserProfilePath(): string {
+  // Always use a dedicated profile for headless archiving
+  // This NEVER conflicts with Research Browser window
+  const archiveProfileDir = path.join(app.getPath('userData'), 'archive-browser-profile');
+
+  if (!fs.existsSync(archiveProfileDir)) {
+    fs.mkdirSync(archiveProfileDir, { recursive: true });
+    console.log('[WebSource] Created archive browser profile:', archiveProfileDir);
+  }
+
+  return archiveProfileDir;
+}
+
+/**
+ * Copy cookies from Research Browser to Archive Browser profile
+ * This syncs session data without causing profile conflicts
+ */
+export async function syncCookiesFromResearchBrowser(): Promise<boolean> {
+  const researchProfile = path.join(app.getPath('userData'), 'research-browser');
+  const archiveProfile = getArchiveBrowserProfilePath();
+
+  // Cookie files to copy
+  const cookieFiles = ['Cookies', 'Cookies-journal'];
+
+  let copied = false;
+  for (const file of cookieFiles) {
+    const srcPath = path.join(researchProfile, 'Default', file);
+    const dstDir = path.join(archiveProfile, 'Default');
+    const dstPath = path.join(dstDir, file);
+
+    try {
+      if (fs.existsSync(srcPath)) {
+        await fs.promises.mkdir(dstDir, { recursive: true });
+        await fs.promises.copyFile(srcPath, dstPath);
+        copied = true;
+      }
+    } catch (err) {
+      // Cookie file might be locked - this is okay, we'll try next time
+      console.log(`[WebSource] Could not copy ${file}:`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  if (copied) {
+    console.log('[WebSource] Synced cookies from Research Browser to archive profile');
+  }
+
+  return copied;
+}
+
+/**
  * Get the path to the Research Browser's profile directory
- * OPT-114: CRITICAL FIX - Use the SAME profile path as detached-browser-service.ts
- *
- * Previously this pointed to system Chromium (~/.../Chromium) but our Research Browser
- * stores its profile in app.getPath('userData')/research-browser. This mismatch meant
- * the capture service never had access to the user's cookies from the Research Browser.
- *
- * OPT-113: Detects if browser is running and falls back to app profile
+ * @deprecated Use getArchiveBrowserProfilePath() for headless archiving
  */
 export function getResearchBrowserProfilePath(): string {
-  // Use the SAME path as detached-browser-service.ts:getProfilePath()
-  // This is where the Research Browser actually stores cookies/logins
-  const profilePath = path.join(app.getPath('userData'), 'research-browser');
-
-  // Check if profile exists AND is not locked by running browser
-  if (fs.existsSync(profilePath)) {
-    if (!isProfileLocked(profilePath)) {
-      console.log('[WebSource] Using Research Browser profile:', profilePath);
-      return profilePath;
-    }
-    // Profile exists but is locked - browser is running
-    console.log('[WebSource] Research Browser profile LOCKED (browser running), using fallback');
-  } else {
-    console.log('[WebSource] Research Browser profile not found at:', profilePath);
-  }
-
-  // Fallback: Create/use separate app-managed profile directory
-  // This won't have the user's cookies but allows archiving to proceed
-  const fallbackDir = path.join(app.getPath('userData'), 'browser-profile');
-  if (!fs.existsSync(fallbackDir)) {
-    fs.mkdirSync(fallbackDir, { recursive: true });
-  }
-  console.log('[WebSource] Using fallback profile:', fallbackDir);
-  return fallbackDir;
+  return getArchiveBrowserProfilePath();
 }
 
 /**
@@ -301,8 +343,24 @@ export async function captureScreenshot(options: CaptureOptions): Promise<Captur
       await page.waitForSelector(options.waitForSelector, { timeout: 10000 });
     }
 
-    // Scroll page to load lazy images
-    if (options.scrollPage !== false) {
+    // Run comprehensive behaviors to expand all content (Browsertrix-level archiving)
+    // This replaces simple autoScroll with full page interaction
+    let behaviorResult: BehaviorResult | null = null;
+    if (options.runBehaviors !== false) {
+      const mode = options.runBehaviors === 'quick' ? 'quick' : 'thorough';
+      console.log(`[Screenshot] Running ${mode} behaviors to expand all content...`);
+
+      if (mode === 'quick') {
+        behaviorResult = await runQuickBehaviors(page);
+      } else {
+        behaviorResult = await runThoroughBehaviors(page);
+      }
+
+      console.log(`[Screenshot] Behaviors complete: expanded ${behaviorResult.stats.elementsExpanded} elements, ` +
+                  `clicked ${behaviorResult.stats.tabsClicked} tabs, ` +
+                  `${behaviorResult.stats.carouselSlides} carousel slides`);
+    } else if (options.scrollPage !== false) {
+      // Legacy: just scroll if behaviors disabled but scroll enabled
       await autoScroll(page);
     }
 
@@ -393,8 +451,17 @@ export async function capturePdf(options: CaptureOptions): Promise<CaptureResult
       await page.waitForSelector(options.waitForSelector, { timeout: 10000 });
     }
 
-    // Scroll to load lazy content
-    if (options.scrollPage !== false) {
+    // Run comprehensive behaviors to expand all content
+    if (options.runBehaviors !== false) {
+      const mode = options.runBehaviors === 'quick' ? 'quick' : 'thorough';
+      console.log(`[PDF] Running ${mode} behaviors to expand all content...`);
+
+      if (mode === 'quick') {
+        await runQuickBehaviors(page);
+      } else {
+        await runThoroughBehaviors(page);
+      }
+    } else if (options.scrollPage !== false) {
       await autoScroll(page);
     }
 
@@ -468,8 +535,17 @@ export async function captureHtml(options: CaptureOptions): Promise<CaptureResul
       await page.waitForSelector(options.waitForSelector, { timeout: 10000 });
     }
 
-    // Scroll to load lazy content
-    if (options.scrollPage !== false) {
+    // Run comprehensive behaviors to expand all content
+    if (options.runBehaviors !== false) {
+      const mode = options.runBehaviors === 'quick' ? 'quick' : 'thorough';
+      console.log(`[HTML] Running ${mode} behaviors to expand all content...`);
+
+      if (mode === 'quick') {
+        await runQuickBehaviors(page);
+      } else {
+        await runThoroughBehaviors(page);
+      }
+    } else if (options.scrollPage !== false) {
       await autoScroll(page);
     }
 
