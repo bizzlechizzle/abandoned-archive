@@ -863,6 +863,8 @@ const api = {
       invokeAuto("timeline:deleteWebPageEvent")(websourceId),
     hasWebPageEvent: (websourceId) =>
       invokeAuto("timeline:hasWebPageEvent")(websourceId),
+    getMediaCounts: (mediaHashesJson) =>
+      invokeAuto("timeline:getMediaCounts")(mediaHashesJson),
     backfillWebPages: () =>
       invokeAuto("timeline:backfillWebPages")(),
   },

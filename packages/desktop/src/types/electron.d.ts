@@ -938,6 +938,7 @@ export interface ElectronAPI {
     createWebPageEvent: (locid: string, subid: string | null, websourceId: string, publishDate: string, title: string | null, userId?: string) => Promise<TimelineEvent | undefined>;
     deleteWebPageEvent: (websourceId: string) => Promise<number>;
     hasWebPageEvent: (websourceId: string) => Promise<boolean>;
+    getMediaCounts: (mediaHashesJson: string | null) => Promise<{ images: number; videos: number }>;
     backfillWebPages: () => Promise<{ processed: number; created: number; skipped: number; errors: number }>;
   };
 

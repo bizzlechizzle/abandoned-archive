@@ -226,6 +226,43 @@ export function registerTimelineHandlers(db: Kysely<Database>): TimelineService 
     }
   );
 
+  // Get media counts by hashes (for visit display)
+  ipcMain.handle(
+    'timeline:getMediaCounts',
+    async (_, mediaHashesJson: string | null) => {
+      if (!dbInstance || !mediaHashesJson) {
+        return { images: 0, videos: 0 };
+      }
+
+      try {
+        const hashes: string[] = JSON.parse(mediaHashesJson);
+        if (!hashes.length) return { images: 0, videos: 0 };
+
+        // Count images
+        const imgResult = await dbInstance
+          .selectFrom('imgs')
+          .select(({ fn }) => fn.count('imghash').as('count'))
+          .where('imghash', 'in', hashes)
+          .executeTakeFirst();
+
+        // Count videos
+        const vidResult = await dbInstance
+          .selectFrom('vids')
+          .select(({ fn }) => fn.count('vidhash').as('count'))
+          .where('vidhash', 'in', hashes)
+          .executeTakeFirst();
+
+        return {
+          images: Number(imgResult?.count ?? 0),
+          videos: Number(vidResult?.count ?? 0),
+        };
+      } catch (err) {
+        console.error('[Timeline] Failed to count media:', err);
+        return { images: 0, videos: 0 };
+      }
+    }
+  );
+
   // Backfill web page timeline events for existing websources
   ipcMain.handle('timeline:backfillWebPages', async () => {
     if (!dbInstance) {

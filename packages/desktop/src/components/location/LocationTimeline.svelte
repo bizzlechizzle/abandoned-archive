@@ -31,6 +31,9 @@
   let expanded = $state(false);
   let currentUser = $state<string | null>(null);
 
+  // Media counts cache: event_id -> { images, videos }
+  let mediaCounts = $state<Map<string, { images: number; videos: number }>>(new Map());
+
   // Max entries to show when collapsed
   const MAX_ENTRIES = 7;
 
@@ -141,12 +144,37 @@
       } else {
         events = await window.electronAPI.timeline.findByLocation(locid);
       }
+
+      // Fetch media counts for visit events (async, non-blocking)
+      loadMediaCounts();
     } catch (e) {
       console.error('Failed to load timeline:', e);
       error = 'Failed to load timeline';
     } finally {
       loading = false;
     }
+  }
+
+  async function loadMediaCounts() {
+    const visitEvts = events.filter(e => e.event_type === 'visit' && e.media_hashes);
+    if (!visitEvts.length) return;
+
+    const newCounts = new Map(mediaCounts);
+
+    // Fetch counts in parallel
+    await Promise.all(
+      visitEvts.map(async (event) => {
+        if (!event.media_hashes) return;
+        try {
+          const counts = await window.electronAPI.timeline.getMediaCounts(event.media_hashes);
+          newCounts.set(event.event_id, counts);
+        } catch (err) {
+          console.warn('Failed to get media counts for', event.event_id, err);
+        }
+      })
+    );
+
+    mediaCounts = newCounts;
   }
 
   /**
@@ -177,14 +205,28 @@
 
   function formatVisitLine(event: TimelineEvent | TimelineEventWithSource): string {
     const date = event.date_display || '—';
-    const isMyVisit = event.created_by === currentUser;
+    const username = event.created_by || 'Unknown';
 
-    // Don't show username for own visits or if no username
-    if (isMyVisit || !event.created_by) {
-      return `${date} - Site Visit`;
+    // Build media count string from cache (or fallback to total)
+    let mediaStr = '';
+    const counts = mediaCounts.get(event.event_id);
+    if (counts) {
+      const parts: string[] = [];
+      if (counts.images > 0) {
+        parts.push(`${counts.images} image${counts.images !== 1 ? 's' : ''}`);
+      }
+      if (counts.videos > 0) {
+        parts.push(`${counts.videos} video${counts.videos !== 1 ? 's' : ''}`);
+      }
+      if (parts.length > 0) {
+        mediaStr = ` (${parts.join(', ')})`;
+      }
+    } else if (event.media_count && event.media_count > 0) {
+      // Fallback while loading
+      mediaStr = ` (${event.media_count} photo${event.media_count !== 1 ? 's' : ''})`;
     }
 
-    return `${date} - Site Visit - ${event.created_by}`;
+    return `${date} - Site Visit${mediaStr} - ${username}`;
   }
 
   function formatWebPageLine(event: TimelineEvent | TimelineEventWithSource): string {
