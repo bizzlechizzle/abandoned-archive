@@ -422,4 +422,49 @@ export class SqliteTimelineRepository {
 
     return result as TimelineEvent | undefined;
   }
+
+  /**
+   * Find a timeline event by source_ref (for duplicate prevention)
+   * Used to check if a web page event already exists for a websource
+   */
+  async findBySourceRef(
+    sourceRef: string,
+    eventType: string,
+    eventSubtype?: string
+  ): Promise<TimelineEvent | undefined> {
+    let query = this.db
+      .selectFrom('location_timeline')
+      .selectAll()
+      .where('source_ref', '=', sourceRef)
+      .where('event_type', '=', eventType);
+
+    if (eventSubtype) {
+      query = query.where('event_subtype', '=', eventSubtype);
+    }
+
+    const result = await query.executeTakeFirst();
+    return result as TimelineEvent | undefined;
+  }
+
+  /**
+   * Delete timeline events by source_ref (for cascade deletion)
+   * Used when a websource is deleted
+   */
+  async deleteBySourceRef(
+    sourceRef: string,
+    eventType: string,
+    eventSubtype?: string
+  ): Promise<number> {
+    let query = this.db
+      .deleteFrom('location_timeline')
+      .where('source_ref', '=', sourceRef)
+      .where('event_type', '=', eventType);
+
+    if (eventSubtype) {
+      query = query.where('event_subtype', '=', eventSubtype);
+    }
+
+    const result = await query.execute();
+    return result.length > 0 ? Number(result[0].numDeletedRows) : 0;
+  }
 }

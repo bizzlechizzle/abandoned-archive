@@ -856,6 +856,15 @@ const api = {
     getEstablished: (locid, subid) => invokeAuto("timeline:getEstablished")(locid, subid),
     updateEstablished: (locid, subid, dateInput, eventSubtype, userId) =>
       invokeAuto("timeline:updateEstablished")(locid, subid, dateInput, eventSubtype, userId),
+    // Web page event methods (OPT-119: Timeline overhaul)
+    createWebPageEvent: (locid, subid, websourceId, publishDate, title, userId) =>
+      invokeAuto("timeline:createWebPageEvent")(locid, subid, websourceId, publishDate, title, userId),
+    deleteWebPageEvent: (websourceId) =>
+      invokeAuto("timeline:deleteWebPageEvent")(websourceId),
+    hasWebPageEvent: (websourceId) =>
+      invokeAuto("timeline:hasWebPageEvent")(websourceId),
+    backfillWebPages: () =>
+      invokeAuto("timeline:backfillWebPages")(),
   },
 };
 

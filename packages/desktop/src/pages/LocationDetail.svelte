@@ -21,6 +21,7 @@
     type MediaImage, type MediaVideo, type MediaDocument, type MediaMap, type Bookmark,
     type GpsWarning, type FailedFile
   } from '../components/location';
+  import WebSourceDetailModal from '../components/location/WebSourceDetailModal.svelte';
   import type { Location, LocationInput } from '@au-archive/core';
   import { ACCESS_OPTIONS } from '../constants/location-enums';
 
@@ -90,6 +91,10 @@
   let verifyCategoryOptions = $state<string[]>([]);
   let verifyClassOptions = $state<string[]>([]);
   let savingVerify = $state(false);
+
+  // OPT-119: Timeline web page detail modal state
+  let showWebSourceModal = $state(false);
+  let webSourceModalId = $state<string | null>(null);
 
   // Derived: Are we viewing a sub-location?
   const isViewingSubLocation = $derived(!!subId && !!currentSubLocation);
@@ -332,6 +337,17 @@
   // Migration 28 + OPT-062: Check if this is a host location
   // Use database flag OR existing sub-locations (flag allows host-only without sub-locations yet)
   const isHostLocation = $derived(location?.isHostOnly || sublocations.length > 0);
+
+  // OPT-119: Timeline web page modal handlers
+  function handleOpenWebSource(websourceId: string) {
+    webSourceModalId = websourceId;
+    showWebSourceModal = true;
+  }
+
+  function handleCloseWebSourceModal() {
+    showWebSourceModal = false;
+    webSourceModalId = null;
+  }
 
   async function loadLocation() {
     try {
@@ -1186,6 +1202,7 @@
               subid={isViewingSubLocation && currentSubLocation ? currentSubLocation.subid : null}
               isHostLocation={isHostLocation && !isViewingSubLocation}
               onUpdate={loadLocation}
+              onOpenWebSource={handleOpenWebSource}
             />
           </div>
 
@@ -1638,6 +1655,15 @@
         </div>
       </div>
     </div>
+  {/if}
+
+  <!-- OPT-119: Web Source Detail Modal (from Timeline web page clicks) -->
+  {#if showWebSourceModal && webSourceModalId}
+    <WebSourceDetailModal
+      sourceId={webSourceModalId}
+      onClose={handleCloseWebSourceModal}
+      onOpenUrl={(url) => window.electronAPI.shell.openExternal(url)}
+    />
   {/if}
 </div>
 

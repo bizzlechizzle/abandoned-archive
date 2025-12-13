@@ -51,6 +51,7 @@ import {
   ImageDomContext,
 } from './websource-metadata-service';
 import { calculateHash, calculateHashBuffer } from './crypto-service';
+import { getTimelineService } from '../main/ipc-handlers/timeline';
 
 // =============================================================================
 // Types and Interfaces
@@ -554,6 +555,27 @@ export class WebSourceOrchestrator extends EventEmitter {
         image_count: extractedImages.length,
         video_count: extractedVideos.length,
       });
+
+      // OPT-119: Create timeline event for web page publish date
+      if (source.locid && metadata.date) {
+        try {
+          const timelineService = getTimelineService();
+          if (timelineService) {
+            const displayTitle = metadata.title || source.title || 'Web Page';
+            await timelineService.createWebPageEvent(
+              source.locid,
+              source.subid ?? null,
+              sourceId,
+              metadata.date,
+              displayTitle
+            );
+            console.log(`[WebSource] Created timeline event for ${sourceId} with date ${metadata.date}`);
+          }
+        } catch (timelineError) {
+          // Don't fail the archive if timeline creation fails
+          console.error('[WebSource] Failed to create timeline event:', timelineError);
+        }
+      }
 
       this.emitProgress(sourceId, source.url, 'complete', undefined, 100, 'Archive complete');
 

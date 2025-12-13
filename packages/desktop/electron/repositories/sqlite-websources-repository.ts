@@ -475,6 +475,15 @@ export class SQLiteWebSourcesRepository {
     await this.db.deleteFrom('web_source_versions').where('source_id', '=', source_id).execute();
     await this.db.deleteFrom('web_source_images').where('source_id', '=', source_id).execute();
     await this.db.deleteFrom('web_source_videos').where('source_id', '=', source_id).execute();
+
+    // OPT-119: Delete associated timeline events (web page publish dates)
+    await this.db
+      .deleteFrom('location_timeline')
+      .where('source_ref', '=', source_id)
+      .where('event_type', '=', 'custom')
+      .where('event_subtype', '=', 'web_page')
+      .execute();
+
     await this.db.deleteFrom('web_sources').where('source_id', '=', source_id).execute();
 
     // 4. Background file cleanup (non-blocking for instant UI response)

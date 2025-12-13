@@ -934,6 +934,11 @@ export interface ElectronAPI {
     getVisitCount: (locid: string) => Promise<number>;
     getEstablished: (locid: string, subid?: string | null) => Promise<TimelineEvent | undefined>;
     updateEstablished: (locid: string, subid: string | null, dateInput: string, eventSubtype?: string, userId?: string) => Promise<TimelineEvent | undefined>;
+    // OPT-119: Web page timeline events
+    createWebPageEvent: (locid: string, subid: string | null, websourceId: string, publishDate: string, title: string | null, userId?: string) => Promise<TimelineEvent | undefined>;
+    deleteWebPageEvent: (websourceId: string) => Promise<number>;
+    hasWebPageEvent: (websourceId: string) => Promise<boolean>;
+    backfillWebPages: () => Promise<{ processed: number; created: number; skipped: number; errors: number }>;
   };
 
   // Image Downloader - Migration 72 (pHash, URL patterns, staging)

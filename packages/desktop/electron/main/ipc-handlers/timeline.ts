@@ -12,6 +12,7 @@ import type { TimelineEventInput } from '@au-archive/core';
 
 let timelineService: TimelineService | null = null;
 let timelineRepository: SqliteTimelineRepository | null = null;
+let dbInstance: Kysely<Database> | null = null;
 
 /**
  * Initialize and get the timeline service singleton
@@ -20,8 +21,64 @@ function getService(db: Kysely<Database>): TimelineService {
   if (!timelineService) {
     timelineRepository = new SqliteTimelineRepository(db);
     timelineService = new TimelineService(timelineRepository);
+    dbInstance = db;
   }
   return timelineService;
+}
+
+/**
+ * Backfill web page timeline events for existing websources
+ * Creates timeline events for websources that have extracted_date but no timeline event
+ */
+async function backfillWebPageTimeline(
+  db: Kysely<Database>,
+  service: TimelineService
+): Promise<{ processed: number; created: number; skipped: number; errors: number }> {
+  const stats = { processed: 0, created: 0, skipped: 0, errors: 0 };
+
+  try {
+    // Find all websources with extracted_date and locid
+    const websources = await db
+      .selectFrom('web_sources')
+      .select(['source_id', 'locid', 'subid', 'extracted_date', 'title', 'extracted_title'])
+      .where('extracted_date', 'is not', null)
+      .where('locid', 'is not', null)
+      .execute();
+
+    console.log(`[Timeline Backfill] Found ${websources.length} websources with dates`);
+
+    for (const ws of websources) {
+      stats.processed++;
+      try {
+        // Use extracted_title if available, otherwise title
+        const displayTitle = ws.extracted_title || ws.title || 'Web Page';
+
+        const result = await service.createWebPageEvent(
+          ws.locid!,
+          ws.subid ?? null,
+          ws.source_id,
+          ws.extracted_date!,
+          displayTitle
+        );
+
+        if (result) {
+          stats.created++;
+        } else {
+          stats.skipped++;
+        }
+      } catch (err) {
+        console.error(`[Timeline Backfill] Error for websource ${ws.source_id}:`, err);
+        stats.errors++;
+      }
+    }
+
+    console.log(`[Timeline Backfill] Complete: ${stats.created} created, ${stats.skipped} skipped, ${stats.errors} errors`);
+  } catch (err) {
+    console.error('[Timeline Backfill] Failed to run backfill:', err);
+    throw err;
+  }
+
+  return stats;
 }
 
 /**
@@ -136,6 +193,46 @@ export function registerTimelineHandlers(db: Kysely<Database>): TimelineService 
       );
     }
   );
+
+  // Create web page timeline event (from archived websource)
+  ipcMain.handle(
+    'timeline:createWebPageEvent',
+    async (
+      _,
+      locid: string,
+      subid: string | null,
+      websourceId: string,
+      publishDate: string,
+      title: string | null,
+      userId?: string
+    ) => {
+      return service.createWebPageEvent(locid, subid, websourceId, publishDate, title, userId);
+    }
+  );
+
+  // Delete web page timeline event (cascade from websource deletion)
+  ipcMain.handle(
+    'timeline:deleteWebPageEvent',
+    async (_, websourceId: string) => {
+      return service.deleteWebPageEvent(websourceId);
+    }
+  );
+
+  // Check if web page event exists for a websource
+  ipcMain.handle(
+    'timeline:hasWebPageEvent',
+    async (_, websourceId: string) => {
+      return service.hasWebPageEvent(websourceId);
+    }
+  );
+
+  // Backfill web page timeline events for existing websources
+  ipcMain.handle('timeline:backfillWebPages', async () => {
+    if (!dbInstance) {
+      throw new Error('Database not initialized');
+    }
+    return backfillWebPageTimeline(dbInstance, service);
+  });
 
   console.log('Timeline IPC handlers registered');
   return service;

@@ -1,11 +1,11 @@
 <script lang="ts">
   /**
-   * LocationTimeline - Timeline display for location history
-   * Shows established date, visits (from EXIF), and database entry
-   * Per PLAN: Braun white card styling matching LocationMapSection
+   * LocationTimeline - Timeline display for location history (OPT-119)
+   * Shows established dates, visits, web page publish dates, and database entry
+   * Visual hierarchy: Major (user visits, established) → Minor (other visits, web pages) → Technical (db entry)
+   * Per PLAN: Braun white card styling, view-only mode (no editing)
    */
   import type { TimelineEvent, TimelineEventWithSource } from '@au-archive/core';
-  import TimelineDateInput from './TimelineDateInput.svelte';
   import { onMount } from 'svelte';
 
   interface Props {
@@ -13,22 +13,26 @@
     subid?: string | null;
     isHostLocation?: boolean;
     onUpdate?: () => void;
+    onOpenWebSource?: (websourceId: string) => void;
   }
 
   let {
     locid,
     subid = null,
     isHostLocation = false,
-    onUpdate
+    onUpdate,
+    onOpenWebSource
   }: Props = $props();
 
   // Timeline state
   let events = $state<(TimelineEvent | TimelineEventWithSource)[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
-  let editMode = $state(false);
-  let showAllVisits = $state(false);
-  let editingEstablished = $state(false);
+  let expanded = $state(false);
+  let currentUser = $state<string | null>(null);
+
+  // Max entries to show when collapsed
+  const MAX_ENTRIES = 7;
 
   // Chronological sort: oldest first
   // Unknown established dates pin to top (inherently oldest - building existed before visits)
@@ -44,32 +48,57 @@
     })
   );
 
-  // Separate references for edit mode and special handling
-  let establishedEvent = $derived(
-    events.find(e => e.event_type === 'established')
+  // Count events by type for collapse priority
+  let establishedEvents = $derived(
+    sortedEvents.filter(e => e.event_type === 'established')
   );
 
-  // Visit events for collapse logic (already in chronological order from sortedEvents)
+  let databaseEntryEvents = $derived(
+    sortedEvents.filter(e => e.event_type === 'database_entry')
+  );
+
   let visitEvents = $derived(
     sortedEvents.filter(e => e.event_type === 'visit')
   );
 
-  // Collapse visits: show oldest N, hide newer ones
-  const VISIBLE_VISITS = 5;
-  let hiddenVisitCount = $derived(
-    visitEvents.length > VISIBLE_VISITS ? visitEvents.length - VISIBLE_VISITS : 0
+  let webPageEvents = $derived(
+    sortedEvents.filter(e => e.event_type === 'custom' && e.event_subtype === 'web_page')
   );
 
-  // Build display list: all events with visit collapsing applied
+  // Calculate hidden count
+  let hiddenCount = $derived(
+    sortedEvents.length > MAX_ENTRIES ? sortedEvents.length - MAX_ENTRIES : 0
+  );
+
+  // Build display list with priority-based collapsing
   let displayEvents = $derived(() => {
-    if (showAllVisits || visitEvents.length <= VISIBLE_VISITS) {
+    if (expanded || sortedEvents.length <= MAX_ENTRIES) {
       return sortedEvents;
     }
-    // Show only first N visits (oldest), hide newer ones
-    const visibleVisitIds = new Set(visitEvents.slice(0, VISIBLE_VISITS).map(e => e.event_id));
-    return sortedEvents.filter(e =>
-      e.event_type !== 'visit' || visibleVisitIds.has(e.event_id)
-    );
+
+    // Priority: established first, then database_entry, then fill with recent visits/web pages
+    const reserved = [...establishedEvents, ...databaseEntryEvents];
+    const reservedIds = new Set(reserved.map(e => e.event_id));
+
+    // Remaining slots for visits and web pages
+    const remainingSlots = Math.max(0, MAX_ENTRIES - reserved.length);
+
+    // Combine visits and web pages, sorted by date (most recent first for priority)
+    const otherEvents = [...visitEvents, ...webPageEvents]
+      .sort((a, b) => (b.date_sort ?? 0) - (a.date_sort ?? 0))
+      .slice(0, remainingSlots);
+
+    // Combine all and re-sort chronologically
+    const combined = [...reserved, ...otherEvents];
+    return combined.sort((a, b) => {
+      const aSort = a.event_type === 'established' && (a.date_sort === null || a.date_sort === 99999999)
+        ? -1
+        : (a.date_sort ?? 99999999);
+      const bSort = b.event_type === 'established' && (b.date_sort === null || b.date_sort === 99999999)
+        ? -1
+        : (b.date_sort ?? 99999999);
+      return aSort - bSort;
+    });
   });
 
   // Subtype labels for established events ("Built", "Opened", etc.)
@@ -84,7 +113,13 @@
   };
 
   // Load timeline on mount
-  onMount(() => {
+  onMount(async () => {
+    // Get current user for visit classification
+    try {
+      currentUser = await window.electronAPI.settings.get('current_user') as string | null;
+    } catch (e) {
+      console.warn('Could not get current user:', e);
+    }
     loadTimeline();
   });
 
@@ -114,44 +149,53 @@
     }
   }
 
-  async function handleEstablishedUpdate(dateInput: string, eventSubtype: string) {
-    try {
-      await window.electronAPI.timeline.updateEstablished(
-        locid,
-        subid,
-        dateInput,
-        eventSubtype
-      );
-      editingEstablished = false;
-      await loadTimeline();
-      onUpdate?.();
-    } catch (e) {
-      console.error('Failed to update established date:', e);
+  /**
+   * Classify event for visual hierarchy
+   * Major: established, user's own visits
+   * Minor: other visits, web pages
+   * Technical: database entry
+   */
+  function getEventClass(event: TimelineEvent | TimelineEventWithSource): 'major' | 'minor' | 'technical' {
+    if (event.event_type === 'database_entry') return 'technical';
+    if (event.event_type === 'established') return 'major';
+    if (event.event_type === 'visit') {
+      return event.created_by === currentUser ? 'major' : 'minor';
     }
+    // Web page events are Minor
+    if (event.event_type === 'custom' && event.event_subtype === 'web_page') {
+      return 'minor';
+    }
+    return 'minor';
   }
 
-  function toggleEditMode() {
-    editMode = !editMode;
-    if (!editMode) {
-      editingEstablished = false;
-    }
-  }
-
-  function getEstablishedDisplay(): string {
-    if (!establishedEvent) return '';
-    const subtype = establishedEvent.event_subtype || 'built';
+  function formatEstablishedLine(event: TimelineEvent | TimelineEventWithSource): string {
+    const subtype = event.event_subtype || 'built';
     const label = subtypeLabels[subtype] || 'Built';
-    const date = establishedEvent.date_display;
-    // DATE - NOTE format; empty if no date (user must edit to add)
-    return date ? `${date} - ${label}` : '';
+    const date = event.date_display;
+    return date ? `${date} - ${label}` : `Unknown - ${label}`;
   }
 
-  function formatVisitLine(event: TimelineEvent): string {
+  function formatVisitLine(event: TimelineEvent | TimelineEventWithSource): string {
     const date = event.date_display || '—';
-    return `${date} - Site Visit`;
+    const isMyVisit = event.created_by === currentUser;
+
+    // Don't show username for own visits or if no username
+    if (isMyVisit || !event.created_by) {
+      return `${date} - Site Visit`;
+    }
+
+    return `${date} - Site Visit - ${event.created_by}`;
   }
 
-  function formatDatabaseEntryDate(event: TimelineEvent | TimelineEventWithSource): string {
+  function formatWebPageLine(event: TimelineEvent | TimelineEventWithSource): string {
+    const date = event.date_display || '—';
+    const title = event.notes || 'Web Page';
+    // Truncate long titles
+    const truncatedTitle = title.length > 40 ? title.slice(0, 37) + '...' : title;
+    return `${date} - Web: ${truncatedTitle}`;
+  }
+
+  function formatDatabaseEntryLine(event: TimelineEvent | TimelineEventWithSource): string {
     if (!event.date_display) return '— - Added to Database';
     // Normalize to ISO 8601: YYYY-MM-DD
     const raw = event.date_display;
@@ -161,21 +205,33 @@
     }
     return `${formatted} - Added to Database`;
   }
+
+  function handleWebPageClick(event: TimelineEvent | TimelineEventWithSource) {
+    if (event.source_ref && onOpenWebSource) {
+      onOpenWebSource(event.source_ref);
+    }
+  }
+
+  function toggleExpanded() {
+    expanded = !expanded;
+  }
 </script>
 
 <!-- PLAN: Match LocationMapSection white card styling -->
 <div class="bg-white rounded border border-braun-300 flex-1 flex flex-col">
-  <!-- Header with edit button -->
+  <!-- Header with expand/collapse button -->
   <div class="px-8 pt-6 pb-4 flex items-center justify-between">
     <h2 class="text-2xl font-semibold text-braun-900 leading-none">Timeline</h2>
-    <button
-      type="button"
-      onclick={toggleEditMode}
-      class="text-sm text-braun-500 hover:text-braun-900 hover:underline"
-      title={editMode ? 'Collapse edit mode' : 'Edit timeline'}
-    >
-      {editMode ? 'collapse' : 'edit'}
-    </button>
+    {#if sortedEvents.length > MAX_ENTRIES}
+      <button
+        type="button"
+        onclick={toggleExpanded}
+        class="text-sm text-braun-500 hover:text-braun-900 hover:underline"
+        title={expanded ? 'Show fewer entries' : 'Show all entries'}
+      >
+        {expanded ? 'collapse' : 'expand'}
+      </button>
+    {/if}
   </div>
 
   <!-- Content -->
@@ -188,104 +244,83 @@
       <div class="flex items-center justify-center py-8">
         <div class="text-red-600 text-sm">{error}</div>
       </div>
+    {:else if sortedEvents.length === 0}
+      <div class="flex items-center justify-center py-8">
+        <div class="text-braun-500 text-sm">No timeline events</div>
+      </div>
     {:else}
       <div class="timeline-events relative pl-5">
         <!-- Vertical line -->
         <div class="absolute left-[3px] top-2 bottom-2 w-px bg-braun-300"></div>
 
-        <!-- Add established date prompt (only in edit mode when no established event exists) -->
-        {#if editMode && !establishedEvent}
-          <div class="relative pb-4">
-            <div class="absolute -left-5 top-[5px] w-[7px] h-[7px] rounded-full bg-braun-300"></div>
-            {#if editingEstablished}
-              <div class="bg-braun-50 border border-braun-200 rounded p-4">
-                <TimelineDateInput
-                  initialValue=""
-                  initialSubtype="built"
-                  onSave={handleEstablishedUpdate}
-                  onCancel={() => editingEstablished = false}
-                />
-              </div>
-            {:else}
-              <button
-                type="button"
-                onclick={() => editingEstablished = true}
-                class="text-[15px] text-braun-500 hover:text-braun-900 hover:underline cursor-pointer"
-              >
-                Add established date...
-              </button>
-            {/if}
-          </div>
-        {/if}
-
         <!-- Chronological event list (oldest first) -->
         {#each displayEvents() as event, index (event.event_id)}
-          {@const isLast = index === displayEvents().length - 1 && hiddenVisitCount === 0}
+          {@const isLast = index === displayEvents().length - 1 && hiddenCount === 0}
+          {@const eventClass = getEventClass(event)}
 
           {#if event.event_type === 'established'}
-            <!-- Established Event - only show if has date or in edit mode -->
-            {@const displayText = getEstablishedDisplay()}
-            {#if displayText || editMode}
-              <div class="relative {isLast ? '' : 'pb-4'}">
-                <!-- Filled dot for established -->
-                <div class="absolute -left-5 top-[5px] w-[7px] h-[7px] rounded-full bg-braun-900"></div>
-
-                {#if editMode && editingEstablished}
-                  <!-- Inline edit form -->
-                  <div class="bg-braun-50 border border-braun-200 rounded p-4">
-                    <TimelineDateInput
-                      initialValue={establishedEvent?.date_display || ''}
-                      initialSubtype={establishedEvent?.event_subtype || 'built'}
-                      onSave={handleEstablishedUpdate}
-                      onCancel={() => editingEstablished = false}
-                    />
-                  </div>
-                {:else}
-                  <button
-                    type="button"
-                    onclick={() => editMode && (editingEstablished = true)}
-                    class="text-[15px] text-braun-900 {editMode ? 'hover:underline cursor-pointer' : 'cursor-default'}"
-                    disabled={!editMode}
-                  >
-                    {displayText || 'Add established date...'}
-                  </button>
-                {/if}
-              </div>
-            {/if}
-
-          {:else if event.event_type === 'visit'}
-            <!-- Visit Event -->
+            <!-- Established Event - Major -->
             <div class="relative {isLast ? '' : 'pb-4'}">
-              <!-- Hollow dot for visits -->
-              <div class="absolute -left-5 top-[5px] w-[7px] h-[7px] rounded-full border border-braun-400 bg-white"></div>
-
-              <div class="text-[15px] text-braun-900">
-                {formatVisitLine(event)}
+              <!-- Filled 8px dot for major -->
+              <div class="absolute -left-5 top-[6px] w-2 h-2 rounded-full bg-braun-900"></div>
+              <div class="text-[15px] font-medium text-braun-900">
+                {formatEstablishedLine(event)}
               </div>
             </div>
 
-          {:else if event.event_type === 'database_entry'}
-            <!-- Database Entry Event -->
+          {:else if event.event_type === 'visit'}
+            <!-- Visit Event - Major (user) or Minor (other) -->
             <div class="relative {isLast ? '' : 'pb-4'}">
-              <!-- Small square dot for database entry -->
-              <div class="absolute -left-5 top-[5px] w-[5px] h-[5px] bg-braun-400"></div>
+              {#if eventClass === 'major'}
+                <!-- Filled 8px dot for user's own visits -->
+                <div class="absolute -left-5 top-[6px] w-2 h-2 rounded-full bg-braun-900"></div>
+                <div class="text-[15px] font-medium text-braun-900">
+                  {formatVisitLine(event)}
+                </div>
+              {:else}
+                <!-- Hollow 8px dot for other visits -->
+                <div class="absolute -left-5 top-[6px] w-2 h-2 rounded-full border border-braun-400 bg-white"></div>
+                <div class="text-[15px] font-normal text-braun-600">
+                  {formatVisitLine(event)}
+                </div>
+              {/if}
+            </div>
 
-              <div class="text-[15px] text-braun-600">
-                {formatDatabaseEntryDate(event)}
+          {:else if event.event_type === 'custom' && event.event_subtype === 'web_page'}
+            <!-- Web Page Event - Minor with diamond marker -->
+            <div class="relative {isLast ? '' : 'pb-4'}">
+              <!-- Diamond marker (rotated square) -->
+              <div class="absolute -left-5 top-[7px] w-[6px] h-[6px] border border-braun-400 bg-white rotate-45"></div>
+              <button
+                type="button"
+                onclick={() => handleWebPageClick(event)}
+                class="text-[15px] font-normal text-braun-600 hover:text-braun-900 hover:underline cursor-pointer text-left"
+              >
+                {formatWebPageLine(event)}
+              </button>
+            </div>
+
+          {:else if event.event_type === 'database_entry'}
+            <!-- Database Entry Event - Technical -->
+            <div class="relative {isLast ? '' : 'pb-4'}">
+              <!-- Small 4px square for technical -->
+              <div class="absolute -left-5 top-[8px] w-1 h-1 bg-braun-400"></div>
+              <div class="text-[13px] font-normal text-braun-500">
+                {formatDatabaseEntryLine(event)}
               </div>
             </div>
           {/if}
         {/each}
 
-        <!-- Show more visits button (newer visits hidden) -->
-        {#if hiddenVisitCount > 0 && !showAllVisits}
+        <!-- Show more button when collapsed -->
+        {#if hiddenCount > 0 && !expanded}
           <div class="relative pb-4">
             <button
               type="button"
-              onclick={() => showAllVisits = true}
+              onclick={toggleExpanded}
               class="text-[13px] text-braun-600 hover:text-braun-900 hover:underline"
             >
-              Show {hiddenVisitCount} more recent visits
+              Show {hiddenCount} more entries
             </button>
           </div>
         {/if}

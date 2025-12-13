@@ -399,4 +399,90 @@ export class TimelineService {
       userId
     );
   }
+
+  /**
+   * Create a web page timeline event from an archived websource
+   * Used when archiving a web page with a publish date
+   *
+   * @param locid - Location ID
+   * @param subid - Sub-location ID (optional)
+   * @param websourceId - WebSource ID (for linking/deduplication)
+   * @param publishDate - Extracted publish date from the page
+   * @param title - Page title for display
+   * @param userId - User ID for audit trail
+   * @returns Created timeline event or undefined if duplicate/invalid
+   */
+  async createWebPageEvent(
+    locid: string,
+    subid: string | null,
+    websourceId: string,
+    publishDate: string,
+    title: string | null,
+    userId?: string
+  ): Promise<TimelineEvent | undefined> {
+    // Skip if no publish date
+    if (!publishDate) return undefined;
+
+    // Duplicate prevention: check if event already exists for this websource
+    const existing = await this.repository.findBySourceRef(
+      websourceId,
+      'custom',
+      'web_page'
+    );
+    if (existing) {
+      console.log(`[Timeline] Web page event already exists for websource ${websourceId}`);
+      return existing;
+    }
+
+    // Parse the publish date
+    const parsed = parseDate(publishDate);
+    if (parsed.precision === 'unknown') {
+      console.log(`[Timeline] Could not parse publish date: ${publishDate}`);
+      return undefined;
+    }
+
+    // Create the web page event
+    return this.createEvent(
+      {
+        locid,
+        subid: subid ?? undefined,
+        event_type: 'custom',
+        event_subtype: 'web_page',
+        date_start: parsed.dateStart,
+        date_end: parsed.dateEnd,
+        date_precision: parsed.precision,
+        date_display: parsed.display,
+        date_edtf: parsed.edtf,
+        date_sort: parsed.dateSort,
+        source_type: 'web',
+        source_ref: websourceId,
+        notes: title || 'Web Page', // Store title in notes field
+      },
+      userId
+    );
+  }
+
+  /**
+   * Delete web page timeline event when websource is deleted
+   * Cascade deletion to keep timeline in sync
+   *
+   * @param websourceId - WebSource ID to delete events for
+   * @returns Number of deleted events
+   */
+  async deleteWebPageEvent(websourceId: string): Promise<number> {
+    return this.repository.deleteBySourceRef(websourceId, 'custom', 'web_page');
+  }
+
+  /**
+   * Check if a web page event exists for a websource
+   * Used to prevent duplicates
+   */
+  async hasWebPageEvent(websourceId: string): Promise<boolean> {
+    const existing = await this.repository.findBySourceRef(
+      websourceId,
+      'custom',
+      'web_page'
+    );
+    return !!existing;
+  }
 }
