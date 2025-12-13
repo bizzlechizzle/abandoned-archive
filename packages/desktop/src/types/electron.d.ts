@@ -1,4 +1,21 @@
-import type { Location, LocationInput, LocationFilters, TimelineEvent, TimelineEventInput, TimelineEventWithSource, ParsedDate } from '@au-archive/core';
+import type {
+  Location,
+  LocationInput,
+  LocationFilters,
+  TimelineEvent,
+  TimelineEventInput,
+  TimelineEventWithSource,
+  ParsedDate,
+  DateExtraction,
+  DateExtractionFilters,
+  DatePatternInput,
+  BackfillOptions,
+  ExtractFromTextInput,
+  DatePattern,
+  DateEngineLearning,
+  DateExtractionStats,
+  DateEngineLearningStats,
+} from '@au-archive/core';
 
 /**
  * OPT-043: Lean location type for map display - only essential fields
@@ -940,6 +957,101 @@ export interface ElectronAPI {
     hasWebPageEvent: (websourceId: string) => Promise<boolean>;
     getMediaCounts: (mediaHashesJson: string | null) => Promise<{ images: number; videos: number }>;
     backfillWebPages: () => Promise<{ processed: number; created: number; skipped: number; errors: number }>;
+  };
+
+  // Date Engine - Migration 73 (NLP date extraction from web sources)
+  dateEngine: {
+    // Extraction
+    extractFromWebSource: (sourceId: string) => Promise<DateExtraction[]>;
+    extractFromText: (input: ExtractFromTextInput) => Promise<DateExtraction[]>;
+    preview: (text: string, articleDate?: string) => Promise<Array<{
+      rawText: string;
+      parsedDate: string | null;
+      dateStart: string | null;
+      dateEnd: string | null;
+      datePrecision: string;
+      dateDisplay: string | null;
+      sentence: string;
+      category: string;
+      categoryConfidence: number;
+      overallConfidence: number;
+      wasRelativeDate: boolean;
+    }>>;
+
+    // Backfill
+    backfillWebSources: (options?: BackfillOptions) => Promise<{
+      processed: number;
+      total: number;
+      extractions_found: number;
+      errors: number;
+    }>;
+    backfillImageCaptions: (options?: BackfillOptions) => Promise<{
+      processed: number;
+      total: number;
+      extractions_found: number;
+      errors: number;
+    }>;
+
+    // Query
+    getPendingReview: (limit?: number, offset?: number) => Promise<DateExtraction[]>;
+    getPendingByLocation: (locid: string) => Promise<DateExtraction[]>;
+    getByLocation: (locid: string, filters?: Partial<DateExtractionFilters>) => Promise<DateExtraction[]>;
+    getConflicts: () => Promise<DateExtraction[]>;
+    getById: (extractionId: string) => Promise<DateExtraction | null>;
+    find: (filters: DateExtractionFilters) => Promise<DateExtraction[]>;
+
+    // Review Actions
+    approve: (extractionId: string, userId: string) => Promise<DateExtraction | null>;
+    reject: (extractionId: string, userId: string, reason?: string) => Promise<DateExtraction | null>;
+    approveAndResolveConflict: (extractionId: string, userId: string, updateTimeline: boolean) => Promise<DateExtraction | null>;
+    convertToTimeline: (extractionId: string, userId?: string) => Promise<DateExtraction | null>;
+    revert: (extractionId: string, userId: string) => Promise<DateExtraction | null>;
+    mergeDuplicates: (primaryId: string, duplicateId: string) => Promise<DateExtraction | null>;
+
+    // Statistics
+    getStats: () => Promise<DateExtractionStats>;
+    getLearningStats: () => Promise<DateEngineLearningStats>;
+
+    // CSV Export/Import
+    exportPending: () => Promise<string>;
+    importReviewed: (csvContent: string, userId: string) => Promise<{
+      imported: number;
+      approved: number;
+      rejected: number;
+      errors: number;
+    }>;
+
+    // Custom Patterns
+    getPatterns: (enabledOnly?: boolean) => Promise<DatePattern[]>;
+    getPattern: (patternId: string) => Promise<DatePattern | null>;
+    savePattern: (patternId: string | null, input: DatePatternInput) => Promise<DatePattern>;
+    deletePattern: (patternId: string) => Promise<void>;
+    testPattern: (pattern: string, testText: string) => Promise<{
+      valid: boolean;
+      matches: Array<{
+        fullMatch: string;
+        groups: Record<string, string>;
+        index: number;
+      }>;
+      error?: string;
+    }>;
+
+    // OCR Document Extraction
+    extractFromDocument: (input: {
+      imagePath: string;
+      locid?: string | null;
+      subid?: string | null;
+      language?: string;
+    }) => Promise<{
+      success: boolean;
+      error?: string;
+      ocrText?: string;
+      ocrConfidence?: number;
+      ocrWordCount?: number;
+      ocrProcessingTimeMs?: number;
+      extractionsFound?: number;
+      extractions?: DateExtraction[];
+    }>;
   };
 
   // Image Downloader - Migration 72 (pHash, URL patterns, staging)

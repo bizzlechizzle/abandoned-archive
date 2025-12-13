@@ -48,6 +48,7 @@ import { registerMonitoringHandlers, setMainWindow as setMonitoringMainWindow } 
 import { registerWebSourcesHandlers } from './websources';
 import { registerTimelineHandlers } from './timeline';
 import { registerImageDownloaderHandlers } from './image-downloader';
+import { registerDateEngineHandlers } from './date-engine';
 import {
   initializeBrowserImageCapture,
   cleanupBrowserImageCapture,
@@ -127,6 +128,9 @@ export function registerIpcHandlers() {
 
   // Image Downloader (Migration 72 - pHash, URL patterns, staging)
   registerImageDownloaderHandlers(db);
+
+  // Date Engine (Migration 73 - NLP date extraction from web sources)
+  registerDateEngineHandlers(db);
 
   // Browser Image Capture (network monitoring, context menu)
   initializeBrowserImageCapture({

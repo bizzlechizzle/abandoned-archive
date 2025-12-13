@@ -3017,6 +3017,135 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 72 completed: Image Downloader schema created');
     }
 
+    // Migration 73: Date Engine - NLP date extraction for web sources
+    const hasDateExtractions = sqlite.prepare(
+      `SELECT 1 FROM sqlite_master WHERE type='table' AND name='date_extractions'`
+    ).get();
+
+    if (!hasDateExtractions) {
+      // Main date extractions table
+      sqlite.exec(`
+        CREATE TABLE date_extractions (
+          extraction_id TEXT PRIMARY KEY,
+
+          -- Source reference
+          source_type TEXT NOT NULL CHECK(source_type IN ('web_source', 'image_caption', 'document', 'manual')),
+          source_id TEXT NOT NULL,
+          locid TEXT REFERENCES locs(locid) ON DELETE CASCADE,
+          subid TEXT REFERENCES slocs(subid) ON DELETE SET NULL,
+
+          -- Parsed date
+          raw_text TEXT NOT NULL,
+          parsed_date TEXT,
+          date_start TEXT,
+          date_end TEXT,
+          date_precision TEXT NOT NULL,
+          date_display TEXT,
+          date_edtf TEXT,
+          date_sort INTEGER,
+
+          -- Context
+          sentence TEXT NOT NULL,
+          sentence_position INTEGER,
+          category TEXT NOT NULL CHECK(category IN ('build_date', 'site_visit', 'obituary', 'publication', 'closure', 'opening', 'demolition', 'unknown')),
+          category_confidence REAL DEFAULT 0,
+          category_keywords TEXT,
+
+          -- Rich confidence scoring
+          keyword_distance INTEGER,
+          sentence_position_type TEXT CHECK(sentence_position_type IN ('beginning', 'middle', 'end') OR sentence_position_type IS NULL),
+          source_age_days INTEGER,
+          overall_confidence REAL DEFAULT 0,
+
+          -- Article date context (for relative dates)
+          article_date TEXT,
+          relative_date_anchor TEXT,
+          was_relative_date INTEGER DEFAULT 0,
+
+          -- Parsing metadata
+          parser_name TEXT DEFAULT 'chrono',
+          parser_confidence REAL DEFAULT 0,
+          century_bias_applied INTEGER DEFAULT 0,
+          original_year_ambiguous INTEGER DEFAULT 0,
+
+          -- Duplicate detection & merging
+          is_primary INTEGER DEFAULT 1,
+          merged_from_ids TEXT,
+          duplicate_of_id TEXT,
+
+          -- Timeline conflict detection
+          conflict_event_id TEXT REFERENCES location_timeline(event_id) ON DELETE SET NULL,
+          conflict_type TEXT CHECK(conflict_type IN ('date_mismatch', 'category_mismatch', 'duplicate') OR conflict_type IS NULL),
+          conflict_resolved INTEGER DEFAULT 0,
+
+          -- Verification
+          status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'auto_approved', 'user_approved', 'rejected', 'converted', 'reverted')),
+          auto_approve_reason TEXT,
+          reviewed_at TEXT,
+          reviewed_by TEXT,
+          rejection_reason TEXT,
+
+          -- Timeline linkage & undo
+          timeline_event_id TEXT REFERENCES location_timeline(event_id) ON DELETE SET NULL,
+          converted_at TEXT,
+          reverted_at TEXT,
+          reverted_by TEXT,
+
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT
+        );
+
+        CREATE INDEX idx_date_extractions_source ON date_extractions(source_type, source_id);
+        CREATE INDEX idx_date_extractions_locid ON date_extractions(locid);
+        CREATE INDEX idx_date_extractions_status ON date_extractions(status);
+        CREATE INDEX idx_date_extractions_category ON date_extractions(category);
+        CREATE INDEX idx_date_extractions_date_sort ON date_extractions(date_sort);
+        CREATE INDEX idx_date_extractions_conflict ON date_extractions(conflict_event_id) WHERE conflict_event_id IS NOT NULL;
+        CREATE INDEX idx_date_extractions_primary ON date_extractions(locid, date_start, category) WHERE is_primary = 1;
+      `);
+
+      // ML Learning table
+      sqlite.exec(`
+        CREATE TABLE date_engine_learning (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          category TEXT NOT NULL,
+          keyword TEXT NOT NULL,
+          approval_count INTEGER DEFAULT 0,
+          rejection_count INTEGER DEFAULT 0,
+          weight_modifier REAL DEFAULT 1.0,
+          last_updated TEXT,
+          UNIQUE(category, keyword)
+        );
+      `);
+
+      // Custom regex patterns table
+      sqlite.exec(`
+        CREATE TABLE date_patterns (
+          pattern_id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          regex TEXT NOT NULL,
+          category TEXT,
+          priority INTEGER DEFAULT 0,
+          enabled INTEGER DEFAULT 1,
+          test_cases TEXT,
+          created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX idx_date_patterns_enabled ON date_patterns(enabled, priority DESC);
+      `);
+
+      // Add extraction tracking to web_sources
+      const wsColumns = sqlite.prepare(`PRAGMA table_info(web_sources)`).all() as Array<{ name: string }>;
+      if (!wsColumns.some(col => col.name === 'dates_extracted_at')) {
+        sqlite.exec(`ALTER TABLE web_sources ADD COLUMN dates_extracted_at TEXT`);
+      }
+      if (!wsColumns.some(col => col.name === 'dates_extraction_count')) {
+        sqlite.exec(`ALTER TABLE web_sources ADD COLUMN dates_extraction_count INTEGER DEFAULT 0`);
+      }
+
+      console.log('Migration 73 completed: Date Engine tables created');
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

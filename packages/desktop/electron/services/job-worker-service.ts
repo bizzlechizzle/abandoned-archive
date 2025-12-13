@@ -125,6 +125,10 @@ export class JobWorkerService extends EventEmitter {
     // Lower priority than media imports, background operation
     this.registerQueue(IMPORT_QUEUES.WEBSOURCE_ARCHIVE, 1, this.handleWebSourceArchiveJob.bind(this) as JobHandler);
 
+    // Migration 73: Date extraction from web sources - runs with concurrency 2
+    // Lower priority, background operation after text extraction
+    this.registerQueue(IMPORT_QUEUES.DATE_EXTRACTION, 2, this.handleDateExtractionJob.bind(this) as JobHandler);
+
     // Log configuration
     logger.info('JobWorker', 'Queue configuration (hardware-scaled)', {
       // Per-file
@@ -140,6 +144,8 @@ export class JobWorkerService extends EventEmitter {
       bagit: hw.bagitWorkers,
       // Web archiving
       websourceArchive: 1,
+      // Date extraction
+      dateExtraction: 2,
     });
   }
 
@@ -1301,6 +1307,90 @@ export class JobWorkerService extends EventEmitter {
       }
 
       return { success: false, error: message };
+    }
+  }
+
+  /**
+   * Migration 73: Handle date extraction job
+   * Extracts dates from web source text using NLP and stores for verification
+   *
+   * - Processes text from web_sources.extracted_text
+   * - Uses chrono-node with historical bias for urbex context
+   * - Detects categories (build_date, site_visit, etc.)
+   * - Stores extractions in date_extractions table
+   * - Emits completion event for UI reactivity
+   */
+  private async handleDateExtractionJob(
+    payload: { sourceId: string },
+    emit: (event: string, data: unknown) => void
+  ): Promise<{ success: boolean; extractionsFound: number; error?: string }> {
+    const { sourceId } = payload;
+
+    emit('progress', { progress: 0, message: 'Starting date extraction...' });
+
+    try {
+      // Lazy load date extraction processor to avoid circular dependencies
+      const { getDateExtractionProcessor } = await import('../main/ipc-handlers/date-engine');
+      const processor = getDateExtractionProcessor();
+
+      if (!processor) {
+        logger.warn('JobWorker', `Date extraction processor not initialized, skipping ${sourceId}`);
+        return { success: true, extractionsFound: 0 };
+      }
+
+      // Get the web source with extracted text
+      const source = await this.db
+        .selectFrom('web_sources')
+        .select(['source_id', 'extracted_text', 'locid', 'subid', 'extracted_date'])
+        .where('source_id', '=', sourceId)
+        .executeTakeFirst();
+
+      if (!source) {
+        logger.info('JobWorker', `Web source ${sourceId} no longer exists, skipping date extraction`);
+        return { success: true, extractionsFound: 0 };
+      }
+
+      if (!source.extracted_text) {
+        logger.info('JobWorker', `Web source ${sourceId} has no extracted text, skipping date extraction`);
+        return { success: true, extractionsFound: 0 };
+      }
+
+      emit('progress', { progress: 20, message: 'Processing text for dates...' });
+
+      // Process the text
+      const extractions = await processor.processText(
+        source.extracted_text,
+        'web_source',
+        sourceId,
+        source.locid,
+        source.subid,
+        source.extracted_date
+      );
+
+      emit('progress', { progress: 80, message: `Found ${extractions.length} dates...` });
+
+      // Update tracking on web_sources
+      await this.db
+        .updateTable('web_sources')
+        .set({
+          dates_extracted_at: new Date().toISOString(),
+          dates_extraction_count: extractions.length,
+        })
+        .where('source_id', '=', sourceId)
+        .execute();
+
+      emit('progress', { progress: 100, message: 'Date extraction complete' });
+
+      logger.info('JobWorker', `Date extraction complete for ${sourceId}`, {
+        extractionsFound: extractions.length,
+        locid: source.locid,
+      });
+
+      return { success: true, extractionsFound: extractions.length };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('JobWorker', `Date extraction job failed: ${message}`);
+      return { success: false, extractionsFound: 0, error: message };
     }
   }
 

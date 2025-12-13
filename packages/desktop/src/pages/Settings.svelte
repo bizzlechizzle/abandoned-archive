@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { thumbnailCache } from '../stores/thumbnail-cache-store';
+  import DateExtractionQueue from '../components/DateExtractionQueue.svelte';
+  import PatternEditor from '../components/PatternEditor.svelte';
 
   interface User {
     user_id: string;
@@ -53,6 +55,10 @@
   let maintenanceExpanded = $state(false);
   let databaseExpanded = $state(false);
   let healthExpanded = $state(false);
+
+  // Date Engine accordion state (Migration 73)
+  let dateEngineExpanded = $state(false);
+  let showPatternEditor = $state(false);
 
   // Storage bar state - OPT-047: Enhanced with database-backed tracking
   let storageStats = $state<{
@@ -2669,6 +2675,52 @@
               <p class="text-xs text-braun-400">Storage info unavailable</p>
             {/if}
           </div>
+        </div>
+        {/if}
+      </div>
+
+      <!-- Date Engine Accordion (Migration 73) -->
+      <div class="bg-white rounded border border-braun-300 mb-6 overflow-hidden">
+        <button
+          onclick={() => dateEngineExpanded = !dateEngineExpanded}
+          class="w-full flex items-center justify-between text-left transition-colors hover:bg-braun-50 {dateEngineExpanded ? 'p-6' : 'px-6 py-4'}"
+        >
+          <h2 class="text-lg font-semibold text-foreground">Date Engine</h2>
+          <svg
+            class="w-5 h-5 text-braun-900 transition-transform duration-200 {dateEngineExpanded ? 'rotate-180' : ''}"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {#if dateEngineExpanded}
+        <div class="px-6 pb-6 space-y-6">
+          <p class="text-sm text-braun-600">
+            NLP-based date extraction from web sources. Review pending extractions and manage custom patterns.
+          </p>
+
+          <!-- Date Extraction Queue -->
+          <DateExtractionQueue />
+
+          <!-- Pattern Editor Toggle -->
+          <div class="border-t border-braun-200 pt-4">
+            <button
+              onclick={() => showPatternEditor = !showPatternEditor}
+              class="flex items-center gap-2 text-sm font-medium text-braun-700 hover:text-braun-900 transition"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+              </svg>
+              {showPatternEditor ? 'Hide Pattern Editor' : 'Show Pattern Editor'}
+            </button>
+          </div>
+
+          {#if showPatternEditor}
+            <PatternEditor onClose={() => showPatternEditor = false} />
+          {/if}
         </div>
         {/if}
       </div>

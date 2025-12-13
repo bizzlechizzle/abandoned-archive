@@ -696,6 +696,9 @@ export const IMPORT_QUEUES = {
 
   // OPT-113: Web source archiving (lower priority, runs in background)
   WEBSOURCE_ARCHIVE: 'websource-archive',
+
+  // Migration 73: Date extraction from web sources
+  DATE_EXTRACTION: 'date-extraction',
 } as const;
 
 /**

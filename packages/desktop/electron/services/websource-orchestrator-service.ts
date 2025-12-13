@@ -52,6 +52,7 @@ import {
 } from './websource-metadata-service';
 import { calculateHash, calculateHashBuffer } from './crypto-service';
 import { getTimelineService } from '../main/ipc-handlers/timeline';
+import { JobQueue, IMPORT_QUEUES, JOB_PRIORITY } from './job-queue';
 
 // =============================================================================
 // Types and Interfaces
@@ -119,10 +120,12 @@ export class WebSourceOrchestrator extends EventEmitter {
   private archiveBasePath: string | null = null;
   private isProcessing = false;
   private currentSourceId: string | null = null;
+  private jobQueue: JobQueue;
 
   constructor(private readonly db: Kysely<Database>) {
     super();
     this.repository = new SQLiteWebSourcesRepository(db);
+    this.jobQueue = new JobQueue(db);
   }
 
   // ===========================================================================
@@ -362,6 +365,22 @@ export class WebSourceOrchestrator extends EventEmitter {
           contentHash = result.text.hash;
           extractedTextContent = result.text.content; // OPT-110: Capture text for FTS5 storage
           componentStatus.text = 'done';
+
+          // Migration 73: Queue date extraction job if we have text content
+          // Date extraction runs in background after text extraction completes
+          if (extractedTextContent && extractedTextContent.length > 0) {
+            try {
+              await this.jobQueue.addJob({
+                queue: IMPORT_QUEUES.DATE_EXTRACTION,
+                payload: { sourceId },
+                priority: JOB_PRIORITY.BACKGROUND,
+              });
+              console.log(`[WebSource] Queued date extraction job for ${sourceId}`);
+            } catch (queueError) {
+              // Don't fail the archive if job queueing fails
+              console.error('[WebSource] Failed to queue date extraction job:', queueError);
+            }
+          }
         } else {
           componentStatus.text = 'failed';
         }

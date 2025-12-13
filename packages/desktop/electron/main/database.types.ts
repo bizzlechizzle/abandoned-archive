@@ -40,6 +40,10 @@ export interface Database {
   web_source_videos: WebSourceVideosTable;
   // Migration 69: Timeline events
   location_timeline: LocationTimelineTable;
+  // Migration 73: Date Engine - NLP date extraction
+  date_extractions: DateExtractionsTable;
+  date_engine_learning: DateEngineLearningTable;
+  date_patterns: DatePatternsTable;
 }
 
 // Locations table
@@ -808,6 +812,10 @@ export interface WebSourcesTable {
   twitter_card_json: string | null;
   schema_org_json: string | null;
   http_status: number | null;
+
+  // Migration 73: Date extraction tracking
+  dates_extracted_at: string | null;
+  dates_extraction_count: number;
 }
 
 // Web Source Versions table - Track changes over time
@@ -957,4 +965,98 @@ export interface LocationTimelineTable {
   created_by: string | null;
   updated_at: string | null;
   updated_by: string | null;
+}
+
+// Migration 73: Date Extractions table - NLP date extraction from web sources
+export interface DateExtractionsTable {
+  extraction_id: string;
+
+  // Source reference
+  source_type: string;      // 'web_source' | 'image_caption' | 'document' | 'manual'
+  source_id: string;
+  locid: string | null;
+  subid: string | null;
+
+  // Parsed date
+  raw_text: string;
+  parsed_date: string | null;
+  date_start: string | null;
+  date_end: string | null;
+  date_precision: string;
+  date_display: string | null;
+  date_edtf: string | null;
+  date_sort: number | null;
+
+  // Context
+  sentence: string;
+  sentence_position: number | null;
+  category: string;         // 'build_date' | 'site_visit' | 'obituary' | etc.
+  category_confidence: number;
+  category_keywords: string | null;  // JSON array
+
+  // Rich confidence scoring
+  keyword_distance: number | null;
+  sentence_position_type: string | null;  // 'beginning' | 'middle' | 'end'
+  source_age_days: number | null;
+  overall_confidence: number;
+
+  // Article date context (for relative dates)
+  article_date: string | null;
+  relative_date_anchor: string | null;
+  was_relative_date: number;
+
+  // Parsing metadata
+  parser_name: string;
+  parser_confidence: number;
+  century_bias_applied: number;
+  original_year_ambiguous: number;
+
+  // Duplicate detection & merging
+  is_primary: number;
+  merged_from_ids: string | null;    // JSON array
+  duplicate_of_id: string | null;
+
+  // Timeline conflict detection
+  conflict_event_id: string | null;
+  conflict_type: string | null;      // 'date_mismatch' | 'category_mismatch' | 'duplicate'
+  conflict_resolved: number;
+
+  // Verification
+  status: string;           // 'pending' | 'auto_approved' | 'user_approved' | 'rejected' | 'converted' | 'reverted'
+  auto_approve_reason: string | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  rejection_reason: string | null;
+
+  // Timeline linkage & undo
+  timeline_event_id: string | null;
+  converted_at: string | null;
+  reverted_at: string | null;
+  reverted_by: string | null;
+
+  created_at: string;
+  updated_at: string | null;
+}
+
+// Migration 73: Date Engine Learning table - ML weight adjustments
+export interface DateEngineLearningTable {
+  id: Generated<number>;
+  category: string;
+  keyword: string;
+  approval_count: number;
+  rejection_count: number;
+  weight_modifier: number;
+  last_updated: string | null;
+}
+
+// Migration 73: Date Patterns table - Custom regex patterns
+export interface DatePatternsTable {
+  pattern_id: string;
+  name: string;
+  regex: string;
+  category: string | null;
+  priority: number;
+  enabled: number;
+  test_cases: string | null;  // JSON array of {input, expected}
+  created_at: string;
 }

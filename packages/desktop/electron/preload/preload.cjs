@@ -868,6 +868,79 @@ const api = {
     backfillWebPages: () =>
       invokeAuto("timeline:backfillWebPages")(),
   },
+
+  // Date Engine (Migration 73 - NLP date extraction from web sources)
+  dateEngine: {
+    // Extraction
+    extractFromWebSource: (sourceId) =>
+      invokeAuto("dateEngine:extractFromWebSource")(sourceId),
+    extractFromText: (input) =>
+      invokeAuto("dateEngine:extractFromText")(input),
+    preview: (text, articleDate) =>
+      invokeAuto("dateEngine:preview")(text, articleDate),
+
+    // Backfill
+    backfillWebSources: (options) =>
+      invokeLong("dateEngine:backfillWebSources")(options),
+    backfillImageCaptions: (options) =>
+      invokeLong("dateEngine:backfillImageCaptions")(options),
+
+    // Query
+    getPendingReview: (limit, offset) =>
+      invokeAuto("dateEngine:getPendingReview")(limit, offset),
+    getPendingByLocation: (locid) =>
+      invokeAuto("dateEngine:getPendingByLocation")(locid),
+    getByLocation: (locid, filters) =>
+      invokeAuto("dateEngine:getByLocation")(locid, filters),
+    getConflicts: () =>
+      invokeAuto("dateEngine:getConflicts")(),
+    getById: (extractionId) =>
+      invokeAuto("dateEngine:getById")(extractionId),
+    find: (filters) =>
+      invokeAuto("dateEngine:find")(filters),
+
+    // Review Actions
+    approve: (extractionId, userId) =>
+      invokeAuto("dateEngine:approve")(extractionId, userId),
+    reject: (extractionId, userId, reason) =>
+      invokeAuto("dateEngine:reject")(extractionId, userId, reason),
+    approveAndResolveConflict: (extractionId, userId, updateTimeline) =>
+      invokeAuto("dateEngine:approveAndResolveConflict")(extractionId, userId, updateTimeline),
+    convertToTimeline: (extractionId, userId) =>
+      invokeAuto("dateEngine:convertToTimeline")(extractionId, userId),
+    revert: (extractionId, userId) =>
+      invokeAuto("dateEngine:revert")(extractionId, userId),
+    mergeDuplicates: (primaryId, duplicateId) =>
+      invokeAuto("dateEngine:mergeDuplicates")(primaryId, duplicateId),
+
+    // Statistics
+    getStats: () =>
+      invokeAuto("dateEngine:getStats")(),
+    getLearningStats: () =>
+      invokeAuto("dateEngine:getLearningStats")(),
+
+    // CSV Export/Import
+    exportPending: () =>
+      invokeAuto("dateEngine:exportPending")(),
+    importReviewed: (csvContent, userId) =>
+      invokeAuto("dateEngine:importReviewed")(csvContent, userId),
+
+    // Custom Patterns
+    getPatterns: (enabledOnly) =>
+      invokeAuto("dateEngine:getPatterns")(enabledOnly),
+    getPattern: (patternId) =>
+      invokeAuto("dateEngine:getPattern")(patternId),
+    savePattern: (patternId, input) =>
+      invokeAuto("dateEngine:savePattern")(patternId, input),
+    deletePattern: (patternId) =>
+      invokeAuto("dateEngine:deletePattern")(patternId),
+    testPattern: (pattern, testText) =>
+      invokeAuto("dateEngine:testPattern")(pattern, testText),
+
+    // OCR Document Extraction
+    extractFromDocument: (input) =>
+      invokeLong("dateEngine:extractFromDocument")(input),
+  },
 };
 
 contextBridge.exposeInMainWorld("electronAPI", api);

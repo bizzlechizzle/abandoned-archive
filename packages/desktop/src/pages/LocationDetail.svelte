@@ -22,6 +22,7 @@
     type GpsWarning, type FailedFile
   } from '../components/location';
   import WebSourceDetailModal from '../components/location/WebSourceDetailModal.svelte';
+  import DateExtractionReview from '../components/location/DateExtractionReview.svelte';
   import type { Location, LocationInput } from '@au-archive/core';
   import { ACCESS_OPTIONS } from '../constants/location-enums';
 
@@ -1203,6 +1204,12 @@
               isHostLocation={isHostLocation && !isViewingSubLocation}
               onUpdate={loadLocation}
               onOpenWebSource={handleOpenWebSource}
+            />
+            <!-- Date Extraction Review: Pending dates feed into Timeline -->
+            <DateExtractionReview
+              locid={location.locid}
+              subid={isViewingSubLocation && currentSubLocation ? currentSubLocation.subid : null}
+              onUpdate={loadLocation}
             />
           </div>
 
