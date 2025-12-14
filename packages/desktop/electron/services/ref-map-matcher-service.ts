@@ -18,6 +18,7 @@ import {
   calculateNameMatch,
   hasBlockingConflict,
   isGenericName,
+  shouldExcludeFromSuggestions,
   type NameMatchResult,
 } from './token-set-service';
 import { DUPLICATE_CONFIG } from '../../src/lib/constants';
@@ -146,6 +147,10 @@ export class RefMapMatcherService {
 
       for (const point of points) {
         if (!point.name) continue;
+
+        // Skip non-descriptive placeholder names from suggestions
+        // Filters: "House", "Buffalo Church", "House - CNY", "Point 155", etc.
+        if (shouldExcludeFromSuggestions(point.name)) continue;
 
         // Use Token Set Ratio (includes Jaro-Winkler) for comprehensive matching
         // This is the key fix: TSR handles word reordering that JW misses

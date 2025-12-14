@@ -90,6 +90,37 @@ export const IDENTIFIER_PATTERNS = [
 ];
 
 // ============================================================================
+// SUGGESTION FILTERING
+// ============================================================================
+
+/**
+ * Generic words that alone (or with region) are not useful as suggestions.
+ * These are typically Google Maps/Street View pins without real documentation.
+ */
+export const SUGGESTION_GENERIC_WORDS = new Set([
+  // From GENERIC_NAMES plus additional patterns found in map data
+  'house', 'houses', 'church', 'churches', 'school', 'schools',
+  'factory', 'industrial', 'industry', 'building', 'farm', 'farms',
+  'barn', 'mill', 'warehouse', 'store', 'shop', 'hotel', 'motel',
+  'hospital', 'office', 'station', 'tower', 'plant', 'center',
+  'site', 'place', 'location', 'point', 'cars', 'trains', 'trucks',
+  'quarry', 'cabin', 'greenhouse', 'theater', 'trails', 'trail',
+]);
+
+/**
+ * Region/city names that when combined with generic words = placeholder entry.
+ * "Buffalo Church", "House - CNY", "Industrial - Syracuse" should all be filtered.
+ */
+export const SUGGESTION_REGION_WORDS = new Set([
+  // Abbreviations
+  'cny', 'wny', 'nny', 'eny', 'pa', 'ny', 'in',
+  // Cities/regions from map data
+  'fingerlakes', 'buffalo', 'syracuse', 'rochester', 'binghamton',
+  'pittsburgh', 'albany', 'sayre', 'elmira', 'waterloo', 'lockport',
+  'cortland', 'maine', 'ohio',
+]);
+
+// ============================================================================
 // TOKENIZATION
 // ============================================================================
 
@@ -479,6 +510,66 @@ export function getNameFlags(name: string): {
   };
 }
 
+/**
+ * Check if a name should be excluded from reference map suggestions.
+ * Filters out non-descriptive 1-3 word placeholder names that dilute search results.
+ *
+ * Excludes:
+ * - Single generic words: "House", "Church", "Industry"
+ * - Generic + region combos: "Buffalo Church", "House - CNY", "Industrial - Syracuse"
+ * - Generic with question marks: "House?", "School?"
+ * - Numbered placeholders: "Point 155", "School 75"
+ * - Coordinate strings and plus codes
+ * - Off-topic trails: "Off Road Trails"
+ *
+ * @param name - The reference map point name to check
+ * @returns true if name should be EXCLUDED from suggestions
+ */
+export function shouldExcludeFromSuggestions(name: string): boolean {
+  if (!name) return true;
+
+  const trimmed = name.trim();
+  const lower = trimmed.toLowerCase();
+  const words = tokenize(trimmed);
+
+  // Only filter 1-3 word names; 4+ words are descriptive enough
+  if (words.length > 3) return false;
+
+  // Single generic word: "House", "Church", "Industry"
+  if (words.length === 1) {
+    if (SUGGESTION_GENERIC_WORDS.has(lower)) return true;
+    // Also check without trailing 's' for plurals: "Houses" -> "house"
+    if (SUGGESTION_GENERIC_WORDS.has(lower.replace(/s$/, ''))) return true;
+  }
+
+  // Generic with question mark: "House?", "School?", "Power Plant?"
+  if (trimmed.endsWith('?') && words.length <= 2) {
+    const baseWord = words[0];
+    if (SUGGESTION_GENERIC_WORDS.has(baseWord)) return true;
+  }
+
+  // Generic + region in ANY order: "House - CNY", "Buffalo Church", "Syracuse School"
+  if (words.length >= 2 && words.length <= 3) {
+    const hasGeneric = words.some((w) => SUGGESTION_GENERIC_WORDS.has(w));
+    const hasRegion = words.some((w) => SUGGESTION_REGION_WORDS.has(w));
+    if (hasGeneric && hasRegion) return true;
+  }
+
+  // Point/Location/Site/Marker + number: "Point 155", "Site 12" (but NOT "School 75" - real school names!)
+  if (/^(point|location|site|marker)\s*\d+$/i.test(trimmed)) return true;
+
+  // Coordinate patterns: "43.259, -79.05" or similar
+  if (/^-?\d+\.\d+,?\s*-?\d+\.\d+$/.test(trimmed)) return true;
+
+  // Google Plus Codes: "4RR6+2R", "22CR+9G"
+  if (/^[A-Z0-9]{4,}\+[A-Z0-9]+$/i.test(trimmed)) return true;
+
+  // Off-topic trails
+  if (/trail/i.test(trimmed)) return true;
+
+  return false;
+}
+
 // ============================================================================
 // COMBINED SCORING
 // ============================================================================
@@ -860,8 +951,11 @@ export default {
   hasUncertainty,
   isPlaceholder,
   getNameFlags,
+  shouldExcludeFromSuggestions,
   calculateMultiSignalMatch,
   GENERIC_NAMES,
   BLOCKING_WORDS,
   SIGNAL_WEIGHTS,
+  SUGGESTION_GENERIC_WORDS,
+  SUGGESTION_REGION_WORDS,
 };
