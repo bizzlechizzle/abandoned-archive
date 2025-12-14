@@ -124,7 +124,8 @@
       </svg>
     </button>
 
-    <div class="px-6 pb-6" class:hidden={!isOpen}>
+    {#if isOpen}
+      <div class="px-6 pb-6">
         <!-- Nested accordions - only show those with data -->
         <div class="pl-4 space-y-2">
           <!-- Timeline FIRST - primary research artifact -->
@@ -175,5 +176,6 @@
           </button>
         </div>
       </div>
+    {/if}
   </div>
 {/if}
