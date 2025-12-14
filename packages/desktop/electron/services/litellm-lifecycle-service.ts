@@ -16,10 +16,16 @@
 
 import { spawn, execSync, ChildProcess } from 'child_process';
 import { existsSync, writeFileSync, readFileSync, unlinkSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import { homedir } from 'os';
 import { app } from 'electron';
 import { retrieveCredential, hasCredential, listCredentialProviders } from './credential-service';
 import { getRawDatabase } from '../main/database';
+
+// ESM-compatible __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // =============================================================================
 // TYPES
@@ -89,10 +95,14 @@ function getVenvPaths(): string[] {
   return [
     // Production: in app resources
     join(app.getPath('userData'), 'litellm-venv', 'bin', 'python'),
-    // Development: in scripts folder
-    join(__dirname, '..', '..', '..', '..', 'scripts', 'litellm-venv', 'bin', 'python'),
-    // Alternative dev path
+    // Development: project root scripts folder (when running from packages/desktop)
+    join(process.cwd(), '..', '..', 'scripts', 'litellm-venv', 'bin', 'python'),
+    // Development: when cwd is project root
     join(process.cwd(), 'scripts', 'litellm-venv', 'bin', 'python'),
+    // Development: relative to dist-electron output
+    join(__dirname, '..', '..', '..', 'scripts', 'litellm-venv', 'bin', 'python'),
+    // Desktop package scripts folder
+    join(__dirname, '..', '..', 'scripts', 'litellm-venv', 'bin', 'python'),
   ];
 }
 
@@ -102,24 +112,33 @@ function getVenvPaths(): string[] {
  */
 function getLiteLLMPython(): string | null {
   // Check bundled venv first
-  for (const pythonPath of getVenvPaths()) {
-    if (existsSync(pythonPath)) {
+  const venvPaths = getVenvPaths();
+  console.log('[LiteLLM] Checking venv paths:', venvPaths);
+
+  for (const pythonPath of venvPaths) {
+    const exists = existsSync(pythonPath);
+    console.log(`[LiteLLM] Checking ${pythonPath}: ${exists ? 'FOUND' : 'not found'}`);
+    if (exists) {
       console.log(`[LiteLLM] Using bundled venv: ${pythonPath}`);
       return pythonPath;
     }
   }
 
-  // Fall back to system Python
+  // Fall back to system Python with proper environment
+  console.log('[LiteLLM] No venv found, checking system Python...');
+  const env = { ...process.env, HOME: process.env.HOME || homedir() };
+
   try {
-    execSync('python3 -c "import litellm"', { timeout: 5000, stdio: 'ignore' });
+    execSync('python3 -c "import litellm"', { timeout: 5000, stdio: 'ignore', env });
     console.log('[LiteLLM] Using system python3');
     return 'python3';
   } catch {
     try {
-      execSync('python -c "import litellm"', { timeout: 5000, stdio: 'ignore' });
+      execSync('python -c "import litellm"', { timeout: 5000, stdio: 'ignore', env });
       console.log('[LiteLLM] Using system python');
       return 'python';
     } catch {
+      console.log('[LiteLLM] No Python with litellm found');
       return null;
     }
   }
@@ -440,15 +459,25 @@ export async function startLiteLLM(): Promise<boolean> {
   const configContent = await generateConfig();
   writeFileSync(configPath, configContent, 'utf8');
 
+  // Determine if using bundled venv (has litellm executable) or system Python
+  const venvBinDir = dirname(pythonPath);
+  const litellmExe = join(venvBinDir, 'litellm');
+  const useBundledExe = existsSync(litellmExe);
+
   console.log(`[LiteLLMLifecycle] Starting proxy on port ${currentPort}`);
   console.log(`[LiteLLMLifecycle] Config: ${configPath}`);
-  console.log(`[LiteLLMLifecycle] Using Python: ${pythonPath}`);
+  console.log(`[LiteLLMLifecycle] Using: ${useBundledExe ? litellmExe : pythonPath}`);
 
   try {
-    // Spawn LiteLLM proxy using Python module
+    // Spawn LiteLLM proxy - use executable if bundled, otherwise python -m litellm.proxy
+    const spawnCmd = useBundledExe ? litellmExe : pythonPath;
+    const spawnArgs = useBundledExe
+      ? ['--config', configPath, '--port', String(currentPort)]
+      : ['-m', 'litellm.proxy', '--config', configPath, '--port', String(currentPort)];
+
     litellmProcess = spawn(
-      pythonPath,
-      ['-m', 'litellm', '--config', configPath, '--port', String(currentPort), '--detailed_debug', 'false'],
+      spawnCmd,
+      spawnArgs,
       {
         detached: true,
         stdio: 'ignore',

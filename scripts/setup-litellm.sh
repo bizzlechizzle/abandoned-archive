@@ -70,8 +70,9 @@ check_installation() {
     if [[ -d "$VENV_DIR" && -f "$VENV_DIR/bin/python" ]]; then
         # Check if litellm is installed
         if "$VENV_DIR/bin/python" -c "import litellm" 2>/dev/null; then
-            version=$("$VENV_DIR/bin/python" -c "import litellm; print(litellm.__version__)" 2>/dev/null)
-            log_info "LiteLLM $version installed at $VENV_DIR"
+            # Try to get version (attribute name varies by version)
+            version=$("$VENV_DIR/bin/python" -c "import litellm; print(getattr(litellm, '__version__', getattr(litellm, 'version', 'unknown')))" 2>/dev/null || echo "installed")
+            log_info "LiteLLM $version at $VENV_DIR"
             return 0
         else
             log_warn "Venv exists but LiteLLM not installed"
@@ -110,9 +111,9 @@ install_litellm() {
     # Upgrade pip first
     pip install --upgrade pip --quiet
 
-    # Install LiteLLM with all providers
+    # Install LiteLLM with proxy extras
     pip install \
-        "litellm>=1.40.0" \
+        "litellm[proxy]>=1.40.0" \
         "python-dotenv>=1.0.0" \
         "pyyaml>=6.0" \
         --quiet
