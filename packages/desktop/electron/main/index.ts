@@ -17,6 +17,7 @@ import { startWebSocketServer, stopWebSocketServer } from '../services/websocket
 import { terminateDetachedBrowser } from '../services/detached-browser-service';
 import { getDatabaseArchiveService } from '../services/database-archive-service';
 import { stopOllama } from '../services/ollama-lifecycle-service';
+import { stopLiteLLM } from '../services/litellm-lifecycle-service';
 import { getPreprocessingService } from '../services/extraction/preprocessing-service';
 import { SQLiteWebSourcesRepository } from '../repositories/sqlite-websources-repository';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
@@ -576,6 +577,14 @@ app.on('before-quit', async () => {
     console.log('Ollama stopped successfully');
   } catch (error) {
     console.error('Failed to stop Ollama:', error);
+  }
+
+  // Migration 86: Stop LiteLLM proxy if we started it
+  try {
+    await stopLiteLLM();
+    console.log('LiteLLM proxy stopped successfully');
+  } catch (error) {
+    console.error('Failed to stop LiteLLM proxy:', error);
   }
 
   // Stop spaCy preprocessing server if we started it

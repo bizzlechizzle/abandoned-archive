@@ -150,6 +150,16 @@ export function registerIpcHandlers() {
   cleanupOrphanOllama();
   registerOllamaLifecycleHandlers();
 
+  // Credential Management (Migration 85)
+  // Secure API key storage using Electron safeStorage
+  registerCredentialsHandlers();
+
+  // LiteLLM Proxy Gateway (Migration 86)
+  // Unified AI gateway for cloud providers
+  // Clean up orphan from previous crash, register handlers
+  cleanupOrphanLiteLLM();
+  registerLiteLLMHandlers();
+
   // Browser Image Capture (network monitoring, context menu)
   initializeBrowserImageCapture({
     filter: {
@@ -174,3 +184,6 @@ export { setMonitoringMainWindow };
 
 // Export Ollama lifecycle cleanup for app shutdown
 export { stopOllama as stopOllamaLifecycle };
+
+// Export LiteLLM lifecycle cleanup for app shutdown
+export { shutdownLiteLLM as stopLiteLLMLifecycle };

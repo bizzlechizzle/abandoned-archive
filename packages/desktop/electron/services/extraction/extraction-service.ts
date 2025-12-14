@@ -22,6 +22,7 @@ import type { Database as SqliteDatabase } from 'better-sqlite3';
 import { BaseExtractionProvider } from './providers/base-provider';
 import { OllamaProvider } from './providers/ollama-provider';
 import { SpacyProvider } from './providers/spacy-provider';
+import { LiteLLMProvider } from './providers/litellm-provider';
 import type {
   ExtractionInput,
   ExtractionResult,
@@ -179,6 +180,13 @@ export class ExtractionService {
             break;
           case 'spacy':
             provider = new SpacyProvider(config);
+            break;
+          case 'litellm':
+          case 'anthropic':
+          case 'openai':
+          case 'google':
+            // All cloud providers route through LiteLLM proxy
+            provider = new LiteLLMProvider(config);
             break;
           default:
             console.warn(`[ExtractionService] Unknown provider type: ${config.type}`);
@@ -526,6 +534,13 @@ export class ExtractionService {
           break;
         case 'spacy':
           provider = new SpacyProvider(config);
+          break;
+        case 'litellm':
+        case 'anthropic':
+        case 'openai':
+        case 'google':
+          // All cloud providers route through LiteLLM proxy
+          provider = new LiteLLMProvider(config);
           break;
         default:
           throw new Error(`Unknown provider type: ${config.type}`);

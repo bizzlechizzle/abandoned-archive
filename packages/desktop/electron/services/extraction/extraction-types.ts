@@ -299,7 +299,7 @@ export interface ExtractionResult {
 /**
  * Provider type enumeration
  */
-export type ProviderType = 'spacy' | 'ollama' | 'anthropic' | 'google' | 'openai';
+export type ProviderType = 'spacy' | 'ollama' | 'anthropic' | 'google' | 'openai' | 'litellm';
 
 /**
  * Provider configuration (stored in settings/database)

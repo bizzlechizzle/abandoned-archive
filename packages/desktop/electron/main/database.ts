@@ -3666,6 +3666,51 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 84 completed: extracted_addresses table created');
     }
 
+    // Migration 85: Credentials table for encrypted API key storage
+    // Per LiteLLM Integration Plan: Secure storage using Electron safeStorage
+    const hasCredentialsTable = tableNames.includes('credentials');
+    if (!hasCredentialsTable) {
+      console.log('Running migration 85: Creating credentials table');
+      sqlite.exec(`
+        CREATE TABLE credentials (
+          provider TEXT PRIMARY KEY,
+          encrypted_key TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          last_used_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+      console.log('Migration 85 completed: credentials table created');
+    }
+
+    // Migration 86: LiteLLM settings table for proxy configuration
+    // Per LiteLLM Integration Plan: Unified AI gateway configuration
+    const hasLiteLLMSettings = tableNames.includes('litellm_settings');
+    if (!hasLiteLLMSettings) {
+      console.log('Running migration 86: Creating litellm_settings table');
+      sqlite.exec(`
+        CREATE TABLE litellm_settings (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        -- Insert default settings
+        INSERT INTO litellm_settings (key, value) VALUES
+          ('default_model', 'extraction-local'),
+          ('auto_start', 'true'),
+          ('idle_timeout_minutes', '10'),
+          ('max_concurrent', '5'),
+          ('log_level', 'warning'),
+          ('port', '4000'),
+          ('privacy_enabled', 'true'),
+          ('privacy_redact_gps', 'true'),
+          ('privacy_redact_addresses', 'true'),
+          ('privacy_redact_phones', 'false'),
+          ('privacy_redact_emails', 'false'),
+          ('privacy_excluded_locations', '[]');
+      `);
+      console.log('Migration 86 completed: litellm_settings table created with defaults');
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

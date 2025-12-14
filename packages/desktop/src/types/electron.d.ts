@@ -2400,6 +2400,46 @@ export interface ElectronAPI {
     }) => void) => () => void;
   };
 
+  // OPT-125: Ollama Lifecycle Management
+  ollama: {
+    getStatus: () => Promise<OllamaStatus>;
+    ensureRunning: () => Promise<{ success: boolean; error?: string }>;
+    stop: () => Promise<{ success: boolean; error?: string }>;
+    checkInstalled: () => Promise<{ installed: boolean; path?: string }>;
+  };
+
+  // Credential Management (Migration 85)
+  credentials: {
+    store: (provider: CredentialProvider, apiKey: string) => Promise<{ success: boolean; error?: string }>;
+    has: (provider: CredentialProvider) => Promise<{ hasCredential: boolean }>;
+    delete: (provider: CredentialProvider) => Promise<{ success: boolean; error?: string }>;
+    list: () => Promise<{ providers: CredentialProvider[] }>;
+    info: (provider: CredentialProvider) => Promise<{
+      exists: boolean;
+      createdAt?: string;
+      lastUsedAt?: string;
+    }>;
+  };
+
+  // LiteLLM Proxy Gateway (Migration 86)
+  litellm: {
+    status: () => Promise<LiteLLMStatus>;
+    start: () => Promise<{ success: boolean; error?: string }>;
+    stop: () => Promise<{ success: boolean; error?: string }>;
+    reload: () => Promise<{ success: boolean; error?: string }>;
+    test: (modelId: string) => Promise<LiteLLMTestResult>;
+    costs: () => Promise<LiteLLMCosts>;
+    models: () => Promise<LiteLLMModel[]>;
+    settings: {
+      get: () => Promise<LiteLLMSettings>;
+      set: (key: string, value: string) => Promise<{ success: boolean; error?: string }>;
+    };
+    privacy: {
+      get: () => Promise<PrivacySettings>;
+      update: (updates: Partial<PrivacySettings>) => Promise<{ success: boolean; error?: string }>;
+    };
+  };
+
 }
 
 // Migration 76: Location Tag Summary type
@@ -3092,6 +3132,85 @@ export interface ConflictSummary {
   byResolution: Record<ConflictResolution, number>;
   oldestUnresolved: string | null;
   mostRecentResolved: string | null;
+}
+
+// =============================================================================
+// CREDENTIAL MANAGEMENT (Migration 85)
+// =============================================================================
+
+export type CredentialProvider = 'anthropic' | 'openai' | 'google' | 'groq';
+
+export interface CredentialInfo {
+  exists: boolean;
+  createdAt?: string;
+  lastUsedAt?: string;
+}
+
+// =============================================================================
+// OLLAMA LIFECYCLE (OPT-125)
+// =============================================================================
+
+export interface OllamaStatus {
+  running: boolean;
+  installed: boolean;
+  path?: string;
+  version?: string;
+  models?: string[];
+  error?: string;
+}
+
+// =============================================================================
+// LITELLM PROXY GATEWAY (Migration 86)
+// =============================================================================
+
+export interface LiteLLMStatus {
+  running: boolean;
+  port: number;
+  pid?: number;
+  uptime?: number;
+  lastStarted?: string;
+  error?: string;
+}
+
+export interface LiteLLMTestResult {
+  success: boolean;
+  modelId: string;
+  responseTimeMs?: number;
+  tokensUsed?: number;
+  error?: string;
+}
+
+export interface LiteLLMCosts {
+  totalCost: number;
+  byModel: Record<string, number>;
+  byDay: Record<string, number>;
+  period: { start: string; end: string };
+}
+
+export interface LiteLLMModel {
+  id: string;
+  name: string;
+  provider: string;
+  available: boolean;
+  costPerToken?: { input: number; output: number };
+}
+
+export interface LiteLLMSettings {
+  defaultModel: string;
+  autoStart: boolean;
+  idleTimeoutMinutes: number;
+  maxConcurrent: number;
+  logLevel: 'debug' | 'info' | 'warning' | 'error';
+  port: number;
+}
+
+export interface PrivacySettings {
+  enabled: boolean;
+  redactGps: boolean;
+  redactAddresses: boolean;
+  redactPhones: boolean;
+  redactEmails: boolean;
+  excludedLocations: string[];
 }
 
 declare global {

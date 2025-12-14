@@ -1178,6 +1178,66 @@ const api = {
     checkInstalled: () =>
       invokeAuto("ollama:checkInstalled")(),
   },
+
+  // Credential Management (Migration 85)
+  // Secure API key storage using Electron safeStorage
+  credentials: {
+    // Store encrypted API key
+    store: (provider, apiKey) =>
+      invokeAuto("credentials:store")({ provider, apiKey }),
+    // Check if credential exists (never exposes key)
+    has: (provider) =>
+      invokeAuto("credentials:has")({ provider }),
+    // Delete stored credential
+    delete: (provider) =>
+      invokeAuto("credentials:delete")({ provider }),
+    // List all providers with stored credentials
+    list: () =>
+      invokeAuto("credentials:list")(),
+    // Get credential info (last used, created date) without exposing key
+    info: (provider) =>
+      invokeAuto("credentials:info")({ provider }),
+  },
+
+  // LiteLLM Proxy Gateway (Migration 86)
+  // Unified AI gateway for cloud providers
+  litellm: {
+    // Get current proxy status
+    status: () =>
+      invokeAuto("litellm:status")(),
+    // Start LiteLLM proxy
+    start: () =>
+      invokeLong("litellm:start")(),
+    // Stop LiteLLM proxy
+    stop: () =>
+      invokeAuto("litellm:stop")(),
+    // Reload configuration (after credential changes)
+    reload: () =>
+      invokeAuto("litellm:reload")(),
+    // Test a model connection
+    test: (modelId) =>
+      invokeLong("litellm:test")({ modelId }),
+    // Get usage costs (if available)
+    costs: () =>
+      invokeAuto("litellm:costs")(),
+    // List available models
+    models: () =>
+      invokeAuto("litellm:models")(),
+    // Settings management
+    settings: {
+      get: () =>
+        invokeAuto("litellm:settings:get")(),
+      set: (key, value) =>
+        invokeAuto("litellm:settings:set")({ key, value }),
+    },
+    // Privacy settings
+    privacy: {
+      get: () =>
+        invokeAuto("litellm:privacy:get")(),
+      update: (updates) =>
+        invokeAuto("litellm:privacy:update")(updates),
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld("electronAPI", api);
