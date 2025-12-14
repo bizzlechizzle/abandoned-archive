@@ -1,12 +1,14 @@
 <script lang="ts">
   /**
    * LocationResearch - Research section accordion wrapper
-   * Contains: Timeline (detailed), People, Companies, Addresses
+   * Contains: Web Sources, Timeline (detailed), People, Companies, Addresses
    * Per Braun: White card accordion, 8pt grid, functional minimalism
    * LLM Tools Overhaul: Added Addresses accordion + conditional visibility
+   * FIX: Added Web Sources - users expect to find bookmarks here (Rule 9)
    */
   import { router } from '../../stores/router';
   import { onMount } from 'svelte';
+  import LocationWebSources from './LocationWebSources.svelte';
   import LocationResearchTimeline from './LocationResearchTimeline.svelte';
   import LocationResearchPeople from './LocationResearchPeople.svelte';
   import LocationResearchCompanies from './LocationResearchCompanies.svelte';
@@ -45,12 +47,14 @@
     people: 0,
     companies: 0,
     addresses: 0,
+    websources: 0,
     total: 0
   });
   let countsLoading = $state(true);
 
   // Computed visibility flags
-  let hasAnyData = $derived(counts.total > 0);
+  let hasAnyData = $derived(counts.total > 0 || counts.websources > 0);
+  let showWebSources = $derived(counts.websources > 0);
   let showTimeline = $derived(counts.timeline > 0);
   let showPeople = $derived(counts.people > 0);
   let showCompanies = $derived(counts.companies > 0);
@@ -69,10 +73,14 @@
   async function loadCounts() {
     countsLoading = true;
     try {
+      // Load research counts
       const result = await window.electronAPI.extraction.research.getCounts(locid);
       if (result.success && result.counts) {
-        counts = result.counts;
+        counts = { ...result.counts, websources: counts.websources };
       }
+      // FIX: Also load web sources count
+      const wsCount = await window.electronAPI.websources.countByLocation(locid);
+      counts = { ...counts, websources: wsCount || 0 };
     } catch (e) {
       console.error('Failed to load research counts:', e);
     } finally {
@@ -109,8 +117,8 @@
     >
       <div class="flex items-center gap-2">
         <h2 class="text-xl font-semibold text-braun-900">Research</h2>
-        {#if !countsLoading && counts.total > 0}
-          <span class="text-sm text-braun-400">({counts.total})</span>
+        {#if !countsLoading && (counts.total > 0 || counts.websources > 0)}
+          <span class="text-sm text-braun-400">({counts.total + counts.websources})</span>
         {/if}
       </div>
       <svg
@@ -127,6 +135,14 @@
       <div class="px-6 pb-6">
         <!-- Nested accordions - only show those with data -->
         <div class="pl-4 space-y-2">
+          <!-- FIX: Web Sources FIRST - this is where users expect to find bookmarks -->
+          {#if showWebSources || countsLoading}
+            <LocationWebSources
+              {locid}
+              onOpenSource={(url) => window.electronAPI?.shell?.openExternal(url)}
+            />
+          {/if}
+
           <!-- Timeline (detailed) - always show if data exists -->
           {#if showTimeline || countsLoading}
             <LocationResearchTimeline
