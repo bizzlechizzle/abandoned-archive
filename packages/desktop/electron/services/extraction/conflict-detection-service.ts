@@ -22,9 +22,63 @@ import type {
   ConflictDetectionOptions,
   ConflictSummary,
   SourceAuthority,
+  ConflictResolutionSuggestion,
+  FactConflictWithSuggestion,
 } from './conflict-types';
 
 import { DEFAULT_CONFLICT_OPTIONS, getDefaultTier } from './conflict-types';
+
+// =============================================================================
+// OLLAMA HELPER (for LLM-based conflict resolution)
+// =============================================================================
+
+interface OllamaGenerateOptions {
+  model?: string;
+  temperature?: number;
+  maxTokens?: number;
+}
+
+/**
+ * Simple Ollama generate call for conflict resolution
+ * Uses default localhost:11434 endpoint
+ */
+async function ollamaGenerate(
+  prompt: string,
+  options: OllamaGenerateOptions = {}
+): Promise<string | null> {
+  const {
+    model = 'qwen2.5:32b',
+    temperature = 0.3,
+    maxTokens = 500,
+  } = options;
+
+  try {
+    const response = await fetch('http://localhost:11434/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        prompt,
+        stream: false,
+        options: {
+          temperature,
+          num_predict: maxTokens,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn(`[ConflictDetection] Ollama returned ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json() as { response?: string };
+    return data.response || null;
+  } catch (error) {
+    console.warn('[ConflictDetection] Ollama call failed:', error);
+    return null;
+  }
+}
 
 // =============================================================================
 // TYPES
@@ -601,56 +655,271 @@ export class ConflictDetectionService {
   }
 
   /**
-   * Suggest resolution based on source authority
+   * Suggest resolution based on source authority (rule-based)
+   * Per LLM Tools Overhaul: First strategy in three-strategy approach
    */
-  suggestResolution(conflict: FactConflict): {
-    suggestion: ConflictResolution;
-    reasoning: string;
-    confidence: number;
-  } {
+  suggestResolution(conflict: FactConflict): ConflictResolutionSuggestion {
     const tierA = conflict.claim_a.source_tier || 3;
     const tierB = conflict.claim_b.source_tier || 3;
 
     // Higher tier (lower number) is more authoritative
     if (tierA < tierB) {
       return {
-        suggestion: 'claim_a',
+        suggestedResolution: 'claim_a',
         reasoning: `Source A has higher authority (tier ${tierA} vs ${tierB})`,
         confidence: 0.7 + (tierB - tierA) * 0.1,
+        strategy: 'source_authority',
       };
     }
 
     if (tierB < tierA) {
       return {
-        suggestion: 'claim_b',
+        suggestedResolution: 'claim_b',
         reasoning: `Source B has higher authority (tier ${tierB} vs ${tierA})`,
         confidence: 0.7 + (tierA - tierB) * 0.1,
+        strategy: 'source_authority',
       };
     }
 
     // Same tier - use confidence
     if (conflict.claim_a.confidence > conflict.claim_b.confidence + 0.1) {
       return {
-        suggestion: 'claim_a',
+        suggestedResolution: 'claim_a',
         reasoning: `Source A has higher extraction confidence (${conflict.claim_a.confidence.toFixed(2)} vs ${conflict.claim_b.confidence.toFixed(2)})`,
         confidence: 0.6,
+        strategy: 'confidence_based',
       };
     }
 
     if (conflict.claim_b.confidence > conflict.claim_a.confidence + 0.1) {
       return {
-        suggestion: 'claim_b',
+        suggestedResolution: 'claim_b',
         reasoning: `Source B has higher extraction confidence (${conflict.claim_b.confidence.toFixed(2)} vs ${conflict.claim_a.confidence.toFixed(2)})`,
         confidence: 0.6,
+        strategy: 'confidence_based',
       };
     }
 
     // Can't determine - needs review
     return {
-      suggestion: 'both_valid',
+      suggestedResolution: 'needs_review',
       reasoning: 'Sources have similar authority and confidence - manual review recommended',
       confidence: 0.3,
+      strategy: 'manual_required',
+      reviewNotes: `Claim A: "${conflict.claim_a.value}" (tier ${tierA}, conf ${conflict.claim_a.confidence.toFixed(2)})\nClaim B: "${conflict.claim_b.value}" (tier ${tierB}, conf ${conflict.claim_b.confidence.toFixed(2)})`,
     };
+  }
+
+  /**
+   * Suggest resolution using LLM analysis (async)
+   * Per LLM Tools Overhaul: Second strategy - LLM picks best
+   *
+   * @param conflict - The conflict to analyze
+   * @returns Resolution suggestion with LLM reasoning
+   */
+  async suggestLLMResolution(conflict: FactConflict): Promise<ConflictResolutionSuggestion> {
+    // First try rule-based resolution
+    const ruleBasedSuggestion = this.suggestResolution(conflict);
+
+    // If rule-based has high confidence, use it
+    if (ruleBasedSuggestion.confidence >= 0.7) {
+      return ruleBasedSuggestion;
+    }
+
+    // Try LLM-based resolution
+    try {
+      const prompt = `You are an archive historian resolving a fact conflict between two sources.
+
+CONFLICT TYPE: ${conflict.conflict_type}
+FIELD: ${conflict.field_name}
+
+CLAIM A:
+- Value: ${conflict.claim_a.value}
+- Source: ${conflict.claim_a.source_domain || 'unknown'}
+- Authority Tier: ${conflict.claim_a.source_tier || 3} (1=highest, 4=lowest)
+- Confidence: ${conflict.claim_a.confidence.toFixed(2)}
+- Context: "${conflict.claim_a.context || 'none'}"
+
+CLAIM B:
+- Value: ${conflict.claim_b.value}
+- Source: ${conflict.claim_b.source_domain || 'unknown'}
+- Authority Tier: ${conflict.claim_b.source_tier || 3} (1=highest, 4=lowest)
+- Confidence: ${conflict.claim_b.confidence.toFixed(2)}
+- Context: "${conflict.claim_b.context || 'none'}"
+
+Analyze the conflict and determine which claim is more likely correct. Consider:
+1. Source authority (official sources like .gov, .edu are more reliable)
+2. Specificity of the date (exact dates vs years)
+3. Context and surrounding evidence
+4. Whether both claims could be valid (e.g., different events)
+
+Return ONLY valid JSON:
+{
+  "resolution": "claim_a" | "claim_b" | "both_valid" | "needs_review",
+  "reasoning": "explanation (2-3 sentences)",
+  "confidence": 0.0-1.0,
+  "merged_value": "optional - if both_valid, suggest merged representation"
+}`;
+
+      const response = await ollamaGenerate(prompt, {
+        model: 'qwen2.5:32b',
+        temperature: 0.3,
+        maxTokens: 500,
+      });
+
+      if (!response) {
+        return {
+          ...ruleBasedSuggestion,
+          reviewNotes: 'LLM unavailable - using rule-based suggestion',
+        };
+      }
+
+      // Parse LLM response
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]) as {
+          resolution: string;
+          reasoning: string;
+          confidence: number;
+          merged_value?: string;
+        };
+
+        const resolution = parsed.resolution as 'claim_a' | 'claim_b' | 'both_valid' | 'needs_review';
+        return {
+          suggestedResolution: resolution,
+          reasoning: parsed.reasoning,
+          confidence: Math.min(1, Math.max(0, parsed.confidence)),
+          strategy: 'llm_analysis',
+          suggestedMergedValue: parsed.merged_value,
+        };
+      }
+
+      // Fallback if parsing fails
+      return {
+        ...ruleBasedSuggestion,
+        reviewNotes: 'LLM response parsing failed - using rule-based suggestion',
+      };
+    } catch (error) {
+      console.error('[ConflictDetection] LLM resolution failed:', error);
+      return {
+        ...ruleBasedSuggestion,
+        reviewNotes: `LLM error: ${error instanceof Error ? error.message : 'Unknown'} - using rule-based suggestion`,
+      };
+    }
+  }
+
+  /**
+   * Flag timeline events for review when conflicts are detected
+   * Per LLM Tools Overhaul: Third strategy - flag for review
+   *
+   * @param locid - Location ID
+   * @param eventIds - Event IDs to flag (or all conflicting events if not provided)
+   * @returns Number of events flagged
+   */
+  flagTimelineEventsForReview(locid: string, eventIds?: string[]): number {
+    if (eventIds && eventIds.length > 0) {
+      // Flag specific events
+      const stmt = this.db.prepare(`
+        UPDATE location_timeline
+        SET needs_review = 1
+        WHERE locid = ? AND event_id IN (${eventIds.map(() => '?').join(',')})
+      `);
+      const result = stmt.run(locid, ...eventIds);
+      return result.changes;
+    }
+
+    // Flag all events involved in unresolved conflicts
+    const conflicts = this.getConflictsForLocation(locid, false);
+    if (conflicts.length === 0) return 0;
+
+    // Get all source refs from conflicts
+    const sourceRefs = new Set<string>();
+    for (const conflict of conflicts) {
+      sourceRefs.add(conflict.claim_a.source_ref);
+      sourceRefs.add(conflict.claim_b.source_ref);
+    }
+
+    // Find and flag timeline events from these sources
+    const result = this.db.prepare(`
+      UPDATE location_timeline
+      SET needs_review = 1
+      WHERE locid = ?
+        AND (
+          source_refs LIKE '%' || ? || '%'
+          OR source_refs LIKE '%' || ? || '%'
+        )
+    `).run(locid, ...Array.from(sourceRefs).slice(0, 2));
+
+    return result.changes;
+  }
+
+  /**
+   * Get conflicts with suggestions attached
+   *
+   * @param locid - Location ID
+   * @param useLLM - Whether to use LLM for suggestions (async)
+   * @returns Conflicts with resolution suggestions
+   */
+  async getConflictsWithSuggestions(
+    locid: string,
+    useLLM = false
+  ): Promise<FactConflictWithSuggestion[]> {
+    const conflicts = this.getConflictsForLocation(locid, false);
+    const results: FactConflictWithSuggestion[] = [];
+
+    for (const conflict of conflicts) {
+      const suggestion = useLLM
+        ? await this.suggestLLMResolution(conflict)
+        : this.suggestResolution(conflict);
+
+      results.push({
+        ...conflict,
+        suggestion,
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * Auto-resolve conflicts where suggestion confidence is high
+   *
+   * @param locid - Location ID
+   * @param minConfidence - Minimum confidence to auto-resolve (default 0.8)
+   * @param resolvedBy - User/system ID performing resolution
+   * @returns Number of conflicts auto-resolved
+   */
+  async autoResolveHighConfidence(
+    locid: string,
+    minConfidence = 0.8,
+    resolvedBy = 'system'
+  ): Promise<number> {
+    const conflicts = await this.getConflictsWithSuggestions(locid, true);
+    let resolved = 0;
+
+    for (const conflict of conflicts) {
+      if (
+        conflict.suggestion &&
+        conflict.suggestion.confidence >= minConfidence &&
+        conflict.suggestion.suggestedResolution !== 'needs_review'
+      ) {
+        // Map suggestion to resolution
+        const resolution = conflict.suggestion.suggestedResolution === 'both_valid'
+          ? 'both_valid' as ConflictResolution
+          : conflict.suggestion.suggestedResolution as ConflictResolution;
+
+        this.resolveConflict({
+          conflict_id: conflict.conflict_id,
+          resolution,
+          resolution_notes: `Auto-resolved by ${conflict.suggestion.strategy}: ${conflict.suggestion.reasoning}`,
+          resolved_by: resolvedBy,
+        });
+
+        resolved++;
+      }
+    }
+
+    return resolved;
   }
 }
 

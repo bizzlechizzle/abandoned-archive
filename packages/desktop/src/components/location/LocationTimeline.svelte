@@ -222,7 +222,21 @@
 
   function formatVisitLine(event: TimelineEvent | TimelineEventWithSource): string {
     const year = getYear(event);
-    return `${year} - Visit`;
+
+    // Get media counts if available
+    const counts = mediaCounts.get(event.event_id);
+    const imgCount = counts?.images ?? 0;
+    const vidCount = counts?.videos ?? 0;
+
+    // Choose verb based on media type (KISS: Year - Event)
+    if (imgCount > 0 && vidCount > 0) {
+      return `${year} - Documented`;
+    } else if (vidCount > 0) {
+      return `${year} - Filmed`;
+    } else if (imgCount > 0) {
+      return `${year} - Photographed`;
+    }
+    return `${year} - Visited`;
   }
 
   function formatWebPageLine(event: TimelineEvent | TimelineEventWithSource): string {

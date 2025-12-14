@@ -157,15 +157,31 @@
       {#if loading}
         <div class="py-4 text-sm text-braun-500">Loading...</div>
       {:else if useProfiles && profiles.length > 0}
-        <!-- Enhanced profile view -->
+        <!-- Enhanced profile view with avatars -->
         <ul class="space-y-3">
           {#each profiles as profile (profile.person_id)}
             <li class="border-l-2 border-braun-200 pl-3">
               <!-- Profile header - clickable to expand -->
               <button
                 onclick={() => toggleExpand(profile.person_id)}
-                class="w-full text-left flex items-start gap-2"
+                class="w-full text-left flex items-start gap-3"
               >
+                <!-- Avatar (40x40) -->
+                <div class="flex-shrink-0">
+                  {#if profile.photo_url}
+                    <img
+                      src={profile.photo_url}
+                      alt={profile.name}
+                      class="w-10 h-10 rounded-full object-cover bg-braun-100"
+                    />
+                  {:else}
+                    <!-- Placeholder avatar with initials -->
+                    <div class="w-10 h-10 rounded-full bg-braun-200 flex items-center justify-center text-braun-500 text-sm font-medium">
+                      {profile.name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()}
+                    </div>
+                  {/if}
+                </div>
+
                 <div class="min-w-0 flex-1">
                   <span class="text-[14px] font-medium text-braun-900">{profile.name}</span>
                   {#if formatLifespan(profile)}
@@ -188,9 +204,20 @@
                 </svg>
               </button>
 
-              <!-- Expanded profile details -->
+              <!-- Expanded profile details with larger photo -->
               {#if expandedProfile === profile.person_id}
                 <div class="mt-2 pl-4 space-y-2 text-[13px]">
+                  <!-- Larger photo in expanded view (96x128) -->
+                  {#if profile.photo_url}
+                    <div class="mb-3">
+                      <img
+                        src={profile.photo_url}
+                        alt={profile.name}
+                        class="w-24 h-32 rounded object-cover bg-braun-100"
+                      />
+                    </div>
+                  {/if}
+
                   {#if profile.aliases.length > 0}
                     <div>
                       <span class="text-braun-500">Also known as:</span>

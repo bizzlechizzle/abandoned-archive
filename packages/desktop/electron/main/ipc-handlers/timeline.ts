@@ -271,6 +271,300 @@ export function registerTimelineHandlers(db: Kysely<Database>): TimelineService 
     return backfillWebPageTimeline(dbInstance, service);
   });
 
+  // ==========================================================================
+  // Multi-Source Timeline (LLM Tools Overhaul)
+  // ==========================================================================
+
+  /**
+   * Get timeline events with all their sources for a location
+   * Returns TimelineEventWithSources[] with source_refs parsed and enriched
+   */
+  ipcMain.handle('timeline:findByLocationWithSources', async (_, locid: string) => {
+    if (!dbInstance) {
+      return [];
+    }
+
+    try {
+      // Get timeline events
+      const events = await dbInstance
+        .selectFrom('location_timeline')
+        .selectAll()
+        .where('locid', '=', locid)
+        .orderBy('date_sort', 'asc')
+        .execute();
+
+      // Enrich each event with source details
+      const enrichedEvents = await Promise.all(
+        events.map(async (event) => {
+          // Parse source_refs JSON array
+          let sourceRefs: string[] = [];
+          try {
+            sourceRefs = event.source_refs ? JSON.parse(event.source_refs) : [];
+          } catch {
+            sourceRefs = [];
+          }
+
+          // Get source details for each reference
+          const sources: Array<{
+            source_id: string;
+            source_type: string;
+            domain: string | null;
+            title: string | null;
+            url: string | null;
+          }> = [];
+
+          for (const sourceId of sourceRefs) {
+            const webSource = await dbInstance!
+              .selectFrom('web_sources')
+              .select(['source_id', 'domain', 'title', 'url'])
+              .where('source_id', '=', sourceId)
+              .executeTakeFirst();
+
+            if (webSource) {
+              sources.push({
+                source_id: webSource.source_id,
+                source_type: 'web',
+                domain: webSource.domain,
+                title: webSource.title,
+                url: webSource.url,
+              });
+            }
+          }
+
+          // Check for conflicts (multiple sources with different dates)
+          const hasConflicts = sources.length > 1;
+
+          // Get image/video breakdown from media_hashes for visit events
+          let image_count = 0;
+          let video_count = 0;
+
+          if (event.event_type === 'visit' && event.media_hashes) {
+            try {
+              const hashes: string[] = JSON.parse(event.media_hashes);
+              for (const hash of hashes) {
+                // Check if hash exists in imgs table
+                const img = await dbInstance!
+                  .selectFrom('imgs')
+                  .select('imghash')
+                  .where('imghash', '=', hash)
+                  .executeTakeFirst();
+                if (img) {
+                  image_count++;
+                  continue;
+                }
+                // Check if hash exists in vids table
+                const vid = await dbInstance!
+                  .selectFrom('vids')
+                  .select('vidhash')
+                  .where('vidhash', '=', hash)
+                  .executeTakeFirst();
+                if (vid) {
+                  video_count++;
+                }
+              }
+            } catch {
+              // If parsing fails, fall back to total media_count as images
+              image_count = event.media_count || 0;
+            }
+          }
+
+          // For database_entry events, get the location author (who added it)
+          let location_author: string | null = null;
+          if (event.event_type === 'database_entry') {
+            const loc = await dbInstance!
+              .selectFrom('locs')
+              .select('auth_imp')
+              .where('locid', '=', event.locid)
+              .executeTakeFirst();
+            location_author = loc?.auth_imp || null;
+          }
+
+          return {
+            ...event,
+            sources,
+            has_conflicts: hasConflicts,
+            image_count,
+            video_count,
+            location_author,
+          };
+        })
+      );
+
+      return enrichedEvents;
+    } catch (err) {
+      console.error('[Timeline] Failed to get events with sources:', err);
+      return [];
+    }
+  });
+
+  /**
+   * Get source details for a specific timeline event
+   */
+  ipcMain.handle('timeline:getSources', async (_, eventId: string) => {
+    if (!dbInstance) {
+      return { success: false, sources: [] };
+    }
+
+    try {
+      // Get the event
+      const event = await dbInstance
+        .selectFrom('location_timeline')
+        .select(['source_refs'])
+        .where('event_id', '=', eventId)
+        .executeTakeFirst();
+
+      if (!event) {
+        return { success: false, error: 'Event not found', sources: [] };
+      }
+
+      // Parse source_refs
+      let sourceRefs: string[] = [];
+      try {
+        sourceRefs = event.source_refs ? JSON.parse(event.source_refs) : [];
+      } catch {
+        sourceRefs = [];
+      }
+
+      // Get source details
+      const sources: Array<{
+        source_id: string;
+        source_type: string;
+        domain: string | null;
+        title: string | null;
+        url: string | null;
+        extracted_date: string | null;
+        extracted_text: string | null;
+      }> = [];
+
+      for (const sourceId of sourceRefs) {
+        const webSource = await dbInstance!
+          .selectFrom('web_sources')
+          .select(['source_id', 'domain', 'title', 'url', 'extracted_date', 'extracted_text'])
+          .where('source_id', '=', sourceId)
+          .executeTakeFirst();
+
+        if (webSource) {
+          sources.push({
+            source_id: webSource.source_id,
+            source_type: 'web',
+            domain: webSource.domain,
+            title: webSource.title,
+            url: webSource.url,
+            extracted_date: webSource.extracted_date,
+            extracted_text: webSource.extracted_text,
+          });
+        }
+      }
+
+      return { success: true, sources };
+    } catch (err) {
+      console.error('[Timeline] Failed to get sources:', err);
+      return { success: false, error: 'Failed to get sources', sources: [] };
+    }
+  });
+
+  /**
+   * Add a source reference to an existing timeline event
+   */
+  ipcMain.handle(
+    'timeline:addSource',
+    async (_, eventId: string, sourceId: string) => {
+      if (!dbInstance) {
+        return { success: false, error: 'Database not initialized' };
+      }
+
+      try {
+        // Get current source_refs
+        const event = await dbInstance
+          .selectFrom('location_timeline')
+          .select(['source_refs'])
+          .where('event_id', '=', eventId)
+          .executeTakeFirst();
+
+        if (!event) {
+          return { success: false, error: 'Event not found' };
+        }
+
+        // Parse and add new source
+        let sourceRefs: string[] = [];
+        try {
+          sourceRefs = event.source_refs ? JSON.parse(event.source_refs) : [];
+        } catch {
+          sourceRefs = [];
+        }
+
+        if (!sourceRefs.includes(sourceId)) {
+          sourceRefs.push(sourceId);
+
+          await dbInstance
+            .updateTable('location_timeline')
+            .set({ source_refs: JSON.stringify(sourceRefs) })
+            .where('event_id', '=', eventId)
+            .execute();
+        }
+
+        return { success: true };
+      } catch (err) {
+        console.error('[Timeline] Failed to add source:', err);
+        return { success: false, error: 'Failed to add source' };
+      }
+    }
+  );
+
+  /**
+   * Reject/soft-delete a timeline event (marks it for review queue)
+   */
+  ipcMain.handle('timeline:reject', async (_, eventId: string, userId?: string) => {
+    if (!dbInstance) {
+      return { success: false, error: 'Database not initialized' };
+    }
+
+    try {
+      await dbInstance
+        .updateTable('location_timeline')
+        .set({
+          needs_review: 1,
+          approved_by: null, // Clear approval if any
+        })
+        .where('event_id', '=', eventId)
+        .execute();
+
+      return { success: true };
+    } catch (err) {
+      console.error('[Timeline] Failed to reject event:', err);
+      return { success: false, error: 'Failed to reject event' };
+    }
+  });
+
+  /**
+   * Get counts of timeline events for a location (for conditional visibility)
+   */
+  ipcMain.handle('timeline:getCounts', async (_, locid: string) => {
+    if (!dbInstance) {
+      return { total: 0, needsReview: 0, approved: 0 };
+    }
+
+    try {
+      const result = await dbInstance
+        .selectFrom('location_timeline')
+        .select(({ fn }) => [
+          fn.count('event_id').as('total'),
+          fn.sum(fn.cast('needs_review', 'integer')).as('needs_review_count'),
+        ])
+        .where('locid', '=', locid)
+        .executeTakeFirst();
+
+      return {
+        total: Number(result?.total ?? 0),
+        needsReview: Number(result?.needs_review_count ?? 0),
+        approved: Number(result?.total ?? 0) - Number(result?.needs_review_count ?? 0),
+      };
+    } catch (err) {
+      console.error('[Timeline] Failed to get counts:', err);
+      return { total: 0, needsReview: 0, approved: 0 };
+    }
+  });
+
   console.log('Timeline IPC handlers registered');
   return service;
 }

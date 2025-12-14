@@ -53,6 +53,8 @@ export interface Database {
   // Migration 76: RAM++ Image Auto-Tagging
   location_tag_summary: LocationTagSummaryTable;
   image_tagging_queue: ImageTaggingQueueTable;
+  // Migration 84: Extracted Addresses (LLM Tools Overhaul)
+  extracted_addresses: ExtractedAddressesTable;
 }
 
 // Locations table
@@ -1230,4 +1232,39 @@ export interface ImageTaggingQueueTable {
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
+}
+
+// Migration 84: Extracted Addresses table - LLM Tools Overhaul
+// Per plan: Extract addresses from web sources to validate/suggest corrections
+export interface ExtractedAddressesTable {
+  address_id: string;
+  locid: string;
+  source_id: string;
+  source_type: string;                   // 'web' | 'document' | 'manual'
+
+  // Address components (normalized)
+  street: string | null;
+  city: string | null;
+  county: string | null;
+  state: string | null;                  // 2-letter state code
+  zipcode: string | null;
+  full_address: string;
+
+  // Extraction metadata
+  confidence: number;                    // 0-1 confidence score
+  context_sentence: string | null;       // Sentence where address was found
+  verb_context: string | null;           // Verb that triggered extraction
+  prompt_version: string | null;         // LLM prompt version used
+
+  // Status workflow
+  status: 'pending' | 'approved' | 'rejected' | 'applied';
+
+  // Comparison with location address
+  matches_location: number;              // 0/1 - Does this match current location address?
+  suggested_corrections: string | null;  // JSON of suggested field corrections
+
+  // Timestamps
+  created_at: string;
+  applied_at: string | null;
+  applied_by: string | null;
 }

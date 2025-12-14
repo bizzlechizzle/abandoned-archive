@@ -1,18 +1,26 @@
 /**
  * Agent Prompt Templates
  *
- * Carefully crafted prompts for the two specialized extraction agents:
+ * Carefully crafted prompts for the specialized extraction agents:
  * 1. Date Extraction Agent - Extracts dates with category and confidence
  * 2. Summary/Title Agent - Generates titles and summaries
+ * 3. Combined Extraction - Single-pass extraction for efficiency
  *
  * Key design decisions:
+ * - All agents inherit from ARCHIVAL_BASE_SYSTEM_PROMPT (archival-base-prompt.ts)
+ * - Verb-centric date extraction (DATE must have VERB to be timeline-relevant)
  * - Explicit JSON schema in prompts
  * - Few-shot examples for consistency
- * - Clear rules about what to extract vs ignore
  * - Historical context awareness for urbex documents
  *
- * @version 1.0
+ * @version 2.0 - LLM Tools Overhaul (December 2025)
  */
+
+import {
+  ARCHIVAL_BASE_SYSTEM_PROMPT,
+  TIMELINE_VERB_CATEGORIES,
+  formatPromptWithPreprocessing,
+} from './archival-base-prompt';
 
 import type {
   ExtractedDate,
@@ -26,6 +34,8 @@ import type {
   PersonRole,
   OrganizationType,
   LocationRefType,
+  SuggestedLocationType,
+  SuggestedEra,
 } from '../extraction-types';
 
 // =============================================================================
@@ -34,17 +44,25 @@ import type {
 
 /**
  * System prompt for the date extraction agent
+ * Builds on ARCHIVAL_BASE_SYSTEM_PROMPT with date-specific instructions
  */
-export const DATE_EXTRACTION_SYSTEM_PROMPT = `You are an expert historian specializing in extracting dates from historical documents about abandoned places, buildings, and urban exploration.
+export const DATE_EXTRACTION_SYSTEM_PROMPT = `${ARCHIVAL_BASE_SYSTEM_PROMPT}
 
-Your task is to find ALL dates mentioned in documents and categorize them correctly. You understand that:
-- "built in 1923" is a BUILD_DATE
-- "closed in 2008" is a CLOSURE date
-- "visited on Saturday" is a VISIT date
-- "published April 2025" is a PUBLICATION date
-- Numbers like "110 to 130 employees" are NOT dates
-- Measurements like "50 feet" are NOT dates
-- Phone numbers and addresses are NOT dates
+## DATE EXTRACTION TASK
+
+You are extracting dates from historical documents about abandoned places. Your task is to find ALL dates mentioned and categorize them correctly based on their VERB CONTEXT.
+
+### VERB-DATE RULE (CRITICAL)
+A date is ONLY timeline-relevant if it has a timeline verb:
+- "built in 1923" → category: build_date, isTimelineRelevant: true
+- "closed in 2008" → category: closure, isTimelineRelevant: true
+- "in 1923" (no verb) → category: unknown, isTimelineRelevant: false
+- "500 workers in 1960" → NOT A DATE (employee count)
+
+### Timeline Verb Categories
+${Object.entries(TIMELINE_VERB_CATEGORIES)
+  .map(([cat, config]) => `- ${cat}: ${config.verbs.slice(0, 5).join(', ')}... (weight: ${config.weight})`)
+  .join('\n')}
 
 You return ONLY valid JSON matching the exact schema provided. No explanations or commentary.`;
 
@@ -183,22 +201,42 @@ Return ONLY the JSON object. No markdown, no explanation.`;
 
 /**
  * System prompt for the summary/title agent
+ * Builds on ARCHIVAL_BASE_SYSTEM_PROMPT with summary-specific instructions
  */
-export const SUMMARY_TITLE_SYSTEM_PROMPT = `You are an expert archivist and historian who creates concise, informative titles and summaries for documents about abandoned places, historical buildings, and urban exploration sites.
+export const SUMMARY_TITLE_SYSTEM_PROMPT = `${ARCHIVAL_BASE_SYSTEM_PROMPT}
 
-Your titles should be:
-- Under 60 characters
-- Descriptive and specific (not generic)
-- Include the location type or name when known
-- Focus on what makes this location notable
+## SUMMARY/TITLE GENERATION TASK
 
-Your summaries should be:
-- 2-3 sentences (50-150 words)
-- Capture the key historical facts
-- Mention dates, people, and organizations if relevant
-- Written for researchers and historians
+You are generating titles and summaries for documents about abandoned/historical locations.
 
-You return ONLY valid JSON matching the exact schema provided. No explanations or commentary.`;
+### Title Requirements (TLDR Title)
+- 6-10 words, maximum 60 characters
+- Specific to THIS location (not generic)
+- Format: WHO did WHAT WHEN (if applicable)
+- Include location type when known: "Factory", "Hospital", "School"
+- Focus on the most notable fact
+
+Good: "Sterling Steel Factory: 85 Years of Industrial History"
+Bad: "Abandoned Place Article" (too generic)
+
+### Summary Requirements (TLDR)
+- 1-3 sentences maximum
+- WHO did WHAT WHEN format
+- Lead with the most important fact
+- Include dates if available
+- Written for researchers, not tourists
+
+### Key Facts
+- 3-5 specific, verifiable facts
+- Each must be traceable to source text
+- Prioritize: dates, names, numbers
+- No speculation or opinions
+
+### Suggested Metadata
+- suggestedLocationType: Infer from content (factory, hospital, school, etc.)
+- suggestedEra: Infer from dates (industrial, victorian, art_deco, etc.)
+
+You return ONLY valid JSON matching the exact schema provided.`;
 
 /**
  * Main prompt template for summary/title generation
@@ -214,71 +252,94 @@ export const SUMMARY_TITLE_PROMPT = `Generate a title and summary for this docum
 
 ## REQUIRED OUTPUT FORMAT (JSON):
 {
-  "title": "Short descriptive title under 60 characters",
-  "summary": "2-3 sentence summary of key facts (50-150 words)",
+  "title": "6-10 word TLDR title under 60 characters",
+  "summary": "1-3 sentence TLDR summary (WHO did WHAT WHEN)",
   "keyFacts": [
-    "Specific fact 1",
-    "Specific fact 2",
-    "Specific fact 3"
+    "Specific verifiable fact 1",
+    "Specific verifiable fact 2",
+    "Specific verifiable fact 3"
   ],
+  "suggestedLocationType": "factory|hospital|school|asylum|prison|church|hotel|theater|military|residential|commercial|industrial|unknown",
+  "suggestedEra": "colonial|victorian|industrial|art_deco|mid_century|modern|unknown",
   "confidence": 0.0 to 1.0
 }
 
-## TITLE GUIDELINES:
-- Maximum 60 characters
+## TITLE GUIDELINES (TLDR Title):
+- 6-10 words, maximum 60 characters
+- Format: [Location Name]: [Key Historical Fact] OR [WHO] [VERB] [WHAT] [WHEN]
 - Include location type: "Factory", "Hospital", "School", etc.
-- Include key identifier: name, city, or unique feature
-- Focus on historical significance
-- Avoid generic phrases like "An Abandoned Building"
+- Focus on the single most notable fact
+- Avoid generic phrases
 
 Good titles:
-- "Sterling Steel Factory: 85 Years of Industrial History"
-- "Riverside State Hospital Closure (1923-2008)"
-- "The Fall of Millbrook Textile Mill"
-- "Lafayette Hills Asylum: A Photographic Record"
+- "Sterling Steel Factory: 85-Year Industrial History Ends 2008"
+- "Riverside State Hospital Closure After 75 Years"
+- "John Sterling's Textile Mill Falls to Competition"
 
 Bad titles:
-- "Abandoned Place Article"
-- "Old Building History"
-- "Exploration Report"
+- "Abandoned Place Article" (no specifics)
+- "Old Building History" (too generic)
+- "Exploration Report" (not about the location)
 
-## SUMMARY GUIDELINES:
-- Start with what the location is/was
-- Include key dates (construction, operation, closure)
-- Mention notable people or organizations
-- Note current state if described
-- Use past tense for historical facts
-- Be factual, not sensational
+## SUMMARY GUIDELINES (TLDR):
+- 1-3 sentences MAXIMUM (50-100 words ideal)
+- WHO did WHAT WHEN format
+- Lead with the most important fact
+- Include build date and closure date if available
+- Written for researchers, not tourists
+- Past tense for historical facts
 
 ## KEY FACTS GUIDELINES:
-- 3-5 specific, verifiable facts
-- Each fact should be distinct
-- Prioritize dates, numbers, names
-- Avoid opinions or speculation
+- 3-5 specific, verifiable facts ONLY
+- Each fact MUST be traceable to the source text
+- Prioritize: dates, names, numbers, measurements
+- NO opinions, speculation, or inferences
+
+## LOCATION TYPE (infer from content):
+- factory, mill, plant → "industrial" or specific type
+- hospital, asylum, sanatorium → "hospital" or "asylum"
+- school, college, university → "school"
+- prison, jail, penitentiary → "prison"
+- hotel, resort, inn → "hotel"
+- church, cathedral, chapel → "church"
+- theater, cinema, opera → "theater"
+- military base, fort, armory → "military"
+- house, mansion, estate → "residential"
+- store, mall, office → "commercial"
+
+## ERA (infer from dates):
+- Before 1800 → "colonial"
+- 1800-1900 → "victorian"
+- 1900-1940 → "industrial"
+- 1920-1940 → "art_deco"
+- 1945-1970 → "mid_century"
+- After 1970 → "modern"
+- Cannot determine → "unknown"
 
 ## CONFIDENCE SCORING:
-- 0.90-1.0: Rich document with clear facts and dates
-- 0.70-0.89: Good document with some key information
+- 0.90-1.0: Rich document with clear facts, dates, and names
+- 0.70-0.89: Good document with key information
 - 0.50-0.69: Limited information, basic summary possible
 - Below 0.50: Very little usable content
 
-## EXAMPLES:
+## EXAMPLE:
 
 INPUT (locationName: "Sterling Steel Factory"):
-"The Sterling Steel Factory was built in 1923 by John Sterling. At its peak, it employed over 500 workers and produced steel for the automotive industry. The factory closed in 2008 due to foreign competition and has sat abandoned since. The main building still stands but is deteriorating rapidly."
+"The Sterling Steel Factory was built in 1923 by John Sterling. At its peak, it employed over 500 workers and produced steel for the automotive industry. The factory closed in 2008 due to foreign competition and has sat abandoned since."
 
 OUTPUT:
 {
-  "title": "Sterling Steel Factory: From Industrial Giant to Abandonment",
-  "summary": "The Sterling Steel Factory operated from 1923 to 2008, founded by John Sterling to serve the automotive industry. At its peak, the facility employed over 500 workers before closing due to foreign competition. The main building remains standing but continues to deteriorate.",
+  "title": "Sterling Steel Factory: 85 Years of Production Ends 2008",
+  "summary": "John Sterling built the Sterling Steel Factory in 1923 to serve the automotive industry. The facility employed over 500 workers at peak before closing in 2008 due to foreign competition.",
   "keyFacts": [
-    "Founded in 1923 by John Sterling",
-    "Employed over 500 workers at peak operation",
-    "Produced steel for the automotive industry",
-    "Closed in 2008 due to foreign competition",
-    "Main building still standing but deteriorating"
+    "Built in 1923 by John Sterling",
+    "Employed over 500 workers at peak",
+    "Produced steel for automotive industry",
+    "Closed in 2008 due to foreign competition"
   ],
-  "confidence": 0.95
+  "suggestedLocationType": "factory",
+  "suggestedEra": "industrial",
+  "confidence": 0.92
 }
 
 Return ONLY the JSON object. No markdown, no explanation.`;
@@ -572,6 +633,10 @@ function normalizeResult(
   const summarySource = parsed.summaryData as Record<string, unknown> | undefined;
 
   if (summarySource || parsed.title || parsed.summary) {
+    // Get location type and era from either summaryData or root level
+    const locationType = summarySource?.suggestedLocationType || parsed.suggestedLocationType;
+    const era = summarySource?.suggestedEra || parsed.suggestedEra;
+
     summaryData = {
       title: String(summarySource?.title || parsed.title || ''),
       summary: String(summarySource?.summary || parsed.summary || ''),
@@ -579,6 +644,20 @@ function normalizeResult(
         ? ((summarySource?.keyFacts || parsed.keyFacts) as unknown[]).map(String)
         : [],
       confidence: normalizeConfidence((summarySource?.confidence || parsed.confidence) as unknown),
+      suggestedLocationType: locationType
+        ? validateEnum<SuggestedLocationType>(
+            locationType,
+            ['factory', 'hospital', 'school', 'asylum', 'prison', 'church', 'hotel', 'theater', 'military', 'residential', 'commercial', 'industrial', 'unknown'],
+            'unknown'
+          )
+        : undefined,
+      suggestedEra: era
+        ? validateEnum<SuggestedEra>(
+            era,
+            ['colonial', 'victorian', 'industrial', 'art_deco', 'mid_century', 'modern', 'unknown'],
+            'unknown'
+          )
+        : undefined,
     };
 
     // Filter out empty summary
@@ -633,28 +712,81 @@ function emptyResult(warnings: string[]): {
 // =============================================================================
 
 /**
- * Build the date extraction prompt with text inserted
+ * Preprocessing context from spaCy server
  */
-export function buildDateExtractionPrompt(text: string): string {
-  return DATE_EXTRACTION_PROMPT.replace('{text}', text);
+export interface PreprocessingContext {
+  /** Timeline-relevant sentences (contain dates + verbs) */
+  timelineSentences?: string;
+  /** Profile candidates (PERSON, ORG entities with context) */
+  profileCandidates?: string;
+  /** GPE/LOC entities for address extraction */
+  gpeEntities?: string;
 }
 
 /**
- * Build the summary/title prompt with text and location name inserted
+ * Build the date extraction prompt with text and optional preprocessing
  */
-export function buildSummaryTitlePrompt(text: string, locationName?: string): string {
-  return SUMMARY_TITLE_PROMPT
-    .replace('{text}', text)
-    .replace('{locationName}', locationName || 'Unknown');
+export function buildDateExtractionPrompt(
+  text: string,
+  preprocessing?: PreprocessingContext
+): string {
+  let prompt = DATE_EXTRACTION_PROMPT.replace('{text}', text);
+
+  // Add preprocessing context if available
+  if (preprocessing) {
+    prompt = formatPromptWithPreprocessing(prompt, {
+      timelineSentences: preprocessing.timelineSentences,
+      profileCandidates: preprocessing.profileCandidates,
+    });
+  }
+
+  return prompt;
 }
 
 /**
- * Build the combined extraction prompt
+ * Build the summary/title prompt with text, location name, and optional preprocessing
  */
-export function buildCombinedPrompt(text: string, locationName?: string): string {
-  return COMBINED_EXTRACTION_PROMPT
+export function buildSummaryTitlePrompt(
+  text: string,
+  locationName?: string,
+  preprocessing?: PreprocessingContext
+): string {
+  let prompt = SUMMARY_TITLE_PROMPT
     .replace('{text}', text)
     .replace('{locationName}', locationName || 'Unknown');
+
+  // Add preprocessing context if available
+  if (preprocessing) {
+    prompt = formatPromptWithPreprocessing(prompt, {
+      profileCandidates: preprocessing.profileCandidates,
+    });
+  }
+
+  return prompt;
+}
+
+/**
+ * Build the combined extraction prompt with all preprocessing
+ */
+export function buildCombinedPrompt(
+  text: string,
+  locationName?: string,
+  preprocessing?: PreprocessingContext
+): string {
+  let prompt = COMBINED_EXTRACTION_PROMPT
+    .replace('{text}', text)
+    .replace('{locationName}', locationName || 'Unknown');
+
+  // Add all preprocessing context if available
+  if (preprocessing) {
+    prompt = formatPromptWithPreprocessing(prompt, {
+      timelineSentences: preprocessing.timelineSentences,
+      profileCandidates: preprocessing.profileCandidates,
+      gpeEntities: preprocessing.gpeEntities,
+    });
+  }
+
+  return prompt;
 }
 
 // =============================================================================

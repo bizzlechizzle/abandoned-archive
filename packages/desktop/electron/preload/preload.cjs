@@ -867,6 +867,17 @@ const api = {
       invokeAuto("timeline:getMediaCounts")(mediaHashesJson),
     backfillWebPages: () =>
       invokeAuto("timeline:backfillWebPages")(),
+    // Multi-source timeline (LLM Tools Overhaul)
+    findByLocationWithSources: (locid) =>
+      invokeAuto("timeline:findByLocationWithSources")(locid),
+    getSources: (eventId) =>
+      invokeAuto("timeline:getSources")(eventId),
+    addSource: (eventId, sourceId) =>
+      invokeAuto("timeline:addSource")(eventId, sourceId),
+    reject: (eventId, userId) =>
+      invokeAuto("timeline:reject")(eventId, userId),
+    getCounts: (locid) =>
+      invokeAuto("timeline:getCounts")(locid),
   },
 
   // Date Engine (Migration 73 - NLP date extraction from web sources)
@@ -1072,6 +1083,28 @@ const api = {
         invokeAuto("extraction:prompts:getVersions")(promptType),
       setDefault: (promptType, version) =>
         invokeAuto("extraction:prompts:setDefault")(promptType, version),
+    },
+
+    // Extracted Addresses (LLM Tools Overhaul)
+    addresses: {
+      getByLocation: (locid, includeRejected) =>
+        invokeAuto("extraction:addresses:getByLocation")(locid, includeRejected),
+      apply: (addressId, userId) =>
+        invokeAuto("extraction:addresses:apply")(addressId, userId),
+      reject: (addressId, userId) =>
+        invokeAuto("extraction:addresses:reject")(addressId, userId),
+      approve: (addressId, userId) =>
+        invokeAuto("extraction:addresses:approve")(addressId, userId),
+      count: (locid) =>
+        invokeAuto("extraction:addresses:count")(locid),
+      save: (locid, sourceId, addresses, corrections) =>
+        invokeAuto("extraction:addresses:save")(locid, sourceId, addresses, corrections),
+    },
+
+    // Research Counts (LLM Tools Overhaul - conditional visibility)
+    research: {
+      getCounts: (locid) =>
+        invokeAuto("extraction:research:getCounts")(locid),
     },
   },
 

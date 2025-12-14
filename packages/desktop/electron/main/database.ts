@@ -3618,6 +3618,54 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 83 completed: Profile columns added to entity_extractions');
     }
 
+    // Migration 84: Extracted addresses table for address validation
+    // Per LLM Tools Overhaul: Extract addresses from web sources to validate/suggest corrections
+    const hasExtractedAddresses = tableNames.includes('extracted_addresses');
+    if (!hasExtractedAddresses) {
+      console.log('Running migration 84: Creating extracted_addresses table');
+      sqlite.exec(`
+        CREATE TABLE extracted_addresses (
+          address_id TEXT PRIMARY KEY,
+          locid TEXT NOT NULL REFERENCES locs(locid) ON DELETE CASCADE,
+          source_id TEXT NOT NULL,
+          source_type TEXT DEFAULT 'web',
+
+          -- Address components (normalized)
+          street TEXT,
+          city TEXT,
+          county TEXT,
+          state TEXT CHECK(state IS NULL OR length(state) = 2),
+          zipcode TEXT,
+          full_address TEXT NOT NULL,
+
+          -- Extraction metadata
+          confidence REAL DEFAULT 0.5 CHECK(confidence >= 0 AND confidence <= 1),
+          context_sentence TEXT,
+          verb_context TEXT,
+          prompt_version TEXT,
+
+          -- Status workflow
+          status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected', 'applied')),
+
+          -- Comparison with location address
+          matches_location INTEGER DEFAULT 0,
+          suggested_corrections TEXT,
+
+          -- Timestamps
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          applied_at TEXT,
+          applied_by TEXT,
+
+          UNIQUE(locid, full_address)
+        );
+
+        CREATE INDEX idx_extracted_addresses_locid ON extracted_addresses(locid);
+        CREATE INDEX idx_extracted_addresses_status ON extracted_addresses(status);
+        CREATE INDEX idx_extracted_addresses_source ON extracted_addresses(source_id);
+      `);
+      console.log('Migration 84 completed: extracted_addresses table created');
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

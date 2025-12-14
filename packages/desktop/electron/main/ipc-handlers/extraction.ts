@@ -958,6 +958,260 @@ export function registerExtractionHandlers(
   });
 
   // ==========================================================================
+  // Extracted Addresses (NEW - LLM Tools Overhaul)
+  // ==========================================================================
+
+  /**
+   * Get extracted addresses for a location
+   */
+  ipcMain.handle('extraction:addresses:getByLocation', async (_, locid: string, includeRejected?: boolean) => {
+    try {
+      let query = `
+        SELECT
+          ea.*,
+          ws.title as source_title,
+          ws.url as source_url,
+          ws.domain as source_domain
+        FROM extracted_addresses ea
+        LEFT JOIN web_sources ws ON ea.source_id = ws.source_id
+        WHERE ea.locid = ?
+      `;
+
+      if (!includeRejected) {
+        query += ` AND ea.status != 'rejected'`;
+      }
+
+      query += ` ORDER BY ea.confidence DESC, ea.created_at DESC`;
+
+      const addresses = sqliteDb.prepare(query).all(locid);
+
+      // Parse JSON fields if present
+      const parsed = addresses.map((a: Record<string, unknown>) => ({
+        ...a,
+        suggested_corrections: a.suggested_corrections
+          ? JSON.parse(a.suggested_corrections as string)
+          : null,
+      }));
+
+      return { success: true, addresses: parsed };
+    } catch (error) {
+      console.error('[ExtractionHandlers] extraction:addresses:getByLocation failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  /**
+   * Apply an extracted address to the location
+   * Updates the location's address fields and marks the extraction as applied
+   */
+  ipcMain.handle(
+    'extraction:addresses:apply',
+    async (_, addressId: string, userId?: string) => {
+      try {
+        // Get the extracted address
+        const address = sqliteDb.prepare(`
+          SELECT * FROM extracted_addresses WHERE address_id = ?
+        `).get(addressId) as Record<string, unknown> | undefined;
+
+        if (!address) {
+          return { success: false, error: 'Address not found' };
+        }
+
+        // Update the location with the extracted address fields
+        const updateFields: string[] = [];
+        const updateValues: (string | null)[] = [];
+
+        if (address.street) {
+          updateFields.push('locstr = ?');
+          updateValues.push(address.street as string);
+        }
+        if (address.city) {
+          updateFields.push('loccit = ?');
+          updateValues.push(address.city as string);
+        }
+        if (address.county) {
+          updateFields.push('loccty = ?');
+          updateValues.push(address.county as string);
+        }
+        if (address.state) {
+          updateFields.push('locsta = ?');
+          updateValues.push(address.state as string);
+        }
+        if (address.zipcode) {
+          updateFields.push('loczip = ?');
+          updateValues.push(address.zipcode as string);
+        }
+
+        if (updateFields.length > 0) {
+          updateValues.push(address.locid as string);
+          sqliteDb.prepare(`
+            UPDATE locs SET ${updateFields.join(', ')} WHERE locid = ?
+          `).run(...updateValues);
+        }
+
+        // Mark the extracted address as applied
+        sqliteDb.prepare(`
+          UPDATE extracted_addresses
+          SET status = 'applied', applied_at = datetime('now'), applied_by = ?
+          WHERE address_id = ?
+        `).run(userId || null, addressId);
+
+        return { success: true };
+      } catch (error) {
+        console.error('[ExtractionHandlers] extraction:addresses:apply failed:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    }
+  );
+
+  /**
+   * Reject an extracted address
+   */
+  ipcMain.handle('extraction:addresses:reject', async (_, addressId: string, userId?: string) => {
+    try {
+      sqliteDb.prepare(`
+        UPDATE extracted_addresses
+        SET status = 'rejected', applied_at = datetime('now'), applied_by = ?
+        WHERE address_id = ?
+      `).run(userId || null, addressId);
+
+      return { success: true };
+    } catch (error) {
+      console.error('[ExtractionHandlers] extraction:addresses:reject failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  /**
+   * Approve an extracted address (mark as verified but don't apply)
+   */
+  ipcMain.handle('extraction:addresses:approve', async (_, addressId: string, userId?: string) => {
+    try {
+      sqliteDb.prepare(`
+        UPDATE extracted_addresses
+        SET status = 'approved', applied_by = ?
+        WHERE address_id = ?
+      `).run(userId || null, addressId);
+
+      return { success: true };
+    } catch (error) {
+      console.error('[ExtractionHandlers] extraction:addresses:approve failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  /**
+   * Get count of pending addresses for a location
+   */
+  ipcMain.handle('extraction:addresses:count', async (_, locid: string) => {
+    try {
+      const result = sqliteDb.prepare(`
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+          SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved,
+          SUM(CASE WHEN status = 'applied' THEN 1 ELSE 0 END) as applied
+        FROM extracted_addresses
+        WHERE locid = ?
+      `).get(locid) as Record<string, number>;
+
+      return { success: true, counts: result };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
+  /**
+   * Save extracted addresses from LLM extraction
+   */
+  ipcMain.handle(
+    'extraction:addresses:save',
+    async (
+      _,
+      locid: string,
+      sourceId: string,
+      addresses: Array<{
+        street?: string | null;
+        city?: string | null;
+        county?: string | null;
+        state?: string | null;
+        zipcode?: string | null;
+        fullAddress: string;
+        confidence: number;
+        contextSentence?: string;
+        isLocationAddress?: boolean;
+        verbContext?: string;
+      }>,
+      corrections?: Array<{
+        field: string;
+        currentValue?: string | null;
+        suggestedValue: string;
+        reasoning: string;
+        confidence: number;
+      }>
+    ) => {
+      try {
+        const insertStmt = sqliteDb.prepare(`
+          INSERT OR REPLACE INTO extracted_addresses (
+            address_id, locid, source_id, source_type,
+            street, city, county, state, zipcode,
+            full_address, confidence, context_sentence, verb_context,
+            status, matches_location, suggested_corrections, created_at
+          ) VALUES (?, ?, ?, 'web', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, datetime('now'))
+        `);
+
+        let savedCount = 0;
+        for (const addr of addresses) {
+          const addressId = `addr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+          // Find corrections for this address
+          const relevantCorrections = corrections?.filter((c) =>
+            addr.fullAddress.toLowerCase().includes(c.suggestedValue.toLowerCase())
+          );
+
+          insertStmt.run(
+            addressId,
+            locid,
+            sourceId,
+            addr.street || null,
+            addr.city || null,
+            addr.county || null,
+            addr.state || null,
+            addr.zipcode || null,
+            addr.fullAddress,
+            addr.confidence,
+            addr.contextSentence || null,
+            addr.verbContext || null,
+            addr.isLocationAddress ? 1 : 0,
+            relevantCorrections?.length ? JSON.stringify(relevantCorrections) : null
+          );
+          savedCount++;
+        }
+
+        return { success: true, savedCount };
+      } catch (error) {
+        console.error('[ExtractionHandlers] extraction:addresses:save failed:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    }
+  );
+
+  // ==========================================================================
   // Versioned Prompts (NEW - Phase 4)
   // ==========================================================================
 
@@ -998,6 +1252,87 @@ export function registerExtractionHandlers(
       return { success };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
+  // ==========================================================================
+  // Research Counts (LLM Tools Overhaul - conditional visibility)
+  // ==========================================================================
+
+  /**
+   * Get all research section counts for a location in one efficient call
+   * Used for conditional visibility of Research accordions
+   */
+  ipcMain.handle('extraction:research:getCounts', async (_, locid: string) => {
+    try {
+      // Timeline events count
+      const timelineResult = sqliteDb.prepare(`
+        SELECT COUNT(*) as total
+        FROM location_timeline
+        WHERE locid = ?
+      `).get(locid) as { total: number } | undefined;
+
+      // People profiles count (try profiles first, fall back to entities)
+      let peopleCount = 0;
+      try {
+        const profilesResult = sqliteDb.prepare(`
+          SELECT COUNT(*) as count FROM people_profiles WHERE locid = ?
+        `).get(locid) as { count: number } | undefined;
+        peopleCount = profilesResult?.count || 0;
+      } catch {
+        // Fallback to entity_extractions
+        const entitiesResult = sqliteDb.prepare(`
+          SELECT COUNT(*) as count FROM entity_extractions
+          WHERE locid = ? AND entity_type = 'person'
+        `).get(locid) as { count: number } | undefined;
+        peopleCount = entitiesResult?.count || 0;
+      }
+
+      // Companies count
+      let companiesCount = 0;
+      try {
+        const profilesResult = sqliteDb.prepare(`
+          SELECT COUNT(*) as count FROM company_profiles WHERE locid = ?
+        `).get(locid) as { count: number } | undefined;
+        companiesCount = profilesResult?.count || 0;
+      } catch {
+        // Fallback to entity_extractions
+        const entitiesResult = sqliteDb.prepare(`
+          SELECT COUNT(*) as count FROM entity_extractions
+          WHERE locid = ? AND entity_type = 'organization'
+        `).get(locid) as { count: number } | undefined;
+        companiesCount = entitiesResult?.count || 0;
+      }
+
+      // Addresses count
+      let addressesCount = 0;
+      try {
+        const addressesResult = sqliteDb.prepare(`
+          SELECT COUNT(*) as count FROM extracted_addresses WHERE locid = ?
+        `).get(locid) as { count: number } | undefined;
+        addressesCount = addressesResult?.count || 0;
+      } catch {
+        // Table might not exist yet
+        addressesCount = 0;
+      }
+
+      return {
+        success: true,
+        counts: {
+          timeline: timelineResult?.total || 0,
+          people: peopleCount,
+          companies: companiesCount,
+          addresses: addressesCount,
+          total: (timelineResult?.total || 0) + peopleCount + companiesCount + addressesCount
+        }
+      };
+    } catch (error) {
+      console.error('[ExtractionHandlers] extraction:research:getCounts failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        counts: { timeline: 0, people: 0, companies: 0, addresses: 0, total: 0 }
+      };
     }
   });
 }

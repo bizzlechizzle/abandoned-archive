@@ -48,6 +48,62 @@ export interface UserRecord {
   last_login: string | null;
 }
 
+/**
+ * Timeline event with all source references (LLM Tools Overhaul)
+ */
+export interface TimelineEventWithSources extends TimelineEvent {
+  sources: Array<{
+    source_id: string;
+    source_type: string;
+    domain: string | null;
+    title: string | null;
+    url: string | null;
+  }>;
+  has_conflicts: boolean;
+  /** Image count for visit events (parsed from media_hashes) */
+  image_count: number;
+  /** Video count for visit events (parsed from media_hashes) */
+  video_count: number;
+  /** Location author (auth_imp) for database_entry events */
+  location_author: string | null;
+}
+
+/**
+ * Extracted address from web sources (LLM Tools Overhaul)
+ */
+export interface ExtractedAddress {
+  address_id: string;
+  locid: string;
+  source_id: string;
+  source_type: string;
+  street: string | null;
+  city: string | null;
+  county: string | null;
+  state: string | null;
+  zipcode: string | null;
+  full_address: string;
+  confidence: number;
+  context_sentence: string | null;
+  verb_context: string | null;
+  prompt_version: string | null;
+  status: 'pending' | 'approved' | 'rejected' | 'applied';
+  matches_location: number;
+  suggested_corrections: Array<{
+    field: string;
+    currentValue: string | null;
+    suggestedValue: string;
+    reasoning: string;
+    confidence: number;
+  }> | null;
+  created_at: string;
+  applied_at: string | null;
+  applied_by: string | null;
+  // Joined from web_sources
+  source_title?: string;
+  source_url?: string;
+  source_domain?: string;
+}
+
 export interface ElectronAPI {
   versions: {
     node: () => string;
@@ -957,6 +1013,24 @@ export interface ElectronAPI {
     hasWebPageEvent: (websourceId: string) => Promise<boolean>;
     getMediaCounts: (mediaHashesJson: string | null) => Promise<{ images: number; videos: number }>;
     backfillWebPages: () => Promise<{ processed: number; created: number; skipped: number; errors: number }>;
+    // Multi-source timeline (LLM Tools Overhaul)
+    findByLocationWithSources: (locid: string) => Promise<TimelineEventWithSources[]>;
+    getSources: (eventId: string) => Promise<{
+      success: boolean;
+      sources: Array<{
+        source_id: string;
+        source_type: string;
+        domain: string | null;
+        title: string | null;
+        url: string | null;
+        extracted_date: string | null;
+        extracted_text: string | null;
+      }>;
+      error?: string;
+    }>;
+    addSource: (eventId: string, sourceId: string) => Promise<{ success: boolean; error?: string }>;
+    reject: (eventId: string, userId?: string) => Promise<{ success: boolean; error?: string }>;
+    getCounts: (locid: string) => Promise<{ total: number; needsReview: number; approved: number }>;
   };
 
   // Date Engine - Migration 73 (NLP date extraction from web sources)
@@ -1530,6 +1604,61 @@ export interface ElectronAPI {
       }>;
       setDefault: (promptType: string, version: string) => Promise<{
         success: boolean;
+        error?: string;
+      }>;
+    };
+
+    // Extracted Addresses (LLM Tools Overhaul)
+    addresses: {
+      getByLocation: (locid: string, includeRejected?: boolean) => Promise<{
+        success: boolean;
+        addresses?: ExtractedAddress[];
+        error?: string;
+      }>;
+      apply: (addressId: string, userId?: string) => Promise<{ success: boolean; error?: string }>;
+      reject: (addressId: string, userId?: string) => Promise<{ success: boolean; error?: string }>;
+      approve: (addressId: string, userId?: string) => Promise<{ success: boolean; error?: string }>;
+      count: (locid: string) => Promise<{
+        success: boolean;
+        counts?: { total: number; pending: number; approved: number; applied: number };
+        error?: string;
+      }>;
+      save: (
+        locid: string,
+        sourceId: string,
+        addresses: Array<{
+          street?: string | null;
+          city?: string | null;
+          county?: string | null;
+          state?: string | null;
+          zipcode?: string | null;
+          fullAddress: string;
+          confidence: number;
+          contextSentence?: string;
+          isLocationAddress?: boolean;
+          verbContext?: string;
+        }>,
+        corrections?: Array<{
+          field: string;
+          currentValue?: string | null;
+          suggestedValue: string;
+          reasoning: string;
+          confidence: number;
+        }>
+      ) => Promise<{ success: boolean; savedCount?: number; error?: string }>;
+    };
+
+    // Research Counts (LLM Tools Overhaul - conditional visibility)
+    research: {
+      getCounts: (locid: string) => Promise<{
+        success: boolean;
+        counts: {
+          timeline: number;
+          people: number;
+          companies: number;
+          addresses: number;
+          total: number;
+        };
         error?: string;
       }>;
     };

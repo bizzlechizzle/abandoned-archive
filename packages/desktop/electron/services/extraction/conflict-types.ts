@@ -286,3 +286,33 @@ export interface ExtractionInputRecord {
   prompt_version?: string;
   provider?: string;
 }
+
+// =============================================================================
+// LLM CONFLICT RESOLUTION (LLM Tools Overhaul)
+// =============================================================================
+
+/**
+ * LLM-suggested resolution with detailed reasoning
+ * Per LLM Tools Overhaul: Three-strategy approach
+ */
+export interface ConflictResolutionSuggestion {
+  /** Suggested resolution */
+  suggestedResolution: 'claim_a' | 'claim_b' | 'both_valid' | 'needs_review';
+  /** Detailed reasoning from LLM or rule-based analysis */
+  reasoning: string;
+  /** Confidence in the suggestion (0.0-1.0) */
+  confidence: number;
+  /** Which strategy was used */
+  strategy: 'source_authority' | 'llm_analysis' | 'confidence_based' | 'manual_required';
+  /** Suggested merged value if both_valid */
+  suggestedMergedValue?: string;
+  /** Additional context for human reviewer */
+  reviewNotes?: string;
+}
+
+/**
+ * Conflict with resolution suggestion attached
+ */
+export interface FactConflictWithSuggestion extends FactConflict {
+  suggestion?: ConflictResolutionSuggestion;
+}

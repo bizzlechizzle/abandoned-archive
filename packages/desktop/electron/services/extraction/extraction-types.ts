@@ -195,20 +195,56 @@ export interface ExtractedLocation {
 // =============================================================================
 
 /**
+ * Suggested location type (inferred from content)
+ */
+export type SuggestedLocationType =
+  | 'factory'
+  | 'hospital'
+  | 'school'
+  | 'asylum'
+  | 'prison'
+  | 'church'
+  | 'hotel'
+  | 'theater'
+  | 'military'
+  | 'residential'
+  | 'commercial'
+  | 'industrial'
+  | 'unknown';
+
+/**
+ * Suggested era (inferred from dates)
+ */
+export type SuggestedEra =
+  | 'colonial'
+  | 'victorian'
+  | 'industrial'
+  | 'art_deco'
+  | 'mid_century'
+  | 'modern'
+  | 'unknown';
+
+/**
  * Document summary with title
  */
 export interface ExtractedSummary {
-  /** Short title (max 60 chars) for the document/article */
+  /** Short TLDR title (6-10 words, max 60 chars) */
   title: string;
 
-  /** TL;DR summary (2-3 sentences) */
+  /** TL;DR summary (1-3 sentences, WHO did WHAT WHEN format) */
   summary: string;
 
-  /** Key facts as bullet points */
+  /** Key facts as bullet points (3-5 verifiable facts) */
   keyFacts: string[];
 
   /** Confidence in the summary quality 0-1 */
   confidence: number;
+
+  /** Suggested location type inferred from content */
+  suggestedLocationType?: SuggestedLocationType;
+
+  /** Suggested era inferred from dates */
+  suggestedEra?: SuggestedEra;
 }
 
 // =============================================================================
