@@ -582,13 +582,183 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 // ============================================================================
-// OPT-115: Full Page Capture - Extension-First Archiving
+// OPT-121: Complete Page Capture - Extension-First Archiving
+// Premium capture system that captures EVERYTHING while user is authenticated
 // ============================================================================
+
+/**
+ * Progress stages for user feedback
+ */
+const CaptureStage = {
+  STARTING: { badge: '◐', color: '#2196F3' },
+  SCREENSHOT: { badge: '◑', color: '#FF9800' },
+  SCROLLING: { badge: '◒', color: '#FF9800' },
+  CONTENT: { badge: '◓', color: '#FF9800' },
+  COOKIES: { badge: '◐', color: '#9C27B0' },
+  SAVING: { badge: '◑', color: '#9C27B0' },
+  COMPLETE: { badge: '✓', color: '#4CAF50' },
+  ERROR: { badge: '✗', color: '#f44336' },
+};
+
+/**
+ * Update capture progress badge
+ */
+async function setCaptureProgress(tabId, stage) {
+  if (!tabId) return;
+  const { badge, color } = CaptureStage[stage] || CaptureStage.STARTING;
+  try {
+    await chrome.action.setBadgeText({ text: badge, tabId });
+    await chrome.action.setBadgeBackgroundColor({ color, tabId });
+  } catch (e) {
+    // Tab may have closed
+  }
+}
+
+/**
+ * Sleep helper for scroll timing
+ */
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Capture full-page screenshot by scrolling and stitching
+ * Returns array of screenshot segments for server-side stitching
+ */
+async function captureFullPageScreenshot(tabId, windowId) {
+  try {
+    // Get page dimensions
+    const [{ result: dims }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => ({
+        scrollHeight: Math.max(
+          document.documentElement.scrollHeight,
+          document.body.scrollHeight
+        ),
+        viewportHeight: window.innerHeight,
+        viewportWidth: window.innerWidth,
+        originalScrollY: window.scrollY,
+      }),
+    });
+
+    const { scrollHeight, viewportHeight, originalScrollY } = dims;
+    const screenshots = [];
+    const maxScrolls = 10; // Limit to prevent huge captures
+    let scrollCount = 0;
+
+    // Scroll to top
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => window.scrollTo(0, 0),
+    });
+    await sleep(200);
+
+    // Capture each viewport
+    let currentY = 0;
+    while (currentY < scrollHeight && scrollCount < maxScrolls) {
+      const screenshot = await chrome.tabs.captureVisibleTab(windowId, {
+        format: 'png',
+      });
+
+      screenshots.push({
+        y: currentY,
+        data: screenshot,
+        height: viewportHeight,
+      });
+
+      currentY += viewportHeight;
+      scrollCount++;
+
+      if (currentY < scrollHeight) {
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          func: (y) => window.scrollTo(0, y),
+          args: [currentY],
+        });
+        await sleep(200); // Wait for render and lazy-load images
+      }
+    }
+
+    // Restore original scroll position
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (y) => window.scrollTo(0, y),
+      args: [originalScrollY],
+    });
+
+    return {
+      segments: screenshots,
+      totalHeight: scrollHeight,
+      viewportHeight,
+      viewportWidth: dims.viewportWidth,
+      isFullPage: screenshots.length > 1,
+    };
+  } catch (err) {
+    console.error('[AU Archive] Full-page screenshot failed:', err);
+    // Fall back to single viewport capture
+    const screenshot = await chrome.tabs.captureVisibleTab(windowId, {
+      format: 'png',
+    });
+    return {
+      segments: [{ y: 0, data: screenshot, height: 0 }],
+      isFullPage: false,
+    };
+  }
+}
+
+/**
+ * Capture all cookies for domain and parent domains
+ */
+async function captureAllCookies(url) {
+  try {
+    const urlObj = new URL(url);
+    const domain = urlObj.hostname;
+
+    // Get cookies for exact URL
+    const urlCookies = await chrome.cookies.getAll({ url });
+
+    // Get cookies for domain (includes subdomains)
+    const domainCookies = await chrome.cookies.getAll({ domain });
+
+    // Get cookies for parent domain (e.g., .redfin.com)
+    const parts = domain.split('.');
+    let parentCookies = [];
+    if (parts.length > 2) {
+      const parentDomain = '.' + parts.slice(-2).join('.');
+      parentCookies = await chrome.cookies.getAll({ domain: parentDomain });
+    }
+
+    // Merge and dedupe by name+domain+path
+    const cookieMap = new Map();
+    [...urlCookies, ...domainCookies, ...parentCookies].forEach(c => {
+      const key = `${c.name}|${c.domain}|${c.path}`;
+      if (!cookieMap.has(key)) {
+        cookieMap.set(key, {
+          name: c.name,
+          value: c.value,
+          domain: c.domain,
+          path: c.path,
+          secure: c.secure,
+          httpOnly: c.httpOnly,
+          sameSite: c.sameSite || 'unspecified',
+          expirationDate: c.expirationDate,
+        });
+      }
+    });
+
+    const cookies = Array.from(cookieMap.values());
+    console.log(`[AU Archive] Captured ${cookies.length} cookies for ${domain}`);
+    return cookies;
+  } catch (err) {
+    console.error('[AU Archive] Cookie capture failed:', err);
+    return [];
+  }
+}
 
 /**
  * Capture complete page state from the user's actual browser session
  * This captures everything the user sees - no second browser needed
- * OPT-121: Enhanced with cookie capture for authenticated session preservation
+ * OPT-121: Complete implementation with full-page screenshot and session data
  */
 async function captureFullPage(tabId) {
   const tab = await chrome.tabs.get(tabId);
@@ -596,59 +766,53 @@ async function captureFullPage(tabId) {
     throw new Error('Invalid tab');
   }
 
-  // Capture screenshot first (viewport)
-  let screenshot = null;
+  // Stage 1: Start capture
+  await setCaptureProgress(tabId, 'STARTING');
+
+  // Stage 2: Capture full-page screenshot
+  await setCaptureProgress(tabId, 'SCREENSHOT');
+  let screenshotData = null;
   try {
-    screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, {
-      format: 'png',
-      quality: 100,
-    });
+    screenshotData = await captureFullPageScreenshot(tabId, tab.windowId);
+    console.log(`[AU Archive] Captured ${screenshotData.segments.length} screenshot segments`);
   } catch (err) {
     console.log('[AU Archive] Screenshot capture failed:', err.message);
   }
 
-  // OPT-121: Capture cookies for this URL (authenticated session)
-  let cookies = [];
-  try {
-    cookies = await chrome.cookies.getAll({ url: tab.url });
-    console.log(`[AU Archive] Captured ${cookies.length} cookies for ${new URL(tab.url).hostname}`);
-  } catch (err) {
-    console.log('[AU Archive] Cookie capture failed:', err.message);
-  }
+  // Stage 3: Capture cookies
+  await setCaptureProgress(tabId, 'COOKIES');
+  const cookies = await captureAllCookies(tab.url);
 
-  // Execute content script to extract page data (including localStorage/sessionStorage)
+  // Stage 4: Extract page content
+  await setCaptureProgress(tabId, 'CONTENT');
   const results = await chrome.scripting.executeScript({
     target: { tabId },
     func: extractPageContent,
   });
-
   const pageContent = results[0]?.result || {};
 
-  // Get user agent
+  // Get user agent from service worker context
   const userAgent = navigator.userAgent;
 
+  // Build complete capture object
   return {
     url: tab.url,
     title: tab.title || pageContent.title || '',
-    screenshot,
-    // OPT-121: Session data for authenticated re-fetch
-    cookies: cookies.map(c => ({
-      name: c.name,
-      value: c.value,
-      domain: c.domain,
-      path: c.path,
-      secure: c.secure,
-      httpOnly: c.httpOnly,
-      expirationDate: c.expirationDate,
-      sameSite: c.sameSite,
-    })),
+    // Full-page screenshot data
+    screenshot: screenshotData?.segments?.[0]?.data || null, // First segment for backward compat
+    fullPageScreenshot: screenshotData, // Full data for server-side stitching
+    // Session data for authenticated re-fetch
+    cookies,
     userAgent,
     viewport: {
-      width: tab.width || window.innerWidth || 1920,
-      height: tab.height || window.innerHeight || 1080,
+      width: screenshotData?.viewportWidth || tab.width || 1920,
+      height: screenshotData?.viewportHeight || tab.height || 1080,
     },
+    // Page content from content script
     ...pageContent,
+    // Capture metadata
     capturedAt: new Date().toISOString(),
+    captureVersion: '2.0', // OPT-121 complete capture
   };
 }
 
@@ -836,54 +1000,51 @@ async function handleCapturePageCommand(requestId, tabId) {
 }
 
 /**
- * Show capturing badge (orange spinner effect)
- */
-function showCapturingBadge(tabId) {
-  if (!tabId) return;
-  chrome.action.setBadgeText({ text: '...', tabId });
-  chrome.action.setBadgeBackgroundColor({ color: '#FF9800', tabId });
-}
-
-/**
- * Show capture complete badge with cookie count
- */
-function showCaptureDoneBadge(tabId, cookieCount = 0) {
-  if (!tabId) return;
-  chrome.action.setBadgeText({ text: '✓', tabId });
-  chrome.action.setBadgeBackgroundColor({ color: '#4CAF50', tabId });
-
-  // Clear after 3 seconds
-  setTimeout(() => {
-    chrome.action.setBadgeText({ text: '', tabId });
-  }, 3000);
-}
-
-/**
  * Enhanced save bookmark with full page capture
- * OPT-115: Capture page state immediately when user saves
- * OPT-121: Enhanced with cookie capture and user notification
+ * OPT-121: Complete capture with progress feedback and session preservation
  */
 async function saveBookmarkWithCapture(url, title, locid = null, tabId = null) {
+  const startTime = Date.now();
+
   try {
     let capture = null;
-
-    // Show capturing indicator
-    if (tabId) {
-      showCapturingBadge(tabId);
-    }
 
     // Capture full page if we have a tab
     if (tabId) {
       try {
+        // Progress is shown inside captureFullPage
         capture = await captureFullPage(tabId);
-        console.log(`[AU Archive] Full capture complete: ${capture.cookies?.length || 0} cookies, ${capture.images?.length || 0} images`);
+
+        const cookieCount = capture?.cookies?.length || 0;
+        const imageCount = capture?.images?.length || 0;
+        const screenshotCount = capture?.fullPageScreenshot?.segments?.length || 1;
+
+        console.log(`[AU Archive] Capture complete in ${Date.now() - startTime}ms:`);
+        console.log(`  - ${cookieCount} cookies`);
+        console.log(`  - ${imageCount} images`);
+        console.log(`  - ${screenshotCount} screenshot segments`);
+        console.log(`  - ${capture?.localStorage ? 'localStorage' : 'no localStorage'}`);
+        console.log(`  - ${capture?.sessionStorage ? 'sessionStorage' : 'no sessionStorage'}`);
       } catch (err) {
-        console.log('[AU Archive] Full capture failed, falling back to basic:', err.message);
-        // Fall back to screenshot only
-        capture = {
-          screenshot: await captureScreenshot(tabId),
-        };
+        console.error('[AU Archive] Full capture failed:', err.message);
+        await setCaptureProgress(tabId, 'ERROR');
+
+        // Fall back to basic screenshot only
+        try {
+          const screenshot = await chrome.tabs.captureVisibleTab(
+            (await chrome.tabs.get(tabId)).windowId,
+            { format: 'png' }
+          );
+          capture = { screenshot };
+        } catch (e) {
+          capture = null;
+        }
       }
+    }
+
+    // Stage: Saving to server
+    if (tabId) {
+      await setCaptureProgress(tabId, 'SAVING');
     }
 
     const res = await fetch(`${API_BASE}/api/bookmark`, {
@@ -893,20 +1054,38 @@ async function saveBookmarkWithCapture(url, title, locid = null, tabId = null) {
         url,
         title,
         locid,
-        capture, // Full page capture data including cookies and storage
+        capture, // Full page capture data including cookies, storage, full-page screenshot
       }),
     });
 
     const data = await res.json();
 
-    // OPT-121: Show completion notification
-    if (data.success && tabId) {
-      showCaptureDoneBadge(tabId, capture?.cookies?.length || 0);
+    // Show final status
+    if (tabId) {
+      if (data.success) {
+        await setCaptureProgress(tabId, 'COMPLETE');
+        console.log(`[AU Archive] Archive saved successfully in ${Date.now() - startTime}ms`);
+
+        // Keep success badge visible for 5 seconds so user knows it's safe to navigate
+        setTimeout(async () => {
+          try {
+            await chrome.action.setBadgeText({ text: '', tabId });
+          } catch (e) {
+            // Tab may have closed
+          }
+        }, 5000);
+      } else {
+        await setCaptureProgress(tabId, 'ERROR');
+        console.error('[AU Archive] Server save failed:', data.error);
+      }
     }
 
     return data.success;
   } catch (error) {
     console.error('[AU Archive] Failed to save bookmark:', error);
+    if (tabId) {
+      await setCaptureProgress(tabId, 'ERROR');
+    }
     return false;
   }
 }

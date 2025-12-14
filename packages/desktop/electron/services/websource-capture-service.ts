@@ -305,22 +305,80 @@ interface ExtensionCookie {
 /**
  * Load extension session data for a web source
  * Returns cookies captured when user saved the page via extension
+ *
+ * OPT-121: Checks both userData/archive and configured archive_folder
  */
 export async function loadExtensionSessionData(sourceId: string): Promise<{
   cookies: ExtensionCookie[];
   userAgent?: string;
 } | null> {
   try {
-    // Session data is stored in _websources/[sourceId]/[sourceId]_session.json
-    const archiveBase = path.join(app.getPath('userData'), 'archive');
-    const sessionPath = path.join(archiveBase, '_websources', sourceId, `${sourceId}_session.json`);
+    // Session data can be in either:
+    // 1. Configured archive_folder/_websources (preferred - used by bookmark-api-server)
+    // 2. userData/archive/_websources (fallback)
 
-    if (!fs.existsSync(sessionPath)) {
+    // OPT-121: Try to read archive_folder from settings file
+    // The bookmark-api-server writes to the configured archive folder
+    let configuredArchive: string | null = null;
+    try {
+      const configPath = path.join(app.getPath('userData'), 'config.json');
+      if (fs.existsSync(configPath)) {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        if (config.archive_folder) {
+          configuredArchive = config.archive_folder;
+        }
+      }
+    } catch {
+      // Config file may not exist
+    }
+
+    // Also try to read from database settings (better-sqlite3 direct read)
+    if (!configuredArchive) {
+      try {
+        const dbPath = path.join(app.getPath('userData'), 'au-archive.db');
+        if (fs.existsSync(dbPath)) {
+          // Use dynamic import for better-sqlite3 since it's a native module
+          const Database = (await import('better-sqlite3')).default;
+          const db = new Database(dbPath, { readonly: true });
+          const result = db.prepare("SELECT value FROM settings WHERE key = 'archive_folder'").get() as { value: string } | undefined;
+          if (result?.value) {
+            configuredArchive = result.value;
+          }
+          db.close();
+        }
+      } catch {
+        // Database may not exist or be locked
+      }
+    }
+
+    const possiblePaths = [];
+
+    // Configured archive path (where bookmark-api-server saves)
+    if (configuredArchive) {
+      possiblePaths.push(path.join(configuredArchive, '_websources', sourceId, `${sourceId}_session.json`));
+    }
+
+    // Fallback: userData/archive path
+    possiblePaths.push(path.join(app.getPath('userData'), 'archive', '_websources', sourceId, `${sourceId}_session.json`));
+
+    // Try to find the session file
+    let sessionPath: string | null = null;
+    for (const p of possiblePaths) {
+      console.log(`[OPT-121] Checking session path: ${p}`);
+      if (fs.existsSync(p)) {
+        sessionPath = p;
+        break;
+      }
+    }
+
+    if (!sessionPath) {
+      console.log(`[OPT-121] No session file found for ${sourceId} in any path`);
       return null;
     }
 
     const sessionData = JSON.parse(await fs.promises.readFile(sessionPath, 'utf-8'));
-    console.log(`[OPT-121] Loaded extension session: ${sessionData.cookies?.length || 0} cookies for ${sourceId}`);
+    const cookieCount = sessionData.cookies?.length || 0;
+    console.log(`[OPT-121] Loaded extension session from ${sessionPath}: ${cookieCount} cookies`);
 
     return {
       cookies: sessionData.cookies || [],

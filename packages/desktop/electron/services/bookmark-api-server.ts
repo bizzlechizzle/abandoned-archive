@@ -112,14 +112,36 @@ let cachedArchiveBasePath: string | null = null;
 
 /**
  * Get archive base path from settings or fallback to userData
+ * OPT-121: Now properly reads from database settings
  */
 async function getArchiveBasePath(): Promise<string> {
   if (cachedArchiveBasePath) return cachedArchiveBasePath;
 
-  // Try to get from settings via repository
-  // Fallback to app userData if not set
   const userData = app.getPath('userData');
-  cachedArchiveBasePath = path.join(userData, 'archive');
+
+  // OPT-121: Try to read archive_folder from database settings
+  try {
+    const dbPath = path.join(userData, 'au-archive.db');
+    if (fs.existsSync(dbPath)) {
+      // Use dynamic import for better-sqlite3 since it's a native module
+      const Database = (await import('better-sqlite3')).default;
+      const db = new Database(dbPath, { readonly: true });
+      const result = db.prepare("SELECT value FROM settings WHERE key = 'archive_folder'").get() as { value: string } | undefined;
+      if (result?.value) {
+        cachedArchiveBasePath = result.value;
+        logger.info('BookmarkAPI', `[OPT-121] Using configured archive path: ${cachedArchiveBasePath}`);
+      }
+      db.close();
+    }
+  } catch (err) {
+    logger.warn('BookmarkAPI', `[OPT-121] Could not read archive_folder from database: ${err}`);
+  }
+
+  // Fallback to userData if not set
+  if (!cachedArchiveBasePath) {
+    cachedArchiveBasePath = path.join(userData, 'archive');
+    logger.info('BookmarkAPI', `[OPT-121] Using fallback archive path: ${cachedArchiveBasePath}`);
+  }
 
   // Ensure directory exists
   try {
