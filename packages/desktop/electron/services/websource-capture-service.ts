@@ -285,6 +285,111 @@ export async function syncCookiesFromResearchBrowser(): Promise<boolean> {
   return copied;
 }
 
+// =============================================================================
+// OPT-121: Extension Session Cookie Injection
+// =============================================================================
+
+/**
+ * Extension session cookie format (from bookmark-api-server.ts)
+ */
+interface ExtensionCookie {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+  secure: boolean;
+  httpOnly: boolean;
+  expirationDate?: number;
+}
+
+/**
+ * Load extension session data for a web source
+ * Returns cookies captured when user saved the page via extension
+ */
+export async function loadExtensionSessionData(sourceId: string): Promise<{
+  cookies: ExtensionCookie[];
+  userAgent?: string;
+} | null> {
+  try {
+    // Session data is stored in _websources/[sourceId]/[sourceId]_session.json
+    const archiveBase = path.join(app.getPath('userData'), 'archive');
+    const sessionPath = path.join(archiveBase, '_websources', sourceId, `${sourceId}_session.json`);
+
+    if (!fs.existsSync(sessionPath)) {
+      return null;
+    }
+
+    const sessionData = JSON.parse(await fs.promises.readFile(sessionPath, 'utf-8'));
+    console.log(`[OPT-121] Loaded extension session: ${sessionData.cookies?.length || 0} cookies for ${sourceId}`);
+
+    return {
+      cookies: sessionData.cookies || [],
+      userAgent: sessionData.userAgent,
+    };
+  } catch (err) {
+    console.warn(`[OPT-121] Could not load extension session for ${sourceId}:`, err);
+    return null;
+  }
+}
+
+/**
+ * Inject extension cookies into a Puppeteer page
+ * This allows Puppeteer to use the same authenticated session as the user's browser
+ *
+ * OPT-121: Critical for bypassing 403 errors on protected sites
+ */
+export async function injectExtensionCookies(page: Page, sourceId: string, url: string): Promise<boolean> {
+  const sessionData = await loadExtensionSessionData(sourceId);
+
+  if (!sessionData || sessionData.cookies.length === 0) {
+    console.log(`[OPT-121] No extension cookies to inject for ${sourceId}`);
+    return false;
+  }
+
+  try {
+    // Parse URL to get domain for cookie matching
+    const urlObj = new URL(url);
+    const urlDomain = urlObj.hostname;
+
+    // Convert extension cookies to Puppeteer format and filter by domain
+    const puppeteerCookies = sessionData.cookies
+      .filter(cookie => {
+        // Match cookies for this domain (including subdomain matching)
+        const cookieDomain = cookie.domain.startsWith('.') ? cookie.domain.slice(1) : cookie.domain;
+        return urlDomain === cookieDomain || urlDomain.endsWith('.' + cookieDomain);
+      })
+      .map(cookie => ({
+        name: cookie.name,
+        value: cookie.value,
+        domain: cookie.domain,
+        path: cookie.path || '/',
+        secure: cookie.secure,
+        httpOnly: cookie.httpOnly,
+        expires: cookie.expirationDate,
+      }));
+
+    if (puppeteerCookies.length === 0) {
+      console.log(`[OPT-121] No cookies match domain ${urlDomain}`);
+      return false;
+    }
+
+    // Inject cookies into page
+    await page.setCookie(...puppeteerCookies);
+    console.log(`[OPT-121] Injected ${puppeteerCookies.length} cookies for ${urlDomain}`);
+
+    // Also set user agent if available (matches user's browser)
+    if (sessionData.userAgent) {
+      await page.setUserAgent(sessionData.userAgent);
+      console.log(`[OPT-121] Set user agent from extension session`);
+    }
+
+    return true;
+  } catch (err) {
+    console.error(`[OPT-121] Cookie injection failed:`, err);
+    return false;
+  }
+}
+
 /**
  * Get the path to the Research Browser's profile directory
  * @deprecated Use getArchiveBrowserProfilePath() for headless archiving
@@ -331,6 +436,10 @@ export async function captureScreenshot(options: CaptureOptions): Promise<Captur
       width: options.viewportWidth || 1920,
       height: options.viewportHeight || 1080,
     });
+
+    // OPT-121: Inject extension cookies BEFORE navigation
+    // This allows Puppeteer to use the same authenticated session as the user
+    await injectExtensionCookies(page, options.sourceId, options.url);
 
     // Navigate to URL
     await page.goto(options.url, {
@@ -440,6 +549,9 @@ export async function capturePdf(options: CaptureOptions): Promise<CaptureResult
     const browser = await getBrowser();
     page = await browser.newPage();
 
+    // OPT-121: Inject extension cookies BEFORE navigation
+    await injectExtensionCookies(page, options.sourceId, options.url);
+
     // Navigate to URL
     await page.goto(options.url, {
       waitUntil: 'networkidle2',
@@ -523,6 +635,9 @@ export async function captureHtml(options: CaptureOptions): Promise<CaptureResul
   try {
     const browser = await getBrowser();
     page = await browser.newPage();
+
+    // OPT-121: Inject extension cookies BEFORE navigation
+    await injectExtensionCookies(page, options.sourceId, options.url);
 
     // Navigate to URL
     await page.goto(options.url, {
@@ -1111,6 +1226,9 @@ async function captureWarcWithCDP(options: CaptureOptions): Promise<CaptureResul
   try {
     const browser = await getBrowser();
     page = await browser.newPage();
+
+    // OPT-121: Inject extension cookies BEFORE navigation and CDP setup
+    await injectExtensionCookies(page, options.sourceId, options.url);
 
     // Create CDP session
     cdpSession = await page.createCDPSession();
