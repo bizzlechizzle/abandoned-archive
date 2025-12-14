@@ -3711,6 +3711,41 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 86 completed: litellm_settings table created with defaults');
     }
 
+    // Migration 87: Update extraction_providers CHECK constraint to include 'litellm'
+    // SQLite doesn't support ALTER CHECK, so we recreate the table
+    const providerTypeCheck = sqlite.prepare(`
+      SELECT sql FROM sqlite_master
+      WHERE type='table' AND name='extraction_providers'
+    `).get() as { sql: string } | undefined;
+
+    if (providerTypeCheck && !providerTypeCheck.sql.includes("'litellm'")) {
+      console.log('Running migration 87: Adding litellm to extraction_providers type constraint');
+
+      sqlite.exec(`
+        -- Create new table with updated CHECK constraint
+        CREATE TABLE extraction_providers_new (
+          provider_id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          type TEXT NOT NULL CHECK(type IN ('spacy', 'ollama', 'anthropic', 'google', 'openai', 'litellm')),
+          enabled INTEGER DEFAULT 1,
+          priority INTEGER DEFAULT 10,
+          settings_json TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- Copy existing data
+        INSERT INTO extraction_providers_new
+        SELECT * FROM extraction_providers;
+
+        -- Drop old table and rename new one
+        DROP TABLE extraction_providers;
+        ALTER TABLE extraction_providers_new RENAME TO extraction_providers;
+      `);
+
+      console.log('Migration 87 completed: extraction_providers now supports litellm type');
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;
