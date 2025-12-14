@@ -3,6 +3,7 @@
   import { thumbnailCache } from '../stores/thumbnail-cache-store';
   import DateExtractionQueue from '../components/DateExtractionQueue.svelte';
   import PatternEditor from '../components/PatternEditor.svelte';
+  import ExtractionSettings from '../components/ExtractionSettings.svelte';
 
   interface User {
     user_id: string;
@@ -2699,8 +2700,13 @@
         {#if dateEngineExpanded}
         <div class="px-6 pb-6 space-y-6">
           <p class="text-sm text-braun-600">
-            NLP-based date extraction from web sources. Review pending extractions and manage custom patterns.
+            Document Intelligence extraction system. Configure providers (spaCy, Ollama), review pending extractions, and manage custom patterns.
           </p>
+
+          <!-- Extraction Providers -->
+          <div class="border-b border-braun-200 pb-6">
+            <ExtractionSettings />
+          </div>
 
           <!-- Date Extraction Queue -->
           <DateExtractionQueue />

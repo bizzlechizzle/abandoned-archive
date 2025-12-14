@@ -49,10 +49,12 @@ import { registerWebSourcesHandlers } from './websources';
 import { registerTimelineHandlers } from './timeline';
 import { registerImageDownloaderHandlers } from './image-downloader';
 import { registerDateEngineHandlers } from './date-engine';
+import { registerExtractionHandlers, shutdownExtractionHandlers } from './extraction';
 import {
   initializeBrowserImageCapture,
   cleanupBrowserImageCapture,
 } from '../../services/image-downloader/browser-image-capture';
+import { getRawDatabase } from '../database';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
@@ -132,6 +134,10 @@ export function registerIpcHandlers() {
   // Date Engine (Migration 73 - NLP date extraction from web sources)
   registerDateEngineHandlers(db);
 
+  // Document Intelligence Extraction (spaCy + Ollama + Cloud providers)
+  const sqliteDb = getRawDatabase();
+  registerExtractionHandlers(db, sqliteDb);
+
   // Browser Image Capture (network monitoring, context menu)
   initializeBrowserImageCapture({
     filter: {
@@ -147,6 +153,9 @@ export { shutdownJobWorker };
 
 // Export browser capture cleanup for app shutdown
 export { cleanupBrowserImageCapture };
+
+// Export extraction service shutdown for app cleanup
+export { shutdownExtractionHandlers };
 
 // Export monitoring window setter for alert notifications
 export { setMonitoringMainWindow };

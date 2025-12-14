@@ -941,6 +941,43 @@ const api = {
     extractFromDocument: (input) =>
       invokeLong("dateEngine:extractFromDocument")(input),
   },
+
+  // Document Intelligence Extraction (spaCy + Ollama + Cloud)
+  extraction: {
+    // Main extraction
+    extract: (input) =>
+      invokeLong("extraction:extract")(input),
+    extractFromWebSource: (sourceId, options) =>
+      invokeLong("extraction:extractFromWebSource")(sourceId, options),
+    extractBatch: (request) =>
+      invokeLong("extraction:extractBatch")(request),
+
+    // Provider management
+    getProviders: () =>
+      invokeAuto("extraction:getProviders")(),
+    getProviderStatuses: () =>
+      invokeAuto("extraction:getProviderStatuses")(),
+    updateProvider: (providerId, updates) =>
+      invokeAuto("extraction:updateProvider")(providerId, updates),
+    addProvider: (config) =>
+      invokeAuto("extraction:addProvider")(config),
+    removeProvider: (providerId) =>
+      invokeAuto("extraction:removeProvider")(providerId),
+    testProvider: (providerId, testText) =>
+      invokeLong("extraction:testProvider")(providerId, testText),
+
+    // Health & diagnostics
+    healthCheck: () =>
+      invokeAuto("extraction:healthCheck")(),
+
+    // Ollama-specific
+    testOllamaConnection: (host, port) =>
+      invokeAuto("extraction:testOllamaConnection")(host, port),
+    listOllamaModels: (host, port) =>
+      invokeAuto("extraction:listOllamaModels")(host, port),
+    pullOllamaModel: (modelName, host, port) =>
+      invokeLong("extraction:pullOllamaModel")(modelName, host, port),
+  },
 };
 
 contextBridge.exposeInMainWorld("electronAPI", api);

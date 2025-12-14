@@ -7,6 +7,7 @@ import type { Database as DatabaseSchema } from './database.types';
 import { getEffectiveDatabasePath, getDefaultDatabasePath } from '../services/bootstrap-config';
 
 let db: Kysely<DatabaseSchema> | null = null;
+let sqliteDb: Database | null = null;
 
 /**
  * Database schema SQL - embedded to avoid bundling issues with Vite
@@ -3146,6 +3147,102 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 73 completed: Date Engine tables created');
     }
 
+    // Migration 74: Document Intelligence Extraction Providers
+    // Stores configuration for spaCy, Ollama, and cloud LLM providers
+    const tablesForMig74 = sqlite.prepare(`
+      SELECT name FROM sqlite_master WHERE type='table' AND name='extraction_providers'
+    `).all() as Array<{ name: string }>;
+
+    if (tablesForMig74.length === 0) {
+      console.log('Running migration 74: Creating extraction_providers table');
+
+      sqlite.exec(`
+        -- Extraction provider configurations
+        CREATE TABLE IF NOT EXISTS extraction_providers (
+          provider_id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          type TEXT NOT NULL CHECK(type IN ('spacy', 'ollama', 'anthropic', 'google', 'openai')),
+          enabled INTEGER DEFAULT 1,
+          priority INTEGER DEFAULT 10,
+          settings_json TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- Entity extractions (unified storage for all entity types)
+        CREATE TABLE IF NOT EXISTS entity_extractions (
+          extraction_id TEXT PRIMARY KEY,
+          source_type TEXT NOT NULL,
+          source_id TEXT NOT NULL,
+          locid TEXT REFERENCES locs(locid) ON DELETE SET NULL,
+          entity_type TEXT NOT NULL CHECK(entity_type IN ('date', 'person', 'organization', 'location', 'summary')),
+
+          -- Raw extraction data
+          raw_text TEXT NOT NULL,
+          normalized_value TEXT,
+
+          -- Date-specific fields
+          date_start TEXT,
+          date_end TEXT,
+          date_precision TEXT,
+          date_category TEXT,
+          is_approximate INTEGER DEFAULT 0,
+
+          -- Entity-specific fields
+          entity_role TEXT,
+          entity_subtype TEXT,
+          mentions TEXT, -- JSON array
+
+          -- Confidence and provenance
+          overall_confidence REAL,
+          provider_id TEXT,
+          model_used TEXT,
+          context_sentence TEXT,
+
+          -- Review status
+          status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected', 'corrected')),
+          reviewed_at TEXT,
+          reviewed_by TEXT,
+          user_correction TEXT,
+
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- Document summaries (separate table for clarity)
+        CREATE TABLE IF NOT EXISTS document_summaries (
+          summary_id TEXT PRIMARY KEY,
+          source_type TEXT NOT NULL,
+          source_id TEXT NOT NULL,
+          locid TEXT REFERENCES locs(locid) ON DELETE SET NULL,
+
+          title TEXT,
+          summary_text TEXT,
+          key_facts TEXT, -- JSON array
+
+          provider_id TEXT,
+          model_used TEXT,
+          confidence REAL,
+
+          status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected', 'corrected')),
+          reviewed_at TEXT,
+          reviewed_by TEXT,
+
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- Indices for common queries
+        CREATE INDEX IF NOT EXISTS idx_entity_extractions_source ON entity_extractions(source_type, source_id);
+        CREATE INDEX IF NOT EXISTS idx_entity_extractions_locid ON entity_extractions(locid) WHERE locid IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_entity_extractions_type ON entity_extractions(entity_type);
+        CREATE INDEX IF NOT EXISTS idx_entity_extractions_status ON entity_extractions(status);
+
+        CREATE INDEX IF NOT EXISTS idx_document_summaries_source ON document_summaries(source_type, source_id);
+        CREATE INDEX IF NOT EXISTS idx_document_summaries_locid ON document_summaries(locid) WHERE locid IS NOT NULL;
+      `);
+
+      console.log('Migration 74 completed: Document Intelligence tables created');
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;
@@ -3236,7 +3333,25 @@ export function getDatabase(): Kysely<DatabaseSchema> {
     dialect,
   });
 
+  // Store raw sqlite instance for services that need it
+  sqliteDb = sqlite;
+
   return db;
+}
+
+/**
+ * Get the raw better-sqlite3 database instance
+ * Use this for services that need direct SQL access
+ */
+export function getRawDatabase(): Database {
+  if (!sqliteDb) {
+    // Initialize database if not already done
+    getDatabase();
+  }
+  if (!sqliteDb) {
+    throw new Error('Database not initialized');
+  }
+  return sqliteDb;
 }
 
 /**
