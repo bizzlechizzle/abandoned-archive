@@ -172,7 +172,7 @@ export class OllamaProvider extends BaseExtractionProvider {
    * Get the configured model name
    */
   private getModelName(): string {
-    return this.config.settings.model || 'qwen2.5:7b';
+    return this.config.settings.model || 'qwen2.5:32b';
   }
 
   /**

@@ -57,3 +57,11 @@ resources/browsers/ungoogled-chromium/*/chrome.exe
 # Electron Builder output
 build/
 release/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+*.egg-info/

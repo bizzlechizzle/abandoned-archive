@@ -60,7 +60,7 @@ const DEFAULT_PROVIDERS: ProviderConfig[] = [
     settings: {
       host: 'localhost',
       port: 11434,
-      model: 'qwen2.5:7b',
+      model: 'qwen2.5:32b',
       timeout: 120000,
       temperature: 0.1,
       maxTokens: 4096,

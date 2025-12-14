@@ -29,6 +29,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 import dateparser
+import dateparser.search  # Explicit import needed for search_dates
 import spacy
 import uvicorn
 from fastapi import FastAPI, HTTPException

@@ -1054,6 +1054,228 @@ export interface ElectronAPI {
     }>;
   };
 
+  // Document Intelligence Extraction - Multi-provider extraction system
+  extraction: {
+    // Main extraction
+    extract: (input: {
+      text: string;
+      sourceType: 'web_source' | 'document' | 'note' | 'media_caption';
+      sourceId: string;
+      locid?: string;
+      subid?: string;
+      extractTypes?: Array<'dates' | 'people' | 'organizations' | 'locations' | 'summary' | 'title'>;
+      articleDate?: string;
+      locationName?: string;
+      options?: {
+        preferProvider?: string;
+        needsSummary?: boolean;
+        needsTitle?: boolean;
+        minConfidence?: number;
+        maxRetries?: number;
+      };
+    }) => Promise<{
+      success: boolean;
+      result?: {
+        provider: string;
+        model: string;
+        dates: Array<{
+          rawText: string;
+          parsedDate: string | null;
+          parsedDateEnd?: string | null;
+          precision: 'exact' | 'month' | 'year' | 'decade' | 'approximate' | 'range';
+          category: 'build_date' | 'opening' | 'closure' | 'demolition' | 'visit' | 'publication' | 'renovation' | 'event' | 'unknown';
+          confidence: number;
+          context: string;
+          isApproximate: boolean;
+        }>;
+        people: Array<{
+          name: string;
+          role: 'owner' | 'architect' | 'developer' | 'employee' | 'founder' | 'visitor' | 'photographer' | 'historian' | 'unknown';
+          mentions: string[];
+          confidence: number;
+        }>;
+        organizations: Array<{
+          name: string;
+          type: 'company' | 'government' | 'school' | 'hospital' | 'church' | 'nonprofit' | 'military' | 'unknown';
+          mentions: string[];
+          confidence: number;
+        }>;
+        locations: Array<{
+          name: string;
+          type: 'city' | 'state' | 'country' | 'address' | 'landmark' | 'region' | 'neighborhood' | 'unknown';
+          confidence: number;
+        }>;
+        summaryData?: {
+          title: string;
+          summary: string;
+          keyFacts: string[];
+          confidence: number;
+        };
+        processingTimeMs: number;
+        warnings?: string[];
+        providerId: string;
+      };
+      error?: string;
+    }>;
+    extractFromWebSource: (sourceId: string, options?: {
+      preferProvider?: string;
+      needsSummary?: boolean;
+      needsTitle?: boolean;
+      minConfidence?: number;
+      maxRetries?: number;
+    }) => Promise<{
+      success: boolean;
+      result?: {
+        provider: string;
+        model: string;
+        dates: Array<{
+          rawText: string;
+          parsedDate: string | null;
+          precision: string;
+          category: string;
+          confidence: number;
+          context: string;
+          isApproximate: boolean;
+        }>;
+        people: Array<{ name: string; role: string; mentions: string[]; confidence: number }>;
+        organizations: Array<{ name: string; type: string; mentions: string[]; confidence: number }>;
+        locations: Array<{ name: string; type: string; confidence: number }>;
+        summaryData?: { title: string; summary: string; keyFacts: string[]; confidence: number };
+        processingTimeMs: number;
+        providerId: string;
+      };
+      error?: string;
+    }>;
+    extractBatch: (request: {
+      items: Array<{
+        text: string;
+        sourceType: 'web_source' | 'document' | 'note' | 'media_caption';
+        sourceId: string;
+        locid?: string;
+        subid?: string;
+      }>;
+      options?: { preferProvider?: string; needsSummary?: boolean };
+      parallel?: boolean;
+      concurrency?: number;
+    }) => Promise<{
+      success: boolean;
+      result?: {
+        total: number;
+        successful: number;
+        failed: number;
+        results: Record<string, unknown>;
+        totalTimeMs: number;
+      };
+      error?: string;
+    }>;
+
+    // Provider management
+    getProviders: () => Promise<{
+      success: boolean;
+      providers?: Array<{
+        id: string;
+        name: string;
+        type: 'spacy' | 'ollama' | 'anthropic' | 'google' | 'openai';
+        enabled: boolean;
+        priority: number;
+        settings: {
+          host?: string;
+          port?: number;
+          model?: string;
+          executablePath?: string;
+          timeout?: number;
+          temperature?: number;
+          maxTokens?: number;
+        };
+      }>;
+      error?: string;
+    }>;
+    getProviderStatuses: () => Promise<{
+      success: boolean;
+      statuses?: Array<{
+        id: string;
+        available: boolean;
+        lastCheck: string;
+        lastError?: string;
+        responseTimeMs?: number;
+        modelInfo?: { name: string; size?: string; quantization?: string };
+      }>;
+      error?: string;
+    }>;
+    updateProvider: (providerId: string, updates: {
+      name?: string;
+      enabled?: boolean;
+      priority?: number;
+      settings?: {
+        host?: string;
+        port?: number;
+        model?: string;
+        timeout?: number;
+        temperature?: number;
+        maxTokens?: number;
+      };
+    }) => Promise<{ success: boolean; config?: unknown; error?: string }>;
+    addProvider: (config: {
+      id: string;
+      name: string;
+      type: 'spacy' | 'ollama' | 'anthropic' | 'google' | 'openai';
+      enabled: boolean;
+      priority: number;
+      settings: {
+        host?: string;
+        port?: number;
+        model?: string;
+        executablePath?: string;
+        timeout?: number;
+      };
+    }) => Promise<{ success: boolean; error?: string }>;
+    removeProvider: (providerId: string) => Promise<{ success: boolean; error?: string }>;
+    testProvider: (providerId: string, testText?: string) => Promise<{
+      success: boolean;
+      result?: {
+        dates: Array<{ rawText: string; parsedDate: string | null; confidence: number }>;
+        people: Array<{ name: string; confidence: number }>;
+        processingTimeMs: number;
+      };
+      error?: string;
+    }>;
+
+    // Health & diagnostics
+    healthCheck: () => Promise<{
+      success: boolean;
+      health?: {
+        healthy: boolean;
+        providers: Array<{ id: string; available: boolean; lastError?: string }>;
+        system: { ollamaAvailable: boolean; spacyAvailable: boolean; memoryUsage: number };
+      };
+      error?: string;
+    }>;
+
+    // Ollama-specific
+    testOllamaConnection: (host?: string, port?: number) => Promise<{
+      success: boolean;
+      result?: {
+        connected: boolean;
+        responseTimeMs: number;
+        ollamaVersion?: string;
+        availableModels: string[];
+        configuredModelAvailable: boolean;
+        error?: string;
+      };
+      error?: string;
+    }>;
+    listOllamaModels: (host?: string, port?: number) => Promise<{
+      success: boolean;
+      models?: Array<{ name: string; size: number }>;
+      error?: string;
+    }>;
+    pullOllamaModel: (modelName: string, host?: string, port?: number) => Promise<{
+      success: boolean;
+      message?: string;
+      error?: string;
+    }>;
+  };
+
   // Image Downloader - Migration 72 (pHash, URL patterns, staging)
   downloader: {
     // URL Pattern Transformation

@@ -82,10 +82,14 @@ export class SpacyProvider extends BaseExtractionProvider {
     super(config);
 
     this.port = config.settings.port || 8234;
-    this.pythonPath = config.settings.executablePath || 'python3';
 
     // Service script location (relative to electron directory)
     this.serviceDir = join(__dirname, '..', '..', '..', 'python', 'spacy-service');
+
+    // Use venv Python if available, otherwise fall back to system python3
+    const venvPython = join(this.serviceDir, 'venv', 'bin', 'python');
+    this.pythonPath = config.settings.executablePath || venvPython;
+
     this.baseUrl = `http://localhost:${this.port}`;
   }
 

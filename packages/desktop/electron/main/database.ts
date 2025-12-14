@@ -1,13 +1,13 @@
 import { app } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import Database from 'better-sqlite3';
+import Database, { type Database as SqliteDatabase } from 'better-sqlite3';
 import { Kysely, SqliteDialect } from 'kysely';
 import type { Database as DatabaseSchema } from './database.types';
 import { getEffectiveDatabasePath, getDefaultDatabasePath } from '../services/bootstrap-config';
 
 let db: Kysely<DatabaseSchema> | null = null;
-let sqliteDb: Database | null = null;
+let sqliteDb: SqliteDatabase | null = null;
 
 /**
  * Database schema SQL - embedded to avoid bundling issues with Vite
@@ -3343,7 +3343,7 @@ export function getDatabase(): Kysely<DatabaseSchema> {
  * Get the raw better-sqlite3 database instance
  * Use this for services that need direct SQL access
  */
-export function getRawDatabase(): Database {
+export function getRawDatabase(): SqliteDatabase {
   if (!sqliteDb) {
     // Initialize database if not already done
     getDatabase();
