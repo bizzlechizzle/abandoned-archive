@@ -1006,6 +1006,69 @@ const api = {
         invokeAuto("extraction:entities:updateStatus")(extractionId, status),
     },
   },
+
+  // Migration 76: RAM++ Image Auto-Tagging
+  // Per CLAUDE.md Rule 9: Local LLMs for background tasks only
+  tagging: {
+    // Image tag operations
+    getImageTags: (imghash) =>
+      invokeAuto("tagging:getImageTags")(imghash),
+    editImageTags: (input) =>
+      invokeAuto("tagging:editImageTags")(input),
+    retagImage: (imghash) =>
+      invokeAuto("tagging:retagImage")(imghash),
+    clearImageTags: (imghash) =>
+      invokeAuto("tagging:clearImageTags")(imghash),
+
+    // Location tag summary
+    getLocationSummary: (locid) =>
+      invokeAuto("tagging:getLocationSummary")(locid),
+    reaggregateLocation: (locid) =>
+      invokeAuto("tagging:reaggregateLocation")(locid),
+    applySuggestions: (input) =>
+      invokeAuto("tagging:applySuggestions")(input),
+
+    // Queue management
+    getQueueStats: () =>
+      invokeAuto("tagging:getQueueStats")(),
+    queueUntaggedImages: (locid) =>
+      invokeAuto("tagging:queueUntaggedImages")(locid),
+
+    // Service status
+    getServiceStatus: () =>
+      invokeAuto("tagging:getServiceStatus")(),
+    testConnection: () =>
+      invokeAuto("tagging:testConnection")(),
+
+    // Event listeners for real-time tag updates
+    onTagsReady: (callback) => {
+      const listener = (_event, data) => callback(data);
+      ipcRenderer.on("asset:tags-ready", listener);
+      return () => ipcRenderer.removeListener("asset:tags-ready", listener);
+    },
+    onLocationAggregated: (callback) => {
+      const listener = (_event, data) => callback(data);
+      ipcRenderer.on("location:tags-aggregated", listener);
+      return () => ipcRenderer.removeListener("location:tags-aggregated", listener);
+    },
+  },
+
+  // OPT-125: Ollama Lifecycle Management
+  // Seamless auto-start/stop of local Ollama
+  ollama: {
+    // Get current lifecycle status
+    getStatus: () =>
+      invokeAuto("ollama:getStatus")(),
+    // Ensure Ollama is running (starts if needed)
+    ensureRunning: () =>
+      invokeLong("ollama:ensureRunning")(),
+    // Stop Ollama (only if we started it)
+    stop: () =>
+      invokeAuto("ollama:stop")(),
+    // Check if Ollama is installed
+    checkInstalled: () =>
+      invokeAuto("ollama:checkInstalled")(),
+  },
 };
 
 contextBridge.exposeInMainWorld("electronAPI", api);

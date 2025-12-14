@@ -16,6 +16,7 @@ import { startBookmarkAPIServer, stopBookmarkAPIServer } from '../services/bookm
 import { startWebSocketServer, stopWebSocketServer } from '../services/websocket-server';
 import { terminateDetachedBrowser } from '../services/detached-browser-service';
 import { getDatabaseArchiveService } from '../services/database-archive-service';
+import { stopOllama } from '../services/ollama-lifecycle-service';
 import { SQLiteWebSourcesRepository } from '../repositories/sqlite-websources-repository';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
 import { SQLiteSubLocationRepository } from '../repositories/sqlite-sublocation-repository';
@@ -566,6 +567,14 @@ app.on('before-quit', async () => {
     console.log('Health monitoring shut down successfully');
   } catch (error) {
     console.error('Failed to shutdown health monitoring:', error);
+  }
+
+  // OPT-125: Stop Ollama if we started it (seamless lifecycle management)
+  try {
+    stopOllama();
+    console.log('Ollama stopped successfully');
+  } catch (error) {
+    console.error('Failed to stop Ollama:', error);
   }
 
   closeDatabase();

@@ -32,6 +32,10 @@ import type {
   ProviderStatus,
   ExtractedDate,
 } from '../extraction-types';
+import {
+  ensureOllamaRunning,
+  resetIdleTimer,
+} from '../../ollama-lifecycle-service';
 
 /**
  * Ollama API response types
@@ -73,6 +77,7 @@ interface OllamaTagsResponse {
 export class OllamaProvider extends BaseExtractionProvider {
   private baseUrl: string;
   private modelLoaded = false;
+  private isLocalhostHost: boolean;
 
   constructor(config: ProviderConfig) {
     super(config);
@@ -80,12 +85,30 @@ export class OllamaProvider extends BaseExtractionProvider {
     const host = config.settings.host || 'localhost';
     const port = config.settings.port || 11434;
 
+    // Track if this is a localhost connection (for lifecycle management)
+    this.isLocalhostHost = host === 'localhost' || host === '127.0.0.1';
+
     // Support both http and hostname-only formats
     if (host.startsWith('http://') || host.startsWith('https://')) {
       this.baseUrl = host;
+      // Check if URL points to localhost
+      try {
+        const url = new URL(host);
+        this.isLocalhostHost = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+      } catch {
+        // Keep original detection
+      }
     } else {
       this.baseUrl = `http://${host}:${port}`;
     }
+  }
+
+  /**
+   * Check if this provider is configured for localhost.
+   * Used to determine if we should manage Ollama lifecycle.
+   */
+  isLocalhost(): boolean {
+    return this.isLocalhostHost;
   }
 
   /**
@@ -214,6 +237,16 @@ export class OllamaProvider extends BaseExtractionProvider {
     const model = this.getModelName();
     const startTime = Date.now();
 
+    // OPT-125: For localhost, ensure Ollama is running (auto-start if needed)
+    if (this.isLocalhostHost) {
+      const started = await ensureOllamaRunning();
+      if (!started) {
+        throw new Error(
+          'Could not start Ollama. Is it installed? Download from https://ollama.ai'
+        );
+      }
+    }
+
     // Ensure model is loaded
     await this.ensureModelLoaded();
 
@@ -300,9 +333,19 @@ export class OllamaProvider extends BaseExtractionProvider {
 
       this.log('info', `Extraction complete in ${processingTimeMs}ms: ${calibratedDates.length} dates, ${validated.people.length} people`);
 
+      // OPT-125: Reset idle timer after successful extraction (keeps Ollama warm)
+      if (this.isLocalhostHost) {
+        resetIdleTimer();
+      }
+
       return result;
     } catch (error) {
       const processingTimeMs = Date.now() - startTime;
+
+      // OPT-125: Still reset idle timer on error (Ollama was used)
+      if (this.isLocalhostHost) {
+        resetIdleTimer();
+      }
 
       if (error instanceof Error && error.name === 'AbortError') {
         throw new Error(

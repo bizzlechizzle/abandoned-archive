@@ -50,11 +50,14 @@ import { registerTimelineHandlers } from './timeline';
 import { registerImageDownloaderHandlers } from './image-downloader';
 import { registerDateEngineHandlers } from './date-engine';
 import { registerExtractionHandlers, shutdownExtractionHandlers } from './extraction';
+import { registerTaggingHandlers } from './tagging';
+import { registerOllamaLifecycleHandlers } from './ollama-lifecycle';
 import {
   initializeBrowserImageCapture,
   cleanupBrowserImageCapture,
 } from '../../services/image-downloader/browser-image-capture';
 import { getRawDatabase } from '../database';
+import { cleanupOrphanOllama, stopOllama } from '../../services/ollama-lifecycle-service';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
@@ -138,6 +141,15 @@ export function registerIpcHandlers() {
   const sqliteDb = getRawDatabase();
   registerExtractionHandlers(db, sqliteDb);
 
+  // Migration 76: RAM++ Image Auto-Tagging
+  // Per CLAUDE.md Rule 9: Local LLMs for background tasks only
+  registerTaggingHandlers(db);
+
+  // OPT-125: Ollama Lifecycle Management (auto-start/stop)
+  // Clean up orphan from previous crash, register handlers
+  cleanupOrphanOllama();
+  registerOllamaLifecycleHandlers();
+
   // Browser Image Capture (network monitoring, context menu)
   initializeBrowserImageCapture({
     filter: {
@@ -159,3 +171,6 @@ export { shutdownExtractionHandlers };
 
 // Export monitoring window setter for alert notifications
 export { setMonitoringMainWindow };
+
+// Export Ollama lifecycle cleanup for app shutdown
+export { stopOllama as stopOllamaLifecycle };
