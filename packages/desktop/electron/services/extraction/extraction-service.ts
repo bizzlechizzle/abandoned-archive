@@ -52,13 +52,13 @@ const DEFAULT_PROVIDERS: ProviderConfig[] = [
     },
   },
   {
-    id: 'ollama-local',
-    name: 'Ollama (Local)',
+    id: 'ollama-mac-studio',
+    name: 'Ollama (Mac Studio)',
     type: 'ollama',
     enabled: true,
     priority: 2,
     settings: {
-      host: 'localhost',
+      host: '192.168.1.254',
       port: 11434,
       model: 'qwen2.5:32b',
       timeout: 120000,
