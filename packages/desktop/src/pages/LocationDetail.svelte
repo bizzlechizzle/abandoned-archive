@@ -15,9 +15,9 @@
   import MediaViewer from '../components/MediaViewer.svelte';
   import {
     LocationInfo, LocationTimeline, LocationInfoHorizontal,
-    LocationMapSection, LocationRecords,
+    LocationMapSection, LocationRecords, LocationResearch,
     LocationImportZone, LocationBookmarks, LocationNerdStats,
-    LocationSettings, SubLocationGrid, LocationPeopleCompanies,
+    LocationSettings, SubLocationGrid,
     type MediaImage, type MediaVideo, type MediaDocument, type MediaMap, type Bookmark,
     type GpsWarning, type FailedFile
   } from '../components/location';
@@ -1060,11 +1060,16 @@
     }
     catch (err) { console.error('Error loading user settings:', err); }
 
-    // Auto-open file browser if navigated from "Add Media" button on Import form
+    // Auto-scroll to import zone if navigated from new location creation
     const hash = window.location.hash;
     if (hash.includes('autoImport=true')) {
-      // Small delay to ensure UI is ready, then open file browser
-      setTimeout(() => handleSelectFiles(), 100);
+      // Small delay to ensure UI is ready, then scroll to import zone
+      setTimeout(() => {
+        const importZone = document.querySelector('[data-import-zone]');
+        if (importZone) {
+          importZone.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
       // Clear the query param to prevent re-triggering on refresh
       router.navigate(`/location/${locationId}`);
     }
@@ -1143,7 +1148,7 @@
                 {#if location.access}{location.access}{/if}
                 {#if location.access && location.class} {/if}
                 {#if location.class}{location.class}{/if}
-                {#if !location.access && !location.class && !location.category}<button onclick={openVerifyModal} class="text-error hover:underline cursor-pointer">verify location</button>{/if}
+                {#if !location.access && !location.class && !location.category}<button onclick={openVerifyModal} class="text-error hover:underline cursor-pointer">verify</button>{/if}
               </p>
 
               <!-- Built / Abandoned -->
@@ -1278,9 +1283,6 @@
           onDismissAllWarnings={() => gpsWarnings = []}
         />
 
-        <!-- OPT-120: People & Companies extracted from web sources -->
-        <LocationPeopleCompanies locid={location.locid} />
-
         <div id="media-gallery">
           <LocationRecords
             {images}
@@ -1294,6 +1296,15 @@
             onOpenSource={(url) => window.electronAPI.shell.openExternal(url)}
           />
         </div>
+
+        <!-- Research section: Timeline (detailed), People, Companies -->
+        <LocationResearch
+          locid={location.locid}
+          subid={isViewingSubLocation && currentSubLocation ? currentSubLocation.subid : null}
+          isHostLocation={isHostLocation && !isViewingSubLocation}
+          onOpenWebSource={handleOpenWebSource}
+        />
+
         <LocationSettings {location} onLocationUpdated={loadLocation} />
         <LocationNerdStats {location} imageCount={images.length} videoCount={videos.length} documentCount={documents.length} mapCount={maps.length} onLocationUpdated={loadLocation} />
       {/if}

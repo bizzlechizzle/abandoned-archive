@@ -24,7 +24,12 @@ export { default as TimelineEventRow } from './TimelineEventRow.svelte';
 export { default as TimelineDateInput } from './TimelineDateInput.svelte';
 // Horizontal info strip (replaces LocationInfo in main position)
 export { default as LocationInfoHorizontal } from './LocationInfoHorizontal.svelte';
-// OPT-120: Document Intelligence - People & Companies
+// OPT-120: Document Intelligence - People & Companies (legacy, replaced by Research section)
 export { default as LocationPeopleCompanies } from './LocationPeopleCompanies.svelte';
+// Research section with Timeline, People, Companies
+export { default as LocationResearch } from './LocationResearch.svelte';
+export { default as LocationResearchTimeline } from './LocationResearchTimeline.svelte';
+export { default as LocationResearchPeople } from './LocationResearchPeople.svelte';
+export { default as LocationResearchCompanies } from './LocationResearchCompanies.svelte';
 
 export * from './types';
