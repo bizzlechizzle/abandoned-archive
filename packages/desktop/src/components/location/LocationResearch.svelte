@@ -26,12 +26,17 @@
   // Outer accordion state - collapsed by default
   let isOpen = $state(false);
 
+  // Expose expand function for TimelineHighlightBox to call
+  export function expand() {
+    isOpen = true;
+  }
+
   function openResearchPage() {
     router.navigate('/research');
   }
 </script>
 
-<div class="mt-6 bg-white rounded border border-braun-300">
+<div id="research-section" class="mt-6 bg-white rounded border border-braun-300">
   <!-- Outer accordion header -->
   <button
     onclick={() => isOpen = !isOpen}

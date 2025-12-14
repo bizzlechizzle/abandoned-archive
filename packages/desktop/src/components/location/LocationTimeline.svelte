@@ -14,6 +14,7 @@
     isHostLocation?: boolean;
     onUpdate?: () => void;
     onOpenWebSource?: (websourceId: string) => void;
+    onExpandClick?: () => void; // Scroll to Research section
   }
 
   let {
@@ -21,7 +22,8 @@
     subid = null,
     isHostLocation = false,
     onUpdate,
-    onOpenWebSource
+    onOpenWebSource,
+    onExpandClick
   }: Props = $props();
 
   // Timeline state
@@ -34,21 +36,29 @@
   // Media counts cache: event_id -> { images, videos }
   let mediaCounts = $state<Map<string, { images: number; videos: number }>>(new Map());
 
-  // Max entries to show when collapsed
-  const MAX_ENTRIES = 7;
+  // Max entries to show (major events only)
+  const MAX_ENTRIES = 9;
 
-  // Chronological sort: oldest first
-  // Unknown established dates pin to top (inherently oldest - building existed before visits)
+  // Major event subtypes to include
+  const MAJOR_SUBTYPES = ['built', 'opened', 'closed', 'abandoned', 'demolished'];
+
+  // Filter to major events only, then sort chronologically
+  // Major = established events + user's own visits with media
   let sortedEvents = $derived(
-    [...events].sort((a, b) => {
-      const aSort = a.event_type === 'established' && (a.date_sort === null || a.date_sort === 99999999)
-        ? -1
-        : (a.date_sort ?? 99999999);
-      const bSort = b.event_type === 'established' && (b.date_sort === null || b.date_sort === 99999999)
-        ? -1
-        : (b.date_sort ?? 99999999);
-      return aSort - bSort;
-    })
+    events
+      .filter(e =>
+        (e.event_type === 'established' && MAJOR_SUBTYPES.includes(e.event_subtype ?? '')) ||
+        (e.event_type === 'visit' && e.created_by === currentUser && (e.media_count ?? 0) > 0)
+      )
+      .sort((a, b) => {
+        const aSort = a.event_type === 'established' && (a.date_sort === null || a.date_sort === 99999999)
+          ? -1
+          : (a.date_sort ?? 99999999);
+        const bSort = b.event_type === 'established' && (b.date_sort === null || b.date_sort === 99999999)
+          ? -1
+          : (b.date_sort ?? 99999999);
+        return aSort - bSort;
+      })
   );
 
   // Count events by type for collapse priority
@@ -196,37 +206,23 @@
     return 'minor';
   }
 
+  // Get year only from date_sort (YYYYMMDD format)
+  function getYear(event: TimelineEvent | TimelineEventWithSource): string {
+    const dateSort = event.date_sort ?? 99999999;
+    if (dateSort === 99999999) return '?';
+    return String(Math.floor(dateSort / 10000));
+  }
+
   function formatEstablishedLine(event: TimelineEvent | TimelineEventWithSource): string {
     const subtype = event.event_subtype || 'built';
     const label = subtypeLabels[subtype] || 'Built';
-    const date = event.date_display;
-    return date ? `${date} - ${label}` : `Unknown - ${label}`;
+    const year = getYear(event);
+    return `${year} - ${label}`;
   }
 
   function formatVisitLine(event: TimelineEvent | TimelineEventWithSource): string {
-    const date = event.date_display || '—';
-    const username = event.created_by || 'Unknown';
-
-    // Build media count string from cache (or fallback to total)
-    let mediaStr = '';
-    const counts = mediaCounts.get(event.event_id);
-    if (counts) {
-      const parts: string[] = [];
-      if (counts.images > 0) {
-        parts.push(`${counts.images} image${counts.images !== 1 ? 's' : ''}`);
-      }
-      if (counts.videos > 0) {
-        parts.push(`${counts.videos} video${counts.videos !== 1 ? 's' : ''}`);
-      }
-      if (parts.length > 0) {
-        mediaStr = ` (${parts.join(', ')})`;
-      }
-    } else if (event.media_count && event.media_count > 0) {
-      // Fallback while loading
-      mediaStr = ` (${event.media_count} photo${event.media_count !== 1 ? 's' : ''})`;
-    }
-
-    return `${date} - Site Visit${mediaStr} - ${username}`;
+    const year = getYear(event);
+    return `${year} - Visit`;
   }
 
   function formatWebPageLine(event: TimelineEvent | TimelineEventWithSource): string {
@@ -266,116 +262,53 @@
 
 <!-- PLAN: Match LocationMapSection white card styling -->
 <div class="bg-white rounded border border-braun-300 flex-1 flex flex-col">
-  <!-- Header with expand/collapse button -->
+  <!-- Header with expand button (same position as edit button in Location box) -->
   <div class="px-8 pt-6 pb-4 flex items-center justify-between">
     <h2 class="text-2xl font-semibold text-braun-900 leading-none">Timeline</h2>
-    {#if sortedEvents.length > MAX_ENTRIES}
+    {#if onExpandClick}
       <button
-        type="button"
-        onclick={toggleExpanded}
+        onclick={onExpandClick}
         class="text-sm text-braun-500 hover:text-braun-900 hover:underline"
-        title={expanded ? 'Show fewer entries' : 'Show all entries'}
+        title="View full timeline in Research section"
       >
-        {expanded ? 'collapse' : 'expand'}
+        expand
       </button>
     {/if}
   </div>
 
-  <!-- Content -->
-  <div class="px-8 pb-6 flex-1">
+  <!-- Content - fills height, matches LocationMapSection section spacing -->
+  <div class="px-8 pb-8 flex-1 flex flex-col">
     {#if loading}
-      <div class="flex items-center justify-center py-8">
+      <div class="flex-1 flex items-center justify-center">
         <div class="text-braun-500 text-sm">Loading timeline...</div>
       </div>
     {:else if error}
-      <div class="flex items-center justify-center py-8">
+      <div class="flex-1 flex items-center justify-center">
         <div class="text-red-600 text-sm">{error}</div>
       </div>
     {:else if sortedEvents.length === 0}
-      <div class="flex items-center justify-center py-8">
+      <div class="flex-1 flex items-center justify-center">
         <div class="text-braun-500 text-sm">No timeline events</div>
       </div>
     {:else}
-      <div class="timeline-events relative pl-5">
-        <!-- Vertical line -->
-        <div class="absolute left-[3px] top-2 bottom-2 w-px bg-braun-300"></div>
+      <div class="timeline-events relative pl-6 py-4 flex-1 flex flex-col justify-between">
+        <!-- Vertical line (8pt grid: 4px from left edge of pl-6 = centered on 8px dot) -->
+        <div class="absolute left-[4px] top-4 bottom-4 w-px bg-braun-300"></div>
 
-        <!-- Chronological event list (oldest first) -->
-        {#each displayEvents() as event, index (event.event_id)}
-          {@const isLast = index === displayEvents().length - 1 && hiddenCount === 0}
-          {@const eventClass = getEventClass(event)}
-
-          {#if event.event_type === 'established'}
-            <!-- Established Event - Major -->
-            <div class="relative {isLast ? '' : 'pb-4'}">
-              <!-- Filled 8px dot for major -->
-              <div class="absolute -left-5 top-[6px] w-2 h-2 rounded-full bg-braun-900"></div>
-              <div class="text-[15px] font-medium text-braun-900">
+        <!-- Chronological event list - evenly distributed -->
+        {#each displayEvents() as event (event.event_id)}
+          <div class="relative">
+            <!-- Filled 8px dot (centered on vertical line) -->
+            <div class="absolute -left-6 top-[6px] w-2 h-2 rounded-full bg-braun-900"></div>
+            <div class="text-[15px] font-medium text-braun-900">
+              {#if event.event_type === 'established'}
                 {formatEstablishedLine(event)}
-              </div>
-            </div>
-
-          {:else if event.event_type === 'visit'}
-            <!-- Visit Event - Major (user) or Minor (other) -->
-            <div class="relative {isLast ? '' : 'pb-4'}">
-              {#if eventClass === 'major'}
-                <!-- Filled 8px dot for user's own visits -->
-                <div class="absolute -left-5 top-[6px] w-2 h-2 rounded-full bg-braun-900"></div>
-                <div class="text-[15px] font-medium text-braun-900">
-                  {formatVisitLine(event)}
-                </div>
               {:else}
-                <!-- Hollow 8px dot for other visits -->
-                <div class="absolute -left-5 top-[6px] w-2 h-2 rounded-full border border-braun-400 bg-white"></div>
-                <div class="text-[15px] font-normal text-braun-600">
-                  {formatVisitLine(event)}
-                </div>
+                {formatVisitLine(event)}
               {/if}
             </div>
-
-          {:else if event.event_type === 'custom' && event.event_subtype === 'web_page'}
-            <!-- Web Page Event - Minor with diamond marker -->
-            {@const tldr = getWebPageTldr(event)}
-            <div class="relative {isLast ? '' : 'pb-4'}">
-              <!-- Diamond marker (rotated square) -->
-              <div class="absolute -left-5 top-[7px] w-[6px] h-[6px] border border-braun-400 bg-white rotate-45"></div>
-              <button
-                type="button"
-                onclick={() => handleWebPageClick(event)}
-                class="text-[15px] font-normal text-braun-600 hover:text-braun-900 hover:underline cursor-pointer text-left"
-                title={tldr || undefined}
-              >
-                {formatWebPageLine(event)}
-              </button>
-              {#if tldr}
-                <p class="text-[12px] text-braun-500 mt-0.5 line-clamp-1">{tldr}</p>
-              {/if}
-            </div>
-
-          {:else if event.event_type === 'database_entry'}
-            <!-- Database Entry Event - Technical -->
-            <div class="relative {isLast ? '' : 'pb-4'}">
-              <!-- Small 4px square for technical -->
-              <div class="absolute -left-5 top-[8px] w-1 h-1 bg-braun-400"></div>
-              <div class="text-[13px] font-normal text-braun-500">
-                {formatDatabaseEntryLine(event)}
-              </div>
-            </div>
-          {/if}
-        {/each}
-
-        <!-- Show more button when collapsed -->
-        {#if hiddenCount > 0 && !expanded}
-          <div class="relative pb-4">
-            <button
-              type="button"
-              onclick={toggleExpanded}
-              class="text-[13px] text-braun-600 hover:text-braun-900 hover:underline"
-            >
-              Show {hiddenCount} more entries
-            </button>
           </div>
-        {/if}
+        {/each}
       </div>
     {/if}
   </div>

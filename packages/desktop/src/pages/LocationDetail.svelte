@@ -97,6 +97,18 @@
   let showWebSourceModal = $state(false);
   let webSourceModalId = $state<string | null>(null);
 
+  // Timeline highlight box - reference to Research section for expand on click
+  let researchRef: { expand: () => void } | undefined;
+
+  // Handle timeline expand - scroll to Research section and auto-expand
+  function handleTimelineExpand() {
+    const researchEl = document.getElementById('research-section');
+    if (researchEl) {
+      researchEl.scrollIntoView({ behavior: 'smooth' });
+    }
+    researchRef?.expand();
+  }
+
   // Derived: Are we viewing a sub-location?
   const isViewingSubLocation = $derived(!!subId && !!currentSubLocation);
 
@@ -1209,6 +1221,7 @@
               isHostLocation={isHostLocation && !isViewingSubLocation}
               onUpdate={loadLocation}
               onOpenWebSource={handleOpenWebSource}
+              onExpandClick={handleTimelineExpand}
             />
             <!-- Date Extraction Review: Pending dates feed into Timeline -->
             <DateExtractionReview
@@ -1299,6 +1312,7 @@
 
         <!-- Research section: Timeline (detailed), People, Companies -->
         <LocationResearch
+          bind:this={researchRef}
           locid={location.locid}
           subid={isViewingSubLocation && currentSubLocation ? currentSubLocation.subid : null}
           isHostLocation={isHostLocation && !isViewingSubLocation}
