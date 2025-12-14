@@ -1,6 +1,7 @@
 <script lang="ts">
   /**
-   * LocationWebSources - Web source archive management
+   * LocationWebSources - "Websites" archive management
+   * Shows web-extracted images/videos inline per source
    * OPT-109: Comprehensive web archiving replacing simple bookmarks
    * OPT-111: Enhanced metadata viewer modal integration
    * OPT-116: PIN confirmation for destructive delete
@@ -47,6 +48,34 @@
     domain: string | null;
   }
 
+  // Web source image/video types from database
+  interface WebSourceImage {
+    id: number;
+    source_id: string;
+    image_index: number;
+    url: string;
+    local_path: string | null;
+    hash: string | null;
+    width: number | null;
+    height: number | null;
+    size: number | null;
+    original_filename: string | null;
+    alt: string | null;
+    caption: string | null;
+  }
+
+  interface WebSourceVideo {
+    id: number;
+    source_id: string;
+    video_index: number;
+    url: string;
+    local_path: string | null;
+    hash: string | null;
+    title: string | null;
+    duration: number | null;
+    thumbnail_path: string | null;
+  }
+
   interface Props {
     locid: string;
     onOpenSource: (url: string) => void;
@@ -57,9 +86,15 @@
   // State
   let sources = $state<WebSource[]>([]);
   let loading = $state(true);
+  let isOpen = $state(true); // Expanded by default as sub-accordion
   let showAddForm = $state(false);
   let archivingSource = $state<string | null>(null);
   let expandedSource = $state<string | null>(null);
+
+  // Inline media display state
+  let expandedMediaSource = $state<string | null>(null);
+  let sourceMedia = $state<Map<string, { images: WebSourceImage[]; videos: WebSourceVideo[] }>>(new Map());
+  let loadingMedia = $state<string | null>(null);
 
   // OPT-111: Detail modal state
   let showDetailModal = $state(false);
@@ -239,6 +274,37 @@
     detailSourceId = null;
   }
 
+  // Toggle inline media display for a source
+  async function toggleMediaDisplay(sourceId: string) {
+    // If already expanded, collapse
+    if (expandedMediaSource === sourceId) {
+      expandedMediaSource = null;
+      return;
+    }
+
+    // Check if already loaded
+    if (sourceMedia.has(sourceId)) {
+      expandedMediaSource = sourceId;
+      return;
+    }
+
+    // Load media for this source
+    loadingMedia = sourceId;
+    try {
+      const [images, videos] = await Promise.all([
+        window.electronAPI.websources.getImages(sourceId),
+        window.electronAPI.websources.getVideos(sourceId),
+      ]);
+      sourceMedia.set(sourceId, { images: images || [], videos: videos || [] });
+      sourceMedia = sourceMedia; // Trigger reactivity
+      expandedMediaSource = sourceId;
+    } catch (err) {
+      console.error('Failed to load media for source:', err);
+    } finally {
+      loadingMedia = null;
+    }
+  }
+
   function getStatusColor(status: string): string {
     switch (status) {
       case 'complete': return 'bg-green-100 text-green-700';
@@ -271,18 +337,37 @@
   ];
 </script>
 
-<div class="mt-6 bg-white rounded border border-braun-300 p-6">
-  <div class="flex items-center justify-between mb-3">
-    <h2 class="text-xl font-semibold text-braun-900">Web Sources ({sources.length})</h2>
-    <button
-      onclick={() => showAddForm = !showAddForm}
-      class="text-sm text-braun-900 hover:underline"
+<div class="border-b border-braun-200 last:border-b-0">
+  <!-- Sub-accordion header -->
+  <button
+    onclick={() => isOpen = !isOpen}
+    aria-expanded={isOpen}
+    class="w-full py-3 flex items-center justify-between text-left hover:bg-braun-100 transition-colors"
+  >
+    <h3 class="text-sm font-medium text-braun-900">Websites ({sources.length})</h3>
+    <svg
+      class="w-4 h-4 text-braun-400 transition-transform duration-200 {isOpen ? 'rotate-180' : ''}"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
     >
-      {showAddForm ? 'Cancel' : '+ Add Source'}
-    </button>
-  </div>
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+    </svg>
+  </button>
 
-  {#if showAddForm}
+  {#if isOpen}
+    <div class="pb-4">
+      <!-- Add Website button -->
+      <div class="flex justify-end mb-3">
+        <button
+          onclick={() => showAddForm = !showAddForm}
+          class="text-sm text-braun-900 hover:underline"
+        >
+          {showAddForm ? 'Cancel' : '+ Add Website'}
+        </button>
+      </div>
+
+      {#if showAddForm}
     <div class="mb-4 p-4 bg-braun-50 rounded">
       <div class="space-y-3">
         <div>
@@ -334,7 +419,7 @@
           disabled={addingSource || !newUrl.trim()}
           class="w-full px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
         >
-          {addingSource ? 'Adding...' : 'Add Web Source'}
+          {addingSource ? 'Adding...' : 'Add Website'}
         </button>
       </div>
     </div>
@@ -398,11 +483,25 @@
                   {#if source.word_count > 0}
                     <span>{source.word_count.toLocaleString()} words</span>
                   {/if}
-                  {#if source.image_count > 0}
-                    <span>{source.image_count} images</span>
-                  {/if}
-                  {#if source.video_count > 0}
-                    <span>{source.video_count} videos</span>
+                  {#if source.image_count > 0 || source.video_count > 0}
+                    <button
+                      onclick={() => toggleMediaDisplay(source.source_id)}
+                      class="flex items-center gap-1 hover:text-braun-700 transition-colors"
+                      title={expandedMediaSource === source.source_id ? 'Hide media' : 'Show media'}
+                    >
+                      {#if source.image_count > 0}
+                        <span>{source.image_count} images</span>
+                      {/if}
+                      {#if source.image_count > 0 && source.video_count > 0}
+                        <span>•</span>
+                      {/if}
+                      {#if source.video_count > 0}
+                        <span>{source.video_count} videos</span>
+                      {/if}
+                      <svg class="w-3 h-3 transition-transform {expandedMediaSource === source.source_id ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
                   {/if}
                 </div>
               {/if}
@@ -437,6 +536,89 @@
                   </div>
                   {#if source.archive_error}
                     <div class="mt-2 text-red-600 text-xs">Error: {source.archive_error}</div>
+                  {/if}
+                </div>
+              {/if}
+              <!-- Inline media display -->
+              {#if expandedMediaSource === source.source_id}
+                <div class="mt-3 p-3 bg-white rounded border border-braun-200">
+                  {#if loadingMedia === source.source_id}
+                    <div class="text-sm text-braun-400 text-center py-4">Loading media...</div>
+                  {:else}
+                    {@const media = sourceMedia.get(source.source_id)}
+                    {#if media}
+                      <!-- Images grid -->
+                      {#if media.images.length > 0}
+                        <div class="mb-3">
+                          <div class="text-xs font-medium text-braun-600 mb-2">Images ({media.images.length})</div>
+                          <div class="grid grid-cols-4 gap-2">
+                            {#each media.images.slice(0, 8) as image}
+                              <button
+                                onclick={() => handleViewArchive(source.source_id)}
+                                class="aspect-square bg-braun-100 rounded overflow-hidden hover:opacity-80 transition"
+                                title={image.alt || image.original_filename || 'Web image'}
+                              >
+                                {#if image.local_path}
+                                  <img
+                                    src="file://{image.local_path}"
+                                    alt={image.alt || ''}
+                                    class="w-full h-full object-cover"
+                                  />
+                                {:else}
+                                  <div class="w-full h-full flex items-center justify-center text-braun-400">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                    </svg>
+                                  </div>
+                                {/if}
+                              </button>
+                            {/each}
+                          </div>
+                          {#if media.images.length > 8}
+                            <button
+                              onclick={() => handleViewArchive(source.source_id)}
+                              class="mt-2 text-xs text-braun-600 hover:text-braun-900"
+                            >
+                              View all {media.images.length} images...
+                            </button>
+                          {/if}
+                        </div>
+                      {/if}
+                      <!-- Videos list -->
+                      {#if media.videos.length > 0}
+                        <div>
+                          <div class="text-xs font-medium text-braun-600 mb-2">Videos ({media.videos.length})</div>
+                          <div class="space-y-1">
+                            {#each media.videos.slice(0, 4) as video}
+                              <button
+                                onclick={() => handleViewArchive(source.source_id)}
+                                class="w-full flex items-center gap-2 p-2 bg-braun-50 rounded hover:bg-braun-100 transition text-left"
+                              >
+                                <svg class="w-4 h-4 text-braun-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span class="text-xs text-braun-700 truncate">{video.title || video.url}</span>
+                                {#if video.duration}
+                                  <span class="text-xs text-braun-400 ml-auto">{Math.floor(video.duration / 60)}:{String(video.duration % 60).padStart(2, '0')}</span>
+                                {/if}
+                              </button>
+                            {/each}
+                          </div>
+                          {#if media.videos.length > 4}
+                            <button
+                              onclick={() => handleViewArchive(source.source_id)}
+                              class="mt-2 text-xs text-braun-600 hover:text-braun-900"
+                            >
+                              View all {media.videos.length} videos...
+                            </button>
+                          {/if}
+                        </div>
+                      {/if}
+                      {#if media.images.length === 0 && media.videos.length === 0}
+                        <div class="text-sm text-braun-400 text-center py-2">No media found</div>
+                      {/if}
+                    {/if}
                   {/if}
                 </div>
               {/if}
@@ -491,9 +673,11 @@
       {/each}
     </div>
   {:else}
-    <div class="text-center text-braun-400 py-8 border-2 border-dashed border-braun-200 rounded">
-      <p class="text-sm">No web sources yet</p>
-      <p class="text-xs mt-1">Add URLs to articles, photos, and resources to archive them</p>
+      <div class="text-center text-braun-400 py-8 border-2 border-dashed border-braun-200 rounded">
+        <p class="text-sm">No websites yet</p>
+        <p class="text-xs mt-1">Add URLs to articles, photos, and resources to archive them</p>
+      </div>
+    {/if}
     </div>
   {/if}
 </div>

@@ -15,8 +15,8 @@
   import MediaViewer from '../components/MediaViewer.svelte';
   import {
     LocationInfo, LocationTimeline, LocationInfoHorizontal,
-    LocationMapSection, LocationOriginalAssets,
-    LocationImportZone, LocationBookmarks, LocationWebSources, LocationNerdStats,
+    LocationMapSection, LocationRecords,
+    LocationImportZone, LocationBookmarks, LocationNerdStats,
     LocationSettings, SubLocationGrid, LocationPeopleCompanies,
     type MediaImage, type MediaVideo, type MediaDocument, type MediaMap, type Bookmark,
     type GpsWarning, type FailedFile
@@ -1278,26 +1278,20 @@
           onDismissAllWarnings={() => gpsWarnings = []}
         />
 
-        <!-- OPT-109: Web Sources replaces simple bookmarks -->
-        <LocationWebSources
-          locid={location.locid}
-          onOpenSource={(url) => window.electronAPI.shell.openExternal(url)}
-        />
-
         <!-- OPT-120: People & Companies extracted from web sources -->
         <LocationPeopleCompanies locid={location.locid} />
 
         <div id="media-gallery">
-          <LocationOriginalAssets
+          <LocationRecords
             {images}
             {videos}
             {documents}
-            {maps}
-            heroImghash={currentSubLocation?.hero_imghash || location.hero_imghash || null}
+            heroImgsha={currentSubLocation?.hero_imghash || location.hero_imghash || null}
+            locid={location.locid}
             onOpenImageLightbox={(i) => selectedMediaIndex = i}
             onOpenVideoLightbox={(i) => selectedMediaIndex = images.length + i}
             onOpenDocument={openMediaFile}
-            onOpenMap={openMediaFile}
+            onOpenSource={(url) => window.electronAPI.shell.openExternal(url)}
           />
         </div>
         <LocationSettings {location} onLocationUpdated={loadLocation} />

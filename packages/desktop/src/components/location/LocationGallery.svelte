@@ -14,9 +14,10 @@
     images: MediaImage[];
     heroImghash: string | null;
     onOpenLightbox: (index: number) => void;
+    label?: string;  // Custom label, defaults to "Images"
   }
 
-  let { images, heroImghash, onOpenLightbox }: Props = $props();
+  let { images, heroImghash, onOpenLightbox, label = "Images" }: Props = $props();
 
   const IMAGE_LIMIT = 8; // 4x2 grid for preview
   const COLUMNS = 4; // Grid columns for virtual mode
@@ -105,7 +106,7 @@
       aria-expanded={isOpen}
       class="w-full py-3 flex items-center justify-between text-left hover:bg-braun-100 transition-colors"
     >
-      <h3 class="text-sm font-medium text-braun-900">Images ({images.length})</h3>
+      <h3 class="text-sm font-medium text-braun-900">{label} ({images.length})</h3>
       <svg
         class="w-4 h-4 text-braun-400 transition-transform duration-200 {isOpen ? 'rotate-180' : ''}"
         fill="none"
