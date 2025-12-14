@@ -40,6 +40,9 @@ import type {
 // =============================================================================
 
 const DEFAULT_PROVIDERS: ProviderConfig[] = [
+  // ==========================================================================
+  // LOCAL PROVIDERS (enabled by default)
+  // ==========================================================================
   {
     id: 'spacy-local',
     name: 'spaCy (Offline)',
@@ -62,6 +65,49 @@ const DEFAULT_PROVIDERS: ProviderConfig[] = [
       host: '192.168.1.254',
       port: 11434,
       model: 'qwen2.5:32b',
+      timeout: 120000,
+      temperature: 0.1,
+      maxTokens: 4096,
+    },
+  },
+  // ==========================================================================
+  // CLOUD PROVIDERS (disabled until credentials configured)
+  // All route through LiteLLM proxy for unified access
+  // ==========================================================================
+  {
+    id: 'anthropic-claude',
+    name: 'Anthropic Claude',
+    type: 'anthropic',
+    enabled: false,
+    priority: 10,
+    settings: {
+      cloudModel: 'claude-sonnet-4-20250514',
+      timeout: 120000,
+      temperature: 0.1,
+      maxTokens: 4096,
+    },
+  },
+  {
+    id: 'openai-gpt',
+    name: 'OpenAI GPT',
+    type: 'openai',
+    enabled: false,
+    priority: 11,
+    settings: {
+      cloudModel: 'gpt-4o',
+      timeout: 120000,
+      temperature: 0.1,
+      maxTokens: 4096,
+    },
+  },
+  {
+    id: 'google-gemini',
+    name: 'Google Gemini',
+    type: 'google',
+    enabled: false,
+    priority: 12,
+    settings: {
+      cloudModel: 'gemini-1.5-pro',
       timeout: 120000,
       temperature: 0.1,
       maxTokens: 4096,
