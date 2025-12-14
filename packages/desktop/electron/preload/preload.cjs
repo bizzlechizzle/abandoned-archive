@@ -468,6 +468,14 @@ const api = {
       ipcRenderer.on("websources:archive-complete", handler);
       return () => ipcRenderer.removeListener("websources:archive-complete", handler);
     },
+
+    // FIX: Event listener for web source saved (from browser extension)
+    // Allows UI to refresh when bookmarks are saved externally
+    onWebSourceSaved: (callback) => {
+      const handler = (_event, payload) => callback(payload);
+      ipcRenderer.on("websource:saved", handler);
+      return () => ipcRenderer.removeListener("websource:saved", handler);
+    },
   },
 
   users: {

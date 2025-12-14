@@ -58,6 +58,7 @@ pnpm reinstall        # Clean and reinstall (fixes native module issues)
 6. **No AI in Docs** — Never mention Claude, ChatGPT, Codex, or similar in user-facing docs or UI
 7. **Keep It Simple** — Favor obvious code, minimal abstraction, fewer files
 8. **Binary Dependencies Welcome** — App size is not a concern; freely add binaries (dcraw_emu, ffmpeg, exiftool, libpostal) when they solve problems better than pure-JS alternatives
+9. **Real-Time UI Updates** — Any operation that modifies data (imports, saves, deletes, external sources like browser extension) must trigger automatic UI refresh. Never require manual page refresh to see changes. Use IPC events from main process to notify renderer when data changes externally.
 
 ## Do Not
 

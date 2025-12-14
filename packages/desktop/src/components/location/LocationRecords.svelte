@@ -4,7 +4,9 @@
    * Contains: Images, Web Images, Videos, Web Videos, Websites, Documents
    * Per DECISION-020: Original Assets Accordion Refactor (renamed to "Records")
    * Migration 23: Hidden media filtering with "Show All" toggle
+   * FIX: Auto-expand when web sources saved from browser extension (Rule 9)
    */
+  import { onMount } from 'svelte';
   import LocationGallery from './LocationGallery.svelte';
   import LocationVideos from './LocationVideos.svelte';
   import LocationDocuments from './LocationDocuments.svelte';
@@ -40,6 +42,37 @@
 
   // Hidden media toggle - show all vs visible only
   let showHidden = $state(false);
+
+  // FIX: Track new web sources for visual indicator
+  let hasNewWebSources = $state(false);
+
+  // FIX: Export function to expand and scroll to websites section
+  export function expandAndScrollToWebsources() {
+    isOpen = true;
+    hasNewWebSources = false;
+    // Scroll to websources section after DOM update
+    setTimeout(() => {
+      document.getElementById('websources-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  }
+
+  // FIX: Listen for web sources saved from browser extension (Rule 9)
+  onMount(() => {
+    const unsubscribe = window.electronAPI?.websources?.onWebSourceSaved?.((payload) => {
+      if (payload.locid === locid) {
+        // Auto-expand and show indicator
+        hasNewWebSources = true;
+        isOpen = true;
+        // Scroll to websources section
+        setTimeout(() => {
+          document.getElementById('websources-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 150);
+      }
+    });
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  });
 
   // Split images by source: user-uploaded vs web-extracted
   const userImages = $derived(images.filter(i => i.extracted_from_web !== 1));
@@ -158,11 +191,16 @@
     aria-expanded={isOpen}
     class="w-full p-6 flex items-center justify-between text-left hover:bg-braun-100 transition-colors"
   >
-    <h2 class="text-xl font-semibold text-braun-900">
+    <h2 class="text-xl font-semibold text-braun-900 flex items-center gap-2">
       Records
-      <span class="text-base font-normal text-braun-400 ml-2">
+      <span class="text-base font-normal text-braun-400">
         ({visibleCount}{totalHiddenCount > 0 && !showHidden ? ` of ${totalCount}` : ''})
       </span>
+      {#if hasNewWebSources}
+        <span class="px-2 py-0.5 text-xs bg-green-500 text-white rounded-full animate-pulse">
+          New
+        </span>
+      {/if}
     </h2>
     <svg
       class="w-5 h-5 text-braun-400 transition-transform duration-200 {isOpen ? 'rotate-180' : ''}"
@@ -226,10 +264,12 @@
       />
 
       <!-- 5. Websites (archived web sources) -->
-      <LocationWebSources
-        {locid}
-        {onOpenSource}
-      />
+      <div id="websources-section">
+        <LocationWebSources
+          {locid}
+          {onOpenSource}
+        />
+      </div>
 
       <!-- 6. Documents -->
       <LocationDocuments

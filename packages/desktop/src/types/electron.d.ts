@@ -2284,6 +2284,9 @@ export interface ElectronAPI {
 
     // OPT-113: Event listener for archive completion
     onArchiveComplete: (callback: (result: { sourceId: string; success: boolean; error?: string }) => void) => () => void;
+
+    // FIX: Event listener for web source saved (from browser extension)
+    onWebSourceSaved: (callback: (payload: { sourceId: string; locid: string | null; subid: string | null; sourceType: string }) => void) => () => void;
   };
 
   // Migration 76: RAM++ Image Auto-Tagging

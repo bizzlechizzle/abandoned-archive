@@ -1043,12 +1043,23 @@
     }
   }
 
+  // FIX: Cleanup function for websource listener
+  let websourceUnsubscribe: (() => void) | null = null;
+
   onMount(async () => {
     // OPT-087: Listen for asset-ready events from App.svelte
     window.addEventListener('asset-ready', handleAssetReady as EventListener);
 
     await loadLocation();
     loadBookmarks();
+
+    // FIX (Rule 9): Listen for web sources saved from browser extension
+    websourceUnsubscribe = window.electronAPI?.websources?.onWebSourceSaved?.((payload) => {
+      if (payload.locid === locationId) {
+        toasts.success('Bookmark saved');
+      }
+    }) || null;
+
     // DECISION-014: Removed ensureGpsFromAddress() - GPS should only come from EXIF or user action
 
     // Migration 33: Track view for Nerd Stats (only for host locations, not sub-locations)
@@ -1090,10 +1101,12 @@
   // OPT-087: Cleanup asset-ready event listener to prevent memory leaks
   // OPT-092: Also cleanup notification timer
   // OPT-110: Also cleanup loadLocation debounce timer
+  // FIX: Also cleanup websource listener
   onDestroy(() => {
     window.removeEventListener('asset-ready', handleAssetReady as EventListener);
     if (notificationTimer) clearTimeout(notificationTimer);
     if (loadLocationDebounceTimer) clearTimeout(loadLocationDebounceTimer);
+    if (websourceUnsubscribe) websourceUnsubscribe();
   });
 </script>
 

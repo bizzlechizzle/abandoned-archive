@@ -5,9 +5,11 @@
    * OPT-109: Comprehensive web archiving replacing simple bookmarks
    * OPT-111: Enhanced metadata viewer modal integration
    * OPT-116: PIN confirmation for destructive delete
+   * FIX: Auto-refresh when bookmarks saved from browser extension
    * Per LILBITS: ~300 lines, single responsibility
    */
 
+  import { onMount } from 'svelte';
   import WebSourceDetailModal from './WebSourceDetailModal.svelte';
 
   type ComponentStatusValue = 'pending' | 'done' | 'failed' | 'skipped';
@@ -135,11 +137,24 @@
   let newNotes = $state('');
   let addingSource = $state(false);
 
-  // Load sources on mount
+  // Load sources on mount and when locid changes
   $effect(() => {
     if (locid) {
       loadSources();
     }
+  });
+
+  // FIX: Listen for web sources saved from browser extension and auto-refresh
+  onMount(() => {
+    const unsubscribe = window.electronAPI?.websources?.onWebSourceSaved?.((payload) => {
+      // Only refresh if the saved source is for this location
+      if (payload.locid === locid) {
+        loadSources();
+      }
+    });
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   });
 
   async function loadSources() {

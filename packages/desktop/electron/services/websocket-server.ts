@@ -16,6 +16,7 @@
  * - Extension sends 'browser:event' for tab changes, navigation, etc.
  */
 import { WebSocketServer, WebSocket } from 'ws';
+import { BrowserWindow } from 'electron';
 import { getLogger } from './logger-service';
 import {
   setWebSocketSender,
@@ -331,6 +332,14 @@ export function notifyWebSourceSaved(
     bookmark_id: sourceId,
     locid,
     subid,
+  });
+
+  // FIX: Also notify Electron renderer windows via IPC so UI updates
+  const payload = { sourceId, locid, subid, sourceType };
+  BrowserWindow.getAllWindows().forEach((win) => {
+    if (!win.isDestroyed()) {
+      win.webContents.send('websource:saved', payload);
+    }
   });
 }
 
