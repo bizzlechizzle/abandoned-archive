@@ -699,6 +699,10 @@ export const IMPORT_QUEUES = {
 
   // Migration 73: Date extraction from web sources
   DATE_EXTRACTION: 'date-extraction',
+
+  // Migration 76: RAM++ Image Auto-Tagging (lowest priority, background only)
+  IMAGE_TAGGING: 'image-tagging',
+  LOCATION_TAG_AGGREGATION: 'location-tag-aggregation',
 } as const;
 
 /**

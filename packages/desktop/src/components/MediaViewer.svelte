@@ -114,6 +114,17 @@
   // Cache version for busting browser cache after thumbnail regeneration
   const cacheVersion = $derived($thumbnailCache);
 
+  // Migration 76: RAM++ Auto-tagging state
+  let imageTags = $state<string[]>([]);
+  let tagsSource = $state<string | null>(null);
+  let tagsViewType = $state<string | null>(null);
+  let tagsQualityScore = $state<number | null>(null);
+  let loadingTags = $state(false);
+  let editingTags = $state(false);
+  let tagEditValue = $state('');
+  let savingTags = $state(false);
+  let retagging = $state(false);
+
   // Get the best available image source
   // Uses custom media:// protocol registered in main process to bypass file:// restrictions
   // OPT-105: Full fallback chain for RAW files where browser can't display original
@@ -579,6 +590,117 @@
   $effect(() => {
     triggerPreload();
   });
+
+  // Migration 76: Load tags when viewing an image
+  async function loadImageTags() {
+    if (!currentMedia || currentMedia.type !== 'image') {
+      imageTags = [];
+      tagsSource = null;
+      return;
+    }
+
+    loadingTags = true;
+    try {
+      const result = await window.electronAPI?.tagging?.getImageTags(currentMedia.hash);
+      if (result?.success) {
+        imageTags = result.tags || [];
+        tagsSource = result.source || null;
+        tagsViewType = result.viewType || null;
+        tagsQualityScore = result.qualityScore || null;
+      }
+    } catch (err) {
+      console.error('Failed to load image tags:', err);
+    } finally {
+      loadingTags = false;
+    }
+  }
+
+  // Start editing tags
+  function startTagEdit() {
+    tagEditValue = imageTags.join(', ');
+    editingTags = true;
+  }
+
+  // Cancel tag editing
+  function cancelTagEdit() {
+    editingTags = false;
+    tagEditValue = '';
+  }
+
+  // Save edited tags
+  async function saveTagEdit() {
+    if (!currentMedia || savingTags) return;
+
+    savingTags = true;
+    const newTags = tagEditValue
+      .split(',')
+      .map(t => t.trim())
+      .filter(t => t.length > 0);
+
+    try {
+      const result = await window.electronAPI?.tagging?.editImageTags({
+        imghash: currentMedia.hash,
+        tags: newTags,
+      });
+
+      if (result?.success) {
+        imageTags = result.tags || newTags;
+        tagsSource = 'manual';
+        editingTags = false;
+      }
+    } catch (err) {
+      console.error('Failed to save tags:', err);
+    } finally {
+      savingTags = false;
+    }
+  }
+
+  // Request re-tagging
+  async function requestRetag() {
+    if (!currentMedia || retagging) return;
+
+    retagging = true;
+    try {
+      const result = await window.electronAPI?.tagging?.retagImage(currentMedia.hash);
+      if (result?.success) {
+        // Keep retagging=true until tags arrive via onTagsReady event
+        console.log('Re-tagging queued:', result.message);
+      } else {
+        // Failed to queue, reset state
+        retagging = false;
+      }
+    } catch (err) {
+      console.error('Failed to queue re-tagging:', err);
+      retagging = false;
+    }
+  }
+
+  // Load tags when metadata panel opens or image changes
+  $effect(() => {
+    if (showExif && currentMedia?.type === 'image') {
+      loadImageTags();
+    }
+  });
+
+  // Listen for real-time tag updates
+  let cleanupTagsListener: (() => void) | undefined;
+  $effect(() => {
+    cleanupTagsListener = window.electronAPI?.tagging?.onTagsReady((data) => {
+      if (currentMedia && data.hash === currentMedia.hash) {
+        imageTags = data.tags || [];
+        tagsViewType = data.viewType || null;
+        tagsQualityScore = data.qualityScore || null;
+        tagsSource = 'ram++';
+        // Reset retagging state - tags have arrived
+        retagging = false;
+        console.log('Tags received:', data.tags?.length, 'tags');
+      }
+    });
+
+    return () => {
+      cleanupTagsListener?.();
+    };
+  });
 </script>
 
 <svelte:window on:keydown={handleKeydown} />
@@ -1014,6 +1136,104 @@
                     <span class="px-2 py-0.5 bg-braun-100 text-braun-600 rounded text-xs">
                       {currentMedia.contribution_source || 'External'}
                     </span>
+                  </div>
+                {/if}
+              </div>
+            {/if}
+
+            <!-- Migration 76: RAM++ Auto Tags (Images only) -->
+            {#if currentMedia.type === 'image'}
+              <div class="pb-3 border-b border-braun-100">
+                <div class="flex items-center justify-between mb-2">
+                  <div class="text-xs font-medium text-braun-400 uppercase tracking-wide">Auto Tags</div>
+                  <div class="flex gap-1">
+                    {#if !editingTags}
+                      <button
+                        onclick={startTagEdit}
+                        class="text-xs text-braun-500 hover:text-braun-700 px-1"
+                        title="Edit tags"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onclick={requestRetag}
+                        disabled={retagging}
+                        class="text-xs text-braun-500 hover:text-braun-700 px-1 disabled:opacity-50"
+                        title="Re-analyze with RAM++"
+                      >
+                        {retagging ? 'Tagging...' : 'Re-tag'}
+                      </button>
+                    {/if}
+                  </div>
+                </div>
+
+                {#if loadingTags}
+                  <div class="text-xs text-braun-400">Loading tags...</div>
+                {:else if editingTags}
+                  <!-- Tag editing mode -->
+                  <div class="space-y-2">
+                    <textarea
+                      bind:value={tagEditValue}
+                      placeholder="Enter tags separated by commas..."
+                      class="w-full px-2 py-1.5 text-xs border border-braun-300 rounded resize-none focus:outline-none focus:border-braun-600"
+                      rows="3"
+                    ></textarea>
+                    <div class="flex gap-2 justify-end">
+                      <button
+                        onclick={cancelTagEdit}
+                        class="px-2 py-1 text-xs text-braun-600 hover:text-braun-800"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onclick={saveTagEdit}
+                        disabled={savingTags}
+                        class="px-2 py-1 text-xs bg-braun-900 text-white rounded hover:bg-braun-600 disabled:opacity-50"
+                      >
+                        {savingTags ? 'Saving...' : 'Save'}
+                      </button>
+                    </div>
+                  </div>
+                {:else if imageTags.length > 0}
+                  <!-- Tag display -->
+                  <div class="flex flex-wrap gap-1 mb-2">
+                    {#each imageTags as tag}
+                      <span class="px-2 py-0.5 bg-braun-100 text-braun-700 rounded text-xs">
+                        {tag}
+                      </span>
+                    {/each}
+                  </div>
+                  <!-- Tag metadata -->
+                  <div class="text-xs text-braun-400 space-y-0.5">
+                    {#if tagsSource}
+                      <div class="flex justify-between">
+                        <span>Source</span>
+                        <span class="text-braun-500">{tagsSource}</span>
+                      </div>
+                    {/if}
+                    {#if tagsViewType}
+                      <div class="flex justify-between">
+                        <span>View Type</span>
+                        <span class="text-braun-500 capitalize">{tagsViewType}</span>
+                      </div>
+                    {/if}
+                    {#if tagsQualityScore !== null}
+                      <div class="flex justify-between">
+                        <span>Quality</span>
+                        <span class="text-braun-500">{(tagsQualityScore * 100).toFixed(0)}%</span>
+                      </div>
+                    {/if}
+                  </div>
+                {:else}
+                  <div class="text-xs text-braun-400 italic">
+                    No tags yet.
+                    <button
+                      onclick={requestRetag}
+                      disabled={retagging}
+                      class="text-braun-600 hover:underline disabled:opacity-50"
+                    >
+                      {retagging ? 'Analyzing...' : 'Analyze with RAM++'}
+                    </button>
                   </div>
                 {/if}
               </div>

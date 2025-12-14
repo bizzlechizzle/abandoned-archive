@@ -1979,6 +1979,140 @@ export interface ElectronAPI {
     onArchiveComplete: (callback: (result: { sourceId: string; success: boolean; error?: string }) => void) => () => void;
   };
 
+  // Migration 76: RAM++ Image Auto-Tagging
+  tagging: {
+    // Image tag operations
+    getImageTags: (imghash: string) => Promise<{
+      success: boolean;
+      imghash?: string;
+      tags?: string[];
+      source?: string | null;
+      confidence?: Record<string, number> | null;
+      taggedAt?: string | null;
+      qualityScore?: number | null;
+      viewType?: string | null;
+      error?: string;
+    }>;
+    editImageTags: (input: { imghash: string; tags: string[] }) => Promise<{
+      success: boolean;
+      imghash?: string;
+      tags?: string[];
+      error?: string;
+    }>;
+    retagImage: (imghash: string) => Promise<{
+      success: boolean;
+      imghash?: string;
+      message?: string;
+      error?: string;
+    }>;
+    clearImageTags: (imghash: string) => Promise<{
+      success: boolean;
+      imghash?: string;
+      error?: string;
+    }>;
+
+    // Location tag summary
+    getLocationSummary: (locid: string) => Promise<{
+      success: boolean;
+      summary?: LocationTagSummary | null;
+      error?: string;
+    }>;
+    reaggregateLocation: (locid: string) => Promise<{
+      success: boolean;
+      summary?: LocationTagSummary | null;
+      error?: string;
+    }>;
+    applySuggestions: (input: {
+      locid: string;
+      typeThreshold?: number;
+      eraThreshold?: number;
+      overwrite?: boolean;
+    }) => Promise<{
+      success: boolean;
+      typeApplied?: boolean;
+      eraApplied?: boolean;
+      error?: string;
+    }>;
+
+    // Queue management
+    getQueueStats: () => Promise<{
+      success: boolean;
+      stats?: {
+        pending: number;
+        processing: number;
+        completed: number;
+        failed: number;
+      };
+      error?: string;
+    }>;
+    queueUntaggedImages: (locid: string) => Promise<{
+      success: boolean;
+      queued?: number;
+      total?: number;
+      error?: string;
+    }>;
+
+    // Service status
+    getServiceStatus: () => Promise<{
+      success: boolean;
+      status: {
+        available: boolean;
+        mode: 'api' | 'local' | 'mock' | 'none';
+        apiUrl?: string;
+        lastCheck?: string;
+        error?: string;
+      };
+      error?: string;
+    }>;
+    testConnection: () => Promise<{
+      success: boolean;
+      mode?: string;
+      message?: string;
+      error?: string;
+    }>;
+
+    // Event listeners for real-time tag updates
+    onTagsReady: (callback: (data: {
+      hash: string;
+      tags: string[];
+      viewType?: string;
+      qualityScore?: number;
+      suggestedType?: string | null;
+    }) => void) => () => void;
+    onLocationAggregated: (callback: (data: {
+      locid: string;
+      taggedImages: number;
+      totalImages: number;
+      dominantTags: string[];
+      suggestedType: string | null;
+      typeApplied: boolean;
+      eraApplied: boolean;
+    }) => void) => () => void;
+  };
+
+}
+
+// Migration 76: Location Tag Summary type
+export interface LocationTagSummary {
+  locid: string;
+  dominantTags: string[];
+  tagCounts: Record<string, number>;
+  suggestedType: string | null;
+  suggestedTypeConfidence: number | null;
+  suggestedEra: string | null;
+  suggestedEraConfidence: number | null;
+  totalImages: number;
+  taggedImages: number;
+  interiorCount: number;
+  exteriorCount: number;
+  aerialCount: number;
+  hasGraffiti: boolean;
+  hasEquipment: boolean;
+  hasDecay: boolean;
+  hasNatureReclaim: boolean;
+  conditionScore: number;
+  bestHeroImghash: string | null;
+  bestHeroScore: number | null;
 }
 
 // Reference Map types
