@@ -212,8 +212,7 @@
     </svg>
   </button>
 
-  {#if isOpen}
-    <div class="px-6 pb-6 space-y-2">
+  <div class="px-6 pb-6 space-y-2" class:hidden={!isOpen}>
       <!-- Filter toggles -->
       {#if totalHiddenCount > 0}
         <div class="flex items-center justify-end gap-2 mb-2 flex-wrap">
@@ -276,6 +275,5 @@
         documents={visibleDocuments}
         onOpenFile={onOpenDocument}
       />
-    </div>
-  {/if}
+  </div>
 </div>
