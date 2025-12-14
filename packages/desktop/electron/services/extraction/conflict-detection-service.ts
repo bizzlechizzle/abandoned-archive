@@ -9,7 +9,7 @@
  */
 
 import type { Database as SqliteDatabase } from 'better-sqlite3';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 import type {
   FactConflict,
@@ -281,7 +281,7 @@ export class ConflictDetectionService {
    * Create and store a new conflict
    */
   createConflict(input: FactConflictInput): FactConflict {
-    const conflict_id = uuidv4();
+    const conflict_id = randomUUID();
     const now = new Date().toISOString();
 
     // Get source authority tiers

@@ -11,7 +11,7 @@
  */
 
 import type { Database as SqliteDatabase } from 'better-sqlite3';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 import type {
   PersonProfile,
@@ -362,7 +362,7 @@ export class ProfileExtractionAgent {
     locid: string,
     sourceRef: string
   ): PersonProfile {
-    const profile_id = uuidv4();
+    const profile_id = randomUUID();
     const now = new Date().toISOString();
 
     const profile: PersonProfile = {
@@ -415,7 +415,7 @@ export class ProfileExtractionAgent {
     locid: string,
     sourceRef: string
   ): CompanyProfile {
-    const profile_id = uuidv4();
+    const profile_id = randomUUID();
     const now = new Date().toISOString();
 
     const profile: CompanyProfile = {

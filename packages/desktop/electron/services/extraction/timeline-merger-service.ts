@@ -15,7 +15,7 @@
  */
 
 import type { Database as SqliteDatabase } from 'better-sqlite3';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 // =============================================================================
 // TYPES
@@ -334,7 +334,7 @@ export class TimelineMergerService {
    * Create a new timeline event
    */
   private createNewEvent(locid: string, event: NewTimelineEvent): MergeResult {
-    const event_id = uuidv4();
+    const event_id = randomUUID();
     const now = new Date().toISOString();
     const precision = event.precision || getPrecision(event.event_date);
 
