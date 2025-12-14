@@ -369,6 +369,8 @@ function extractExplicitPatterns(text: string, masks: MaskRegion[]): DateCandida
 /**
  * Custom chrono refiner for historical year bias
  * Converts 2-digit years 20-99 to 1920-1999 (urbex context)
+ * ONLY applies when text contains actual 2-digit year (e.g., '25 or 25 alone),
+ * NOT when a full 4-digit year is present.
  */
 function createHistoricalBiasRefiner(): Refiner {
   return {
@@ -378,7 +380,16 @@ function createHistoricalBiasRefiner(): Refiner {
 
         // Check if this looks like a 2-digit year that was auto-expanded to 2000s
         if (year && year >= 2020 && year <= 2099) {
-          const twoDigitMatch = result.text.match(/\b['']?(\d{2})\b/);
+          // CRITICAL: Only apply bias if original text has a 2-digit year, NOT a 4-digit year
+          // A 4-digit year in the text means chrono parsed it correctly
+          const has4DigitYear = /\b(19|20)\d{2}\b/.test(result.text);
+          if (has4DigitYear) {
+            // Text contains explicit 4-digit year - DO NOT apply century bias
+            continue;
+          }
+
+          // Look for apostrophe-prefixed 2-digit year (e.g., '25, '95)
+          const twoDigitMatch = result.text.match(/[''](\d{2})\b/);
           if (twoDigitMatch) {
             const twoDigit = parseInt(twoDigitMatch[1], 10);
             if (twoDigit >= 20 && twoDigit <= 99) {
@@ -392,7 +403,11 @@ function createHistoricalBiasRefiner(): Refiner {
         if (result.end) {
           const endYear = result.end.get('year');
           if (endYear && endYear >= 2020 && endYear <= 2099) {
-            const matches = result.text.match(/\b['']?(\d{2})\b/g);
+            // Only apply if no 4-digit year in text
+            const has4DigitYear = /\b(19|20)\d{2}\b/.test(result.text);
+            if (has4DigitYear) continue;
+
+            const matches = result.text.match(/[''](\d{2})\b/g);
             if (matches && matches.length > 1) {
               const twoDigit = parseInt(matches[1].replace(/['']/g, ''), 10);
               if (twoDigit >= 20 && twoDigit <= 99) {

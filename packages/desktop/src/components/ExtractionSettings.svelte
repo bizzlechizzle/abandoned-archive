@@ -74,7 +74,7 @@
 
   async function loadProviders() {
     try {
-      const result = await window.electron.extraction.getProviders();
+      const result = await window.electronAPI.extraction.getProviders();
       if (result.success) {
         providers = result.providers;
 
@@ -93,7 +93,7 @@
 
   async function refreshStatuses() {
     try {
-      const result = await window.electron.extraction.getProviderStatuses();
+      const result = await window.electronAPI.extraction.getProviderStatuses();
       if (result.success) {
         statuses = Object.fromEntries(result.statuses.map((s: ProviderStatus) => [s.id, s]));
       }
@@ -107,7 +107,7 @@
     testResult = null;
 
     try {
-      const result = await window.electron.extraction.testProvider(providerId);
+      const result = await window.electronAPI.extraction.testProvider(providerId);
       if (result.success) {
         testResult = {
           success: true,
@@ -131,7 +131,7 @@
     if (!provider) return;
 
     try {
-      await window.electron.extraction.updateProvider(providerId, {
+      await window.electronAPI.extraction.updateProvider(providerId, {
         enabled: !provider.enabled
       });
       await loadProviders();
@@ -148,7 +148,7 @@
   async function loadOllamaModels() {
     loadingModels = true;
     try {
-      const result = await window.electron.extraction.listOllamaModels(ollamaHost, ollamaPort);
+      const result = await window.electronAPI.extraction.listOllamaModels(ollamaHost, ollamaPort);
       if (result.success) {
         availableModels = result.models || [];
       } else {
@@ -166,7 +166,7 @@
     try {
       const ollamaProvider = providers.find(p => p.type === 'ollama');
       if (ollamaProvider) {
-        await window.electron.extraction.updateProvider(ollamaProvider.id, {
+        await window.electronAPI.extraction.updateProvider(ollamaProvider.id, {
           settings: {
             host: ollamaHost,
             port: ollamaPort,
@@ -189,7 +189,7 @@
     testingProvider = 'test-ollama';
 
     try {
-      const result = await window.electron.extraction.testOllamaConnection(ollamaHost, ollamaPort);
+      const result = await window.electronAPI.extraction.testOllamaConnection(ollamaHost, ollamaPort);
       if (result.success && result.result.connected) {
         testResult = {
           success: true,
@@ -226,7 +226,7 @@
         }
       };
 
-      await window.electron.extraction.addProvider(config);
+      await window.electronAPI.extraction.addProvider(config);
       await loadProviders();
       await refreshStatuses();
 
@@ -247,7 +247,7 @@
     if (!confirm('Remove this provider?')) return;
 
     try {
-      await window.electron.extraction.removeProvider(providerId);
+      await window.electronAPI.extraction.removeProvider(providerId);
       await loadProviders();
     } catch (error) {
       console.error('Failed to remove provider:', error);

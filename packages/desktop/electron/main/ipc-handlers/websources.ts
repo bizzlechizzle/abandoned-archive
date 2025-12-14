@@ -905,7 +905,8 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
   });
 
   /**
-   * Get full detail for archive viewer (source + images + videos)
+   * Get full detail for archive viewer (source + images + videos + intelligence)
+   * OPT-120: Enhanced to include LLM-extracted data
    */
   ipcMain.handle('websources:getDetail', async (_event, sourceId: string) => {
     try {
@@ -919,10 +920,45 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
       const images = await webSourcesRepo.findImages(validatedId);
       const videos = await webSourcesRepo.findVideos(validatedId);
 
+      // OPT-120: Fetch LLM-extracted intelligence data
+      // Document summary
+      const summary = await db
+        .selectFrom('document_summaries')
+        .selectAll()
+        .where('source_type', '=', 'web_source')
+        .where('source_id', '=', validatedId)
+        .executeTakeFirst();
+
+      // Entity extractions (people, organizations)
+      const entities = await db
+        .selectFrom('entity_extractions')
+        .selectAll()
+        .where('source_type', '=', 'web_source')
+        .where('source_id', '=', validatedId)
+        .where('status', 'in', ['pending', 'approved'])
+        .orderBy('entity_type')
+        .orderBy('entity_name')
+        .execute();
+
+      // Date extractions (LLM-detected dates from text)
+      const extractedDates = await db
+        .selectFrom('date_extractions')
+        .selectAll()
+        .where('source_type', '=', 'web_source')
+        .where('source_id', '=', validatedId)
+        .orderBy('parsed_date', 'asc')
+        .execute();
+
       return {
         source,
         images,
         videos,
+        // OPT-120: Intelligence data
+        intelligence: {
+          summary: summary || null,
+          entities: entities || [],
+          extractedDates: extractedDates || [],
+        },
       };
     } catch (error) {
       console.error('Error getting web source detail:', error);

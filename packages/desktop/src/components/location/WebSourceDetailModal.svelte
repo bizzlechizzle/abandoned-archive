@@ -79,6 +79,45 @@
     metadata_json: string | null;
   }
 
+  // OPT-120: Intelligence data types
+  interface DocumentSummary {
+    summary_id: string;
+    title: string | null;
+    summary_text: string | null;
+    key_facts: string | null;
+    confidence: number | null;
+    status: string;
+    created_at: string;
+  }
+
+  interface EntityExtraction {
+    extraction_id: string;
+    entity_type: string;
+    entity_name: string;
+    entity_role: string | null;
+    date_range: string | null;
+    confidence: number;
+    context_sentence: string | null;
+    status: string;
+  }
+
+  interface DateExtraction {
+    extraction_id: string;
+    raw_text: string;
+    parsed_date: string | null;
+    date_display: string | null;
+    category: string | null;
+    overall_confidence: number | null;
+    context_sentence: string | null;
+    status: string;
+  }
+
+  interface Intelligence {
+    summary: DocumentSummary | null;
+    entities: EntityExtraction[];
+    extractedDates: DateExtraction[];
+  }
+
   interface Props {
     sourceId: string;
     onClose: () => void;
@@ -91,6 +130,7 @@
   let source = $state<WebSource | null>(null);
   let images = $state<WebSourceImage[]>([]);
   let videos = $state<WebSourceVideo[]>([]);
+  let intelligence = $state<Intelligence | null>(null);
   let selectedImage = $state<WebSourceImage | null>(null);
   let error = $state<string | null>(null);
 
@@ -101,6 +141,7 @@
   let showFullText = $state(false);
   let showRawMetadata = $state(false);
   let showDates = $state(true);
+  let showIntelligence = $state(true);
   let exportingArchive = $state(false);
 
   // Load data on mount
@@ -118,6 +159,7 @@
       source = detail.source;
       images = detail.images || [];
       videos = detail.videos || [];
+      intelligence = detail.intelligence || null;
     } catch (err) {
       console.error('Failed to load web source detail:', err);
       error = err instanceof Error ? err.message : 'Failed to load archive';
@@ -603,6 +645,122 @@
             <dd class="text-braun-900">{source.video_count || 0}</dd>
           </dl>
         </section>
+
+        <!-- OPT-120: Extracted Intelligence Section -->
+        {#if intelligence && (intelligence.summary || intelligence.entities.length > 0 || intelligence.extractedDates.length > 0)}
+          <section class="bg-amber-50 border border-amber-200 rounded p-4">
+            <button
+              onclick={() => showIntelligence = !showIntelligence}
+              class="w-full flex items-center justify-between text-xs font-semibold text-amber-700 uppercase tracking-wider mb-3 hover:text-amber-900"
+            >
+              <span>EXTRACTED INTELLIGENCE</span>
+              <span class="text-amber-500">{showIntelligence ? '▲' : '▼'}</span>
+            </button>
+
+            {#if showIntelligence}
+              <div class="space-y-4">
+                <!-- Smart Title & Summary -->
+                {#if intelligence.summary}
+                  <div>
+                    {#if intelligence.summary.title && intelligence.summary.title !== source.title && intelligence.summary.title !== source.extracted_title}
+                      <h4 class="text-sm font-medium text-amber-800 mb-1">Smart Title</h4>
+                      <p class="text-sm text-braun-900 bg-white p-2 rounded border border-amber-100">{intelligence.summary.title}</p>
+                    {/if}
+
+                    {#if intelligence.summary.summary_text}
+                      <h4 class="text-sm font-medium text-amber-800 mt-3 mb-1">Summary</h4>
+                      <p class="text-sm text-braun-700 bg-white p-2 rounded border border-amber-100 leading-relaxed">{intelligence.summary.summary_text}</p>
+                    {/if}
+
+                    {#if intelligence.summary.key_facts}
+                      {@const facts = JSON.parse(intelligence.summary.key_facts || '[]')}
+                      {#if facts.length > 0}
+                        <h4 class="text-sm font-medium text-amber-800 mt-3 mb-1">Key Facts</h4>
+                        <ul class="list-disc list-inside text-sm text-braun-700 bg-white p-2 rounded border border-amber-100 space-y-1">
+                          {#each facts as fact}
+                            <li>{fact}</li>
+                          {/each}
+                        </ul>
+                      {/if}
+                    {/if}
+
+                    <div class="flex items-center gap-2 mt-2 text-xs text-amber-600">
+                      <span class="px-1.5 py-0.5 bg-amber-100 rounded capitalize">{intelligence.summary.status}</span>
+                      {#if intelligence.summary.confidence}
+                        <span>{(intelligence.summary.confidence * 100).toFixed(0)}% confidence</span>
+                      {/if}
+                    </div>
+                  </div>
+                {/if}
+
+                <!-- Entities (People & Organizations) -->
+                {#if intelligence.entities.length > 0}
+                  <div>
+                    <h4 class="text-sm font-medium text-amber-800 mb-2">People & Organizations</h4>
+                    <div class="grid grid-cols-2 gap-2">
+                      {#each intelligence.entities as entity}
+                        <div class="bg-white p-2 rounded border border-amber-100 text-sm">
+                          <div class="flex items-center gap-2">
+                            <span class={entity.entity_type === 'person' ? 'text-blue-600' : 'text-green-600'}>
+                              {entity.entity_type === 'person' ? '👤' : '🏢'}
+                            </span>
+                            <span class="font-medium text-braun-900">{entity.entity_name}</span>
+                          </div>
+                          {#if entity.entity_role}
+                            <p class="text-xs text-braun-600 mt-1 capitalize">{entity.entity_role}</p>
+                          {/if}
+                          {#if entity.date_range}
+                            <p class="text-xs text-braun-500 mt-0.5">{entity.date_range}</p>
+                          {/if}
+                          <div class="flex items-center gap-2 mt-1 text-xs text-amber-600">
+                            <span class="px-1 py-0.5 bg-amber-100 rounded capitalize">{entity.status}</span>
+                            <span>{(entity.confidence * 100).toFixed(0)}%</span>
+                          </div>
+                        </div>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+
+                <!-- Extracted Dates (LLM-detected) -->
+                {#if intelligence.extractedDates.length > 0}
+                  <div>
+                    <h4 class="text-sm font-medium text-amber-800 mb-2">Detected Dates</h4>
+                    <table class="w-full text-sm bg-white rounded border border-amber-100">
+                      <thead>
+                        <tr class="text-left text-braun-500 border-b border-amber-100">
+                          <th class="p-2 font-medium">Date</th>
+                          <th class="p-2 font-medium">Category</th>
+                          <th class="p-2 font-medium">Context</th>
+                          <th class="p-2 font-medium">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody class="text-braun-900">
+                        {#each intelligence.extractedDates as dateItem}
+                          <tr class="border-t border-amber-50">
+                            <td class="p-2">{dateItem.date_display || dateItem.parsed_date || dateItem.raw_text}</td>
+                            <td class="p-2 text-braun-600 capitalize">{dateItem.category || '-'}</td>
+                            <td class="p-2 text-xs text-braun-500 truncate max-w-48" title={dateItem.context_sentence || ''}>
+                              {dateItem.context_sentence?.slice(0, 60) || '-'}{dateItem.context_sentence && dateItem.context_sentence.length > 60 ? '...' : ''}
+                            </td>
+                            <td class="p-2">
+                              <span class="px-1.5 py-0.5 text-xs rounded capitalize
+                                {dateItem.status === 'approved' ? 'bg-green-100 text-green-700' :
+                                 dateItem.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                                 'bg-amber-100 text-amber-700'}">
+                                {dateItem.status}
+                              </span>
+                            </td>
+                          </tr>
+                        {/each}
+                      </tbody>
+                    </table>
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          </section>
+        {/if}
 
         <!-- OPT-115: Open Graph Preview -->
         {#if source.og_title || source.og_description || source.og_image}

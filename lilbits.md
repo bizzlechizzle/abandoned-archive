@@ -157,6 +157,32 @@ Detects platform (macOS/Linux/Windows) and locates config directory accordingly.
 
 ---
 
+### scripts/backfill-extractions.py
+
+- **Path**: `scripts/backfill-extractions.py`
+- **Lines**: 249
+- **Runtime**: python3
+- **Purpose**: OPT-120 backfill script - queues pending web sources for LLM extraction and auto-tags locations
+- **Usage**:
+  ```bash
+  python3 scripts/backfill-extractions.py             # Apply changes
+  python3 scripts/backfill-extractions.py --dry-run   # Preview only
+  ```
+- **Inputs**: CLI flags (--dry-run)
+- **Outputs**: stdout (queued sources, tagged locations, queue status)
+- **Side Effects**:
+  - Inserts records into extraction_queue table for web sources with text
+  - Updates location_type and era on locs table based on keyword detection
+- **Dependencies**: python3, sqlite3 (built-in)
+- **Last Verified**: 2025-12-13
+
+Finds web sources with extracted_text but missing smart_title/extraction and queues them for processing.
+Also auto-tags locations with missing location_type or era based on:
+- Location name keywords (e.g., "golf", "hospital", "factory")
+- Built year for era detection
+
+---
+
 ### scripts/extract-text.py
 
 - **Path**: `scripts/extract-text.py`

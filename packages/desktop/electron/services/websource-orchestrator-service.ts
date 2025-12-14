@@ -364,6 +364,34 @@ export class WebSourceOrchestrator extends EventEmitter {
           wordCount = result.text.wordCount;
           contentHash = result.text.hash;
           extractedTextContent = result.text.content; // OPT-110: Capture text for FTS5 storage
+
+          // OPT-120: Fallback to OG description when extracted content is too short
+          // This handles JS-heavy sites like Zillow where main content is in metadata
+          if (extractedTextContent && extractedTextContent.length < 200 && pageMetadata) {
+            const ogDescription = pageMetadata.openGraph?.description;
+            const schemaDescription = pageMetadata.schemaOrg?.[0]?.description;
+            const metaDescription = pageMetadata.metaDescription;
+
+            // Build enriched content from metadata
+            const metaContent: string[] = [];
+            if (ogDescription) metaContent.push(`[Open Graph] ${ogDescription}`);
+            if (schemaDescription && schemaDescription !== ogDescription) {
+              metaContent.push(`[Schema.org] ${schemaDescription}`);
+            }
+            if (metaDescription && metaDescription !== ogDescription && metaDescription !== schemaDescription) {
+              metaContent.push(`[Meta Description] ${metaDescription}`);
+            }
+
+            if (metaContent.length > 0) {
+              const enrichedContent = metaContent.join('\n\n') +
+                (extractedTextContent.length > 0 ? '\n\n[Extracted Text] ' + extractedTextContent : '');
+
+              console.log(`[WebSource] OPT-120: Enriched short content (${extractedTextContent.length} chars) with OG description (${enrichedContent.length} chars total)`);
+              extractedTextContent = enrichedContent;
+              wordCount = extractedTextContent.split(/\s+/).filter(w => w.length > 0).length;
+            }
+          }
+
           componentStatus.text = 'done';
 
           // Migration 73: Queue date extraction job if we have text content

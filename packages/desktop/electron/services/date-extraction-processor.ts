@@ -340,6 +340,7 @@ export class DateExtractionProcessor {
 
   /**
    * Record approval and update ML weights
+   * OPT-120: Auto-create timeline events for historical date categories
    */
   async approveWithLearning(extractionId: string, userId: string): Promise<DateExtraction | null> {
     const extraction = await this.extractionRepo.findById(extractionId);
@@ -356,7 +357,22 @@ export class DateExtractionProcessor {
     );
 
     // Approve the extraction
-    return this.extractionRepo.approve(extractionId, userId);
+    const approved = await this.extractionRepo.approve(extractionId, userId);
+
+    // OPT-120: Auto-create timeline event for historical categories
+    // These categories represent important historical facts that should be on the timeline
+    const historicalCategories = ['build_date', 'opening', 'closure', 'demolition', 'renovation'];
+    if (approved && extraction.locid && historicalCategories.includes(extraction.category || '')) {
+      try {
+        await this.convertToTimeline(extractionId, userId);
+        console.log(`[DateEngine] Auto-created timeline event for ${extraction.category}: ${extractionId}`);
+      } catch (timelineError) {
+        // Don't fail approval if timeline creation fails
+        console.error(`[DateEngine] Failed to create timeline event for ${extractionId}:`, timelineError);
+      }
+    }
+
+    return approved;
   }
 
   /**

@@ -332,9 +332,9 @@ export class ExtractionQueueService {
   ): Promise<void> {
     const insertStmt = this.db.prepare(`
       INSERT OR REPLACE INTO entity_extractions
-      (extraction_id, source_type, source_id, locid, entity_type, entity_name, entity_role,
-       date_range, confidence, provider_id, context_sentence, status, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      (extraction_id, source_type, source_id, locid, entity_type, raw_text, entity_name, entity_role,
+       date_range, confidence, overall_confidence, provider_id, context_sentence, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `);
 
     // Store people
@@ -350,10 +350,12 @@ export class ExtractionQueueService {
         job.source_id,
         job.locid,
         'person',
-        person.name,
+        person.name,  // raw_text (NOT NULL) - use name as raw text
+        person.name,  // entity_name
         person.role || null,
         null, // date_range - would need to be extracted from context
         person.confidence,
+        person.confidence, // overall_confidence
         providerId,
         null, // context_sentence
         status
@@ -373,10 +375,12 @@ export class ExtractionQueueService {
         job.source_id,
         job.locid,
         'organization',
-        org.name,
+        org.name,  // raw_text (NOT NULL)
+        org.name,  // entity_name
         org.type || null,
         null,
         org.confidence,
+        org.confidence, // overall_confidence
         providerId,
         null,
         status
