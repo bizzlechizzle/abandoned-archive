@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AU Archive Clipper",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Save pages to Abandoned Upstate Archive with zero-detection browser support",
 
   "permissions": [
@@ -10,7 +10,8 @@
     "storage",
     "contextMenus",
     "sidePanel",
-    "scripting"
+    "scripting",
+    "cookies"
   ],
 
   "commands": {
@@ -25,7 +26,8 @@
 
   "host_permissions": [
     "http://localhost:47123/*",
-    "ws://localhost:47124/*"
+    "ws://localhost:47124/*",
+    "<all_urls>"
   ],
 
   "action": {

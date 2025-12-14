@@ -588,6 +588,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 /**
  * Capture complete page state from the user's actual browser session
  * This captures everything the user sees - no second browser needed
+ * OPT-121: Enhanced with cookie capture for authenticated session preservation
  */
 async function captureFullPage(tabId) {
   const tab = await chrome.tabs.get(tabId);
@@ -606,7 +607,16 @@ async function captureFullPage(tabId) {
     console.log('[AU Archive] Screenshot capture failed:', err.message);
   }
 
-  // Execute content script to extract page data
+  // OPT-121: Capture cookies for this URL (authenticated session)
+  let cookies = [];
+  try {
+    cookies = await chrome.cookies.getAll({ url: tab.url });
+    console.log(`[AU Archive] Captured ${cookies.length} cookies for ${new URL(tab.url).hostname}`);
+  } catch (err) {
+    console.log('[AU Archive] Cookie capture failed:', err.message);
+  }
+
+  // Execute content script to extract page data (including localStorage/sessionStorage)
   const results = await chrome.scripting.executeScript({
     target: { tabId },
     func: extractPageContent,
@@ -614,10 +624,29 @@ async function captureFullPage(tabId) {
 
   const pageContent = results[0]?.result || {};
 
+  // Get user agent
+  const userAgent = navigator.userAgent;
+
   return {
     url: tab.url,
     title: tab.title || pageContent.title || '',
     screenshot,
+    // OPT-121: Session data for authenticated re-fetch
+    cookies: cookies.map(c => ({
+      name: c.name,
+      value: c.value,
+      domain: c.domain,
+      path: c.path,
+      secure: c.secure,
+      httpOnly: c.httpOnly,
+      expirationDate: c.expirationDate,
+      sameSite: c.sameSite,
+    })),
+    userAgent,
+    viewport: {
+      width: tab.width || window.innerWidth || 1920,
+      height: tab.height || window.innerHeight || 1080,
+    },
     ...pageContent,
     capturedAt: new Date().toISOString(),
   };
@@ -728,6 +757,27 @@ function extractPageContent() {
   bodyClone.querySelectorAll('script, style, nav, header, footer, aside').forEach(el => el.remove());
   const textContent = bodyClone.textContent?.replace(/\s+/g, ' ').trim() || '';
 
+  // OPT-121: Capture localStorage and sessionStorage for session state
+  let localStorageData = null;
+  let sessionStorageData = null;
+  try {
+    const lsEntries = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      lsEntries[key] = localStorage.getItem(key);
+    }
+    localStorageData = JSON.stringify(lsEntries);
+  } catch (e) { /* localStorage not accessible */ }
+
+  try {
+    const ssEntries = {};
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      ssEntries[key] = sessionStorage.getItem(key);
+    }
+    sessionStorageData = JSON.stringify(ssEntries);
+  } catch (e) { /* sessionStorage not accessible */ }
+
   return {
     title: document.title,
     html,
@@ -746,6 +796,9 @@ function extractPageContent() {
     images: images.slice(0, 100), // Limit to 100 images
     imageCount: images.length,
     linkCount: links.length,
+    // OPT-121: Session storage data for authenticated re-fetch
+    localStorage: localStorageData,
+    sessionStorage: sessionStorageData,
   };
 }
 
@@ -783,17 +836,47 @@ async function handleCapturePageCommand(requestId, tabId) {
 }
 
 /**
+ * Show capturing badge (orange spinner effect)
+ */
+function showCapturingBadge(tabId) {
+  if (!tabId) return;
+  chrome.action.setBadgeText({ text: '...', tabId });
+  chrome.action.setBadgeBackgroundColor({ color: '#FF9800', tabId });
+}
+
+/**
+ * Show capture complete badge with cookie count
+ */
+function showCaptureDoneBadge(tabId, cookieCount = 0) {
+  if (!tabId) return;
+  chrome.action.setBadgeText({ text: '✓', tabId });
+  chrome.action.setBadgeBackgroundColor({ color: '#4CAF50', tabId });
+
+  // Clear after 3 seconds
+  setTimeout(() => {
+    chrome.action.setBadgeText({ text: '', tabId });
+  }, 3000);
+}
+
+/**
  * Enhanced save bookmark with full page capture
  * OPT-115: Capture page state immediately when user saves
+ * OPT-121: Enhanced with cookie capture and user notification
  */
 async function saveBookmarkWithCapture(url, title, locid = null, tabId = null) {
   try {
     let capture = null;
 
+    // Show capturing indicator
+    if (tabId) {
+      showCapturingBadge(tabId);
+    }
+
     // Capture full page if we have a tab
     if (tabId) {
       try {
         capture = await captureFullPage(tabId);
+        console.log(`[AU Archive] Full capture complete: ${capture.cookies?.length || 0} cookies, ${capture.images?.length || 0} images`);
       } catch (err) {
         console.log('[AU Archive] Full capture failed, falling back to basic:', err.message);
         // Fall back to screenshot only
@@ -810,11 +893,17 @@ async function saveBookmarkWithCapture(url, title, locid = null, tabId = null) {
         url,
         title,
         locid,
-        capture, // Full page capture data
+        capture, // Full page capture data including cookies and storage
       }),
     });
 
     const data = await res.json();
+
+    // OPT-121: Show completion notification
+    if (data.success && tabId) {
+      showCaptureDoneBadge(tabId, capture?.cookies?.length || 0);
+    }
+
     return data.success;
   } catch (error) {
     console.error('[AU Archive] Failed to save bookmark:', error);
