@@ -83,27 +83,71 @@ let configuredModels: string[] = [];
 // =============================================================================
 
 /**
- * Check if LiteLLM is installed (pip package).
+ * Get paths to check for bundled LiteLLM venv.
  */
-export async function isLiteLLMInstalled(): Promise<boolean> {
-  try {
-    execSync('python3 -c "import litellm"', {
-      timeout: 5000,
-      stdio: 'ignore',
-    });
-    return true;
-  } catch {
-    // Try python instead of python3
-    try {
-      execSync('python -c "import litellm"', {
-        timeout: 5000,
-        stdio: 'ignore',
-      });
-      return true;
-    } catch {
-      return false;
+function getVenvPaths(): string[] {
+  return [
+    // Production: in app resources
+    join(app.getPath('userData'), 'litellm-venv', 'bin', 'python'),
+    // Development: in scripts folder
+    join(__dirname, '..', '..', '..', '..', 'scripts', 'litellm-venv', 'bin', 'python'),
+    // Alternative dev path
+    join(process.cwd(), 'scripts', 'litellm-venv', 'bin', 'python'),
+  ];
+}
+
+/**
+ * Get the Python executable to use for LiteLLM.
+ * Prefers bundled venv, falls back to system Python.
+ */
+function getLiteLLMPython(): string | null {
+  // Check bundled venv first
+  for (const pythonPath of getVenvPaths()) {
+    if (existsSync(pythonPath)) {
+      console.log(`[LiteLLM] Using bundled venv: ${pythonPath}`);
+      return pythonPath;
     }
   }
+
+  // Fall back to system Python
+  try {
+    execSync('python3 -c "import litellm"', { timeout: 5000, stdio: 'ignore' });
+    console.log('[LiteLLM] Using system python3');
+    return 'python3';
+  } catch {
+    try {
+      execSync('python -c "import litellm"', { timeout: 5000, stdio: 'ignore' });
+      console.log('[LiteLLM] Using system python');
+      return 'python';
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
+ * Check if LiteLLM is installed (bundled venv or system).
+ */
+export async function isLiteLLMInstalled(): Promise<boolean> {
+  return getLiteLLMPython() !== null;
+}
+
+/**
+ * Get installation info for status display.
+ */
+export function getLiteLLMInstallInfo(): { installed: boolean; path: string | null; isBundled: boolean } {
+  for (const pythonPath of getVenvPaths()) {
+    if (existsSync(pythonPath)) {
+      return { installed: true, path: pythonPath, isBundled: true };
+    }
+  }
+
+  const systemPython = getLiteLLMPython();
+  if (systemPython) {
+    return { installed: true, path: systemPython, isBundled: false };
+  }
+
+  return { installed: false, path: null, isBundled: false };
 }
 
 // =============================================================================
@@ -383,8 +427,10 @@ export async function startLiteLLM(): Promise<boolean> {
   }
 
   // Check if installed
-  if (!(await isLiteLLMInstalled())) {
-    lastError = 'LiteLLM not installed. Run: pip install "litellm[proxy]"';
+  // Get Python executable (bundled venv or system)
+  const pythonPath = getLiteLLMPython();
+  if (!pythonPath) {
+    lastError = 'LiteLLM not installed. Run: ./scripts/setup-litellm.sh';
     console.warn(`[LiteLLMLifecycle] ${lastError}`);
     return false;
   }
@@ -396,12 +442,13 @@ export async function startLiteLLM(): Promise<boolean> {
 
   console.log(`[LiteLLMLifecycle] Starting proxy on port ${currentPort}`);
   console.log(`[LiteLLMLifecycle] Config: ${configPath}`);
+  console.log(`[LiteLLMLifecycle] Using Python: ${pythonPath}`);
 
   try {
-    // Spawn LiteLLM proxy
+    // Spawn LiteLLM proxy using Python module
     litellmProcess = spawn(
-      'litellm',
-      ['--config', configPath, '--port', String(currentPort), '--detailed_debug', 'false'],
+      pythonPath,
+      ['-m', 'litellm', '--config', configPath, '--port', String(currentPort), '--detailed_debug', 'false'],
       {
         detached: true,
         stdio: 'ignore',

@@ -4,6 +4,7 @@
   import DateExtractionQueue from '../components/DateExtractionQueue.svelte';
   import PatternEditor from '../components/PatternEditor.svelte';
   import ExtractionSettings from '../components/ExtractionSettings.svelte';
+  import AISettingsPanel from '../components/AISettingsPanel.svelte';
 
   interface User {
     user_id: string;
@@ -63,6 +64,9 @@
 
   // Migration 76: RAM++ Image Tagging settings
   let taggingExpanded = $state(false);
+
+  // AI & Cloud Providers accordion state
+  let aiExpanded = $state(false);
   let ramApiUrl = $state('http://192.168.1.254:8765');
   let ramApiStatus = $state<'connected' | 'disconnected' | 'testing'>('disconnected');
   let ramQueueStats = $state<{ pending: number; processing: number; completed: number; failed: number } | null>(null);
@@ -2888,6 +2892,38 @@
               Refresh stats
             </button>
           </div>
+        </div>
+        {/if}
+      </div>
+
+      <!-- AI & Cloud Providers Accordion -->
+      <div class="bg-white rounded border border-braun-300 mb-6 overflow-hidden">
+        <button
+          onclick={() => aiExpanded = !aiExpanded}
+          class="w-full flex items-center justify-between text-left transition-colors hover:bg-braun-50 {aiExpanded ? 'p-6' : 'px-6 py-4'}"
+        >
+          <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-braun-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            <div>
+              <h2 class="text-lg font-semibold text-foreground">AI & Cloud Providers</h2>
+              <p class="text-xs text-braun-500">LiteLLM proxy, API credentials, privacy settings</p>
+            </div>
+          </div>
+          <svg
+            class="w-5 h-5 text-braun-900 transition-transform duration-200 {aiExpanded ? 'rotate-180' : ''}"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {#if aiExpanded}
+        <div class="px-6 pb-6">
+          <AISettingsPanel />
         </div>
         {/if}
       </div>

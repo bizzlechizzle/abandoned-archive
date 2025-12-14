@@ -58,6 +58,9 @@ import {
 } from '../../services/image-downloader/browser-image-capture';
 import { getRawDatabase } from '../database';
 import { cleanupOrphanOllama, stopOllama } from '../../services/ollama-lifecycle-service';
+import { registerCredentialHandlers } from './credentials';
+import { registerLiteLLMHandlers, shutdownLiteLLM, cleanupOrphanLiteLLM } from './litellm';
+import { registerCostTrackingHandlers } from './cost-tracking';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
@@ -152,13 +155,17 @@ export function registerIpcHandlers() {
 
   // Credential Management (Migration 85)
   // Secure API key storage using Electron safeStorage
-  registerCredentialsHandlers();
+  registerCredentialHandlers();
 
   // LiteLLM Proxy Gateway (Migration 86)
   // Unified AI gateway for cloud providers
   // Clean up orphan from previous crash, register handlers
   cleanupOrphanLiteLLM();
   registerLiteLLMHandlers();
+
+  // Cost Tracking (Migration 88)
+  // Track LLM usage costs for cloud providers
+  registerCostTrackingHandlers(sqliteDb);
 
   // Browser Image Capture (network monitoring, context menu)
   initializeBrowserImageCapture({

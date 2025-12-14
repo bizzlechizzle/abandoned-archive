@@ -2410,14 +2410,25 @@ export interface ElectronAPI {
 
   // Credential Management (Migration 85)
   credentials: {
-    store: (provider: CredentialProvider, apiKey: string) => Promise<{ success: boolean; error?: string }>;
-    has: (provider: CredentialProvider) => Promise<{ hasCredential: boolean }>;
+    store: (provider: CredentialProvider, apiKey: string) => Promise<{
+      success: boolean;
+      error?: string;
+      testFailed?: boolean;
+      autoEnabled?: boolean;
+      responseTimeMs?: number;
+    }>;
+    has: (provider: CredentialProvider) => Promise<{ success: boolean; hasKey: boolean; error?: string }>;
     delete: (provider: CredentialProvider) => Promise<{ success: boolean; error?: string }>;
-    list: () => Promise<{ providers: CredentialProvider[] }>;
+    list: () => Promise<{ success: boolean; providers: CredentialProvider[]; error?: string }>;
     info: (provider: CredentialProvider) => Promise<{
-      exists: boolean;
-      createdAt?: string;
-      lastUsedAt?: string;
+      success: boolean;
+      info: { exists: boolean; createdAt?: string; lastUsedAt?: string } | null;
+      error?: string;
+    }>;
+    test: (provider: CredentialProvider) => Promise<{
+      success: boolean;
+      error?: string;
+      responseTimeMs?: number;
     }>;
   };
 
@@ -2438,6 +2449,30 @@ export interface ElectronAPI {
       get: () => Promise<PrivacySettings>;
       update: (updates: Partial<PrivacySettings>) => Promise<{ success: boolean; error?: string }>;
     };
+  };
+
+  // Cost Tracking (Migration 88)
+  costs: {
+    record: (input: RecordCostInput) => Promise<{ success: boolean; entry?: CostEntry; error?: string }>;
+    getSummary: (startDate?: string, endDate?: string) => Promise<{ success: boolean; summary?: CostSummary; error?: string }>;
+    getDailyCosts: (days?: number) => Promise<{ success: boolean; costs?: DailyCost[]; error?: string }>;
+    getCurrentMonth: () => Promise<{ success: boolean; cost?: number; error?: string }>;
+    checkBudget: (monthlyBudget: number) => Promise<{
+      success: boolean;
+      exceeded?: boolean;
+      current?: number;
+      budget?: number;
+      percentUsed?: number;
+      error?: string;
+    }>;
+    getLocationCosts: (locid: string) => Promise<{ success: boolean; costs?: CostEntry[]; error?: string }>;
+    getRecent: (limit?: number) => Promise<{ success: boolean; entries?: CostEntry[]; error?: string }>;
+    getModelPricing: (model: string) => Promise<{
+      success: boolean;
+      pricing?: { input: number; output: number; isDefault: boolean };
+      error?: string;
+    }>;
+    cleanup: (olderThanDays?: number) => Promise<{ success: boolean; deleted?: number; error?: string }>;
   };
 
 }
@@ -3211,6 +3246,60 @@ export interface PrivacySettings {
   redactPhones: boolean;
   redactEmails: boolean;
   excludedLocations: string[];
+}
+
+// =============================================================================
+// COST TRACKING (Migration 88)
+// =============================================================================
+
+export interface RecordCostInput {
+  provider: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  locid?: string;
+  sourceType?: string;
+  sourceId?: string;
+  operation?: string;
+  durationMs?: number;
+  success?: boolean;
+  errorMessage?: string;
+}
+
+export interface CostEntry {
+  cost_id: string;
+  provider: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+  locid?: string;
+  source_type?: string;
+  source_id?: string;
+  operation?: string;
+  duration_ms?: number;
+  success: boolean;
+  error_message?: string;
+  created_at: string;
+}
+
+export interface CostSummary {
+  totalCost: number;
+  totalTokens: number;
+  byProvider: Record<string, { cost: number; tokens: number; requests: number }>;
+  byModel: Record<string, { cost: number; tokens: number; requests: number }>;
+  period: {
+    start: string;
+    end: string;
+  };
+}
+
+export interface DailyCost {
+  date: string;
+  cost: number;
+  tokens: number;
+  requests: number;
 }
 
 declare global {

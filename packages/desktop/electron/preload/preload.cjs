@@ -1182,13 +1182,13 @@ const api = {
   // Credential Management (Migration 85)
   // Secure API key storage using Electron safeStorage
   credentials: {
-    // Store encrypted API key
+    // Store encrypted API key (auto-tests and enables provider)
     store: (provider, apiKey) =>
       invokeAuto("credentials:store")({ provider, apiKey }),
     // Check if credential exists (never exposes key)
     has: (provider) =>
       invokeAuto("credentials:has")({ provider }),
-    // Delete stored credential
+    // Delete stored credential (auto-disables provider)
     delete: (provider) =>
       invokeAuto("credentials:delete")({ provider }),
     // List all providers with stored credentials
@@ -1197,6 +1197,9 @@ const api = {
     // Get credential info (last used, created date) without exposing key
     info: (provider) =>
       invokeAuto("credentials:info")({ provider }),
+    // Test connection with stored credentials
+    test: (provider) =>
+      invokeLong("credentials:test")({ provider }),
   },
 
   // LiteLLM Proxy Gateway (Migration 86)
@@ -1237,6 +1240,38 @@ const api = {
       update: (updates) =>
         invokeAuto("litellm:privacy:update")(updates),
     },
+  },
+
+  // Cost Tracking (Migration 88)
+  // Track LLM usage costs for cloud providers
+  costs: {
+    // Record a new cost entry (called by extraction services)
+    record: (input) =>
+      invokeAuto("costs:record")(input),
+    // Get cost summary for a period
+    getSummary: (startDate, endDate) =>
+      invokeAuto("costs:getSummary")({ startDate, endDate }),
+    // Get daily cost breakdown
+    getDailyCosts: (days) =>
+      invokeAuto("costs:getDailyCosts")({ days }),
+    // Get current month's total cost
+    getCurrentMonth: () =>
+      invokeAuto("costs:getCurrentMonth")(),
+    // Check if current month exceeds budget
+    checkBudget: (monthlyBudget) =>
+      invokeAuto("costs:checkBudget")({ monthlyBudget }),
+    // Get costs for a specific location
+    getLocationCosts: (locid) =>
+      invokeAuto("costs:getLocationCosts")({ locid }),
+    // Get recent cost entries
+    getRecent: (limit) =>
+      invokeAuto("costs:getRecent")({ limit }),
+    // Get pricing info for a model
+    getModelPricing: (model) =>
+      invokeAuto("costs:getModelPricing")(model),
+    // Delete old cost entries
+    cleanup: (olderThanDays) =>
+      invokeAuto("costs:cleanup")({ olderThanDays }),
   },
 };
 

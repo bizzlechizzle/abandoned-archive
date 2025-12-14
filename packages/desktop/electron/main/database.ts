@@ -3746,6 +3746,47 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 87 completed: extraction_providers now supports litellm type');
     }
 
+    // Migration 88: Create extraction_costs table for LLM usage tracking
+    const hasCostsTable = sqlite.prepare(`
+      SELECT 1 FROM sqlite_master WHERE type='table' AND name='extraction_costs'
+    `).get();
+
+    if (!hasCostsTable) {
+      console.log('Running migration 88: Creating extraction_costs table');
+      sqlite.exec(`
+        CREATE TABLE extraction_costs (
+          cost_id TEXT PRIMARY KEY,
+          provider TEXT NOT NULL,
+          model TEXT NOT NULL,
+          input_tokens INTEGER NOT NULL DEFAULT 0,
+          output_tokens INTEGER NOT NULL DEFAULT 0,
+          total_tokens INTEGER GENERATED ALWAYS AS (input_tokens + output_tokens) STORED,
+          cost_usd REAL NOT NULL DEFAULT 0,
+          locid TEXT REFERENCES locs(locid) ON DELETE SET NULL,
+          source_type TEXT,
+          source_id TEXT,
+          operation TEXT,
+          duration_ms INTEGER,
+          success INTEGER DEFAULT 1,
+          error_message TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- Index for querying by provider/model
+        CREATE INDEX idx_extraction_costs_provider ON extraction_costs(provider, model);
+
+        -- Index for querying by location
+        CREATE INDEX idx_extraction_costs_locid ON extraction_costs(locid) WHERE locid IS NOT NULL;
+
+        -- Index for time-based queries (daily/monthly reports)
+        CREATE INDEX idx_extraction_costs_created ON extraction_costs(created_at);
+
+        -- Index for cost aggregation
+        CREATE INDEX idx_extraction_costs_aggregate ON extraction_costs(provider, created_at, cost_usd);
+      `);
+      console.log('Migration 88 completed: extraction_costs table created');
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

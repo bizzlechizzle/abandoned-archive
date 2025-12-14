@@ -38,6 +38,8 @@
     today: number;
     month: number;
     requestsToday: number;
+    byProvider: Record<string, { cost: number; tokens: number; requests: number }>;
+    byModel: Record<string, { cost: number; tokens: number; requests: number }>;
   }
 
   interface PrivacySettings {
@@ -92,6 +94,7 @@
       loadLiteLLMStatus(),
       loadCredentials(),
       loadPrivacySettings(),
+      loadCosts(),
     ]);
   }
 
@@ -142,13 +145,30 @@
   }
 
   async function loadCosts() {
-    if (!litellmStatus?.running) return;
-
     loadingCosts = true;
     try {
-      const result = await window.electronAPI.litellm.costs();
-      if (result.success) {
-        costs = result.costs;
+      // Get summary from costs API (Migration 88)
+      const [summaryResult, dailyResult] = await Promise.all([
+        window.electronAPI.costs.getSummary(),
+        window.electronAPI.costs.getDailyCosts(1), // Today only
+      ]);
+
+      if (summaryResult.success && summaryResult.summary) {
+        const summary = summaryResult.summary;
+        const todayCost = dailyResult.success && dailyResult.costs?.length
+          ? dailyResult.costs.reduce((sum, d) => sum + d.cost, 0)
+          : 0;
+        const todayRequests = dailyResult.success && dailyResult.costs?.length
+          ? dailyResult.costs.reduce((sum, d) => sum + d.requests, 0)
+          : 0;
+
+        costs = {
+          today: todayCost,
+          month: summary.totalCost,
+          requestsToday: todayRequests,
+          byProvider: summary.byProvider,
+          byModel: summary.byModel,
+        };
       }
     } catch (error) {
       console.error('Failed to load costs:', error);
@@ -207,9 +227,22 @@
         await loadCredentials();
         await loadLiteLLMStatus();
 
-        testResult = { success: true, message: `API key saved for ${keyModalProviderName}` };
+        // Show success with auto-enable and response time info
+        let message = `API key saved for ${keyModalProviderName}`;
+        if (result.autoEnabled) {
+          message += ' (provider auto-enabled)';
+        }
+        if (result.responseTimeMs) {
+          message += ` - Connection verified in ${result.responseTimeMs}ms`;
+        }
+        testResult = { success: true, message };
       } else {
-        keyError = result.error || 'Failed to save API key';
+        // Show detailed error for connection test failures
+        if (result.testFailed) {
+          keyError = `Connection test failed: ${result.error || 'Invalid API key'}. Key not saved.`;
+        } else {
+          keyError = result.error || 'Failed to save API key';
+        }
       }
     } catch (error) {
       keyError = error instanceof Error ? error.message : 'Unknown error';
@@ -232,22 +265,23 @@
     testResult = null;
 
     try {
-      // Map provider ID to model name
-      const modelMap: Record<string, string> = {
-        anthropic: 'extraction-cloud-anthropic',
-        openai: 'extraction-cloud-openai',
-        google: 'extraction-cloud-google',
-        groq: 'extraction-fast-groq',
-        local: 'extraction-local',
-      };
-
-      const model = modelMap[providerId] || 'extraction-local';
-      const result = await window.electronAPI.litellm.test(model);
-
-      if (result.success) {
-        testResult = { success: true, message: `Response: "${result.response}"` };
+      // For cloud providers, use credentials:test (more direct)
+      if (['anthropic', 'openai', 'google', 'groq'].includes(providerId)) {
+        const result = await window.electronAPI.credentials.test(providerId);
+        if (result.success) {
+          const timeMsg = result.responseTimeMs ? ` (${result.responseTimeMs}ms)` : '';
+          testResult = { success: true, message: `Connection successful${timeMsg}` };
+        } else {
+          testResult = { success: false, message: result.error || 'Connection test failed' };
+        }
       } else {
-        testResult = { success: false, message: result.error || 'Test failed' };
+        // For local Ollama, use the LiteLLM test
+        const result = await window.electronAPI.litellm.test('extraction-local');
+        if (result.success) {
+          testResult = { success: true, message: `Ollama responding - "${result.response || 'OK'}"` };
+        } else {
+          testResult = { success: false, message: result.error || 'Ollama test failed' };
+        }
       }
     } catch (error) {
       testResult = { success: false, message: error instanceof Error ? error.message : 'Unknown error' };
@@ -433,41 +467,56 @@
     </div>
 
     <!-- Usage & Costs -->
-    {#if litellmStatus?.running}
-      <div class="bg-white rounded border border-braun-200 p-6">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-sm font-medium text-braun-800">Usage & Costs</h3>
-          <button
-            onclick={loadCosts}
-            disabled={loadingCosts}
-            class="text-xs text-braun-500 hover:text-braun-700"
-          >
-            {loadingCosts ? 'Loading...' : 'Refresh'}
-          </button>
+    <div class="bg-white rounded border border-braun-200 p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-sm font-medium text-braun-800">Usage & Costs</h3>
+        <button
+          onclick={loadCosts}
+          disabled={loadingCosts}
+          class="text-xs text-braun-500 hover:text-braun-700"
+        >
+          {loadingCosts ? 'Loading...' : 'Refresh'}
+        </button>
+      </div>
+
+      {#if costs}
+        <div class="grid grid-cols-3 gap-4 mb-4">
+          <div>
+            <p class="text-xs text-braun-500 uppercase tracking-wide">Today</p>
+            <p class="text-xl font-medium text-braun-900">{formatCurrency(costs.today)}</p>
+          </div>
+          <div>
+            <p class="text-xs text-braun-500 uppercase tracking-wide">This Month</p>
+            <p class="text-xl font-medium text-braun-900">{formatCurrency(costs.month)}</p>
+          </div>
+          <div>
+            <p class="text-xs text-braun-500 uppercase tracking-wide">Requests Today</p>
+            <p class="text-xl font-medium text-braun-900">{costs.requestsToday}</p>
+          </div>
         </div>
 
-        {#if costs}
-          <div class="grid grid-cols-3 gap-4">
-            <div>
-              <p class="text-xs text-braun-500 uppercase tracking-wide">Today</p>
-              <p class="text-xl font-medium text-braun-900">{formatCurrency(costs.today)}</p>
-            </div>
-            <div>
-              <p class="text-xs text-braun-500 uppercase tracking-wide">This Month</p>
-              <p class="text-xl font-medium text-braun-900">{formatCurrency(costs.month)}</p>
-            </div>
-            <div>
-              <p class="text-xs text-braun-500 uppercase tracking-wide">Requests Today</p>
-              <p class="text-xl font-medium text-braun-900">{costs.requestsToday}</p>
+        <!-- Cost breakdown by provider -->
+        {#if Object.keys(costs.byProvider || {}).length > 0}
+          <div class="border-t border-braun-100 pt-4">
+            <p class="text-xs text-braun-500 uppercase tracking-wide mb-2">By Provider</p>
+            <div class="space-y-1">
+              {#each Object.entries(costs.byProvider) as [provider, data]}
+                <div class="flex justify-between text-xs">
+                  <span class="text-braun-600 capitalize">{provider}</span>
+                  <span class="text-braun-900">
+                    {formatCurrency(data.cost)} ({data.requests} requests)
+                  </span>
+                </div>
+              {/each}
             </div>
           </div>
-        {:else}
-          <p class="text-sm text-braun-500">
-            {loadingCosts ? 'Loading cost data...' : 'No cost data available yet'}
-          </p>
         {/if}
-      </div>
-    {/if}
+      {:else}
+        <p class="text-sm text-braun-500">
+          {loadingCosts ? 'Loading cost data...' : 'No cost data available yet'}
+        </p>
+      {/if}
+    </div>
 
     <!-- Privacy Controls -->
     <div class="bg-white rounded border border-braun-200 p-6">
@@ -590,4 +639,3 @@
     </div>
   </div>
 {/if}
-</script>
