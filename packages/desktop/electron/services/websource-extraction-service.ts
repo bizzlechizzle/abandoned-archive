@@ -1118,6 +1118,39 @@ export async function extractText(options: ExtractionOptions): Promise<TextExtra
           const beautifulsoup = allResults.beautifulsoup || {};
           const readability = allResults.readability || {};
 
+          // OPT-121: Check for error page detection from Python script
+          // This prevents storing 403/CloudFront error pages as valid content
+          if (preferred.is_error_page) {
+            const errorType = preferred.error_page_type || 'unknown';
+            const errorPattern = preferred.error_page_pattern || 'N/A';
+            const confidence = preferred.error_page_confidence || 'low';
+
+            console.error(`[TextExtract] ERROR PAGE DETECTED: type=${errorType}, pattern="${errorPattern}", confidence=${confidence}`);
+
+            // Save error page info for debugging/ML training
+            const errorDir = path.join(options.outputDir, 'errors');
+            await fs.promises.mkdir(errorDir, { recursive: true });
+            const errorPath = path.join(errorDir, `${options.sourceId}_error.json`);
+            await fs.promises.writeFile(errorPath, JSON.stringify({
+              detected_at: new Date().toISOString(),
+              error_type: errorType,
+              matched_pattern: errorPattern,
+              confidence: confidence,
+              all_matches: preferred.all_matches || [],
+              url: options.url,
+              source_id: options.sourceId,
+            }, null, 2), 'utf-8');
+
+            // Return failure with clear error message
+            resolve({
+              success: false,
+              text: null,
+              error: `Error page detected (${errorType}): ${errorPattern}. Site is blocking automated access.`,
+              duration: Date.now() - startTime,
+            });
+            return;
+          }
+
           // Use the preferred extraction's text
           const textContent = preferred.text || trafilatura.text || readability.text || beautifulsoup.text || '';
           const metadata = preferred.metadata || trafilatura.metadata || {};

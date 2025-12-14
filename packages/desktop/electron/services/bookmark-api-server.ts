@@ -35,6 +35,7 @@ import type { SQLiteLocationRepository } from '../repositories/sqlite-location-r
 import type { SQLiteSubLocationRepository } from '../repositories/sqlite-sublocation-repository';
 
 // OPT-115: Extension capture data structure
+// OPT-121: Enhanced with session data for authenticated re-fetch
 interface ExtensionCapture {
   url?: string;
   title?: string;
@@ -85,6 +86,22 @@ interface ExtensionCapture {
   imageCount?: number;
   linkCount?: number;
   capturedAt?: string;
+  // OPT-121: Session data for authenticated re-fetch
+  // These are captured from the user's active session and stored securely
+  cookies?: Array<{
+    name: string;
+    value: string;
+    domain: string;
+    path: string;
+    secure: boolean;
+    httpOnly: boolean;
+    expirationDate?: number;
+  }>;
+  localStorage?: string; // JSON-stringified localStorage entries
+  sessionStorage?: string; // JSON-stringified sessionStorage entries
+  // OPT-121: Research Browser state
+  userAgent?: string;
+  viewport?: { width: number; height: number };
 }
 
 const PORT = 47123;
@@ -250,6 +267,33 @@ async function processExtensionCapture(
         logger.info('BookmarkAPI', `[OPT-115] Stored ${capture.images.length} image metadata records`);
       } catch (err) {
         logger.error('BookmarkAPI', `Failed to store image metadata: ${err}`);
+      }
+    }
+
+    // OPT-121: Store session data securely for authenticated re-fetch
+    // This allows Puppeteer to use the same cookies for PDF/WARC generation
+    if (capture.cookies || capture.localStorage || capture.sessionStorage) {
+      try {
+        const sessionFilename = `${sourceId}_session.json`;
+        const sessionPath = path.join(websourcesDir, sessionFilename);
+
+        // Store session data (sensitive - not exposed to renderer)
+        const sessionData = {
+          capturedAt: capture.capturedAt || new Date().toISOString(),
+          domain: capture.domain,
+          userAgent: capture.userAgent,
+          viewport: capture.viewport,
+          // Cookies for authenticated requests
+          cookies: capture.cookies || [],
+          // Storage data (may contain auth tokens)
+          localStorage: capture.localStorage || '{}',
+          sessionStorage: capture.sessionStorage || '{}',
+        };
+
+        await fs.promises.writeFile(sessionPath, JSON.stringify(sessionData, null, 2), 'utf-8');
+        logger.info('BookmarkAPI', `[OPT-121] Stored session data: ${sessionFilename} (${capture.cookies?.length || 0} cookies)`);
+      } catch (err) {
+        logger.error('BookmarkAPI', `[OPT-121] Failed to store session data: ${err}`);
       }
     }
 

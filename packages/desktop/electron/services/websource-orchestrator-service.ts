@@ -53,6 +53,7 @@ import {
 import { calculateHash, calculateHashBuffer } from './crypto-service';
 import { getTimelineService } from '../main/ipc-handlers/timeline';
 import { JobQueue, IMPORT_QUEUES, JOB_PRIORITY } from './job-queue';
+import { autoConvertToWACZ } from './wacz-service';
 
 // =============================================================================
 // Types and Interfaces
@@ -156,6 +157,16 @@ export class WebSourceOrchestrator extends EventEmitter {
         throw new Error(`Web source not found: ${sourceId}`);
       }
 
+      // OPT-121: Check for existing extension capture data
+      // Extension-first architecture: trust extension data when available
+      const hasExtensionScreenshot = !!(source as unknown as { extension_screenshot_path?: string }).extension_screenshot_path;
+      const hasExtensionHtml = !!(source as unknown as { extension_html_path?: string }).extension_html_path;
+      const hasExtensionText = !!(source as unknown as { extracted_text?: string }).extracted_text;
+
+      if (hasExtensionScreenshot || hasExtensionHtml) {
+        console.log(`[OPT-121] Extension capture found: screenshot=${hasExtensionScreenshot}, html=${hasExtensionHtml}, text=${hasExtensionText}`);
+      }
+
       // Mark as archiving
       await this.repository.markArchiving(sourceId);
       this.currentSourceId = sourceId;
@@ -249,22 +260,47 @@ export class WebSourceOrchestrator extends EventEmitter {
         runBehaviors: 'thorough',
       };
 
-      // Screenshot capture
+      // OPT-121: Extension-first screenshot capture
+      // Trust extension screenshot if available - it's captured from the user's authenticated session
       if (opts.captureScreenshot) {
-        this.emitProgress(sourceId, source.url, 'capture', 'screenshot', 20, 'Capturing screenshot...');
-        const result = await captureScreenshot(captureOptions);
-        if (result.success) {
-          screenshotPath = result.path || null;
-          screenshotHash = result.hash || null;
-          componentStatus.screenshot = 'done';
+        if (hasExtensionScreenshot) {
+          // Use extension screenshot - it's from the user's real browser session
+          const extScreenshotPath = (source as unknown as { extension_screenshot_path: string }).extension_screenshot_path;
+          screenshotPath = extScreenshotPath;
+          try {
+            screenshotHash = await calculateHash(extScreenshotPath);
+            componentStatus.screenshot = 'done';
+            this.emitProgress(sourceId, source.url, 'capture', 'screenshot', 20, 'Using extension screenshot (authenticated session)');
+            console.log(`[OPT-121] Using extension screenshot: ${extScreenshotPath}`);
+          } catch (err) {
+            console.warn(`[OPT-121] Extension screenshot file not found, falling back to Puppeteer: ${err}`);
+            const result = await captureScreenshot(captureOptions);
+            if (result.success) {
+              screenshotPath = result.path || null;
+              screenshotHash = result.hash || null;
+              componentStatus.screenshot = 'done';
+            } else {
+              componentStatus.screenshot = 'failed';
+            }
+          }
         } else {
-          componentStatus.screenshot = 'failed';
+          // No extension screenshot - use Puppeteer (may get blocked on protected sites)
+          this.emitProgress(sourceId, source.url, 'capture', 'screenshot', 20, 'Capturing screenshot...');
+          const result = await captureScreenshot(captureOptions);
+          if (result.success) {
+            screenshotPath = result.path || null;
+            screenshotHash = result.hash || null;
+            componentStatus.screenshot = 'done';
+          } else {
+            componentStatus.screenshot = 'failed';
+          }
         }
       } else {
         componentStatus.screenshot = 'skipped';
       }
 
-      // PDF capture
+      // PDF capture - always needs Puppeteer (extension can't generate PDF)
+      // OPT-121: PDF may fail on protected sites - that's expected
       if (opts.capturePdf) {
         this.emitProgress(sourceId, source.url, 'capture', 'pdf', 30, 'Generating PDF...');
         const result = await capturePdf(captureOptions);
@@ -273,28 +309,60 @@ export class WebSourceOrchestrator extends EventEmitter {
           pdfHash = result.hash || null;
           componentStatus.pdf = 'done';
         } else {
+          // OPT-121: Log but don't fail - PDF is nice-to-have if we have extension data
+          if (hasExtensionScreenshot || hasExtensionHtml) {
+            console.log(`[OPT-121] PDF capture failed (site may block automation) - extension data available as fallback`);
+          }
           componentStatus.pdf = 'failed';
         }
       } else {
         componentStatus.pdf = 'skipped';
       }
 
-      // HTML capture
+      // OPT-121: Extension-first HTML capture
+      // Trust extension HTML - it's from the actual rendered page the user saw
       if (opts.captureHtml) {
-        this.emitProgress(sourceId, source.url, 'capture', 'html', 40, 'Saving HTML...');
-        const result = await captureHtml(captureOptions);
-        if (result.success) {
-          htmlPath = result.path || null;
-          htmlHash = result.hash || null;
-          componentStatus.html = 'done';
+        if (hasExtensionHtml) {
+          // Use extension HTML - it's the actual DOM from user's session
+          const extHtmlPath = (source as unknown as { extension_html_path: string }).extension_html_path;
+          // Copy to archive location with standard naming
+          const destHtmlPath = path.join(archivePath, `${sourceId}.html`);
+          try {
+            await fs.promises.copyFile(extHtmlPath, destHtmlPath);
+            htmlPath = destHtmlPath;
+            htmlHash = await calculateHash(destHtmlPath);
+            componentStatus.html = 'done';
+            this.emitProgress(sourceId, source.url, 'capture', 'html', 40, 'Using extension HTML (authenticated session)');
+            console.log(`[OPT-121] Using extension HTML: ${extHtmlPath} → ${destHtmlPath}`);
+          } catch (err) {
+            console.warn(`[OPT-121] Extension HTML copy failed, falling back to Puppeteer: ${err}`);
+            const result = await captureHtml(captureOptions);
+            if (result.success) {
+              htmlPath = result.path || null;
+              htmlHash = result.hash || null;
+              componentStatus.html = 'done';
+            } else {
+              componentStatus.html = 'failed';
+            }
+          }
         } else {
-          componentStatus.html = 'failed';
+          // No extension HTML - use Puppeteer (may get blocked)
+          this.emitProgress(sourceId, source.url, 'capture', 'html', 40, 'Saving HTML...');
+          const result = await captureHtml(captureOptions);
+          if (result.success) {
+            htmlPath = result.path || null;
+            htmlHash = result.hash || null;
+            componentStatus.html = 'done';
+          } else {
+            componentStatus.html = 'failed';
+          }
         }
       } else {
         componentStatus.html = 'skipped';
       }
 
-      // WARC capture
+      // WARC capture - always needs Puppeteer (extension can't generate WARC)
+      // OPT-121: WARC may fail on protected sites - that's expected
       if (opts.captureWarc) {
         this.emitProgress(sourceId, source.url, 'capture', 'warc', 50, 'Creating WARC archive...');
         const result = await captureWarc(captureOptions);
@@ -302,7 +370,38 @@ export class WebSourceOrchestrator extends EventEmitter {
           warcPath = result.path || null;
           warcHash = result.hash || null;
           componentStatus.warc = 'done';
+
+          // OPT-121: Auto-convert WARC to WACZ for ReplayWeb.page compatibility
+          if (warcPath) {
+            this.emitProgress(sourceId, source.url, 'capture', 'wacz', 55, 'Converting to WACZ format...');
+            try {
+              const waczResult = await autoConvertToWACZ(warcPath, {
+                title: source.title || metadata.title || 'Archived Page',
+                url: source.url,
+                ts: new Date().toISOString(),
+                software: 'AU Archive',
+              });
+              if (waczResult.success) {
+                console.log(`[OPT-121] WACZ created: ${waczResult.path}`);
+                // Store WACZ path in repository (if column exists)
+                try {
+                  await this.repository.update(sourceId, { wacz_path: waczResult.path });
+                } catch {
+                  // wacz_path column might not exist yet - that's ok
+                }
+              } else {
+                console.warn(`[OPT-121] WACZ conversion failed: ${waczResult.error}`);
+              }
+            } catch (waczError) {
+              console.warn(`[OPT-121] WACZ conversion error: ${waczError}`);
+              // Don't fail the archive if WACZ conversion fails
+            }
+          }
         } else {
+          // OPT-121: Log but don't fail - WARC is nice-to-have if we have extension data
+          if (hasExtensionScreenshot || hasExtensionHtml) {
+            console.log(`[OPT-121] WARC capture failed (site may block automation) - extension data available as fallback`);
+          }
           componentStatus.warc = 'failed';
         }
       } else {
@@ -743,28 +842,53 @@ export class WebSourceOrchestrator extends EventEmitter {
         const title = document.title?.toLowerCase() || '';
 
         // Check for common bot detection indicators
+        // OPT-121: Enhanced with CloudFront and comprehensive CDN error patterns
         const indicators = [
+          // CloudFront (Amazon AWS) - OPT-121 critical addition
+          { pattern: 'generated by cloudfront', reason: 'CloudFront 403 block' },
+          { pattern: 'request could not be satisfied', reason: 'CloudFront request blocked' },
+          { pattern: 'cloudfront request id', reason: 'CloudFront error page' },
+          { pattern: 'there might be too much traffic', reason: 'CloudFront traffic limit' },
+          { pattern: 'configuration error', reason: 'CloudFront configuration error' },
+          // Generic access/error patterns
           { pattern: 'access denied', reason: 'Access Denied page' },
           { pattern: 'forbidden', reason: 'Forbidden response' },
           { pattern: 'blocked', reason: 'Request blocked' },
+          { pattern: '403 error', reason: 'HTTP 403 Forbidden' },
+          { pattern: '401 unauthorized', reason: 'HTTP 401 Unauthorized' },
+          { pattern: '503 service', reason: 'HTTP 503 Service Unavailable' },
+          { pattern: '502 bad gateway', reason: 'HTTP 502 Bad Gateway' },
+          // CAPTCHA challenges
           { pattern: 'captcha', reason: 'CAPTCHA challenge' },
           { pattern: 'recaptcha', reason: 'reCAPTCHA challenge' },
           { pattern: 'hcaptcha', reason: 'hCaptcha challenge' },
           { pattern: 'verify you are human', reason: 'Human verification required' },
           { pattern: 'please verify', reason: 'Verification required' },
           { pattern: 'security check', reason: 'Security check required' },
+          // Bot detection
           { pattern: 'unusual traffic', reason: 'Unusual traffic detected' },
           { pattern: 'automated access', reason: 'Automated access detected' },
           { pattern: 'bot detection', reason: 'Bot detection triggered' },
+          // Cloudflare
           { pattern: 'cloudflare', reason: 'Cloudflare protection' },
           { pattern: 'ddos protection', reason: 'DDoS protection active' },
+          { pattern: 'please wait while we verify', reason: 'Verification in progress' },
+          { pattern: 'checking your browser', reason: 'Browser check in progress' },
+          { pattern: 'just a moment', reason: 'Cloudflare "Just a moment" challenge' },
+          { pattern: 'attention required', reason: 'Cloudflare attention required' },
+          { pattern: 'ray id:', reason: 'Cloudflare Ray ID detected' },
+          // Security services
           { pattern: 'perimeterx', reason: 'PerimeterX protection' },
           { pattern: 'distil', reason: 'Distil Networks protection' },
           { pattern: 'incapsula', reason: 'Incapsula protection' },
           { pattern: 'datadome', reason: 'DataDome protection' },
-          { pattern: 'please wait while we verify', reason: 'Verification in progress' },
-          { pattern: 'checking your browser', reason: 'Browser check in progress' },
-          { pattern: 'just a moment', reason: 'Cloudflare "Just a moment" challenge' },
+          { pattern: 'akamai', reason: 'Akamai protection' },
+          { pattern: 'imperva', reason: 'Imperva protection' },
+          { pattern: 'shape security', reason: 'Shape Security protection' },
+          // Rate limiting
+          { pattern: 'too many requests', reason: 'Rate limit exceeded' },
+          { pattern: 'rate limit', reason: 'Rate limited' },
+          { pattern: 'please try again later', reason: 'Temporary block' },
         ];
 
         for (const { pattern, reason } of indicators) {
