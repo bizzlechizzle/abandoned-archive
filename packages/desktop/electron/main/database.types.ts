@@ -44,6 +44,12 @@ export interface Database {
   date_extractions: DateExtractionsTable;
   date_engine_learning: DateEngineLearningTable;
   date_patterns: DatePatternsTable;
+  // Migration 74: Document Intelligence
+  extraction_providers: ExtractionProvidersTable;
+  entity_extractions: EntityExtractionsTable;
+  document_summaries: DocumentSummariesTable;
+  // Migration 75: Extraction Pipeline
+  extraction_queue: ExtractionQueueTable;
 }
 
 // Locations table
@@ -187,6 +193,10 @@ export interface LocsTable {
   earliest_media_date: string | null;
   latest_media_date: string | null;
   stats_updated_at: string | null;
+
+  // Migration 75: Auto-tagging for extraction pipeline
+  location_type: string | null;  // golf-course, factory, hospital, etc.
+  era: string | null;           // pre-1900, 1900-1930, etc.
 }
 
 // Sub-Locations table
@@ -816,6 +826,15 @@ export interface WebSourcesTable {
   // Migration 73: Date extraction tracking
   dates_extracted_at: string | null;
   dates_extraction_count: number;
+
+  // Migration 75: Extraction Pipeline - Smart titles and summaries
+  smart_title: string | null;              // LLM-generated clean title (max 60 chars)
+  smart_summary: string | null;            // LLM-generated 2-sentence TL;DR
+  extraction_status: string | null;        // 'pending' | 'processing' | 'completed' | 'failed'
+  extraction_confidence: number | null;    // 0-1 overall extraction confidence
+  extraction_provider: string | null;      // Provider ID that performed extraction
+  extraction_model: string | null;         // Model name/version used
+  extraction_completed_at: string | null;  // ISO timestamp when extraction completed
 }
 
 // Web Source Versions table - Track changes over time
@@ -965,6 +984,12 @@ export interface LocationTimelineTable {
   created_by: string | null;
   updated_at: string | null;
   updated_by: string | null;
+
+  // Migration 75: Extraction Pipeline - Smart titles for timeline events
+  smart_title: string | null;     // LLM-generated clean title
+  tldr: string | null;            // LLM-generated 2-sentence summary
+  confidence: number | null;      // 0-1 extraction confidence
+  needs_review: number;           // 0/1 - Flag for human review queue
 }
 
 // Migration 73: Date Extractions table - NLP date extraction from web sources
@@ -1059,4 +1084,88 @@ export interface DatePatternsTable {
   enabled: number;
   test_cases: string | null;  // JSON array of {input, expected}
   created_at: string;
+}
+
+// Migration 74: Extraction Providers table - LLM/NLP provider configurations
+export interface ExtractionProvidersTable {
+  provider_id: string;
+  name: string;
+  type: 'spacy' | 'ollama' | 'anthropic' | 'google' | 'openai';
+  enabled: number;
+  priority: number;
+  settings_json: string | null;
+  last_used_at: string | null;
+  success_count: number;
+  error_count: number;
+  avg_latency_ms: number | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+// Migration 74: Entity Extractions table - Extracted people, companies from sources
+export interface EntityExtractionsTable {
+  extraction_id: string;
+  source_type: string;         // 'web_source' | 'document' | 'manual'
+  source_id: string;
+  locid: string | null;
+
+  entity_type: string;         // 'person' | 'organization' | 'place'
+  entity_name: string;
+  entity_role: string | null;  // 'owner' | 'architect' | 'developer' | etc.
+  date_range: string | null;   // '2006-2016'
+
+  confidence: number;
+  provider_id: string | null;
+  context_sentence: string | null;
+
+  status: 'pending' | 'approved' | 'rejected' | 'corrected';
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  user_correction: string | null;
+
+  created_at: string;
+}
+
+// Migration 74: Document Summaries table - LLM-generated summaries
+export interface DocumentSummariesTable {
+  summary_id: string;
+  source_type: string;
+  source_id: string;
+  locid: string | null;
+
+  title: string | null;
+  summary_text: string | null;
+  key_facts: string | null;    // JSON array
+
+  provider_id: string | null;
+  model_used: string | null;
+  confidence: number | null;
+
+  status: 'pending' | 'approved' | 'rejected' | 'corrected';
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+
+  created_at: string;
+}
+
+// Migration 75: Extraction Queue table - Background processing queue
+export interface ExtractionQueueTable {
+  queue_id: string;
+  source_type: 'web_source' | 'document' | 'media';
+  source_id: string;
+  locid: string | null;
+
+  tasks: string;               // JSON array: ['dates', 'entities', 'title', 'summary']
+
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'partial';
+  priority: number;
+  attempts: number;
+  max_attempts: number;
+
+  results_json: string | null;
+  error_message: string | null;
+
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
 }

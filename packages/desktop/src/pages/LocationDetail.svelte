@@ -17,7 +17,7 @@
     LocationInfo, LocationTimeline, LocationInfoHorizontal,
     LocationMapSection, LocationOriginalAssets,
     LocationImportZone, LocationBookmarks, LocationWebSources, LocationNerdStats,
-    LocationSettings, SubLocationGrid,
+    LocationSettings, SubLocationGrid, LocationPeopleCompanies,
     type MediaImage, type MediaVideo, type MediaDocument, type MediaMap, type Bookmark,
     type GpsWarning, type FailedFile
   } from '../components/location';
@@ -1283,6 +1283,10 @@
           locid={location.locid}
           onOpenSource={(url) => window.electronAPI.shell.openExternal(url)}
         />
+
+        <!-- OPT-120: People & Companies extracted from web sources -->
+        <LocationPeopleCompanies locid={location.locid} />
+
         <div id="media-gallery">
           <LocationOriginalAssets
             {images}

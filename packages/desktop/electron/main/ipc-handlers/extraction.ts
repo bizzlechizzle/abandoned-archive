@@ -21,6 +21,8 @@ import type { Database as SqliteDatabase } from 'better-sqlite3';
 import { Kysely } from 'kysely';
 import {
   getExtractionService,
+  getExtractionQueueService,
+  getAutoTaggerService,
   type ExtractionInput,
   type ExtractionOptions,
   type BatchExtractionRequest,
@@ -377,12 +379,236 @@ export function registerExtractionHandlers(
       }
     }
   );
+
+  // ==========================================================================
+  // Extraction Queue (OPT-120)
+  // ==========================================================================
+
+  const queueService = getExtractionQueueService(sqliteDb);
+
+  /**
+   * Start the extraction queue background processor
+   */
+  ipcMain.handle('extraction:queue:start', async () => {
+    try {
+      await queueService.start();
+      return { success: true };
+    } catch (error) {
+      console.error('[ExtractionHandlers] extraction:queue:start failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  /**
+   * Stop the extraction queue background processor
+   */
+  ipcMain.handle('extraction:queue:stop', async () => {
+    try {
+      queueService.stop();
+      return { success: true };
+    } catch (error) {
+      console.error('[ExtractionHandlers] extraction:queue:stop failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  /**
+   * Manually enqueue an extraction job
+   */
+  ipcMain.handle(
+    'extraction:queue:enqueue',
+    async (
+      _,
+      sourceType: 'web_source' | 'document' | 'media',
+      sourceId: string,
+      locid: string | null,
+      tasks?: string[],
+      priority?: number
+    ) => {
+      try {
+        const queueId = await queueService.enqueue(
+          sourceType,
+          sourceId,
+          locid,
+          tasks,
+          priority
+        );
+        return { success: true, queueId };
+      } catch (error) {
+        console.error('[ExtractionHandlers] extraction:queue:enqueue failed:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    }
+  );
+
+  /**
+   * Get queue status
+   */
+  ipcMain.handle('extraction:queue:status', async () => {
+    try {
+      const status = queueService.getStatus();
+      return { success: true, status };
+    } catch (error) {
+      console.error('[ExtractionHandlers] extraction:queue:status failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  /**
+   * Cleanup old completed/failed jobs
+   */
+  ipcMain.handle('extraction:queue:cleanup', async (_, olderThanDays?: number) => {
+    try {
+      const count = queueService.cleanup(olderThanDays);
+      return { success: true, cleaned: count };
+    } catch (error) {
+      console.error('[ExtractionHandlers] extraction:queue:cleanup failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  // Start queue processor automatically
+  queueService.start().catch((error) => {
+    console.error('[ExtractionHandlers] Failed to start queue processor:', error);
+  });
+
+  // ==========================================================================
+  // Auto-Tagger (OPT-120)
+  // ==========================================================================
+
+  const autoTagger = getAutoTaggerService(sqliteDb);
+
+  /**
+   * Detect tags from text
+   */
+  ipcMain.handle(
+    'extraction:tagger:detectTags',
+    async (_, text: string, buildYear?: number | string | null) => {
+      try {
+        const result = autoTagger.detectTags(text, buildYear);
+        return { success: true, result };
+      } catch (error) {
+        console.error('[ExtractionHandlers] extraction:tagger:detectTags failed:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    }
+  );
+
+  /**
+   * Tag a specific location
+   */
+  ipcMain.handle('extraction:tagger:tagLocation', async (_, locid: string) => {
+    try {
+      const result = await autoTagger.tagLocation(locid);
+      return { success: true, result };
+    } catch (error) {
+      console.error('[ExtractionHandlers] extraction:tagger:tagLocation failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  /**
+   * Tag all untagged locations
+   */
+  ipcMain.handle('extraction:tagger:tagAllUntagged', async () => {
+    try {
+      const result = await autoTagger.tagAllUntagged();
+      return { success: true, result };
+    } catch (error) {
+      console.error('[ExtractionHandlers] extraction:tagger:tagAllUntagged failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  // ==========================================================================
+  // Entity Queries (OPT-120)
+  // ==========================================================================
+
+  /**
+   * Get entities (people, organizations) for a location
+   */
+  ipcMain.handle('extraction:entities:getByLocation', async (_, locid: string) => {
+    try {
+      const entities = sqliteDb.prepare(`
+        SELECT
+          extraction_id,
+          entity_type,
+          entity_name,
+          entity_role,
+          date_range,
+          confidence,
+          context_sentence,
+          status,
+          created_at
+        FROM entity_extractions
+        WHERE locid = ? AND status IN ('approved', 'pending')
+        ORDER BY entity_type, entity_name
+      `).all(locid);
+
+      return { success: true, entities };
+    } catch (error) {
+      console.error('[ExtractionHandlers] extraction:entities:getByLocation failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  /**
+   * Update entity status (approve/reject)
+   */
+  ipcMain.handle(
+    'extraction:entities:updateStatus',
+    async (_, extractionId: string, status: 'approved' | 'rejected' | 'pending') => {
+      try {
+        sqliteDb.prepare(`
+          UPDATE entity_extractions
+          SET status = ?, updated_at = datetime('now')
+          WHERE extraction_id = ?
+        `).run(status, extractionId);
+
+        return { success: true };
+      } catch (error) {
+        console.error('[ExtractionHandlers] extraction:entities:updateStatus failed:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    }
+  );
 }
 
 /**
  * Shutdown extraction service
  */
 export async function shutdownExtractionHandlers(): Promise<void> {
-  const { shutdownExtractionService } = await import('../../services/extraction');
+  const { shutdownExtractionService, shutdownExtractionQueueService } = await import('../../services/extraction');
+  shutdownExtractionQueueService();
   await shutdownExtractionService();
 }

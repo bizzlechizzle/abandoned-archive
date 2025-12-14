@@ -4,6 +4,7 @@
  * Replaces bookmarks:* handlers with comprehensive web source management
  * ADR-046: Updated locid/subid validation from UUID to BLAKE3 16-char hex
  * OPT-113: Added auto-archive on create - queues archive job immediately after save
+ * OPT-120: Added auto-extraction trigger on archive complete - queues LLM extraction job
  */
 import { ipcMain } from 'electron';
 import { z } from 'zod';
@@ -19,6 +20,8 @@ import {
 } from '../../repositories/sqlite-websources-repository';
 import { validate, LimitSchema, Blake3IdSchema } from '../ipc-validation';
 import { JobQueue, IMPORT_QUEUES } from '../../services/job-queue';
+import { getExtractionQueueService } from '../../services/extraction/extraction-queue-service';
+import { getRawDatabase } from '../database';
 
 // =============================================================================
 // Validation Schemas
@@ -395,12 +398,35 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
 
   /**
    * Mark a source as archive complete
+   * OPT-120: Also queues extraction job for LLM processing
    */
   ipcMain.handle('websources:markComplete', async (_event, source_id: unknown, options: unknown) => {
     try {
       const validatedId = SourceIdSchema.parse(source_id);
       const validatedOptions = ArchiveCompleteOptionsSchema.parse(options);
-      return await webSourcesRepo.markComplete(validatedId, validatedOptions);
+      const result = await webSourcesRepo.markComplete(validatedId, validatedOptions);
+
+      // OPT-120: Queue extraction job (non-blocking)
+      try {
+        // Get the source to find locid
+        const source = await webSourcesRepo.findById(validatedId);
+        if (source) {
+          const sqliteDb = getRawDatabase();
+          const extractionQueue = getExtractionQueueService(sqliteDb);
+          await extractionQueue.enqueue(
+            'web_source',
+            validatedId,
+            source.locid || null,
+            ['dates', 'entities', 'title', 'summary']
+          );
+          console.log(`[WebSources] Auto-queued extraction job for ${validatedId}`);
+        }
+      } catch (queueError) {
+        // Don't fail if extraction queue fails - just log
+        console.error('[WebSources] Failed to queue extraction job:', queueError);
+      }
+
+      return result;
     } catch (error) {
       console.error('Error marking web source as complete:', error);
       if (error instanceof z.ZodError) {

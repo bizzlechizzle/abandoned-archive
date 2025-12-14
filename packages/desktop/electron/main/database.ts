@@ -3243,6 +3243,87 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 74 completed: Document Intelligence tables created');
     }
 
+    // Migration 75: Extraction Pipeline - Smart titles, summaries, auto-tagging
+    // OPT-120: Background LLM extraction for web sources
+    // Adds smart_title, smart_summary to web_sources and location_timeline
+    // Adds location_type, era to locs for auto-tagging
+    const wsHasSmartTitle = sqlite.prepare(`
+      SELECT COUNT(*) as cnt FROM pragma_table_info('web_sources') WHERE name = 'smart_title'
+    `).get() as { cnt: number };
+
+    if (wsHasSmartTitle.cnt === 0) {
+      console.log('Running migration 75: Extraction Pipeline columns');
+
+      // Add smart extraction columns to web_sources
+      sqlite.exec(`
+        ALTER TABLE web_sources ADD COLUMN smart_title TEXT;
+        ALTER TABLE web_sources ADD COLUMN smart_summary TEXT;
+        ALTER TABLE web_sources ADD COLUMN extraction_status TEXT DEFAULT 'pending';
+        ALTER TABLE web_sources ADD COLUMN extraction_confidence REAL;
+        ALTER TABLE web_sources ADD COLUMN extraction_provider TEXT;
+        ALTER TABLE web_sources ADD COLUMN extraction_model TEXT;
+        ALTER TABLE web_sources ADD COLUMN extraction_completed_at TEXT;
+      `);
+
+      // Add auto-tagging columns to locs
+      // Note: 'status' already exists for abandoned/active status
+      sqlite.exec(`
+        ALTER TABLE locs ADD COLUMN location_type TEXT;
+        ALTER TABLE locs ADD COLUMN era TEXT;
+      `);
+
+      // Add smart title/summary columns to location_timeline
+      sqlite.exec(`
+        ALTER TABLE location_timeline ADD COLUMN smart_title TEXT;
+        ALTER TABLE location_timeline ADD COLUMN tldr TEXT;
+        ALTER TABLE location_timeline ADD COLUMN confidence REAL;
+        ALTER TABLE location_timeline ADD COLUMN needs_review INTEGER DEFAULT 0;
+      `);
+
+      // Create extraction_queue for background processing
+      sqlite.exec(`
+        CREATE TABLE IF NOT EXISTS extraction_queue (
+          queue_id TEXT PRIMARY KEY,
+          source_type TEXT NOT NULL CHECK(source_type IN ('web_source', 'document', 'media')),
+          source_id TEXT NOT NULL,
+          locid TEXT REFERENCES locs(locid) ON DELETE CASCADE,
+
+          -- Tasks to run
+          tasks TEXT NOT NULL, -- JSON array: ['dates', 'entities', 'title', 'summary']
+
+          -- Status
+          status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed', 'partial')),
+          priority INTEGER DEFAULT 0,
+          attempts INTEGER DEFAULT 0,
+          max_attempts INTEGER DEFAULT 3,
+
+          -- Results
+          results_json TEXT,
+          error_message TEXT,
+
+          -- Timestamps
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          started_at TEXT,
+          completed_at TEXT,
+
+          UNIQUE(source_type, source_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_extraction_queue_status ON extraction_queue(status, priority DESC);
+        CREATE INDEX IF NOT EXISTS idx_extraction_queue_locid ON extraction_queue(locid);
+      `);
+
+      // Create indices for new columns
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_ws_extraction_status ON web_sources(extraction_status);
+        CREATE INDEX IF NOT EXISTS idx_locs_location_type ON locs(location_type);
+        CREATE INDEX IF NOT EXISTS idx_locs_era ON locs(era);
+        CREATE INDEX IF NOT EXISTS idx_timeline_needs_review ON location_timeline(needs_review) WHERE needs_review = 1;
+      `);
+
+      console.log('Migration 75 completed: Extraction Pipeline columns and queue created');
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

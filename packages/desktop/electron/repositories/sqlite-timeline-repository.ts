@@ -104,6 +104,11 @@ export class SqliteTimelineRepository {
         't.approved_at',
         't.approved_by',
         't.notes',
+        // OPT-120: Extraction Pipeline - Smart titles and summaries
+        't.smart_title',
+        't.tldr',
+        't.confidence',
+        't.needs_review',
         't.created_at',
         't.created_by',
         't.updated_at',

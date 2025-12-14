@@ -30,6 +30,7 @@
     notes: string | null;
     extracted_title: string | null;
     extracted_author: string | null;
+    extracted_date: string | null;
     word_count: number;
     image_count: number;
     video_count: number;
@@ -38,6 +39,12 @@
     archived_at: string | null;
     component_status: ComponentStatus | null;
     archive_error: string | null;
+    // OPT-120: Extraction Pipeline fields
+    smart_title: string | null;
+    smart_summary: string | null;
+    extraction_status: string | null;
+    extraction_confidence: number | null;
+    domain: string | null;
   }
 
   interface Props {
@@ -341,12 +348,13 @@
         <div class="p-4 bg-braun-50 rounded hover:bg-braun-100 transition">
           <div class="flex items-start justify-between">
             <div class="flex-1 min-w-0">
+              <!-- OPT-120: Use smart_title if available, fall back to extracted_title, then title -->
               <div class="flex items-center gap-2 flex-wrap">
                 <button
                   onclick={() => onOpenSource(source.url)}
                   class="text-braun-900 hover:underline font-medium truncate max-w-md"
                 >
-                  {source.title || source.extracted_title || source.url}
+                  {source.smart_title || source.title || source.extracted_title || source.url}
                 </button>
 {#if (source.status === 'partial' || source.status === 'failed') && source.component_status}
                   <button
@@ -365,9 +373,26 @@
                   {source.source_type}
                 </span>
               </div>
-              {#if source.title || source.extracted_title}
-                <p class="text-xs text-braun-400 truncate mt-1">{source.url}</p>
+              <!-- OPT-120: Show smart summary (TL;DR) if available -->
+              {#if source.smart_summary}
+                <p class="text-sm text-braun-700 mt-2 line-clamp-2">{source.smart_summary}</p>
               {/if}
+              <!-- Source info row: domain, date, author -->
+              <div class="flex items-center gap-2 mt-1 text-xs text-braun-400">
+                {#if source.domain}
+                  <span>{source.domain}</span>
+                  <span class="text-braun-300">•</span>
+                {/if}
+                {#if source.extracted_date}
+                  <span>{source.extracted_date}</span>
+                  <span class="text-braun-300">•</span>
+                {/if}
+                {#if source.extracted_author}
+                  <span>{source.extracted_author}</span>
+                {:else}
+                  <span class="truncate">{source.url}</span>
+                {/if}
+              </div>
               {#if source.status === 'complete' || source.status === 'partial'}
                 <div class="flex items-center gap-4 mt-2 text-xs text-braun-500">
                   {#if source.word_count > 0}
@@ -379,13 +404,10 @@
                   {#if source.video_count > 0}
                     <span>{source.video_count} videos</span>
                   {/if}
-                  {#if source.extracted_author}
-                    <span>by {source.extracted_author}</span>
-                  {/if}
                 </div>
               {/if}
               {#if source.notes}
-                <p class="text-sm text-braun-600 mt-2">{source.notes}</p>
+                <p class="text-sm text-braun-600 mt-2 italic">{source.notes}</p>
               {/if}
               {#if expandedSource === source.source_id && source.component_status}
                 <div class="mt-3 p-3 bg-white rounded border border-braun-200 text-xs">

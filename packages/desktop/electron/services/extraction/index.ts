@@ -28,6 +28,29 @@ export {
   shutdownExtractionService,
 } from './extraction-service';
 
+export {
+  ExtractionQueueService,
+  getExtractionQueueService,
+  shutdownExtractionQueueService,
+} from './extraction-queue-service';
+
+export type {
+  QueueJob,
+  ExtractionQueueConfig,
+} from './extraction-queue-service';
+
+export {
+  AutoTaggerService,
+  getAutoTaggerService,
+} from './auto-tagger-service';
+
+export type {
+  LocationType,
+  Era,
+  LocationStatus,
+  TagResult,
+} from './auto-tagger-service';
+
 // =============================================================================
 // TYPES
 // =============================================================================

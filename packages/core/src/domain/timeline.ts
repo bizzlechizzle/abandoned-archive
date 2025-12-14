@@ -83,6 +83,11 @@ export const TimelineEventSchema = z.object({
   approved_at: z.string().nullable(),
   approved_by: z.string().nullable(),
   notes: z.string().nullable(),
+  // OPT-120: Extraction Pipeline - Smart titles and summaries
+  smart_title: z.string().nullable(),
+  tldr: z.string().nullable(),
+  confidence: z.number().nullable(),
+  needs_review: z.number().default(0),
   created_at: z.string(),
   created_by: z.string().nullable(),
   updated_at: z.string().nullable(),
@@ -110,6 +115,11 @@ export const TimelineEventInputSchema = z.object({
   media_hashes: z.string().nullable().optional(),
   auto_approved: z.number().optional(),
   notes: z.string().nullable().optional(),
+  // OPT-120: Extraction Pipeline
+  smart_title: z.string().nullable().optional(),
+  tldr: z.string().nullable().optional(),
+  confidence: z.number().nullable().optional(),
+  needs_review: z.number().optional(),
 });
 
 export type TimelineEventInput = z.infer<typeof TimelineEventInputSchema>;

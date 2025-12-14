@@ -977,6 +977,34 @@ const api = {
       invokeAuto("extraction:listOllamaModels")(host, port),
     pullOllamaModel: (modelName, host, port) =>
       invokeLong("extraction:pullOllamaModel")(modelName, host, port),
+
+    // Queue management (OPT-120)
+    queue: {
+      start: () => invokeAuto("extraction:queue:start")(),
+      stop: () => invokeAuto("extraction:queue:stop")(),
+      enqueue: (sourceType, sourceId, locid, tasks, priority) =>
+        invokeAuto("extraction:queue:enqueue")(sourceType, sourceId, locid, tasks, priority),
+      status: () => invokeAuto("extraction:queue:status")(),
+      cleanup: (olderThanDays) => invokeAuto("extraction:queue:cleanup")(olderThanDays),
+    },
+
+    // Auto-tagger (OPT-120)
+    tagger: {
+      detectTags: (text, buildYear) =>
+        invokeAuto("extraction:tagger:detectTags")(text, buildYear),
+      tagLocation: (locid) =>
+        invokeAuto("extraction:tagger:tagLocation")(locid),
+      tagAllUntagged: () =>
+        invokeLong("extraction:tagger:tagAllUntagged")(),
+    },
+
+    // Entity queries (OPT-120)
+    entities: {
+      getByLocation: (locid) =>
+        invokeAuto("extraction:entities:getByLocation")(locid),
+      updateStatus: (extractionId, status) =>
+        invokeAuto("extraction:entities:updateStatus")(extractionId, status),
+    },
   },
 };
 

@@ -231,10 +231,15 @@
 
   function formatWebPageLine(event: TimelineEvent | TimelineEventWithSource): string {
     const date = event.date_display || '—';
-    const title = event.notes || 'Web Page';
+    // OPT-120: Prefer smart_title (LLM-generated) over notes (raw web title)
+    const title = event.smart_title || event.notes || 'Web Page';
     // Truncate long titles
     const truncatedTitle = title.length > 40 ? title.slice(0, 37) + '...' : title;
     return `${date} - Web: ${truncatedTitle}`;
+  }
+
+  function getWebPageTldr(event: TimelineEvent | TimelineEventWithSource): string | null {
+    return event.tldr || null;
   }
 
   function formatDatabaseEntryLine(event: TimelineEvent | TimelineEventWithSource): string {
@@ -330,6 +335,7 @@
 
           {:else if event.event_type === 'custom' && event.event_subtype === 'web_page'}
             <!-- Web Page Event - Minor with diamond marker -->
+            {@const tldr = getWebPageTldr(event)}
             <div class="relative {isLast ? '' : 'pb-4'}">
               <!-- Diamond marker (rotated square) -->
               <div class="absolute -left-5 top-[7px] w-[6px] h-[6px] border border-braun-400 bg-white rotate-45"></div>
@@ -337,9 +343,13 @@
                 type="button"
                 onclick={() => handleWebPageClick(event)}
                 class="text-[15px] font-normal text-braun-600 hover:text-braun-900 hover:underline cursor-pointer text-left"
+                title={tldr || undefined}
               >
                 {formatWebPageLine(event)}
               </button>
+              {#if tldr}
+                <p class="text-[12px] text-braun-500 mt-0.5 line-clamp-1">{tldr}</p>
+              {/if}
             </div>
 
           {:else if event.event_type === 'database_entry'}

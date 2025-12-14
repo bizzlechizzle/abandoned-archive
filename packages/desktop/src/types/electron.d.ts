@@ -1274,6 +1274,87 @@ export interface ElectronAPI {
       message?: string;
       error?: string;
     }>;
+
+    // Queue management (OPT-120)
+    queue: {
+      start: () => Promise<{ success: boolean; error?: string }>;
+      stop: () => Promise<{ success: boolean; error?: string }>;
+      enqueue: (
+        sourceType: 'web_source' | 'document' | 'media',
+        sourceId: string,
+        locid: string | null,
+        tasks?: string[],
+        priority?: number
+      ) => Promise<{ success: boolean; queueId?: string; error?: string }>;
+      status: () => Promise<{
+        success: boolean;
+        status?: {
+          running: boolean;
+          activeJobs: number;
+          pending: number;
+          completed: number;
+          failed: number;
+        };
+        error?: string;
+      }>;
+      cleanup: (olderThanDays?: number) => Promise<{ success: boolean; cleaned?: number; error?: string }>;
+    };
+
+    // Auto-tagger (OPT-120)
+    tagger: {
+      detectTags: (text: string, buildYear?: number | string | null) => Promise<{
+        success: boolean;
+        result?: {
+          locationType: string | null;
+          era: string | null;
+          status: string | null;
+          confidence: {
+            locationType: number;
+            era: number;
+            status: number;
+          };
+        };
+        error?: string;
+      }>;
+      tagLocation: (locid: string) => Promise<{
+        success: boolean;
+        result?: {
+          locationType: string | null;
+          era: string | null;
+          status: string | null;
+          confidence: { locationType: number; era: number; status: number };
+        };
+        error?: string;
+      }>;
+      tagAllUntagged: () => Promise<{
+        success: boolean;
+        result?: { tagged: number; failed: number };
+        error?: string;
+      }>;
+    };
+
+    // Entity queries (OPT-120)
+    entities: {
+      getByLocation: (locid: string) => Promise<{
+        success: boolean;
+        entities?: Array<{
+          extraction_id: string;
+          entity_type: 'person' | 'organization';
+          entity_name: string;
+          entity_role: string | null;
+          date_range: string | null;
+          confidence: number;
+          context_sentence: string | null;
+          status: 'approved' | 'pending' | 'rejected';
+          created_at: string;
+        }>;
+        error?: string;
+      }>;
+      updateStatus: (extractionId: string, status: 'approved' | 'rejected' | 'pending') => Promise<{
+        success: boolean;
+        error?: string;
+      }>;
+    };
   };
 
   // Image Downloader - Migration 72 (pHash, URL patterns, staging)
