@@ -31,6 +31,7 @@
 
 <div
   class="mt-6 bg-white rounded border border-braun-300 p-6"
+  data-import-zone
   ondragover={onDragOver}
   ondragleave={onDragLeave}
   ondrop={onDrop}

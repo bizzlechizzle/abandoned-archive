@@ -416,6 +416,15 @@ export function initializeJobWorker(db: Kysely<Database>): void {
     sendToRenderer('asset:proxy-ready', data);
   });
 
+  // Forward tagging events to renderer for UI refresh
+  workerService.on('asset:tags-ready', (data) => {
+    sendToRenderer('asset:tags-ready', data);
+  });
+
+  workerService.on('location:tags-aggregated', (data) => {
+    sendToRenderer('location:tags-aggregated', data);
+  });
+
   workerService.on('job:progress', (data) => {
     sendToRenderer('jobs:progress', data);
   });

@@ -35,6 +35,10 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+# Import preprocessing modules
+from verb_patterns import find_verbs_in_text, get_verb_category, get_all_categories
+from preprocessor import preprocess_text, build_llm_context
+
 # =============================================================================
 # MODELS
 # =============================================================================
@@ -87,6 +91,73 @@ class HealthResponse(BaseModel):
     status: str
     model: str
     version: str
+
+
+# =============================================================================
+# PREPROCESSING MODELS
+# =============================================================================
+
+class PreprocessRequest(BaseModel):
+    text: str
+    articleDate: Optional[str] = None
+    maxSentences: int = 20
+
+
+class VerbMatch(BaseModel):
+    text: str
+    category: str
+    position: int
+
+
+class EntityMatch(BaseModel):
+    text: str
+    type: str
+    start: int
+    end: int
+
+
+class PreprocessedSentence(BaseModel):
+    text: str
+    relevancy: str
+    relevancy_type: Optional[str]
+    verbs: list[VerbMatch]
+    entities: list[EntityMatch]
+    confidence: float
+    has_date: bool
+    has_person: bool
+    has_org: bool
+
+
+class ProfileCandidate(BaseModel):
+    name: str
+    normalized_name: str
+    contexts: list[str]
+    implied_role: Optional[str] = None
+    implied_type: Optional[str] = None
+    implied_relationship: Optional[str] = None
+    all_roles: Optional[list[str]] = None
+    all_types: Optional[list[str]] = None
+    all_relationships: Optional[list[str]] = None
+    mention_count: int
+
+
+class DocumentStats(BaseModel):
+    total_sentences: int
+    timeline_relevant: int
+    profile_relevant: int
+    total_people: int
+    total_organizations: int
+
+
+class PreprocessResponse(BaseModel):
+    document_stats: DocumentStats
+    sentences: list[PreprocessedSentence]
+    timeline_candidates: list[PreprocessedSentence]
+    profile_candidates: dict
+    llm_context: str
+    article_date: Optional[str]
+    processing_time_ms: float
+
 
 # =============================================================================
 # FALSE POSITIVE PATTERNS (CRITICAL)
@@ -586,6 +657,70 @@ async def extract(request: ExtractionRequest):
         maskedPatterns=[MaskedPattern(**p) for p in masked_patterns],
         processingTimeMs=round(processing_time, 2),
     )
+
+@app.post("/preprocess", response_model=PreprocessResponse)
+async def preprocess(request: PreprocessRequest):
+    """
+    Preprocess text for LLM extraction.
+
+    Performs intelligent preprocessing to create a structured context package:
+    - Identifies timeline-relevant sentences (with verbs like built, closed, demolished)
+    - Extracts named entities (people, organizations, locations, dates)
+    - Classifies sentences by relevancy
+    - Builds condensed context for LLM input
+
+    This endpoint should be called BEFORE sending text to an LLM for extraction.
+    """
+    start_time = time.time()
+
+    text = request.text
+    if not text or not text.strip():
+        raise HTTPException(status_code=400, detail="Text is required")
+
+    # Preprocess the text
+    result = preprocess_text(text, nlp, request.articleDate)
+
+    # Build LLM context string
+    llm_context = build_llm_context(result, request.maxSentences)
+
+    processing_time = (time.time() - start_time) * 1000
+
+    return PreprocessResponse(
+        document_stats=DocumentStats(**result['document_stats']),
+        sentences=[PreprocessedSentence(
+            text=s['text'],
+            relevancy=s['relevancy'],
+            relevancy_type=s.get('relevancy_type'),
+            verbs=[VerbMatch(**v) for v in s['verbs']],
+            entities=[EntityMatch(**e) for e in s['entities']],
+            confidence=s['confidence'],
+            has_date=s['has_date'],
+            has_person=s['has_person'],
+            has_org=s['has_org']
+        ) for s in result['sentences']],
+        timeline_candidates=[PreprocessedSentence(
+            text=s['text'],
+            relevancy=s['relevancy'],
+            relevancy_type=s.get('relevancy_type'),
+            verbs=[VerbMatch(**v) for v in s['verbs']],
+            entities=[EntityMatch(**e) for e in s['entities']],
+            confidence=s['confidence'],
+            has_date=s['has_date'],
+            has_person=s['has_person'],
+            has_org=s['has_org']
+        ) for s in result['timeline_candidates']],
+        profile_candidates=result['profile_candidates'],
+        llm_context=llm_context,
+        article_date=result.get('article_date'),
+        processing_time_ms=round(processing_time, 2)
+    )
+
+
+@app.get("/verb-categories")
+async def verb_categories():
+    """Get all available verb categories for timeline detection."""
+    return {"categories": get_all_categories()}
+
 
 @app.post("/shutdown")
 async def shutdown():

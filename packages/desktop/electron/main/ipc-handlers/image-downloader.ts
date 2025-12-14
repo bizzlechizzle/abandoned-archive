@@ -61,6 +61,11 @@ import {
   scanPageForImages,
 } from '../../services/image-downloader/browser-image-capture';
 import type BetterSqlite3 from 'better-sqlite3';
+import { JobQueue, IMPORT_QUEUES, JOB_PRIORITY } from '../../services/job-queue';
+import {
+  queueImageProcessingJobs,
+  queueLocationPostProcessing,
+} from '../../services/import/job-builder';
 
 // Singleton orchestrator instance
 let orchestrator: DownloadOrchestrator | null = null;
@@ -551,6 +556,37 @@ export function registerImageDownloaderHandlers(db: Kysely<Database>) {
         validInput.locationId,
         archiveResult.value
       );
+
+      // Queue ALL standard image processing jobs using unified job builder
+      // Per docs/plans/unified-image-processing-pipeline.md:
+      // - ExifTool (metadata extraction)
+      // - Thumbnail generation
+      // - RAM++ tagging
+      // - Location-level jobs (GPS enrichment, stats, BagIt, etc.)
+      try {
+        // Queue per-file processing jobs
+        const imageJobResult = await queueImageProcessingJobs(db, {
+          imghash: result.imghash,
+          archivePath: result.finalPath,
+          locid: validInput.locationId,
+          subid: null, // Web imports don't have sub-locations
+        });
+
+        // Queue location-level post-processing jobs
+        // These aggregate data and update manifests
+        await queueLocationPostProcessing(db, {
+          locid: validInput.locationId,
+          subid: null,
+          lastExifJobId: imageJobResult.exifJobId ?? undefined,
+          hasImages: true,
+          hasDocuments: false,
+        });
+
+        console.log(`[ImageDownloader] Queued ${imageJobResult.jobs.length} processing jobs for web image ${result.imghash.slice(0, 8)}...`);
+      } catch (jobError) {
+        // Non-fatal: don't fail import if job queue fails
+        console.warn('[ImageDownloader] Failed to queue processing jobs (non-fatal):', jobError);
+      }
 
       return { success: true, ...result };
     } catch (error) {

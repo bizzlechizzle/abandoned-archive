@@ -392,7 +392,7 @@
       toasts.success(successMsg);
 
       if (newLocation?.locid) {
-        router.navigate(`/location/${newLocation.locid}`);
+        router.navigate(`/location/${newLocation.locid}?autoImport=true`);
       }
 
       resetForm();

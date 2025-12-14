@@ -17,6 +17,7 @@ import { startWebSocketServer, stopWebSocketServer } from '../services/websocket
 import { terminateDetachedBrowser } from '../services/detached-browser-service';
 import { getDatabaseArchiveService } from '../services/database-archive-service';
 import { stopOllama } from '../services/ollama-lifecycle-service';
+import { getPreprocessingService } from '../services/extraction/preprocessing-service';
 import { SQLiteWebSourcesRepository } from '../repositories/sqlite-websources-repository';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
 import { SQLiteSubLocationRepository } from '../repositories/sqlite-sublocation-repository';
@@ -575,6 +576,15 @@ app.on('before-quit', async () => {
     console.log('Ollama stopped successfully');
   } catch (error) {
     console.error('Failed to stop Ollama:', error);
+  }
+
+  // Stop spaCy preprocessing server if we started it
+  try {
+    const preprocessingService = getPreprocessingService();
+    await preprocessingService.shutdown();
+    console.log('spaCy preprocessing server stopped successfully');
+  } catch (error) {
+    console.error('Failed to stop spaCy preprocessing server:', error);
   }
 
   closeDatabase();

@@ -27,3 +27,16 @@ export {
   type ImportResult,
   type ImportOptions,
 } from './orchestrator';
+
+// Unified job builder - SINGLE SOURCE OF TRUTH for image processing jobs
+export {
+  queueImageProcessingJobs,
+  queueLocationPostProcessing,
+  queueImageBatchProcessing,
+  needsProcessing,
+  type ImageJobParams,
+  type ImageJobResult,
+  type LocationJobParams,
+  type LocationJobResult,
+  type ProcessingStatus,
+} from './job-builder';

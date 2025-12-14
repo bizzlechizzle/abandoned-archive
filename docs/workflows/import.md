@@ -69,3 +69,44 @@ After a successful import, the system automatically sets a hero image for dashbo
 - **Non-blocking**: Failure to set auto-hero does not fail the import
 
 This ensures new locations immediately appear with thumbnails on the Dashboard without requiring manual hero selection.
+
+## Unified Image Processing Pipeline
+
+**Single Source of Truth**: `packages/desktop/electron/services/import/job-builder.ts`
+
+All image imports (local files AND web downloads) use the same processing pipeline via `job-builder.ts`. This ensures consistent metadata extraction, thumbnail generation, and tagging regardless of import source.
+
+### Per-File Jobs (run for each image)
+
+| Job | Priority | Depends On | Purpose |
+|-----|----------|------------|---------|
+| EXIFTOOL | HIGH (50) | - | Extract dimensions, date, GPS, camera info |
+| THUMBNAIL | NORMAL (10) | ExifTool | Generate 400px, 800px, 1920px thumbnails |
+| IMAGE_TAGGING | BACKGROUND (0) | ExifTool | RAM++ tags, view type, quality score |
+
+### Per-Location Jobs (run once after batch)
+
+| Job | Priority | Depends On | Purpose |
+|-----|----------|------------|---------|
+| GPS_ENRICHMENT | NORMAL (10) | Last ExifTool | Aggregate GPS from media to location |
+| LIVE_PHOTO | NORMAL (10) | Last ExifTool | Detect Live Photo pairs |
+| LOCATION_STATS | BACKGROUND (0) | GPS Enrichment | Update media counts and date ranges |
+| BAGIT | BACKGROUND (0) | GPS Enrichment | Update RFC 8493 manifest |
+| LOCATION_TAG_AGGREGATION | BACKGROUND (0) | GPS Enrichment | Aggregate tags, suggest type/era |
+
+### Import Entry Points
+
+| Entry Point | File | Uses Job Builder? |
+|-------------|------|-------------------|
+| Local Import v2 | `finalizer.ts` | Yes (builds same jobs) |
+| Web Image Download | `image-downloader.ts` | Yes (`queueImageProcessingJobs`) |
+
+### Backfill Existing Images
+
+For images imported before the unified pipeline, run:
+
+```bash
+python scripts/backfill-image-processing.py --dry-run  # Preview
+python scripts/backfill-image-processing.py            # Apply
+python scripts/backfill-image-processing.py --web-only # Only web images
+```

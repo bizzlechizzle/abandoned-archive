@@ -1005,6 +1005,74 @@ const api = {
       updateStatus: (extractionId, status) =>
         invokeAuto("extraction:entities:updateStatus")(extractionId, status),
     },
+
+    // Preprocessing (NEW - Phase 5)
+    preprocess: {
+      analyze: (text, articleDate, maxSentences) =>
+        invokeAuto("extraction:preprocess")(text, articleDate, maxSentences),
+      isAvailable: () =>
+        invokeAuto("extraction:preprocess:isAvailable")(),
+      getVerbCategories: () =>
+        invokeAuto("extraction:preprocess:verbCategories")(),
+    },
+
+    // People Profiles (NEW - Phase 6)
+    profiles: {
+      people: {
+        getByLocation: (locid) =>
+          invokeAuto("extraction:profiles:people:getByLocation")(locid),
+        search: (query) =>
+          invokeAuto("extraction:profiles:search")(query, 'people'),
+        updateStatus: (personId, status) =>
+          invokeAuto("extraction:profiles:people:updateStatus")(personId, status),
+      },
+      companies: {
+        getByLocation: (locid) =>
+          invokeAuto("extraction:profiles:companies:getByLocation")(locid),
+        search: (query) =>
+          invokeAuto("extraction:profiles:search")(query, 'companies'),
+        updateStatus: (companyId, status) =>
+          invokeAuto("extraction:profiles:companies:updateStatus")(companyId, status),
+      },
+    },
+
+    // Fact Conflicts (NEW - Phase 7)
+    conflicts: {
+      getByLocation: (locid, includeResolved) =>
+        invokeAuto("extraction:conflicts:getByLocation")(locid, includeResolved),
+      getSummary: (locid) =>
+        invokeAuto("extraction:conflicts:getSummary")(locid),
+      resolve: (conflictId, resolution, resolvedValue, userId, notes) =>
+        invokeAuto("extraction:conflicts:resolve")(conflictId, resolution, resolvedValue, userId, notes),
+      detect: (locid) =>
+        invokeAuto("extraction:conflicts:detect")(locid),
+      suggestResolution: (conflictId) =>
+        invokeAuto("extraction:conflicts:suggestResolution")(conflictId),
+      getSourceAuthorities: () =>
+        invokeAuto("extraction:conflicts:getSourceAuthorities")(),
+      updateSourceAuthority: (domain, tier, notes) =>
+        invokeAuto("extraction:conflicts:updateSourceAuthority")(domain, tier, notes),
+    },
+
+    // Timeline Deduplication (NEW - Phase 8)
+    timelineMerge: {
+      deduplicate: (locid) =>
+        invokeAuto("extraction:timeline:deduplicate")(locid),
+      getMergeConfig: () =>
+        invokeAuto("extraction:timeline:getMergeConfig")(),
+      updateMergeConfig: (config) =>
+        invokeAuto("extraction:timeline:updateMergeConfig")(config),
+    },
+
+    // Versioned Prompts (NEW - Phase 4)
+    prompts: {
+      getSummary: () =>
+        invokeAuto("extraction:prompts:getSummary")(),
+      getVersions: (promptType) =>
+        invokeAuto("extraction:prompts:getVersions")(promptType),
+      setDefault: (promptType, version) =>
+        invokeAuto("extraction:prompts:setDefault")(promptType, version),
+    },
   },
 
   // Migration 76: RAM++ Image Auto-Tagging

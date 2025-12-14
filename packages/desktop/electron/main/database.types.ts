@@ -50,6 +50,9 @@ export interface Database {
   document_summaries: DocumentSummariesTable;
   // Migration 75: Extraction Pipeline
   extraction_queue: ExtractionQueueTable;
+  // Migration 76: RAM++ Image Auto-Tagging
+  location_tag_summary: LocationTagSummaryTable;
+  image_tagging_queue: ImageTaggingQueueTable;
 }
 
 // Locations table
@@ -319,6 +322,14 @@ export interface ImgsTable {
 
   // Migration 72: Perceptual hash for duplicate detection
   phash: string | null;            // 16-char hex DCT perceptual hash
+
+  // Migration 76: RAM++ Image Auto-Tagging
+  auto_tags: string | null;              // JSON array: ["abandoned", "factory", "graffiti"]
+  auto_tags_source: string | null;       // 'ram++' | 'manual' | 'hybrid'
+  auto_tags_confidence: string | null;   // JSON: {"abandoned": 0.95, "factory": 0.87}
+  auto_tags_at: string | null;           // ISO timestamp when tags were generated
+  quality_score: number | null;          // 0-1 quality score for hero selection
+  view_type: string | null;              // 'interior' | 'exterior' | 'aerial' | 'detail'
 }
 
 // Videos table
@@ -1165,6 +1176,57 @@ export interface ExtractionQueueTable {
   results_json: string | null;
   error_message: string | null;
 
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+// Migration 76: Location Tag Summary table - Aggregated location-level tag insights
+export interface LocationTagSummaryTable {
+  locid: string;                         // Primary key, FK to locs
+
+  // Aggregated tags from all images
+  dominant_tags: string | null;          // JSON: ["factory", "machinery", "decay"]
+  tag_counts: string | null;             // JSON: {"factory": 45, "machinery": 32}
+
+  // Auto-suggested values from tag analysis
+  suggested_type: string | null;         // Auto-detected location type
+  suggested_type_confidence: number | null;
+  suggested_era: string | null;          // Inferred from architecture tags
+  suggested_era_confidence: number | null;
+
+  // Image statistics
+  total_images: number;
+  tagged_images: number;
+  interior_count: number;
+  exterior_count: number;
+  aerial_count: number;
+
+  // Condition indicators from tags
+  has_graffiti: number;                  // 0/1
+  has_equipment: number;                 // 0/1
+  has_decay: number;                     // 0/1
+  has_nature_reclaim: number;            // 0/1
+  condition_score: number | null;        // 0-1, aggregated from decay/condition tags
+
+  // Best hero candidate
+  best_hero_imghash: string | null;
+  best_hero_score: number | null;
+
+  // Timestamps
+  created_at: string;
+  updated_at: string | null;
+}
+
+// Migration 76: Image Tagging Queue table - Track tagging job status
+export interface ImageTaggingQueueTable {
+  imghash: string;                       // Primary key
+  locid: string | null;                  // FK to locs
+  image_path: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'skipped';
+  priority: number;
+  attempts: number;
+  error_message: string | null;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;

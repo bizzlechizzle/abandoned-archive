@@ -3324,6 +3324,300 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 75 completed: Extraction Pipeline columns and queue created');
     }
 
+    // Migration 76: RAM++ Image Auto-Tagging System
+    // Adds ML-generated tags to images with confidence scores
+    // Creates location_tag_summary for aggregated location-level insights
+    const imgHasAutoTags = sqlite.prepare(`
+      SELECT COUNT(*) as cnt FROM pragma_table_info('imgs') WHERE name = 'auto_tags'
+    `).get() as { cnt: number };
+
+    if (imgHasAutoTags.cnt === 0) {
+      console.log('Running migration 76: RAM++ Image Auto-Tagging System');
+
+      // Add auto-tagging columns to imgs table
+      sqlite.exec(`
+        -- ML-generated tags stored as JSON array: ["abandoned", "factory", "graffiti"]
+        ALTER TABLE imgs ADD COLUMN auto_tags TEXT;
+        -- Source: 'ram++' (ML), 'manual' (user), 'hybrid' (user edited ML tags)
+        ALTER TABLE imgs ADD COLUMN auto_tags_source TEXT;
+        -- Per-tag confidence scores: {"abandoned": 0.95, "factory": 0.87}
+        ALTER TABLE imgs ADD COLUMN auto_tags_confidence TEXT;
+        -- ISO timestamp when tags were generated
+        ALTER TABLE imgs ADD COLUMN auto_tags_at TEXT;
+        -- Quality score for hero selection (0-1, higher = better)
+        ALTER TABLE imgs ADD COLUMN quality_score REAL;
+        -- Detected view type: 'interior', 'exterior', 'aerial', 'detail'
+        ALTER TABLE imgs ADD COLUMN view_type TEXT;
+      `);
+
+      // Create location_tag_summary table for aggregated location-level insights
+      sqlite.exec(`
+        CREATE TABLE IF NOT EXISTS location_tag_summary (
+          locid TEXT PRIMARY KEY REFERENCES locs(locid) ON DELETE CASCADE,
+
+          -- Aggregated tags from all images (top 20 by frequency)
+          dominant_tags TEXT,           -- JSON: ["factory", "machinery", "decay"]
+          tag_counts TEXT,              -- JSON: {"factory": 45, "machinery": 32}
+
+          -- Auto-suggested values from tag analysis
+          suggested_type TEXT,          -- Auto-detected location type
+          suggested_type_confidence REAL,
+          suggested_era TEXT,           -- Inferred from architecture tags
+          suggested_era_confidence REAL,
+
+          -- Image statistics
+          total_images INTEGER DEFAULT 0,
+          tagged_images INTEGER DEFAULT 0,
+          interior_count INTEGER DEFAULT 0,
+          exterior_count INTEGER DEFAULT 0,
+          aerial_count INTEGER DEFAULT 0,
+
+          -- Condition indicators from tags
+          has_graffiti INTEGER DEFAULT 0,
+          has_equipment INTEGER DEFAULT 0,
+          has_decay INTEGER DEFAULT 0,
+          has_nature_reclaim INTEGER DEFAULT 0,
+          condition_score REAL,         -- 0-1, aggregated from decay/condition tags
+
+          -- Best hero candidate (highest quality exterior shot)
+          best_hero_imghash TEXT,
+          best_hero_score REAL,
+
+          -- Timestamps
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_loc_tag_summary_suggested ON location_tag_summary(suggested_type);
+      `);
+
+      // Create image_tagging_queue for tracking tagging jobs
+      // This is separate from the main jobs table for better querying
+      sqlite.exec(`
+        CREATE TABLE IF NOT EXISTS image_tagging_queue (
+          imghash TEXT PRIMARY KEY,
+          locid TEXT REFERENCES locs(locid) ON DELETE CASCADE,
+          image_path TEXT NOT NULL,
+          status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed', 'skipped')),
+          priority INTEGER DEFAULT 0,
+          attempts INTEGER DEFAULT 0,
+          error_message TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          started_at TEXT,
+          completed_at TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_img_tag_queue_status ON image_tagging_queue(status, priority DESC);
+        CREATE INDEX IF NOT EXISTS idx_img_tag_queue_locid ON image_tagging_queue(locid);
+      `);
+
+      // Create indices for tag queries
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_imgs_auto_tags ON imgs(auto_tags) WHERE auto_tags IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_imgs_view_type ON imgs(view_type) WHERE view_type IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_imgs_quality_score ON imgs(quality_score) WHERE quality_score IS NOT NULL;
+      `);
+
+      console.log('Migration 76 completed: RAM++ Image Auto-Tagging System created');
+    }
+
+    // Migration 77: People profiles table for extracted person entities
+    const hasPeopleProfiles = sqlite.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='people_profiles'"
+    ).get();
+
+    if (!hasPeopleProfiles) {
+      console.log('Running migration 77: People profiles table');
+      sqlite.exec(`
+        CREATE TABLE people_profiles (
+          profile_id TEXT PRIMARY KEY,
+          locid TEXT NOT NULL,
+          full_name TEXT NOT NULL,
+          normalized_name TEXT,
+          role TEXT DEFAULT 'unknown',
+          date_start TEXT,
+          date_end TEXT,
+          key_facts TEXT,
+          photo_hash TEXT,
+          social_links TEXT,
+          source_refs TEXT,
+          aliases TEXT,
+          confidence REAL DEFAULT 0.5,
+          status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected', 'merged')),
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now')),
+          FOREIGN KEY (locid) REFERENCES locs(locid) ON DELETE CASCADE
+        );
+
+        CREATE INDEX idx_people_profiles_locid ON people_profiles(locid);
+        CREATE INDEX idx_people_profiles_normalized ON people_profiles(normalized_name);
+        CREATE INDEX idx_people_profiles_status ON people_profiles(status);
+      `);
+      console.log('Migration 77 completed: People profiles table created');
+    }
+
+    // Migration 78: Company profiles table for extracted organization entities
+    const hasCompanyProfiles = sqlite.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='company_profiles'"
+    ).get();
+
+    if (!hasCompanyProfiles) {
+      console.log('Running migration 78: Company profiles table');
+      sqlite.exec(`
+        CREATE TABLE company_profiles (
+          profile_id TEXT PRIMARY KEY,
+          locid TEXT NOT NULL,
+          full_name TEXT NOT NULL,
+          normalized_name TEXT,
+          org_type TEXT DEFAULT 'unknown',
+          industry TEXT,
+          relationship TEXT DEFAULT 'unknown',
+          date_start TEXT,
+          date_end TEXT,
+          key_facts TEXT,
+          logo_hash TEXT,
+          logo_source TEXT,
+          source_refs TEXT,
+          aliases TEXT,
+          confidence REAL DEFAULT 0.5,
+          status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected', 'merged')),
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now')),
+          FOREIGN KEY (locid) REFERENCES locs(locid) ON DELETE CASCADE
+        );
+
+        CREATE INDEX idx_company_profiles_locid ON company_profiles(locid);
+        CREATE INDEX idx_company_profiles_normalized ON company_profiles(normalized_name);
+        CREATE INDEX idx_company_profiles_status ON company_profiles(status);
+      `);
+      console.log('Migration 78 completed: Company profiles table created');
+    }
+
+    // Migration 79: Fact conflicts table for tracking contradictory information
+    const hasFactConflicts = sqlite.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='fact_conflicts'"
+    ).get();
+
+    if (!hasFactConflicts) {
+      console.log('Running migration 79: Fact conflicts table');
+      sqlite.exec(`
+        CREATE TABLE fact_conflicts (
+          conflict_id TEXT PRIMARY KEY,
+          locid TEXT NOT NULL,
+          conflict_type TEXT NOT NULL CHECK(conflict_type IN ('date_mismatch', 'name_mismatch', 'fact_mismatch', 'role_mismatch', 'type_mismatch')),
+          field_name TEXT NOT NULL,
+          claim_a_value TEXT,
+          claim_a_source TEXT,
+          claim_a_confidence REAL,
+          claim_a_context TEXT,
+          claim_b_value TEXT,
+          claim_b_source TEXT,
+          claim_b_confidence REAL,
+          claim_b_context TEXT,
+          resolved INTEGER DEFAULT 0,
+          resolution TEXT CHECK(resolution IN ('claim_a', 'claim_b', 'both_valid', 'neither', 'merged')),
+          resolution_notes TEXT,
+          resolved_by TEXT,
+          resolved_at TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          FOREIGN KEY (locid) REFERENCES locs(locid) ON DELETE CASCADE
+        );
+
+        CREATE INDEX idx_fact_conflicts_locid ON fact_conflicts(locid);
+        CREATE INDEX idx_fact_conflicts_resolved ON fact_conflicts(resolved);
+        CREATE INDEX idx_fact_conflicts_type ON fact_conflicts(conflict_type);
+      `);
+      console.log('Migration 79 completed: Fact conflicts table created');
+    }
+
+    // Migration 80: Extraction inputs table for replay capability
+    const hasExtractionInputs = sqlite.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='extraction_inputs'"
+    ).get();
+
+    if (!hasExtractionInputs) {
+      console.log('Running migration 80: Extraction inputs table');
+      sqlite.exec(`
+        CREATE TABLE extraction_inputs (
+          input_id TEXT PRIMARY KEY,
+          source_type TEXT NOT NULL,
+          source_id TEXT NOT NULL,
+          locid TEXT,
+          raw_text TEXT NOT NULL,
+          preprocessing_json TEXT,
+          extraction_json TEXT,
+          prompt_version TEXT,
+          provider TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          FOREIGN KEY (locid) REFERENCES locs(locid) ON DELETE SET NULL
+        );
+
+        CREATE INDEX idx_extraction_inputs_source ON extraction_inputs(source_type, source_id);
+        CREATE INDEX idx_extraction_inputs_locid ON extraction_inputs(locid);
+      `);
+      console.log('Migration 80 completed: Extraction inputs table created');
+    }
+
+    // Migration 81: Source authority table for ranking source credibility
+    const hasSourceAuthority = sqlite.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='source_authority'"
+    ).get();
+
+    if (!hasSourceAuthority) {
+      console.log('Running migration 81: Source authority table');
+      sqlite.exec(`
+        CREATE TABLE source_authority (
+          domain TEXT PRIMARY KEY,
+          tier INTEGER NOT NULL DEFAULT 3 CHECK(tier BETWEEN 1 AND 4),
+          notes TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        -- Default authority tiers
+        INSERT INTO source_authority (domain, tier, notes) VALUES
+          ('wikipedia.org', 2, 'Encyclopedia - verify citations'),
+          ('newspapers.com', 1, 'Historical newspaper archive'),
+          ('findagrave.com', 2, 'Cemetery records'),
+          ('ancestry.com', 2, 'Genealogy records'),
+          ('loc.gov', 1, 'Library of Congress'),
+          ('archives.gov', 1, 'National Archives'),
+          ('nps.gov', 1, 'National Park Service'),
+          ('historicaerials.com', 2, 'Aerial photography archive');
+      `);
+      console.log('Migration 81 completed: Source authority table created with defaults');
+    }
+
+    // Migration 82: Add multi-source support to location_timeline
+    const timelineCols = sqlite.prepare("PRAGMA table_info(location_timeline)").all() as { name: string }[];
+    if (!timelineCols.some((c: { name: string }) => c.name === 'source_refs')) {
+      console.log('Running migration 82: Multi-source support for location_timeline');
+      sqlite.exec(`
+        ALTER TABLE location_timeline ADD COLUMN source_refs TEXT;
+        ALTER TABLE location_timeline ADD COLUMN verb_context TEXT;
+        ALTER TABLE location_timeline ADD COLUMN prompt_version TEXT;
+      `);
+      console.log('Migration 82 completed: Multi-source columns added to location_timeline');
+    }
+
+    // Migration 83: Add profile columns to entity_extractions
+    const entityCols = sqlite.prepare("PRAGMA table_info(entity_extractions)").all() as { name: string }[];
+    if (!entityCols.some((c: { name: string }) => c.name === 'profile_json')) {
+      console.log('Running migration 83: Profile columns for entity_extractions');
+      sqlite.exec(`
+        ALTER TABLE entity_extractions ADD COLUMN profile_json TEXT;
+        ALTER TABLE entity_extractions ADD COLUMN normalized_name TEXT;
+        ALTER TABLE entity_extractions ADD COLUMN aliases TEXT;
+        ALTER TABLE entity_extractions ADD COLUMN cross_location_refs TEXT;
+        ALTER TABLE entity_extractions ADD COLUMN prompt_version TEXT;
+      `);
+      // Create index for normalized name lookups
+      sqlite.exec(`
+        CREATE INDEX IF NOT EXISTS idx_entity_extractions_normalized ON entity_extractions(normalized_name);
+      `);
+      console.log('Migration 83 completed: Profile columns added to entity_extractions');
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

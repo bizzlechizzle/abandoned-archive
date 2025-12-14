@@ -23,11 +23,22 @@ import {
   getExtractionService,
   getExtractionQueueService,
   getAutoTaggerService,
+  shutdownExtractionService,
+  shutdownExtractionQueueService,
   type ExtractionInput,
   type ExtractionOptions,
   type BatchExtractionRequest,
   type ProviderConfig,
 } from '../../services/extraction';
+import { getPreprocessingService } from '../../services/extraction/preprocessing-service';
+import { getConflictDetectionService } from '../../services/extraction/conflict-detection-service';
+import { getTimelineMergerService } from '../../services/extraction/timeline-merger-service';
+import {
+  getPromptsSummary,
+  getAllVersions,
+  getDefaultVersion,
+  setDefaultVersion,
+} from '../../services/extraction/agents/versioned-prompts';
 import type { Database as DatabaseTypes } from '../database.types';
 
 let dbInstance: SqliteDatabase | null = null;
@@ -602,13 +613,399 @@ export function registerExtractionHandlers(
       }
     }
   );
+
+  // ==========================================================================
+  // Preprocessing (NEW - Phase 5)
+  // ==========================================================================
+
+  const preprocessingService = getPreprocessingService();
+
+  /**
+   * Preprocess text using spaCy
+   */
+  ipcMain.handle(
+    'extraction:preprocess',
+    async (_, text: string, articleDate?: string, maxSentences?: number) => {
+      try {
+        const result = await preprocessingService.preprocess(text, articleDate, maxSentences);
+        return { success: true, result };
+      } catch (error) {
+        console.error('[ExtractionHandlers] extraction:preprocess failed:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    }
+  );
+
+  /**
+   * Check if preprocessing service is available
+   */
+  ipcMain.handle('extraction:preprocess:isAvailable', async () => {
+    try {
+      const available = await preprocessingService.isAvailable();
+      return { success: true, available };
+    } catch (error) {
+      return { success: false, available: false };
+    }
+  });
+
+  /**
+   * Get verb categories from spaCy
+   */
+  ipcMain.handle('extraction:preprocess:verbCategories', async () => {
+    try {
+      const categories = await preprocessingService.getVerbCategories();
+      return { success: true, categories };
+    } catch (error) {
+      return { success: false, categories: {} };
+    }
+  });
+
+  // ==========================================================================
+  // Profiles (NEW - Phase 6)
+  // ==========================================================================
+
+  /**
+   * Get people profiles for a location
+   */
+  ipcMain.handle('extraction:profiles:people:getByLocation', async (_, locid: string) => {
+    try {
+      const profiles = sqliteDb.prepare(`
+        SELECT * FROM people_profiles
+        WHERE locid = ?
+        ORDER BY confidence DESC, full_name ASC
+      `).all(locid);
+
+      // Parse JSON fields
+      const parsed = profiles.map((p: Record<string, unknown>) => ({
+        ...p,
+        key_facts: JSON.parse((p.key_facts as string) || '[]'),
+        source_refs: JSON.parse((p.source_refs as string) || '[]'),
+        aliases: JSON.parse((p.aliases as string) || '[]'),
+        social_links: p.social_links ? JSON.parse(p.social_links as string) : null,
+      }));
+
+      return { success: true, profiles: parsed };
+    } catch (error) {
+      console.error('[ExtractionHandlers] profiles:people:getByLocation failed:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
+  /**
+   * Get company profiles for a location
+   */
+  ipcMain.handle('extraction:profiles:companies:getByLocation', async (_, locid: string) => {
+    try {
+      const profiles = sqliteDb.prepare(`
+        SELECT * FROM company_profiles
+        WHERE locid = ?
+        ORDER BY confidence DESC, full_name ASC
+      `).all(locid);
+
+      // Parse JSON fields
+      const parsed = profiles.map((p: Record<string, unknown>) => ({
+        ...p,
+        key_facts: JSON.parse((p.key_facts as string) || '[]'),
+        source_refs: JSON.parse((p.source_refs as string) || '[]'),
+        aliases: JSON.parse((p.aliases as string) || '[]'),
+      }));
+
+      return { success: true, profiles: parsed };
+    } catch (error) {
+      console.error('[ExtractionHandlers] profiles:companies:getByLocation failed:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
+  /**
+   * Update person profile status
+   */
+  ipcMain.handle(
+    'extraction:profiles:people:updateStatus',
+    async (_, profileId: string, status: 'pending' | 'approved' | 'rejected' | 'merged') => {
+      try {
+        sqliteDb.prepare(`
+          UPDATE people_profiles
+          SET status = ?, updated_at = datetime('now')
+          WHERE profile_id = ?
+        `).run(status, profileId);
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    }
+  );
+
+  /**
+   * Update company profile status
+   */
+  ipcMain.handle(
+    'extraction:profiles:companies:updateStatus',
+    async (_, profileId: string, status: 'pending' | 'approved' | 'rejected' | 'merged') => {
+      try {
+        sqliteDb.prepare(`
+          UPDATE company_profiles
+          SET status = ?, updated_at = datetime('now')
+          WHERE profile_id = ?
+        `).run(status, profileId);
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    }
+  );
+
+  /**
+   * Search profiles across all locations
+   */
+  ipcMain.handle('extraction:profiles:search', async (_, query: string, type?: 'people' | 'companies') => {
+    try {
+      const searchPattern = `%${query}%`;
+      const results: { people: unknown[]; companies: unknown[] } = { people: [], companies: [] };
+
+      if (!type || type === 'people') {
+        results.people = sqliteDb.prepare(`
+          SELECT p.*, l.locnam
+          FROM people_profiles p
+          LEFT JOIN locs l ON p.locid = l.locid
+          WHERE p.full_name LIKE ? OR p.normalized_name LIKE ?
+          ORDER BY p.confidence DESC
+          LIMIT 50
+        `).all(searchPattern, searchPattern);
+      }
+
+      if (!type || type === 'companies') {
+        results.companies = sqliteDb.prepare(`
+          SELECT c.*, l.locnam
+          FROM company_profiles c
+          LEFT JOIN locs l ON c.locid = l.locid
+          WHERE c.full_name LIKE ? OR c.normalized_name LIKE ?
+          ORDER BY c.confidence DESC
+          LIMIT 50
+        `).all(searchPattern, searchPattern);
+      }
+
+      return { success: true, results };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
+  // ==========================================================================
+  // Conflicts (NEW - Phase 7)
+  // ==========================================================================
+
+  const conflictService = getConflictDetectionService(sqliteDb);
+
+  /**
+   * Get conflicts for a location
+   */
+  ipcMain.handle(
+    'extraction:conflicts:getByLocation',
+    async (_, locid: string, includeResolved?: boolean) => {
+      try {
+        const conflicts = conflictService.getConflictsForLocation(locid, includeResolved);
+        return { success: true, conflicts };
+      } catch (error) {
+        console.error('[ExtractionHandlers] conflicts:getByLocation failed:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    }
+  );
+
+  /**
+   * Get conflict summary for a location
+   */
+  ipcMain.handle('extraction:conflicts:getSummary', async (_, locid: string) => {
+    try {
+      const summary = conflictService.getConflictSummary(locid);
+      return { success: true, summary };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
+  /**
+   * Resolve a conflict
+   */
+  ipcMain.handle(
+    'extraction:conflicts:resolve',
+    async (
+      _,
+      conflictId: string,
+      resolution: 'claim_a' | 'claim_b' | 'both_valid' | 'neither' | 'merged',
+      notes?: string,
+      resolvedBy?: string
+    ) => {
+      try {
+        const conflict = conflictService.resolveConflict({
+          conflict_id: conflictId,
+          resolution,
+          resolution_notes: notes,
+          resolved_by: resolvedBy,
+        });
+
+        if (!conflict) {
+          return { success: false, error: 'Conflict not found' };
+        }
+
+        return { success: true, conflict };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    }
+  );
+
+  /**
+   * Detect conflicts for a location
+   */
+  ipcMain.handle('extraction:conflicts:detect', async (_, locid: string) => {
+    try {
+      const result = await conflictService.detectTimelineConflicts(locid);
+      return { success: true, result };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
+  /**
+   * Suggest resolution for a conflict
+   */
+  ipcMain.handle('extraction:conflicts:suggestResolution', async (_, conflictId: string) => {
+    try {
+      const conflict = conflictService.getConflictById(conflictId);
+      if (!conflict) {
+        return { success: false, error: 'Conflict not found' };
+      }
+
+      const suggestion = conflictService.suggestResolution(conflict);
+      return { success: true, suggestion };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
+  /**
+   * Get source authority list
+   */
+  ipcMain.handle('extraction:conflicts:getSourceAuthorities', async () => {
+    try {
+      const authorities = conflictService.getAllSourceAuthorities();
+      return { success: true, authorities };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
+  /**
+   * Set source authority tier
+   */
+  ipcMain.handle(
+    'extraction:conflicts:setSourceAuthority',
+    async (_, domain: string, tier: 1 | 2 | 3 | 4, notes?: string) => {
+      try {
+        const authority = conflictService.setSourceAuthority(domain, tier, notes);
+        return { success: true, authority };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      }
+    }
+  );
+
+  // ==========================================================================
+  // Timeline Merging (NEW - Phase 8)
+  // ==========================================================================
+
+  const timelineMerger = getTimelineMergerService(sqliteDb);
+
+  /**
+   * Deduplicate timeline events for a location
+   */
+  ipcMain.handle('extraction:timeline:deduplicate', async (_, locid: string) => {
+    try {
+      const result = timelineMerger.deduplicateLocation(locid);
+      return { success: true, result };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
+  /**
+   * Get timeline merger config
+   */
+  ipcMain.handle('extraction:timeline:getMergeConfig', async () => {
+    try {
+      const config = timelineMerger.getConfig();
+      return { success: true, config };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
+  /**
+   * Update timeline merger config
+   */
+  ipcMain.handle('extraction:timeline:updateMergeConfig', async (_, config: Record<string, unknown>) => {
+    try {
+      timelineMerger.updateConfig(config as Parameters<typeof timelineMerger.updateConfig>[0]);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
+  // ==========================================================================
+  // Versioned Prompts (NEW - Phase 4)
+  // ==========================================================================
+
+  /**
+   * Get all prompt versions summary
+   */
+  ipcMain.handle('extraction:prompts:getSummary', async () => {
+    try {
+      const summary = getPromptsSummary();
+      return { success: true, summary };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
+  /**
+   * Get versions for a prompt type
+   */
+  ipcMain.handle('extraction:prompts:getVersions', async (_, type: string) => {
+    try {
+      const versions = getAllVersions(type as Parameters<typeof getAllVersions>[0]);
+      const defaultVersion = getDefaultVersion(type as Parameters<typeof getDefaultVersion>[0]);
+      return { success: true, versions, defaultVersion };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
+  /**
+   * Set default prompt version
+   */
+  ipcMain.handle('extraction:prompts:setDefault', async (_, type: string, version: string) => {
+    try {
+      const success = setDefaultVersion(
+        type as Parameters<typeof setDefaultVersion>[0],
+        version
+      );
+      return { success };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
 }
 
 /**
  * Shutdown extraction service
  */
 export async function shutdownExtractionHandlers(): Promise<void> {
-  const { shutdownExtractionService, shutdownExtractionQueueService } = await import('../../services/extraction');
   shutdownExtractionQueueService();
   await shutdownExtractionService();
 }

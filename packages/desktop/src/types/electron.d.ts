@@ -1355,6 +1355,184 @@ export interface ElectronAPI {
         error?: string;
       }>;
     };
+
+    // Preprocessing (NEW - Phase 5)
+    preprocess: {
+      analyze: (text: string, articleDate?: string, maxSentences?: number) => Promise<{
+        success: boolean;
+        result?: {
+          sentences: Array<{
+            text: string;
+            index: number;
+            entities: Array<{ text: string; label: string; start: number; end: number }>;
+            verbs: Array<{ text: string; category: string; lemma: string }>;
+            relevancy: { isTimelineRelevant: boolean; score: number; reasons: string[] };
+            dateRefs: Array<{ text: string; normalizedDate: string | null; precision: string }>;
+          }>;
+          profileCandidates: {
+            people: Array<{ name: string; normalizedName: string; mentions: number; roles: string[]; sentences: number[] }>;
+            organizations: Array<{ name: string; normalizedName: string; mentions: number; types: string[]; sentences: number[] }>;
+          };
+          documentStats: {
+            totalSentences: number;
+            totalWords: number;
+            timelineRelevantSentences: number;
+            entityCounts: Record<string, number>;
+            verbCounts: Record<string, number>;
+          };
+        };
+        error?: string;
+      }>;
+      isAvailable: () => Promise<{ success: boolean; available: boolean; error?: string }>;
+      getVerbCategories: () => Promise<{
+        success: boolean;
+        categories?: Array<{ category: string; verbs: string[]; description: string }>;
+        error?: string;
+      }>;
+    };
+
+    // People Profiles (NEW - Phase 6)
+    profiles: {
+      people: {
+        getByLocation: (locid: string) => Promise<{
+          success: boolean;
+          profiles?: PersonProfile[];
+          error?: string;
+        }>;
+        search: (query: string) => Promise<{
+          success: boolean;
+          results?: PersonProfile[];
+          error?: string;
+        }>;
+        updateStatus: (personId: string, status: 'verified' | 'pending' | 'rejected') => Promise<{
+          success: boolean;
+          error?: string;
+        }>;
+      };
+      companies: {
+        getByLocation: (locid: string) => Promise<{
+          success: boolean;
+          profiles?: CompanyProfile[];
+          error?: string;
+        }>;
+        search: (query: string) => Promise<{
+          success: boolean;
+          results?: CompanyProfile[];
+          error?: string;
+        }>;
+        updateStatus: (companyId: string, status: 'verified' | 'pending' | 'rejected') => Promise<{
+          success: boolean;
+          error?: string;
+        }>;
+      };
+    };
+
+    // Fact Conflicts (NEW - Phase 7)
+    conflicts: {
+      getByLocation: (locid: string, includeResolved?: boolean) => Promise<{
+        success: boolean;
+        conflicts?: FactConflict[];
+        error?: string;
+      }>;
+      getSummary: (locid: string) => Promise<{
+        success: boolean;
+        summary?: ConflictSummary;
+        error?: string;
+      }>;
+      resolve: (
+        conflictId: string,
+        resolution: 'source_a' | 'source_b' | 'both_valid' | 'neither' | 'merged',
+        resolvedValue: string | null,
+        userId: string,
+        notes?: string
+      ) => Promise<{
+        success: boolean;
+        error?: string;
+      }>;
+      detect: (locid: string) => Promise<{
+        success: boolean;
+        result?: { totalConflicts: number; newConflicts: number; existingConflicts: number };
+        error?: string;
+      }>;
+      suggestResolution: (conflictId: string) => Promise<{
+        success: boolean;
+        suggestion?: {
+          recommendedResolution: 'source_a' | 'source_b' | 'both_valid' | 'neither' | 'merged';
+          confidence: number;
+          reasoning: string;
+          suggestedValue: string | null;
+        };
+        error?: string;
+      }>;
+      getSourceAuthorities: () => Promise<{
+        success: boolean;
+        authorities?: Array<{ domain: string; tier: number; notes: string | null }>;
+        error?: string;
+      }>;
+      updateSourceAuthority: (domain: string, tier: number, notes?: string) => Promise<{
+        success: boolean;
+        error?: string;
+      }>;
+    };
+
+    // Timeline Deduplication (NEW - Phase 8)
+    timelineMerge: {
+      deduplicate: (locid: string) => Promise<{
+        success: boolean;
+        result?: { merged: number; eventsRemaining: number };
+        error?: string;
+      }>;
+      getMergeConfig: () => Promise<{
+        success: boolean;
+        config?: {
+          maxDateDifferencesDays: number;
+          minConfidence: number;
+          datePreference: 'older' | 'newer' | 'higher_precision';
+          mergeDescriptions: boolean;
+        };
+        error?: string;
+      }>;
+      updateMergeConfig: (config: {
+        maxDateDifferencesDays?: number;
+        minConfidence?: number;
+        datePreference?: 'older' | 'newer' | 'higher_precision';
+        mergeDescriptions?: boolean;
+      }) => Promise<{
+        success: boolean;
+        error?: string;
+      }>;
+    };
+
+    // Versioned Prompts (NEW - Phase 4)
+    prompts: {
+      getSummary: () => Promise<{
+        success: boolean;
+        summary?: {
+          types: Array<{
+            type: string;
+            versions: string[];
+            defaultVersion: string;
+            activeCount: number;
+          }>;
+          totalPrompts: number;
+        };
+        error?: string;
+      }>;
+      getVersions: (promptType: string) => Promise<{
+        success: boolean;
+        versions?: Array<{
+          version: string;
+          description: string;
+          isDefault: boolean;
+          isOllamaOptimized: boolean;
+        }>;
+        error?: string;
+      }>;
+      setDefault: (promptType: string, version: string) => Promise<{
+        success: boolean;
+        error?: string;
+      }>;
+    };
   };
 
   // Image Downloader - Migration 72 (pHash, URL patterns, staging)
@@ -2667,6 +2845,121 @@ export interface WebSourceDetail extends WebSource {
     twitterCards?: Record<string, string>;
     meta?: Record<string, string>;
   } | null;
+}
+
+// =============================================================================
+// Profile Types (NEW - Phase 6)
+// =============================================================================
+
+export type ProfileStatus = 'verified' | 'pending' | 'rejected';
+
+export interface PersonProfile {
+  person_id: string;
+  name: string;
+  normalized_name: string;
+  aliases: string[];
+  birth_year: number | null;
+  death_year: number | null;
+  bio: string | null;
+  roles: string[];
+  photo_url: string | null;
+  social_links: {
+    wikipedia?: string;
+    findagrave?: string;
+    linkedin?: string;
+    twitter?: string;
+    other?: string[];
+  } | null;
+  status: ProfileStatus;
+  source_refs: string[];
+  key_facts: string[];
+  created_at: string;
+  updated_at: string | null;
+  // Cross-location references
+  location_refs?: Array<{
+    locid: string;
+    locnam: string;
+    role: string;
+    date_range: string | null;
+  }>;
+}
+
+export interface CompanyProfile {
+  company_id: string;
+  name: string;
+  normalized_name: string;
+  aliases: string[];
+  founded_year: number | null;
+  dissolved_year: number | null;
+  description: string | null;
+  industry: string | null;
+  company_type: 'company' | 'government' | 'school' | 'hospital' | 'church' | 'nonprofit' | 'military' | 'unknown';
+  logo_url: string | null;
+  website: string | null;
+  social_links: {
+    wikipedia?: string;
+    linkedin?: string;
+    crunchbase?: string;
+    other?: string[];
+  } | null;
+  status: ProfileStatus;
+  source_refs: string[];
+  key_facts: string[];
+  created_at: string;
+  updated_at: string | null;
+  // Cross-location references
+  location_refs?: Array<{
+    locid: string;
+    locnam: string;
+    relationship: string;
+    date_range: string | null;
+  }>;
+  // Parent/subsidiary relationships
+  parent_company_id: string | null;
+  parent_company_name: string | null;
+}
+
+// =============================================================================
+// Conflict Types (NEW - Phase 7)
+// =============================================================================
+
+export type ConflictType = 'date' | 'name' | 'fact' | 'attribution' | 'location';
+export type ConflictResolution = 'source_a' | 'source_b' | 'both_valid' | 'neither' | 'merged';
+
+export interface ConflictClaim {
+  value: string;
+  source_ref: string;
+  source_type: string;
+  source_domain: string | null;
+  confidence: number;
+  extracted_at: string;
+}
+
+export interface FactConflict {
+  conflict_id: string;
+  locid: string;
+  conflict_type: ConflictType;
+  field_name: string;
+  claim_a: ConflictClaim;
+  claim_b: ConflictClaim;
+  resolution: ConflictResolution | null;
+  resolved_value: string | null;
+  resolved_by: string | null;
+  resolved_at: string | null;
+  resolution_notes: string | null;
+  auto_resolution_attempted: boolean;
+  created_at: string;
+}
+
+export interface ConflictSummary {
+  locid: string;
+  totalConflicts: number;
+  unresolvedConflicts: number;
+  resolvedConflicts: number;
+  byType: Record<ConflictType, number>;
+  byResolution: Record<ConflictResolution, number>;
+  oldestUnresolved: string | null;
+  mostRecentResolved: string | null;
 }
 
 declare global {

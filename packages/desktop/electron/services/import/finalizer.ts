@@ -818,6 +818,23 @@ export class Finalizer {
           payload: basePayload,
         });
       }
+
+      // Migration 76: RAM++ Image Tagging job (lowest priority, background only)
+      // Per CLAUDE.md Rule 9: Local LLMs for background tasks only
+      // Depends on Thumbnail job (uses preview path for tagging if available)
+      if (file.mediaType === 'image') {
+        jobs.push({
+          queue: IMPORT_QUEUES.IMAGE_TAGGING,
+          priority: JOB_PRIORITY.BACKGROUND,
+          payload: {
+            imghash: file.hash!,
+            imagePath: file.archivePath!,
+            locid,
+            subid,
+          },
+          dependsOn: exifJobId, // Run after metadata extraction
+        });
+      }
     }
 
     // ============ Per-Location Jobs ============
@@ -887,6 +904,24 @@ export class Finalizer {
       payload: locationWithSubPayload,  // OPT-093: Include subid
       dependsOn: gpsEnrichmentJobId, // After enrichment
     });
+
+    // Migration 76: Location Tag Aggregation - aggregate image tags to location level
+    // Per CLAUDE.md Rule 9: Local LLMs for background tasks only
+    // Runs after GPS Enrichment (which runs after all ExifTool jobs)
+    // This ensures all IMAGE_TAGGING jobs have completed before aggregation
+    const hasImages = files.some(f => f.mediaType === 'image');
+    if (hasImages) {
+      jobs.push({
+        queue: IMPORT_QUEUES.LOCATION_TAG_AGGREGATION,
+        priority: JOB_PRIORITY.BACKGROUND,
+        payload: {
+          locid,
+          applyType: true,  // Auto-apply suggested type if confident
+          applyEra: true,   // Auto-apply suggested era if confident
+        },
+        dependsOn: gpsEnrichmentJobId, // Ensures tagging jobs have run
+      });
+    }
 
     return jobs;
   }

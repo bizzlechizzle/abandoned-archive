@@ -209,12 +209,195 @@ Multi-strategy extraction:
 
 ---
 
+### scripts/spacy-server/main.py
+
+- **Path**: `scripts/spacy-server/main.py`
+- **Lines**: ~160
+- **Runtime**: python3 (FastAPI/uvicorn)
+- **Purpose**: spaCy NLP preprocessing server for LLM extraction pipeline - pre-filters text BEFORE sending to LLMs
+- **Usage**:
+  ```bash
+  # Auto-spawned by app - no manual setup required!
+  # The PreprocessingService automatically starts this server on demand.
+
+  # Manual startup (for debugging):
+  cd scripts/spacy-server
+  python3 -m venv venv
+  source venv/bin/activate
+  pip install -r requirements.txt
+  python -m spacy download en_core_web_sm
+  python main.py
+  ```
+- **Inputs**: Text via POST /preprocess endpoint
+- **Outputs**: JSON with preprocessed sentences, entities, verbs, timeline candidates, profile candidates
+- **Side Effects**: Loads spaCy model into memory (~50MB)
+- **Dependencies**: python3, spacy>=3.7, fastapi, uvicorn, pydantic
+- **Last Verified**: 2025-12-14
+
+**Key Features:**
+- Named Entity Recognition (PERSON, ORG, DATE, GPE, etc.)
+- Verb-based timeline relevancy detection (built, demolished, opened, etc.)
+- Profile candidate extraction with normalized names
+- Relevancy scoring for efficient LLM context building
+
+**Endpoints:**
+- `GET /health` - Service health check
+- `POST /preprocess` - Preprocess text for LLM extraction
+- `GET /verb-categories` - Get verb category definitions
+
+**Auto-spawn:** The app automatically starts this server when preprocessing is needed. No manual setup required. Falls back to basic sentence splitting if spaCy unavailable.
+
+---
+
+### scripts/spacy-server/preprocessor.py
+
+- **Path**: `scripts/spacy-server/preprocessor.py`
+- **Lines**: ~380
+- **Runtime**: python3
+- **Purpose**: Core spaCy preprocessing logic - extracts entities, verbs, and builds timeline/profile candidates
+- **Usage**: Imported by main.py, not run directly
+- **Last Verified**: 2025-12-14
+
+---
+
+### scripts/spacy-server/verb_patterns.py
+
+- **Path**: `scripts/spacy-server/verb_patterns.py`
+- **Lines**: ~175
+- **Runtime**: python3
+- **Purpose**: Defines verb categories for timeline-relevant date extraction
+- **Usage**: Imported by preprocessor.py, not run directly
+- **Last Verified**: 2025-12-14
+
+**Verb Categories:**
+| Category | Description | Example Verbs |
+|----------|-------------|---------------|
+| build_date | Construction/creation | built, constructed, erected |
+| opening | Opening/inauguration | opened, launched, inaugurated |
+| closure | Closing/shutdown | closed, shut, ceased |
+| demolition | Destruction/tear-down | demolished, razed, burned |
+| renovation | Repair/restoration | renovated, restored, rebuilt |
+| event | Notable incidents | occurred, exploded, flooded |
+| visit | Visits/explorations | visited, explored, photographed |
+| publication | Publication dates | published, reported, announced |
+| ownership | Transfer/acquisition | acquired, purchased, sold |
+
+---
+
+### scripts/ram-server/ram_api_server.py
+
+- **Path**: `scripts/ram-server/ram_api_server.py`
+- **Lines**: ~350
+- **Runtime**: python3 (FastAPI/uvicorn)
+- **Purpose**: Migration 76 - RAM++ (Recognize Anything Model) image tagging API server
+- **Usage**:
+  ```bash
+  cd scripts/ram-server
+  ./start.sh                    # Auto-installs deps and starts server
+  ./start.sh --port 9000        # Custom port
+  RAM_DEVICE=cpu ./start.sh     # Force CPU mode
+
+  # Or manually:
+  pip install -r requirements.txt
+  python ram_api_server.py
+  ```
+- **Inputs**: Image files (file upload, base64, or local path)
+- **Outputs**: JSON with tags, confidence scores, duration
+- **Side Effects**: GPU memory usage when loaded
+- **Dependencies**: python3, torch, torchvision, fastapi, uvicorn, recognize-anything
+- **Last Verified**: 2025-12-13
+
+Endpoints:
+- `GET /health` - Service health check (model loaded status)
+- `POST /tag` - Tag single image (file upload or base64)
+- `POST /tag/batch` - Tag multiple images
+- `POST /tag/file` - Tag image from local file path
+
+Per CLAUDE.md Rule 9: Local LLMs for background tasks only.
+
+---
+
+### scripts/backfill-image-processing.py
+
+- **Path**: `scripts/backfill-image-processing.py`
+- **Lines**: ~280
+- **Runtime**: python3
+- **Purpose**: Backfill image processing jobs for images missing ExifTool, thumbnails, or RAM++ tags
+- **Usage**:
+  ```bash
+  python3 scripts/backfill-image-processing.py              # Apply changes
+  python3 scripts/backfill-image-processing.py --dry-run    # Preview only
+  python3 scripts/backfill-image-processing.py --web-only   # Only web-sourced images
+  python3 scripts/backfill-image-processing.py --limit 100  # Process max 100 images
+  ```
+- **Inputs**: CLI flags (--dry-run, --web-only, --limit, --db)
+- **Outputs**: stdout (queued jobs, queue status)
+- **Side Effects**:
+  - Inserts records into jobs table for missing processing
+  - Queues: ExifTool, Thumbnail, Image Tagging per-file jobs
+  - Queues: GPS Enrichment, Location Stats, BagIt, Tag Aggregation per-location jobs
+- **Dependencies**: python3, sqlite3 (built-in)
+- **Last Verified**: 2025-12-14
+
+Per docs/plans/unified-image-processing-pipeline.md:
+Ensures ALL images receive standard processing regardless of import source.
+
+Per CLAUDE.md Rule 9: Local LLMs for background tasks only.
+
+---
+
+### scripts/ram_tagger.py
+
+- **Path**: `scripts/ram_tagger.py`
+- **Lines**: 315 (slightly exceeds 300 LOC guideline)
+- **Runtime**: python3.12 (requires venv at `scripts/ram-server/venv/`)
+- **Purpose**: Local RAM++ (Recognize Anything Model) inference for image tagging on Mac with MPS acceleration
+- **Usage**:
+  ```bash
+  # Using venv (auto-detected by ram-tagging-service.ts)
+  source scripts/ram-server/venv/bin/activate
+  python scripts/ram_tagger.py --image /path/to/image.jpg
+
+  # Options
+  python scripts/ram_tagger.py --image /path/to/image.jpg --device mps    # Mac GPU (default)
+  python scripts/ram_tagger.py --image /path/to/image.jpg --device cpu    # CPU fallback
+  python scripts/ram_tagger.py --image /path/to/image.jpg --max-tags 30   # Limit tags
+  python scripts/ram_tagger.py --image /path/to/image.jpg --output text   # Human-readable
+  ```
+- **Inputs**: Image file path, optional device/max-tags flags
+- **Outputs**: JSON to stdout: `{"tags": [...], "confidence": {...}, "duration_ms": 123, "model": "ram++", "device": "mps"}`
+- **Side Effects**: GPU memory usage during inference (~4-6GB for full RAM++ model)
+- **Dependencies**: Python 3.12, torch, torchvision, Pillow, scipy, timm, fairscale, transformers<4.40, recognize-anything
+- **Last Verified**: 2025-12-14
+
+**Setup (one-time):**
+```bash
+cd scripts/ram-server
+python3.12 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+pip install git+https://github.com/xinyu1205/recognize-anything.git
+curl -L -o ram_plus_swin_large_14m.pth "https://huggingface.co/xinyu1205/recognize-anything-plus-model/resolve/main/ram_plus_swin_large_14m.pth"
+```
+
+**Model**: RAM++ Swin-Large (2.8GB weights, 14M tag vocabulary)
+- Full model at `scripts/ram-server/ram_plus_swin_large_14m.pth`
+- Returns 5-30 semantic tags per image (building, grass, tree, fire station, etc.)
+- ~5.5 seconds per image on Mac Studio M1 Max with MPS
+
+Called by `ram-tagging-service.ts` as subprocess for local inference.
+
+Per CLAUDE.md Rule 9: Local LLMs for background tasks only.
+
+---
+
 ## Scripts Exceeding 300 LOC
 
 | Script | Lines | Status | Action |
 |--------|-------|--------|--------|
 | `scripts/setup.sh` | 514 | ⚠️ Exceeds | Exempt - complex multi-phase installer with extensive error handling |
 | `resetdb.py` | 384 | ⚠️ Exceeds | Exempt - comprehensive reset utility with multiple modes and platform detection |
+| `scripts/ram_tagger.py` | 315 | ⚠️ Exceeds | Exempt - handles 3 model fallback chains with comprehensive error handling |
 
 ---
 

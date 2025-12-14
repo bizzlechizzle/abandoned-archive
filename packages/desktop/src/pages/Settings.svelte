@@ -61,6 +61,13 @@
   let dateEngineExpanded = $state(false);
   let showPatternEditor = $state(false);
 
+  // Migration 76: RAM++ Image Tagging settings
+  let taggingExpanded = $state(false);
+  let ramApiUrl = $state('http://192.168.1.254:8765');
+  let ramApiStatus = $state<'connected' | 'disconnected' | 'testing'>('disconnected');
+  let ramQueueStats = $state<{ pending: number; processing: number; completed: number; failed: number } | null>(null);
+  let loadingRamStatus = $state(false);
+
   // Storage bar state - OPT-047: Enhanced with database-backed tracking
   let storageStats = $state<{
     totalBytes: number;
@@ -1699,6 +1706,42 @@
   }
 
   // Load storage stats for archive drive
+  // Migration 76: RAM++ Settings functions
+  async function testRamConnection() {
+    ramApiStatus = 'testing';
+    loadingRamStatus = true;
+    try {
+      const result = await window.electronAPI?.tagging?.testConnection();
+      ramApiStatus = result?.success ? 'connected' : 'disconnected';
+    } catch {
+      ramApiStatus = 'disconnected';
+    } finally {
+      loadingRamStatus = false;
+    }
+  }
+
+  async function loadRamQueueStats() {
+    try {
+      const result = await window.electronAPI?.tagging?.getQueueStats();
+      if (result?.success && result.stats) {
+        ramQueueStats = result.stats;
+      }
+    } catch {
+      ramQueueStats = null;
+    }
+  }
+
+  async function saveRamApiUrl() {
+    try {
+      await window.electronAPI?.settings?.set({ key: 'ram_api_url', value: ramApiUrl });
+      saveMessage = 'RAM++ API URL saved';
+      setTimeout(() => saveMessage = '', 2000);
+    } catch {
+      saveMessage = 'Failed to save RAM++ API URL';
+      setTimeout(() => saveMessage = '', 2000);
+    }
+  }
+
   async function loadStorageStats() {
     if (!window.electronAPI?.storage?.getStats) return;
     try {
@@ -2727,6 +2770,124 @@
           {#if showPatternEditor}
             <PatternEditor onClose={() => showPatternEditor = false} />
           {/if}
+        </div>
+        {/if}
+      </div>
+
+      <!-- Migration 76: RAM++ Image Tagging Accordion -->
+      <div class="border-b border-braun-200">
+        <button
+          onclick={() => { taggingExpanded = !taggingExpanded; if (taggingExpanded) { testRamConnection(); loadRamQueueStats(); } }}
+          class="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-braun-50 transition"
+        >
+          <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-braun-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+            </svg>
+            <div>
+              <h3 class="text-base font-semibold text-foreground">Image Auto-Tagging</h3>
+              <p class="text-xs text-braun-500">RAM++ background tagging service</p>
+            </div>
+          </div>
+          <svg
+            class="w-5 h-5 text-braun-900 transition-transform duration-200 {taggingExpanded ? 'rotate-180' : ''}"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {#if taggingExpanded}
+        <div class="px-6 pb-6 space-y-6">
+          <p class="text-sm text-braun-600">
+            RAM++ auto-tagging runs on imported images to generate searchable tags. Per CLAUDE.md Rule 9: Background tasks only.
+          </p>
+
+          <!-- API Connection -->
+          <div class="border-b border-braun-200 pb-6">
+            <h4 class="text-sm font-medium text-foreground mb-4">RAM++ API Server</h4>
+
+            <div class="space-y-4">
+              <!-- API URL -->
+              <div>
+                <label for="ram-api-url" class="block text-xs font-medium text-braun-600 mb-1">
+                  API URL
+                </label>
+                <div class="flex gap-2">
+                  <input
+                    id="ram-api-url"
+                    type="text"
+                    bind:value={ramApiUrl}
+                    placeholder="http://192.168.1.254:8765"
+                    class="flex-1 px-3 py-2 text-sm border border-braun-300 rounded focus:outline-none focus:border-braun-600"
+                  />
+                  <button
+                    onclick={saveRamApiUrl}
+                    class="px-3 py-2 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition"
+                  >
+                    Save
+                  </button>
+                </div>
+                <p class="text-xs text-braun-500 mt-1">
+                  RAM++ server running on GPU workstation (e.g., PC with 3090)
+                </p>
+              </div>
+
+              <!-- Connection Status -->
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="w-2.5 h-2.5 rounded-full {ramApiStatus === 'connected' ? 'bg-green-500' : ramApiStatus === 'testing' ? 'bg-yellow-500' : 'bg-red-500'}"></div>
+                  <span class="text-sm text-braun-700">
+                    {ramApiStatus === 'connected' ? 'Connected' : ramApiStatus === 'testing' ? 'Testing...' : 'Disconnected'}
+                  </span>
+                </div>
+                <button
+                  onclick={testRamConnection}
+                  disabled={loadingRamStatus}
+                  class="px-3 py-1.5 text-xs border border-braun-300 rounded hover:bg-braun-50 transition disabled:opacity-50"
+                >
+                  {loadingRamStatus ? 'Testing...' : 'Test Connection'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tagging Queue -->
+          <div>
+            <h4 class="text-sm font-medium text-foreground mb-4">Tagging Queue</h4>
+
+            {#if ramQueueStats}
+              <div class="grid grid-cols-4 gap-4 mb-4">
+                <div class="text-center p-3 bg-braun-50 rounded">
+                  <div class="text-lg font-semibold text-braun-900">{ramQueueStats.pending}</div>
+                  <div class="text-xs text-braun-600">Pending</div>
+                </div>
+                <div class="text-center p-3 bg-braun-50 rounded">
+                  <div class="text-lg font-semibold text-braun-900">{ramQueueStats.processing}</div>
+                  <div class="text-xs text-braun-600">Processing</div>
+                </div>
+                <div class="text-center p-3 bg-braun-50 rounded">
+                  <div class="text-lg font-semibold text-green-600">{ramQueueStats.completed}</div>
+                  <div class="text-xs text-braun-600">Completed</div>
+                </div>
+                <div class="text-center p-3 bg-braun-50 rounded">
+                  <div class="text-lg font-semibold text-red-600">{ramQueueStats.failed}</div>
+                  <div class="text-xs text-braun-600">Failed</div>
+                </div>
+              </div>
+            {:else}
+              <p class="text-sm text-braun-500 italic">Queue stats unavailable</p>
+            {/if}
+
+            <button
+              onclick={loadRamQueueStats}
+              class="text-xs text-braun-600 hover:text-braun-900 hover:underline"
+            >
+              Refresh stats
+            </button>
+          </div>
         </div>
         {/if}
       </div>

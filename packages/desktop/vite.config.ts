@@ -151,6 +151,8 @@ export default defineConfig({
                 'puppeteer-core',
                 'puppeteer-extra',
                 'puppeteer-extra-plugin-stealth',
+                // UUID uses native crypto module
+                'uuid',
               ],
             },
           },
