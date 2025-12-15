@@ -15,11 +15,14 @@
       "sharp",
       "7zip-bin",
       "@electron/rebuild",
-      "blake3"
+      "blake3",
+      "bufferutil",
+      "utf-8-validate",
+      "onnxruntime-node"
     ]
   },
   "scripts": {
-    "postinstall": "pnpm --filter core build && pnpm --filter desktop rebuild",
+    "postinstall": "pnpm --filter core build",
     "init": "bash scripts/setup.sh",
     "init:quick": "bash scripts/setup.sh --skip-optional",
     "deps": "bash scripts/check-deps.sh",
