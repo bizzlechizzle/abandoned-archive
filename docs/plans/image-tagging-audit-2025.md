@@ -652,7 +652,9 @@ But **start simple** - Mac handles everything.
 3. **No Settings UI yet**: Plan Phase 5 mentioned Settings UI for model selection - not implemented in this phase (UI work is separate).
 
 ### Fixes Applied During Audit
-None required - implementation matches plan with acceptable deviations.
+
+1. **CRITICAL: onnxruntime-node bundling** - Added to Vite externals in `vite.config.ts`. Native module was being bundled instead of loaded from node_modules, causing app crash on startup.
+2. **VLM LiteLLM routing** - Rewrote `vlm-enhancement-service.ts` to route through LiteLLM proxy instead of Python subprocess.
 
 ### Recommendations for Phase 7 (Code Audit)
 
