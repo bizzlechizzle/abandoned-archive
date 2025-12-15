@@ -623,14 +623,14 @@ But **start simple** - Mac handles everything.
 
 | Criterion | Status | Notes |
 |-----------|--------|-------|
-| All LLM calls route through LiteLLM | ⚠️ WARNING | VLM service uses direct Python subprocess, not LiteLLM proxy |
-| Model aliases used | ✅ PASS | Config-based model selection (config.model, config.taggerModel) |
+| All LLM calls route through LiteLLM | ✅ PASS | VLM service now routes through LiteLLM proxy (fixed) |
+| Model aliases used | ✅ PASS | Config-based model selection (`vlm-local`, `extraction-local`) |
 | Fallback behavior defined | ✅ PASS | Florence → RAM++ → Error (no mock fallback) |
 | Error handling for LLM failures | ✅ PASS | Proper try/catch, timeouts, error logging |
 
 ### Audit Summary
 
-**Overall Status:** ✅ PASS with 1 WARNING
+**Overall Status:** ✅ PASS (all warnings resolved)
 
 #### Passed
 - [x] Three-stage pipeline architecture implemented correctly
@@ -643,8 +643,8 @@ But **start simple** - Mac handles everything.
 - [x] Quality score for hero image selection
 - [x] Proper singleton management
 
-#### Warnings (Consider)
-- ⚠️ **LiteLLM bypass for VLM**: The `vlm_enhancer.py` script calls Ollama directly rather than through LiteLLM proxy. This is acceptable for local-only deployment but should be updated if LiteLLM routing becomes important for cost tracking or model switching.
+#### Warnings (Resolved)
+- ~~⚠️ **LiteLLM bypass for VLM**~~ **FIXED**: VLM enhancement service now routes through LiteLLM proxy for consistent cost tracking and model switching. Uses `vlm-local` model alias that routes to `ollama/qwen2.5-vl:7b`.
 
 #### Deviations from Plan (Documented)
 1. **Florence-2 not yet primary**: Plan called for Florence-2 to replace RAM++, but implementation keeps RAM++ as fallback. This is correct - validates Florence-2 before removing RAM++.
@@ -942,7 +942,7 @@ Score = (8×0.30) + (7×0.20) + (9×0.20) + (9×0.15) + (9×0.15)
 | 2. Research | ✅ | SigLIP + Florence-2 + Qwen3-VL selected |
 | 3. Hardware | ✅ | Mac M2 Ultra handles all stages |
 | 4. Plan | ✅ | Three-stage architecture documented |
-| 5. Audit Plan | ✅ | PASS with 1 warning (LiteLLM bypass) |
+| 5. Audit Plan | ✅ | PASS (all warnings resolved) |
 | 6. Implement | ✅ | All code committed to feature/import-v2 |
 | 7. Audit Code | ✅ | PASS - code matches guide |
 | 8. Test | ⏸️ | Checkpoint - awaiting user execution |

@@ -247,6 +247,16 @@ async function generateConfig(): Promise<string> {
   });
   configuredModels.push('extraction-local (Ollama)');
 
+  // Add VLM model for image enhancement (Stage 2 tagging)
+  models.push({
+    model_name: 'vlm-local',
+    litellm_params: {
+      model: 'ollama/qwen2.5-vl:7b',
+      api_base: 'http://localhost:11434',
+    },
+  });
+  configuredModels.push('vlm-local (Ollama VLM)');
+
   // Add cloud providers if credentials exist
   const providers = await listCredentialProviders();
 
