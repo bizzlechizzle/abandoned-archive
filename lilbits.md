@@ -391,6 +391,161 @@ Per CLAUDE.md Rule 9: Local LLMs for background tasks only.
 
 ---
 
+### scripts/download-siglip-onnx.py
+
+- **Path**: `scripts/download-siglip-onnx.py`
+- **Lines**: 264
+- **Runtime**: python3 (requires venv at `scripts/ram-server/venv/`)
+- **Purpose**: Download SigLIP model from Hugging Face, export to ONNX format, and precompute text embeddings for scene classification
+- **Usage**:
+  ```bash
+  # Using existing venv
+  source scripts/ram-server/venv/bin/activate
+  python scripts/download-siglip-onnx.py
+
+  # Options
+  python scripts/download-siglip-onnx.py --model google/siglip-base-patch16-224  # Default
+  python scripts/download-siglip-onnx.py --output-dir ./custom/path               # Custom output
+  ```
+- **Inputs**: CLI flags (--model, --output-dir)
+- **Outputs**:
+  - `resources/models/siglip-base-patch16-224.onnx` - Vision encoder ONNX model
+  - `resources/models/siglip-base-patch16-224.onnx.data` - Model weights (~354MB)
+  - `resources/models/siglip-base-patch16-224-text-embeddings.json` - Precomputed text embeddings
+  - `resources/models/siglip-base-patch16-224-info.json` - Model metadata
+- **Side Effects**: Downloads ~400MB from Hugging Face on first run
+- **Dependencies**: python3, torch, transformers, sentencepiece, onnx, onnxscript
+- **Last Verified**: 2025-12-15
+
+**Purpose:** Exports SigLIP vision encoder for use in Stage 0 scene classification.
+The scene-classifier.ts service uses the ONNX model for fast (~0.3s) view type detection
+(interior/exterior/aerial/detail) before image tagging in Stage 1.
+
+**Model:** google/siglip-base-patch16-224 (~400MB total)
+- Better than CLIP for zero-shot classification (~10-15% improvement)
+- 224x224 input resolution
+- Uses precomputed text embeddings for urbex scene classification
+
+Called by `scene-classifier.ts` for Node.js native inference without Python subprocess.
+
+---
+
+### scripts/florence_tagger.py
+
+- **Path**: `scripts/florence_tagger.py`
+- **Lines**: 431 ⚠️ (exceeds 300 LOC guideline)
+- **Runtime**: python3 (requires venv at `scripts/ram-server/venv/`)
+- **Purpose**: Stage 1 image tagging using Florence-2-large with context-aware prompts
+- **Usage**:
+  ```bash
+  # Using existing venv
+  source scripts/ram-server/venv/bin/activate
+  python scripts/florence_tagger.py --image /path/to/image.jpg
+
+  # With context from Stage 0 + database
+  python scripts/florence_tagger.py --image /path/to/image.jpg \
+    --view-type interior \
+    --location-type hospital \
+    --state "New York"
+
+  # Options
+  python scripts/florence_tagger.py --image /path/to/image.jpg --device mps    # Mac GPU (default)
+  python scripts/florence_tagger.py --image /path/to/image.jpg --device cpu    # CPU fallback
+  python scripts/florence_tagger.py --image /path/to/image.jpg --max-tags 30   # Limit tags
+  python scripts/florence_tagger.py --image /path/to/image.jpg --output text   # Human-readable
+  ```
+- **Inputs**: Image file path, optional context flags (--view-type, --location-type, --state, --device, --max-tags)
+- **Outputs**: JSON to stdout: `{"tags": [...], "confidence": {...}, "caption": "...", "quality_score": 0.75, "duration_ms": 1234, "model": "florence-2-large", "device": "mps"}`
+- **Side Effects**: Downloads ~700MB model on first run, GPU memory usage during inference (~2-3GB)
+- **Dependencies**: Python 3.12, torch, transformers, Pillow
+- **Last Verified**: 2025-12-15
+
+**Purpose:** Replaces RAM++ with Florence-2-large for Stage 1 context-aware tagging.
+Builds dynamic prompts from view type (Stage 0), location type, and state.
+
+**Model:** microsoft/Florence-2-large (~700MB)
+- 4x smaller than RAM++ (700MB vs 2.8GB)
+- Prompt-based - can describe "abandoned hospital interior"
+- Returns detailed captions plus extracted tags
+- ~2.5 seconds per image on Mac with MPS
+
+**Key Differences from RAM++:**
+- Accepts context parameters (view_type, location_type, state)
+- Returns both caption and extracted tags
+- More urbex-specific vocabulary from contextual prompts
+
+Called by `image-tagging-service.ts` (renamed from ram-tagging-service.ts) as subprocess.
+
+Per CLAUDE.md Rule 9: Local LLMs for background tasks only.
+
+---
+
+### scripts/vlm_enhancer.py
+
+- **Path**: `scripts/vlm_enhancer.py`
+- **Lines**: 346 ⚠️ (exceeds 300 LOC guideline)
+- **Runtime**: python3 (requires venv at `scripts/vlm-server/venv/`)
+- **Purpose**: Stage 2 VLM deep image analysis using Qwen3-VL or similar large vision-language models
+- **Usage**:
+  ```bash
+  # Using VLM venv
+  source scripts/vlm-server/venv/bin/activate
+  python scripts/vlm_enhancer.py --image /path/to/image.jpg
+
+  # With context from Stage 0/1 + database
+  python scripts/vlm_enhancer.py --image /path/to/image.jpg \
+    --view-type interior \
+    --tags "decay,graffiti,hospital" \
+    --location-type hospital \
+    --location-name "Abandoned Memorial Hospital" \
+    --state "New York"
+
+  # Options
+  python scripts/vlm_enhancer.py --image /path/to/image.jpg --model qwen3-vl   # Default model
+  python scripts/vlm_enhancer.py --image /path/to/image.jpg --device mps       # Mac GPU
+  python scripts/vlm_enhancer.py --image /path/to/image.jpg --max-tokens 512   # Response length
+  python scripts/vlm_enhancer.py --image /path/to/image.jpg --output text      # Human-readable
+  ```
+- **Inputs**: Image file path, optional context flags (--view-type, --tags, --location-type, --location-name, --state, --model, --device, --max-tokens)
+- **Outputs**: JSON to stdout with rich analysis:
+  ```json
+  {
+    "description": "Rich 2-3 sentence description...",
+    "caption": "Short alt text caption",
+    "architectural_style": "Art Deco",
+    "estimated_period": {"start": 1920, "end": 1940, "confidence": 0.7, "reasoning": "..."},
+    "condition_assessment": {"overall": "poor", "score": 0.3, "details": "...", "observations": ["..."]},
+    "notable_features": ["feature1", "feature2"],
+    "search_keywords": ["keyword1", "keyword2"],
+    "duration_ms": 5000,
+    "model": "qwen3-vl",
+    "device": "mps"
+  }
+  ```
+- **Side Effects**: Downloads ~7GB model on first run, high GPU memory usage (~16GB recommended)
+- **Dependencies**: Python 3.12, torch, transformers, Pillow, accelerate
+- **Last Verified**: 2025-12-15
+
+**Purpose:** Stage 2 optional deep analysis for hero image candidates.
+Provides rich descriptions, architectural style detection, period estimation, and condition assessment.
+
+**Model:** Qwen/Qwen2-VL-7B-Instruct (~7GB)
+- Large vision-language model with strong reasoning
+- Returns structured JSON with detailed analysis
+- ~10-20 seconds per image on Mac with MPS
+
+**Key Features:**
+- Architectural style detection (Art Deco, Mid-Century Modern, etc.)
+- Construction period estimation with reasoning
+- Detailed condition assessment with observations
+- Notable features extraction for search indexing
+
+Called by `vlm-enhancement-service.ts` as subprocess for high-value images.
+
+Per CLAUDE.md Rule 9: Local LLMs for background tasks only.
+
+---
+
 ## Scripts Exceeding 300 LOC
 
 | Script | Lines | Status | Action |
@@ -398,6 +553,8 @@ Per CLAUDE.md Rule 9: Local LLMs for background tasks only.
 | `scripts/setup.sh` | 514 | ⚠️ Exceeds | Exempt - complex multi-phase installer with extensive error handling |
 | `resetdb.py` | 384 | ⚠️ Exceeds | Exempt - comprehensive reset utility with multiple modes and platform detection |
 | `scripts/ram_tagger.py` | 315 | ⚠️ Exceeds | Exempt - handles 3 model fallback chains with comprehensive error handling |
+| `scripts/florence_tagger.py` | 431 | ⚠️ Exceeds | Exempt - comprehensive prompt building and tag extraction logic |
+| `scripts/vlm_enhancer.py` | 346 | ⚠️ Exceeds | Exempt - VLM analysis with structured JSON parsing and prompt building |
 
 ---
 

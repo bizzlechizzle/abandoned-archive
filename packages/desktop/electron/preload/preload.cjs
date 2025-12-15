@@ -320,6 +320,7 @@ const api = {
     // Location-specific media fixes
     fixLocationImages: (locid) => invokeAuto("media:fixLocationImages")(locid),
     fixLocationVideos: (locid) => invokeAuto("media:fixLocationVideos")(locid),
+    countUntaggedImages: (locid) => invokeAuto("media:countUntaggedImages")(locid),
 
     // Video Proxy System (Migration 36, updated OPT-053 Immich Model)
     // Proxies generated at import time, stored alongside originals, permanent (no purge)

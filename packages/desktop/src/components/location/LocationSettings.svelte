@@ -28,6 +28,11 @@
   let archivingSources = $state(false);
   let archiveMessage = $state('');
 
+  // Image tagging state
+  let untaggedCount = $state(0);
+  let queueingTags = $state(false);
+  let tagMessage = $state('');
+
   // Edit Category modal state
   let showEditCategory = $state(false);
   let editCategory = $state('');
@@ -58,6 +63,7 @@
   $effect(() => {
     if (isOpen) {
       loadPendingSourceCount();
+      loadUntaggedCount();
     }
   });
 
@@ -173,6 +179,46 @@
       archiveMessage = 'Failed';
     } finally {
       archivingSources = false;
+    }
+  }
+
+  // Load untagged image count for this location
+  async function loadUntaggedCount() {
+    if (!window.electronAPI?.media?.countUntaggedImages) return;
+    try {
+      untaggedCount = await window.electronAPI.media.countUntaggedImages(location.locid);
+    } catch (err) {
+      console.error('Failed to load untagged count:', err);
+    }
+  }
+
+  // Queue untagged images for tagging
+  async function queueUntaggedForTagging() {
+    if (!window.electronAPI?.tagging?.queueUntaggedImages || queueingTags) return;
+
+    try {
+      queueingTags = true;
+      tagMessage = 'Queueing images...';
+
+      const result = await window.electronAPI.tagging.queueUntaggedImages(location.locid);
+
+      if (result.success) {
+        if (result.queued === 0) {
+          tagMessage = 'No untagged images';
+        } else {
+          tagMessage = `Queued ${result.queued} images for tagging`;
+          untaggedCount = 0; // Will be processed
+        }
+      } else {
+        tagMessage = result.error || 'Failed';
+      }
+
+      setTimeout(() => { tagMessage = ''; }, 5000);
+    } catch (err) {
+      console.error('Queue tagging failed:', err);
+      tagMessage = 'Failed';
+    } finally {
+      queueingTags = false;
     }
   }
 
@@ -360,6 +406,28 @@
           {/if}
         </div>
         <p class="text-xs text-braun-400 mt-1">Archive any pending web sources for this location</p>
+      </div>
+
+      <!-- Image Tagging Section -->
+      <div>
+        <p class="text-xs font-semibold text-braun-400 uppercase mb-2">Image Tagging</p>
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            onclick={queueUntaggedForTagging}
+            disabled={queueingTags || untaggedCount === 0}
+            class="px-3 py-1 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
+          >
+            {#if queueingTags}
+              Queueing...
+            {:else}
+              Tag Untagged ({untaggedCount})
+            {/if}
+          </button>
+          {#if tagMessage}
+            <span class="text-sm text-braun-600">{tagMessage}</span>
+          {/if}
+        </div>
+        <p class="text-xs text-braun-400 mt-1">Queue untagged images for AI tagging (Florence-2 + SigLIP)</p>
       </div>
 
       <!-- Edit Section -->

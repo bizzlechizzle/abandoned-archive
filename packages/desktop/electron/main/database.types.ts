@@ -327,11 +327,22 @@ export interface ImgsTable {
 
   // Migration 76: RAM++ Image Auto-Tagging
   auto_tags: string | null;              // JSON array: ["abandoned", "factory", "graffiti"]
-  auto_tags_source: string | null;       // 'ram++' | 'manual' | 'hybrid'
+  auto_tags_source: string | null;       // 'ram++' | 'florence' | 'manual' | 'hybrid'
   auto_tags_confidence: string | null;   // JSON: {"abandoned": 0.95, "factory": 0.87}
   auto_tags_at: string | null;           // ISO timestamp when tags were generated
   quality_score: number | null;          // 0-1 quality score for hero selection
   view_type: string | null;              // 'interior' | 'exterior' | 'aerial' | 'detail'
+
+  // Migration 89: VLM Enhancement (Stage 2 deep analysis)
+  vlm_description: string | null;        // Rich natural language description
+  vlm_caption: string | null;            // Short caption for alt text
+  vlm_architectural_style: string | null;// Art Deco, Mid-Century Modern, etc.
+  vlm_period_json: string | null;        // JSON: {start, end, confidence, reasoning}
+  vlm_condition_json: string | null;     // JSON: {overall, score, details, observations}
+  vlm_features_json: string | null;      // JSON array of notable features
+  vlm_keywords_json: string | null;      // JSON array of search keywords
+  vlm_model: string | null;              // Model used (qwen3-vl, llava, etc.)
+  vlm_enhanced_at: string | null;        // ISO timestamp of enhancement
 }
 
 // Videos table

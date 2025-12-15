@@ -991,6 +991,29 @@ export function registerMediaProcessingHandlers(
     }
   });
 
+  // Count untagged images for a location
+  ipcMain.handle('media:countUntaggedImages', async (_event, locid: unknown) => {
+    try {
+      const validLocid = Blake3IdSchema.parse(locid);
+
+      const result = await db
+        .selectFrom('imgs')
+        .select(eb => [eb.fn.count<number>('imghash').as('count')])
+        .where('locid', '=', validLocid)
+        .where('hidden', '=', 0)
+        .where(eb => eb.or([
+          eb('auto_tags', 'is', null),
+          eb('auto_tags', '=', ''),
+        ]))
+        .executeTakeFirst();
+
+      return Number(result?.count ?? 0);
+    } catch (error) {
+      console.error('Error counting untagged images:', error);
+      return 0;
+    }
+  });
+
   // Generate proxies for all videos in a location (background batch)
   ipcMain.handle('media:generateProxiesForLocation', async (event, locid: unknown) => {
     try {

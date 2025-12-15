@@ -462,6 +462,7 @@ export interface ElectronAPI {
     // Location-specific media fixes
     fixLocationImages: (locid: string) => Promise<{ fixed: number; errors: number; total: number }>;
     fixLocationVideos: (locid: string) => Promise<{ fixed: number; errors: number; total: number }>;
+    countUntaggedImages: (locid: string) => Promise<number>;
 
     // Video Proxy System (Migration 36, updated OPT-053 Immich Model)
     // Proxies generated at import time, stored alongside originals, permanent (no purge)

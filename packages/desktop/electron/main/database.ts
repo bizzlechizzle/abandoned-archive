@@ -3787,6 +3787,43 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 88 completed: extraction_costs table created');
     }
 
+    // Migration 89: VLM Enhancement columns for Stage 2 deep analysis
+    // Stores results from Qwen3-VL or similar large vision-language models
+    const imgsColumnsFor89 = sqlite.prepare(`PRAGMA table_info(imgs)`).all() as Array<{ name: string }>;
+    const hasVLMDescription = imgsColumnsFor89.some(col => col.name === 'vlm_description');
+
+    if (!hasVLMDescription) {
+      sqlite.exec(`
+        -- Rich natural language description from VLM
+        ALTER TABLE imgs ADD COLUMN vlm_description TEXT;
+
+        -- Short caption suitable for alt text
+        ALTER TABLE imgs ADD COLUMN vlm_caption TEXT;
+
+        -- Architectural style detected (Art Deco, Mid-Century Modern, etc.)
+        ALTER TABLE imgs ADD COLUMN vlm_architectural_style TEXT;
+
+        -- Estimated construction period (stored as JSON for start/end/confidence/reasoning)
+        ALTER TABLE imgs ADD COLUMN vlm_period_json TEXT;
+
+        -- Condition assessment (stored as JSON with overall/score/details/observations)
+        ALTER TABLE imgs ADD COLUMN vlm_condition_json TEXT;
+
+        -- Notable features (stored as JSON array)
+        ALTER TABLE imgs ADD COLUMN vlm_features_json TEXT;
+
+        -- Search keywords (stored as JSON array)
+        ALTER TABLE imgs ADD COLUMN vlm_keywords_json TEXT;
+
+        -- Model used for VLM enhancement
+        ALTER TABLE imgs ADD COLUMN vlm_model TEXT;
+
+        -- Timestamp of VLM enhancement
+        ALTER TABLE imgs ADD COLUMN vlm_enhanced_at TEXT;
+      `);
+      console.log('Migration 89 completed: VLM Enhancement columns added to imgs');
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

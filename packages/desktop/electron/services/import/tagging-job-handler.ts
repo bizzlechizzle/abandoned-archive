@@ -9,7 +9,7 @@
 
 import type { Kysely } from 'kysely';
 import type { Database } from '../../main/database.types';
-import { getRamTaggingService, type EnhancedTagResult } from '../tagging/ram-tagging-service';
+import { getImageTaggingService, type EnhancedTagResult } from '../tagging/image-tagging-service';
 import { getLocationTagAggregator } from '../tagging/location-tag-aggregator';
 import { getLogger } from '../logger-service';
 import { JobQueue, IMPORT_QUEUES, JOB_PRIORITY } from '../job-queue';
@@ -67,7 +67,7 @@ export interface LocationAggregationJobResult {
  * Process a single image tagging job
  *
  * Uses the 800px thumbnail (JPEG) instead of original RAW files for better
- * compatibility with RAM++ which expects standard image formats.
+ * compatibility with Florence-2/RAM++ which expect standard image formats.
  */
 export async function handleImageTaggingJob(
   db: Kysely<Database>,
@@ -76,10 +76,10 @@ export async function handleImageTaggingJob(
   const { imghash, imagePath, locid, subid } = payload;
 
   try {
-    const service = getRamTaggingService();
+    const service = getImageTaggingService();
     await service.initialize();
 
-    // Use 800px thumbnail (JPEG) instead of original RAW for RAM++ compatibility
+    // Use 800px thumbnail (JPEG) instead of original RAW for compatibility
     // Query the stored thumb_path_lg from the database
     const imgRecord = await db
       .selectFrom('imgs')
@@ -110,7 +110,7 @@ export async function handleImageTaggingJob(
       .updateTable('imgs')
       .set({
         auto_tags: JSON.stringify(result.tags),
-        auto_tags_source: result.source === 'mock' ? 'mock' : 'ram++',
+        auto_tags_source: 'ram++',  // Will change to 'florence-2' in Phase 3
         auto_tags_confidence: JSON.stringify(result.confidence),
         auto_tags_at: now,
         quality_score: result.qualityScore,

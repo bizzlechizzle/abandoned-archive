@@ -54,6 +54,12 @@ resources/browsers/ungoogled-chromium/*/*.app/
 resources/browsers/ungoogled-chromium/*/chrome
 resources/browsers/ungoogled-chromium/*/chrome.exe
 
+# ML Models (download via scripts/download-siglip-onnx.py)
+resources/models/*.onnx
+resources/models/*.onnx.data
+resources/models/*-text-embeddings.json
+resources/models/*-info.json
+
 # Electron Builder output
 build/
 release/

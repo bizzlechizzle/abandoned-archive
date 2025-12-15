@@ -1,7 +1,7 @@
 /**
  * Image Auto-Tagging IPC Handlers
  *
- * Exposes RAM++ auto-tagging system to the renderer:
+ * Exposes image tagging system to the renderer:
  * - Get/edit image tags
  * - Location tag summaries
  * - Queue status and management
@@ -19,7 +19,7 @@ import { z } from 'zod';
 import type { Kysely } from 'kysely';
 import type { Database } from '../database.types';
 import { Blake3IdSchema } from '../ipc-validation';
-import { getRamTaggingService } from '../../services/tagging/ram-tagging-service';
+import { getImageTaggingService } from '../../services/tagging/image-tagging-service';
 import { getLocationTagAggregator } from '../../services/tagging/location-tag-aggregator';
 import { JobQueue, IMPORT_QUEUES, JOB_PRIORITY } from '../../services/job-queue';
 import {
@@ -310,19 +310,19 @@ export function registerTaggingHandlers(db: Kysely<Database>) {
   // ============================================================================
 
   /**
-   * Get RAM++ tagging service status
+   * Get image tagging service status
    */
   ipcMain.handle('tagging:getServiceStatus', async () => {
     try {
-      const service = getRamTaggingService();
+      const service = getImageTaggingService();
       const status = await service.getStatus();
 
       return {
         success: true,
         status: {
           available: status.available,
-          mode: status.mode,
-          apiUrl: status.apiUrl,
+          model: status.model,
+          sceneClassifier: status.sceneClassifier,
           lastCheck: status.lastCheck,
           error: status.error,
         },
@@ -332,7 +332,7 @@ export function registerTaggingHandlers(db: Kysely<Database>) {
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
-        status: { available: false, mode: 'none', error: 'Service unavailable' },
+        status: { available: false, model: 'none', sceneClassifier: false, error: 'Service unavailable' },
       };
     }
   });
@@ -342,16 +342,17 @@ export function registerTaggingHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('tagging:testConnection', async () => {
     try {
-      const service = getRamTaggingService();
+      const service = getImageTaggingService();
       await service.initialize();
       const status = await service.getStatus();
 
       return {
         success: status.available,
-        mode: status.mode,
+        model: status.model,
+        sceneClassifier: status.sceneClassifier,
         message: status.available
-          ? `Connected to RAM++ via ${status.mode}`
-          : 'RAM++ service not available',
+          ? `Connected to image tagging (${status.model})`
+          : 'Image tagging service not available',
         error: status.error,
       };
     } catch (error) {
