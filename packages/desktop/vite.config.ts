@@ -151,6 +151,9 @@ export default defineConfig({
                 'puppeteer-core',
                 'puppeteer-extra',
                 'puppeteer-extra-plugin-stealth',
+                // ONNX Runtime has platform-specific native bindings
+                // Must be external to load correct darwin/arm64 binary
+                'onnxruntime-node',
               ],
             },
           },
