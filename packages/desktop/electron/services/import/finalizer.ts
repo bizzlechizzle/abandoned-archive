@@ -244,6 +244,115 @@ export class Finalizer {
   }
 
   /**
+   * Progressive persistence: Finalize a single file immediately after validation
+   * This ensures files are visible in UI even if later files fail
+   *
+   * @param file - The validated file to finalize
+   * @param location - Location info for the file
+   * @param options - Finalizer options
+   * @returns The finalized file with DB record info
+   */
+  async finalizeFile(
+    file: ValidatedFile,
+    location: LocationInfo,
+    options?: FinalizerOptions
+  ): Promise<FinalizedFile> {
+    // Skip if file is not valid or has no archive path
+    if (!file.isValid || !file.archivePath || !file.hash) {
+      return {
+        ...file,
+        dbRecordId: null,
+        finalizeError: file.validationError || 'Not validated',
+      };
+    }
+
+    try {
+      // Insert single file to DB (no transaction needed for single insert)
+      await this.insertMediaRecord(this.db, file, location, options);
+
+      // Queue background jobs for this single file
+      const jobs = this.buildJobList([{ ...file, dbRecordId: file.hash, finalizeError: null }], location);
+      if (jobs.length > 0) {
+        await this.jobQueue.addBulk(jobs);
+      }
+
+      return {
+        ...file,
+        dbRecordId: file.hash,
+        finalizeError: null,
+      };
+    } catch (error) {
+      // Check if it's a duplicate key error (file already exists)
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('UNIQUE constraint') || errorMessage.includes('PRIMARY KEY')) {
+        // File already exists - this is OK for progressive persistence
+        // (could happen on resume)
+        return {
+          ...file,
+          dbRecordId: file.hash,
+          finalizeError: null,
+        };
+      }
+
+      return {
+        ...file,
+        dbRecordId: null,
+        finalizeError: errorMessage,
+      };
+    }
+  }
+
+  /**
+   * Finalize remaining tasks after progressive persistence:
+   * - Link relationships (RAW+JPEG pairs, Live Photos)
+   * - Auto-set hero image
+   * - Record import summary
+   *
+   * Call this after all files have been progressively finalized
+   */
+  async finalizePostProcessing(
+    files: FinalizedFile[],
+    location: LocationInfo,
+    importRecordId: string,
+    options?: FinalizerOptions
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    const successfulFiles = files.filter(f => f.dbRecordId);
+
+    // Create or update import record
+    await this.db
+      .insertInto('imports')
+      .values({
+        import_id: importRecordId,
+        locid: location.locid,
+        import_date: now,
+        auth_imp: options?.user?.username ?? null,
+        img_count: successfulFiles.filter(f => f.mediaType === 'image').length,
+        vid_count: successfulFiles.filter(f => f.mediaType === 'video').length,
+        doc_count: successfulFiles.filter(f => f.mediaType === 'document').length,
+        map_count: successfulFiles.filter(f => f.mediaType === 'map').length,
+        notes: null,
+      })
+      .onConflict(oc => oc.column('import_id').doUpdateSet({
+        img_count: successfulFiles.filter(f => f.mediaType === 'image').length,
+        vid_count: successfulFiles.filter(f => f.mediaType === 'video').length,
+        doc_count: successfulFiles.filter(f => f.mediaType === 'document').length,
+        map_count: successfulFiles.filter(f => f.mediaType === 'map').length,
+      }))
+      .execute();
+
+    // Link relationships (RAW+JPEG pairs, Live Photos)
+    if (options?.scanResult && successfulFiles.length > 0) {
+      await this.linkRelationships(this.db, successfulFiles, options.scanResult);
+    }
+
+    // Auto-set hero image if needed
+    if (successfulFiles.length > 0) {
+      await this.autoSetHeroImage(location.locid, location.subid, successfulFiles);
+    }
+  }
+
+  /**
    * Insert a media record into the appropriate table
    * Calculates perceptual hash (pHash) for images during import
    */

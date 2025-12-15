@@ -31,9 +31,9 @@ import type { Kysely } from 'kysely';
 import type { Database } from '../../main/database.types';
 import { Scanner, type ScanResult, type ScannerOptions } from './scanner';
 import { Hasher, type HashResult, type HasherOptions } from './hasher';
-import { Copier, type CopyResult, type CopierOptions, type LocationInfo, type CopiedFile } from './copier';
+import { Copier, type CopyResult, type CopierOptions, type LocationInfo, type CopiedFile, NetworkFailureError } from './copier';
 import { Validator, type ValidationResult, type ValidatorOptions } from './validator';
-import { Finalizer, type FinalizationResult, type FinalizerOptions } from './finalizer';
+import { Finalizer, type FinalizationResult, type FinalizerOptions, type FinalizedFile } from './finalizer';
 import { getLogger } from '../logger-service';
 import { getMetricsCollector, MetricNames } from '../monitoring/metrics-collector';
 import { getTracer, OperationNames } from '../monitoring/tracer';
@@ -56,7 +56,8 @@ export type ImportStatus =
   | 'finalizing'
   | 'completed'
   | 'cancelled'
-  | 'failed';
+  | 'failed'
+  | 'paused';  // Network failure - resumable
 
 /**
  * Import progress event
@@ -459,6 +460,11 @@ export class ImportOrchestrator {
       validateTimer = metrics.timer(MetricNames.IMPORT_VALIDATE_DURATION, { sessionId });
       const validateSpan = importSpan.child(OperationNames.IMPORT_VALIDATE);
 
+      // Progressive persistence: finalize each file immediately after validation
+      // This ensures files are visible in UI even if later files fail
+      const progressiveFinalizedFiles: FinalizedFile[] = [];
+      const importRecordId = generateId();
+
       validationResult = await this.validator.validate(copyResult.files, {
         signal,
         autoRollback: true,
@@ -466,6 +472,19 @@ export class ImportOrchestrator {
           progress.percent = percent;
           progress.currentFile = currentFile;
           emitProgress();
+        },
+        // Progressive persistence callback - finalize each valid file immediately
+        onFileComplete: async (file, _index, _total) => {
+          if (file.isValid && file.archivePath && file.hash) {
+            const finalized = await this.finalizer.finalizeFile(file, options.location, {
+              user: options.user,
+            });
+            progressiveFinalizedFiles.push(finalized);
+            // Update progress with successful finalization
+            if (finalized.dbRecordId) {
+              progress.filesProcessed++;
+            }
+          }
         },
       });
 
@@ -477,16 +496,18 @@ export class ImportOrchestrator {
 
       progress.errorsFound += validationResult.totalInvalid;
 
-      logger.info('ImportOrchestrator', 'Validation completed', {
+      logger.info('ImportOrchestrator', 'Validation completed (progressive persistence)', {
         sessionId,
         valid: validationResult.totalValid,
         invalid: validationResult.totalInvalid,
+        progressivelyFinalized: progressiveFinalizedFiles.filter(f => f.dbRecordId).length,
       });
 
       // Save validation results to DB session (enables resume from step 5)
       await this.saveSessionStateWithResults(sessionId, 'validating', 4, options.location.locid, scanResult, hashResult, copyResult, validationResult);
 
-      // Step 5: Finalize
+      // Step 5: Post-processing (relationships, hero image, import record)
+      // Files already inserted to DB via progressive persistence
       this.currentStatus = 'finalizing';
       progress.status = 'finalizing';
       progress.step = 5;
@@ -495,16 +516,22 @@ export class ImportOrchestrator {
       finalizeTimer = metrics.timer(MetricNames.IMPORT_FINALIZE_DURATION, { sessionId });
       const finalizeSpan = importSpan.child(OperationNames.IMPORT_FINALIZE);
 
-      finalizationResult = await this.finalizer.finalize(validationResult.files, options.location, {
-        signal,
+      // Run post-processing (relationships, hero, import record)
+      await this.finalizer.finalizePostProcessing(progressiveFinalizedFiles, options.location, importRecordId, {
         user: options.user,
         scanResult,
-        onProgress: (percent, phase) => {
-          progress.percent = percent;
-          progress.currentFile = phase;
-          emitProgress();
-        },
       });
+
+      // Build finalization result from progressively finalized files
+      const successfulFiles = progressiveFinalizedFiles.filter(f => f.dbRecordId);
+      finalizationResult = {
+        files: progressiveFinalizedFiles,
+        totalFinalized: successfulFiles.length,
+        totalErrors: progressiveFinalizedFiles.length - successfulFiles.length,
+        jobsQueued: successfulFiles.length * 3, // Approximate: 3 jobs per file
+        importRecordId,
+        finalizeTimeMs: 0, // Not tracked for progressive
+      };
 
       finalizeTimer.end();
       finalizeSpan.end('success', {
@@ -1082,17 +1109,34 @@ export class ImportOrchestrator {
 
   /**
    * Handle error during import
+   * Returns true if the error is a network failure (pausable/resumable)
    */
   private handleError(err: unknown, signal: AbortSignal, progress: ImportProgress): string {
     if (signal.aborted) {
       this.currentStatus = 'cancelled';
       progress.status = 'cancelled';
       return 'Import cancelled';
+    } else if (err instanceof NetworkFailureError) {
+      // Network failure - set to paused (resumable) instead of failed
+      this.currentStatus = 'paused';
+      progress.status = 'paused';
+      logger.warn('ImportOrchestrator', 'Import paused due to network failure', {
+        consecutiveErrors: err.consecutiveErrors,
+        lastError: err.lastError,
+      });
+      return err.message;
     } else {
       this.currentStatus = 'failed';
       progress.status = 'failed';
       return err instanceof Error ? err.message : String(err);
     }
+  }
+
+  /**
+   * Check if current status is a network pause (resumable)
+   */
+  private isNetworkPause(): boolean {
+    return this.currentStatus === 'paused';
   }
 
   /**
@@ -1320,14 +1364,19 @@ export class ImportOrchestrator {
 
     if (existing) {
       // Update existing session
+      // paused: Resumable network failure - can_resume=1, no completed_at
+      // failed: Permanent failure - can_resume=0 (user must restart)
+      // completed/cancelled: Done - can_resume=0
+      const isResumable = status === 'paused';
+      const isTerminal = status === 'completed' || status === 'cancelled' || status === 'failed';
       await this.db
         .updateTable('import_sessions')
         .set({
           status,
           last_step: lastStep,
           error: error ?? null,
-          completed_at: status === 'completed' || status === 'cancelled' || status === 'failed' ? now : null,
-          can_resume: status === 'completed' || status === 'cancelled' ? 0 : 1,
+          completed_at: isTerminal ? now : null,
+          can_resume: isResumable ? 1 : 0,
         })
         .where('session_id', '=', sessionId)
         .execute();

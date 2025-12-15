@@ -664,7 +664,7 @@ export interface JobsTable {
 export interface ImportSessionsTable {
   session_id: string;
   locid: string;
-  status: 'pending' | 'scanning' | 'hashing' | 'copying' | 'validating' | 'finalizing' | 'completed' | 'cancelled' | 'failed';
+  status: 'pending' | 'scanning' | 'hashing' | 'copying' | 'validating' | 'finalizing' | 'completed' | 'cancelled' | 'failed' | 'paused';
   source_paths: string;        // JSON array of source paths
   copy_strategy: string | null; // 'copy' only (OPT-082: pure copy)
   total_files: number;

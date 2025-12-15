@@ -30,6 +30,51 @@ import { HASH_LENGTH } from '../crypto-service';
 import { isNetworkPath, getStorageConfig } from './storage-detection';
 
 /**
+ * Network failure error - thrown when sustained network failure is detected
+ * Allows orchestrator to pause import instead of marking as failed
+ */
+export class NetworkFailureError extends Error {
+  constructor(
+    message: string,
+    public readonly consecutiveErrors: number,
+    public readonly lastError: string
+  ) {
+    super(message);
+    this.name = 'NetworkFailureError';
+  }
+}
+
+/**
+ * Comprehensive list of network-related error codes for SMB/NFS
+ * Used for both retry logic and sustained failure detection
+ */
+const NETWORK_ERROR_CODES = [
+  'EAGAIN',       // Resource temporarily unavailable
+  'ECONNRESET',   // Connection reset
+  'ETIMEDOUT',    // Connection timed out
+  'EBUSY',        // Resource busy
+  'EIO',          // I/O error
+  'ENETUNREACH',  // Network unreachable
+  'EPIPE',        // Broken pipe
+  'ENOTCONN',     // Socket not connected (SMB disconnect)
+  'EHOSTDOWN',    // Host is down
+  'EHOSTUNREACH', // No route to host
+  'ENETDOWN',     // Network is down
+  'ECONNABORTED', // Connection aborted
+  'ESTALE',       // Stale file handle (NFS)
+  'ENOENT',       // File not found (often means network unmounted)
+];
+
+/**
+ * Check if an error message indicates a network failure
+ */
+function isNetworkError(errorMessage: string | null): boolean {
+  if (!errorMessage) return false;
+  const upper = errorMessage.toUpperCase();
+  return NETWORK_ERROR_CODES.some(code => upper.includes(code));
+}
+
+/**
  * Copy strategy type
  * OPT-082: Pure copy only
  */
@@ -229,10 +274,20 @@ export class Copier {
   ): Promise<CopyResult> {
     const startTime = Date.now();
 
-    // Detect if SOURCE is on network - enables inline hashing mode
+    // Detect if SOURCE is on network - enables inline hashing mode AND throttled concurrency
     this.isNetworkSource = this.detectNetworkSource(files);
     if (this.isNetworkSource) {
       console.log(`[Copier] Network SOURCE detected - using inline hashing (single read per file)`);
+
+      // CRITICAL: Throttle concurrency for network SOURCE
+      // 24 parallel reads from SMB will crash the connection!
+      // This is the fix for the network import crash - concurrent reads overwhelmed SMB
+      const hw = getHardwareProfile();
+      const networkConcurrency = hw.copyWorkersNetwork; // Should be 1
+      if (this.copyQueue.concurrency > networkConcurrency) {
+        console.log(`[Copier] THROTTLING: Reducing concurrency from ${this.copyQueue.concurrency} to ${networkConcurrency} for network source`);
+        this.copyQueue.concurrency = networkConcurrency;
+      }
     }
 
     // Filter out duplicates and errored files
@@ -277,6 +332,12 @@ export class Copier {
     let totalCopied = 0;
     let totalErrors = 0;
     let completedCount = 0;
+
+    // Track consecutive network errors for abort threshold
+    // After N consecutive network errors, assume network is down and abort
+    const NETWORK_ABORT_THRESHOLD = 5;
+    let consecutiveNetworkErrors = 0;
+    let lastNetworkError = '';
 
     const results: CopiedFile[] = [];
 
@@ -325,9 +386,28 @@ export class Copier {
         // Update counters (atomic operations in JS single-threaded model)
         if (result.copyError) {
           totalErrors++;
+
+          // Track consecutive network errors for abort threshold
+          if (isNetworkError(result.copyError)) {
+            consecutiveNetworkErrors++;
+            lastNetworkError = result.copyError;
+            console.log(`[Copier] Network error detected (${consecutiveNetworkErrors}/${NETWORK_ABORT_THRESHOLD}): ${result.copyError}`);
+
+            // Check if we should abort due to sustained network failure
+            if (consecutiveNetworkErrors >= NETWORK_ABORT_THRESHOLD) {
+              console.log(`[Copier] ABORTING: ${consecutiveNetworkErrors} consecutive network errors - network appears down`);
+              throw new NetworkFailureError(
+                `Network appears down - ${consecutiveNetworkErrors} consecutive network errors. Last error: ${lastNetworkError}`,
+                consecutiveNetworkErrors,
+                lastNetworkError
+              );
+            }
+          }
         } else {
           totalCopied++;
           bytesCopied += file.size;
+          // Reset consecutive error counter on success
+          consecutiveNetworkErrors = 0;
         }
 
         results.push(result);
@@ -466,7 +546,8 @@ export class Copier {
     const isNetwork = this.isNetworkDest || this.isNetworkSource;
     const MAX_RETRIES = isNetwork ? 3 : 0;
     const RETRY_DELAYS = [1000, 3000, 5000]; // ms - exponential backoff
-    const RETRYABLE_ERRORS = ['EAGAIN', 'ECONNRESET', 'ETIMEDOUT', 'EBUSY', 'EIO', 'ENETUNREACH', 'EPIPE'];
+    // Use module-level NETWORK_ERROR_CODES for retry decisions
+    const RETRYABLE_ERRORS = NETWORK_ERROR_CODES;
 
     // Inline hashing mode: hash is null, compute during copy
     const useInlineHash = file.hash === null;

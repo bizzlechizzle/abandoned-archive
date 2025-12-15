@@ -26,6 +26,7 @@
 import { promises as fs } from 'fs';
 import PQueue from 'p-queue';
 import type { CopiedFile } from './copier';
+import { NetworkFailureError } from './copier';
 import { getWorkerPool, type WorkerPool, type HashResult } from '../worker-pool';
 import { getHardwareProfile } from '../hardware-profile';
 import { isNetworkPath, getStorageConfig } from './storage-detection';
@@ -84,15 +85,22 @@ export interface ValidatorOptions {
 const RETRY_CONFIG = {
   maxRetries: 3,
   delays: [1000, 3000, 5000], // Exponential backoff
+  // Comprehensive network error codes for SMB/NFS reliability
   retryableErrors: [
-    'EAGAIN',      // Resource temporarily unavailable
-    'ECONNRESET',  // Connection reset
-    'ETIMEDOUT',   // Connection timed out
-    'EBUSY',       // Resource busy
-    'EIO',         // I/O error
-    'ENETUNREACH', // Network unreachable
-    'EPIPE',       // Broken pipe
-    'timed out',   // Worker timeout
+    'EAGAIN',       // Resource temporarily unavailable
+    'ECONNRESET',   // Connection reset
+    'ETIMEDOUT',    // Connection timed out
+    'EBUSY',        // Resource busy
+    'EIO',          // I/O error
+    'ENETUNREACH',  // Network unreachable
+    'EPIPE',        // Broken pipe
+    'ENOTCONN',     // Socket not connected (SMB disconnect)
+    'EHOSTDOWN',    // Host is down
+    'EHOSTUNREACH', // No route to host
+    'ENETDOWN',     // Network is down
+    'ECONNABORTED', // Connection aborted
+    'ESTALE',       // Stale file handle (NFS)
+    'timed out',    // Worker timeout
   ],
 };
 
@@ -101,6 +109,12 @@ const RETRY_CONFIG = {
  * Large files on slow networks need more time
  */
 const VALIDATION_TIMEOUT_MS = 120000; // 2 minutes per file
+
+/**
+ * Abort validation after this many consecutive network errors
+ * Prevents wasting time when network is down
+ */
+const NETWORK_ABORT_THRESHOLD = 5;
 
 /**
  * Validator class for integrity verification
@@ -233,6 +247,10 @@ export class Validator {
     let rolledBackCount = 0;
     let totalRetried = 0;
 
+    // Track consecutive network errors to detect sustained network failure
+    let consecutiveNetworkErrors = 0;
+    let lastNetworkError = '';
+
     const results: ValidatedFile[] = [];
 
     // Queue ALL files for validation with controlled concurrency
@@ -241,6 +259,15 @@ export class Validator {
         // Check cancellation
         if (options?.signal?.aborted) {
           throw new Error('Validation cancelled');
+        }
+
+        // Check if we should abort due to sustained network failure
+        if (consecutiveNetworkErrors >= NETWORK_ABORT_THRESHOLD) {
+          throw new NetworkFailureError(
+            `Network appears down - aborting validation after ${consecutiveNetworkErrors} consecutive failures`,
+            consecutiveNetworkErrors,
+            lastNetworkError
+          );
         }
 
         // Hash the file with retry logic
@@ -258,6 +285,27 @@ export class Validator {
           validatedFile.validationError = `Re-hash failed: ${hashResult.error}`;
           invalidCount++;
 
+          // Track consecutive network errors
+          if (this.isRetryableError(hashResult.error)) {
+            consecutiveNetworkErrors++;
+            lastNetworkError = hashResult.error;
+            console.log(`[Validator] Network error #${consecutiveNetworkErrors}: ${hashResult.error}`);
+
+            // Check threshold - abort remaining validations
+            if (consecutiveNetworkErrors >= NETWORK_ABORT_THRESHOLD) {
+              queue.pause();
+              queue.clear();
+              throw new NetworkFailureError(
+                `Network appears down - aborting validation after ${consecutiveNetworkErrors} consecutive failures`,
+                consecutiveNetworkErrors,
+                lastNetworkError
+              );
+            }
+          } else {
+            // Non-network error resets the counter
+            consecutiveNetworkErrors = 0;
+          }
+
           // Rollback if requested
           if (options?.autoRollback !== false) {
             await this.rollback(file.archivePath!);
@@ -266,6 +314,8 @@ export class Validator {
         } else if (hashResult.hash !== file.hash) {
           validatedFile.validationError = `Hash mismatch: expected ${file.hash}, got ${hashResult.hash}`;
           invalidCount++;
+          // Hash mismatch is a data issue, not network - reset counter
+          consecutiveNetworkErrors = 0;
 
           // Rollback invalid file
           if (options?.autoRollback !== false) {
@@ -275,6 +325,8 @@ export class Validator {
         } else {
           validatedFile.isValid = true;
           validCount++;
+          // Success resets consecutive network error counter
+          consecutiveNetworkErrors = 0;
         }
 
         results.push(validatedFile);
