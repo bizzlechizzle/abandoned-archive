@@ -59,6 +59,7 @@ pnpm reinstall        # Clean and reinstall (fixes native module issues)
 7. **Keep It Simple** — Favor obvious code, minimal abstraction, fewer files
 8. **Binary Dependencies Welcome** — App size is not a concern; freely add binaries (dcraw_emu, ffmpeg, exiftool, libpostal) when they solve problems better than pure-JS alternatives
 9. **Real-Time UI Updates** — Any operation that modifies data (imports, saves, deletes, external sources like browser extension) must trigger automatic UI refresh. Never require manual page refresh to see changes. Use IPC events from main process to notify renderer when data changes externally.
+10. **Verify Build Before Done** — After any implementation work, run `pnpm build` and `pnpm dev` to confirm the app compiles and boots without errors. Monitor console output for crashes, native module failures, or import errors. A feature is not complete until the app runs.
 
 ## Do Not
 
@@ -95,6 +96,7 @@ pnpm reinstall        # Clean and reinstall (fixes native module issues)
 | **Ownership pledge** | All assets stay on disk. No telemetry, no cloud sync, no auto-updates. |
 | **Source file responsibility** | User's source files are THEIR responsibility. We make a complete, verified copy. Done. |
 | **pnpm v10+ native modules** | Project pre-configures `onlyBuiltDependencies` for better-sqlite3, electron, sharp, esbuild. If "Ignored build scripts" warnings appear, run `pnpm reinstall`. |
+| **Native modules in Vite** | Native modules with platform-specific binaries (better-sqlite3, sharp, blake3, onnxruntime-node) MUST be in `vite.config.ts` external array. Bundling them causes "Could not dynamically require" crashes at runtime. |
 
 ## Architecture (Quick)
 
