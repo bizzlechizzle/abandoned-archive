@@ -367,49 +367,17 @@
             {#if loading}
               <div class="text-sm text-braun-500 animate-pulse">Loading...</div>
             {:else}
-              <!-- LiteLLM Gateway Status -->
+              <!-- Cloud Providers (LiteLLM auto-starts when needed) -->
               <div class="bg-white rounded border border-braun-200 p-4">
                 <div class="flex items-center justify-between mb-3">
-                  <span class="text-sm font-medium text-braun-800">AI Gateway</span>
-                  <div class="flex items-center gap-2">
-                    <span class="w-2 h-2 rounded-full {litellmStatus?.running ? 'bg-green-500' : 'bg-braun-300'}"></span>
-                    <span class="text-xs text-braun-600">
-                      {litellmStatus?.running ? 'Running' : 'Stopped'}
-                    </span>
-                  </div>
+                  <span class="text-sm font-medium text-braun-800">Cloud Providers</span>
+                  {#if litellmStatus?.running}
+                    <div class="flex items-center gap-1.5" title="AI gateway running">
+                      <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                      <span class="text-xs text-braun-400">active</span>
+                    </div>
+                  {/if}
                 </div>
-
-                {#if !litellmStatus?.installed}
-                  <div class="bg-amber-50 border border-amber-200 rounded p-3 text-xs">
-                    <p class="text-amber-800">LiteLLM not installed.</p>
-                    <code class="block mt-1 bg-braun-100 px-2 py-1 rounded font-mono">
-                      pip install "litellm[proxy]"
-                    </code>
-                  </div>
-                {:else}
-                  <div class="flex gap-2">
-                    {#if litellmStatus?.running}
-                      <button
-                        onclick={stopLiteLLM}
-                        class="text-xs px-3 py-1.5 border border-braun-300 rounded hover:bg-braun-50 transition"
-                      >
-                        Stop
-                      </button>
-                    {:else}
-                      <button
-                        onclick={startLiteLLM}
-                        class="text-xs px-3 py-1.5 bg-braun-900 text-white rounded hover:bg-braun-700 transition"
-                      >
-                        Start
-                      </button>
-                    {/if}
-                  </div>
-                {/if}
-              </div>
-
-              <!-- Cloud Providers -->
-              <div class="bg-white rounded border border-braun-200 p-4">
-                <span class="text-sm font-medium text-braun-800 mb-3 block">Cloud Providers</span>
                 <div class="space-y-2">
                   {#each providers as provider}
                     <div class="flex items-center justify-between py-2 border-b border-braun-100 last:border-0">

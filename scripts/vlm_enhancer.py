@@ -1,344 +1,383 @@
 #!/usr/bin/env python3
 """
-VLM Enhancer - Deep Image Analysis with Qwen3-VL
+VLM Enhancer - Stage 2 Deep Image Analysis using Qwen2-VL
 
-Stage 2 of the three-stage image tagging pipeline.
-Provides rich descriptions, architectural analysis, and condition assessment.
+Provides rich image analysis including:
+- Detailed descriptions
+- Architectural style detection
+- Construction period estimation
+- Condition assessment
+- Notable features extraction
+- Search keyword generation
 
 Usage:
     python vlm_enhancer.py --image /path/to/image.jpg
-    python vlm_enhancer.py --image /path/to/image.jpg --view-type interior
-    python vlm_enhancer.py --image /path/to/image.jpg --tags "building,decay,graffiti"
+    python vlm_enhancer.py --image /path/to/image.jpg --view-type interior --location-type hospital
 
-Output (JSON):
-    {
-        "description": "Rich natural language description...",
-        "caption": "Short caption for alt text",
-        "architectural_style": "Art Deco",
-        "estimated_period": {"start": 1920, "end": 1940, "confidence": 0.7},
-        "condition_assessment": {"overall": "poor", "score": 0.3, "details": "..."},
-        "notable_features": ["feature1", "feature2"],
-        "search_keywords": ["keyword1", "keyword2"],
-        "duration_ms": 5000,
-        "model": "qwen3-vl-7b",
-        "device": "mps"
-    }
+Requirements:
+    - Python 3.12+
+    - PyTorch with MPS/CUDA/CPU support
+    - transformers >= 4.45.0
+    - Pillow
+    - accelerate
 
 Setup:
     cd scripts/vlm-server
-    python3 -m venv venv
+    python3.12 -m venv venv
     source venv/bin/activate
-    pip install transformers torch torchvision pillow accelerate
-    # Download model on first run
+    pip install torch torchvision transformers accelerate pillow
 
-Per CLAUDE.md Rule 9: Local LLMs for background tasks only.
+@version 1.0
+@see docs/plans/adaptive-brewing-cherny.md Phase 5
 """
 
 import argparse
 import json
 import sys
 import time
+import re
 from pathlib import Path
+from typing import Optional
 
 # Check for required dependencies
 try:
     import torch
     from PIL import Image
+    from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
 except ImportError as e:
     print(json.dumps({
-        "error": f"Missing dependency: {e}. Run: pip install torch torchvision pillow",
-        "description": "",
-        "caption": "",
-        "notable_features": [],
-        "search_keywords": [],
-        "duration_ms": 0,
-        "model": "none",
-        "device": "none"
+        "error": f"Missing dependency: {e}. Run: pip install torch transformers accelerate pillow",
+        "tags": [],
+        "confidence": {}
     }))
     sys.exit(1)
 
-# Model loading is deferred for faster startup when checking availability
-MODEL = None
-PROCESSOR = None
-MODEL_NAME = None
+
+# =============================================================================
+# CONSTANTS
+# =============================================================================
+
+MODEL_ID = "Qwen/Qwen2-VL-7B-Instruct"
+
+# Architectural styles for urbex contexts
+ARCHITECTURAL_STYLES = [
+    "Art Deco", "Art Nouveau", "Bauhaus", "Beaux-Arts", "Brutalist",
+    "Colonial Revival", "Craftsman", "Federal", "Georgian", "Gothic Revival",
+    "Greek Revival", "Industrial", "Italianate", "Mid-Century Modern",
+    "Modernist", "Neo-Classical", "Post-Modern", "Prairie Style",
+    "Queen Anne", "Romanesque Revival", "Tudor Revival", "Victorian"
+]
+
+# Condition assessment terms
+CONDITION_TERMS = {
+    "excellent": ["pristine", "well-maintained", "good condition", "intact"],
+    "good": ["minor wear", "slight decay", "mostly intact", "preserved"],
+    "fair": ["moderate decay", "some damage", "deteriorating", "weathered"],
+    "poor": ["significant decay", "heavy damage", "collapsed areas", "unstable"],
+    "critical": ["severe structural", "dangerous", "collapsing", "ruins"]
+}
 
 
-def get_device(requested: str = "auto") -> str:
-    """Determine best available device."""
-    if requested == "mps" and torch.backends.mps.is_available():
+# =============================================================================
+# MODEL LOADING
+# =============================================================================
+
+_model = None
+_processor = None
+
+
+def get_device() -> str:
+    """Detect best available device."""
+    if torch.backends.mps.is_available():
         return "mps"
-    elif requested == "cuda" and torch.cuda.is_available():
+    elif torch.cuda.is_available():
         return "cuda"
-    elif requested == "auto":
-        if torch.backends.mps.is_available():
-            return "mps"
-        elif torch.cuda.is_available():
-            return "cuda"
     return "cpu"
 
 
-def load_model(model_name: str = "qwen3-vl", device: str = "auto"):
-    """Load VLM model and processor."""
-    global MODEL, PROCESSOR, MODEL_NAME
+def load_model(device: Optional[str] = None):
+    """Load Qwen2-VL model and processor."""
+    global _model, _processor
 
-    if MODEL is not None:
-        return
+    if _model is not None:
+        return _model, _processor
 
-    device = get_device(device)
+    if device is None:
+        device = get_device()
+
+    print(f"[VLM] Loading {MODEL_ID} on {device}...", file=sys.stderr)
+    start = time.time()
 
     try:
-        from transformers import AutoModelForCausalLM, AutoProcessor
+        # Load processor
+        _processor = AutoProcessor.from_pretrained(MODEL_ID)
 
-        # Model selection
-        model_map = {
-            "qwen3-vl": "Qwen/Qwen2-VL-7B-Instruct",  # Latest available
-            "qwen2-vl": "Qwen/Qwen2-VL-7B-Instruct",
-            "llava": "llava-hf/llava-1.5-7b-hf",
-        }
-
-        hf_model = model_map.get(model_name, model_map["qwen3-vl"])
-
-        print(f"Loading {hf_model}...", file=sys.stderr)
-
-        PROCESSOR = AutoProcessor.from_pretrained(hf_model, trust_remote_code=True)
-
-        # Load model with appropriate dtype
-        dtype = torch.float16 if device != "cpu" else torch.float32
-
-        MODEL = AutoModelForCausalLM.from_pretrained(
-            hf_model,
-            torch_dtype=dtype,
-            device_map=device if device != "mps" else None,
-            trust_remote_code=True,
-        )
-
+        # Load model with appropriate settings
         if device == "mps":
-            MODEL = MODEL.to(device)
+            _model = Qwen2VLForConditionalGeneration.from_pretrained(
+                MODEL_ID,
+                torch_dtype=torch.float16,
+                device_map="auto",
+                low_cpu_mem_usage=True,
+            )
+        elif device == "cuda":
+            _model = Qwen2VLForConditionalGeneration.from_pretrained(
+                MODEL_ID,
+                torch_dtype=torch.bfloat16,
+                device_map="auto",
+            )
+        else:
+            _model = Qwen2VLForConditionalGeneration.from_pretrained(
+                MODEL_ID,
+                torch_dtype=torch.float32,
+                device_map="cpu",
+                low_cpu_mem_usage=True,
+            )
 
-        MODEL_NAME = model_name
-        print(f"Model loaded on {device}", file=sys.stderr)
+        elapsed = time.time() - start
+        print(f"[VLM] Model loaded in {elapsed:.1f}s", file=sys.stderr)
+
+        return _model, _processor
 
     except Exception as e:
-        raise RuntimeError(f"Failed to load model {model_name}: {e}")
+        print(f"[VLM] Failed to load model: {e}", file=sys.stderr)
+        raise
 
 
-def build_prompt(
-    view_type: str | None = None,
-    tags: list[str] | None = None,
-    location_type: str | None = None,
-    location_name: str | None = None,
-    state: str | None = None,
+# =============================================================================
+# PROMPT BUILDING
+# =============================================================================
+
+def build_analysis_prompt(
+    view_type: Optional[str] = None,
+    location_type: Optional[str] = None,
+    location_name: Optional[str] = None,
+    state: Optional[str] = None,
+    tags: Optional[list] = None
 ) -> str:
-    """Build context-aware analysis prompt."""
-    context_parts = []
+    """Build context-aware analysis prompt for VLM."""
 
+    # Base context
+    context_parts = []
     if location_name:
         context_parts.append(f"This is an image from '{location_name}'")
     if location_type:
-        context_parts.append(f"a {location_type}")
+        context_parts.append(f"an abandoned {location_type}")
     if state:
-        context_parts.append(f"in {state}")
-    if view_type and view_type != "unknown":
+        context_parts.append(f"located in {state}")
+    if view_type:
         context_parts.append(f"showing an {view_type} view")
     if tags:
-        context_parts.append(f"Previously identified elements: {', '.join(tags[:15])}")
+        context_parts.append(f"Previous analysis detected: {', '.join(tags[:10])}")
 
     context = ". ".join(context_parts) + "." if context_parts else ""
 
-    prompt = f"""{context}
+    prompt = f"""Analyze this image of an abandoned location. {context}
 
-Analyze this image of an abandoned or historic location. Provide:
+Provide a detailed JSON response with the following structure:
+{{
+    "description": "A rich 2-3 sentence description of what you see",
+    "caption": "A short alt-text caption (10-15 words)",
+    "architectural_style": "Detected architectural style (e.g., Art Deco, Brutalist, Industrial) or null",
+    "estimated_period": {{
+        "start": 1920,
+        "end": 1940,
+        "confidence": 0.7,
+        "reasoning": "Brief explanation of date clues"
+    }},
+    "condition_assessment": {{
+        "overall": "excellent|good|fair|poor|critical",
+        "score": 0.3,
+        "details": "Description of decay/preservation state",
+        "observations": ["specific observation 1", "specific observation 2"]
+    }},
+    "notable_features": ["feature1", "feature2", "feature3"],
+    "search_keywords": ["keyword1", "keyword2", "keyword3"],
+    "hazards": ["potential hazard 1", "potential hazard 2"]
+}}
 
-1. DESCRIPTION: A detailed 2-3 sentence description of what you see.
+Focus on:
+1. Architectural details and construction materials
+2. Signs of age and decay
+3. Historical elements and period-specific features
+4. Safety considerations for explorers
+5. Unique or notable characteristics
 
-2. CAPTION: A single concise sentence suitable for alt text.
-
-3. ARCHITECTURAL_STYLE: If visible, identify the architectural style (Art Deco, Mid-Century Modern, Victorian, Industrial, Brutalist, Colonial Revival, etc.) or "unknown".
-
-4. ESTIMATED_PERIOD: Estimate when this structure was likely built based on architectural features. Provide start year, end year, and your reasoning.
-
-5. CONDITION_ASSESSMENT: Assess the current condition:
-   - Overall: excellent/good/fair/poor/critical
-   - Score: 0.0 (destroyed) to 1.0 (pristine)
-   - Key observations about decay, damage, or preservation
-
-6. NOTABLE_FEATURES: List 3-5 notable architectural or historical features visible.
-
-7. SEARCH_KEYWORDS: Suggest 5-8 keywords for finding similar locations.
-
-Respond in JSON format only."""
+Return ONLY valid JSON, no additional text."""
 
     return prompt
 
 
+# =============================================================================
+# IMAGE ANALYSIS
+# =============================================================================
+
 def analyze_image(
     image_path: str,
-    view_type: str | None = None,
-    tags: list[str] | None = None,
-    location_type: str | None = None,
-    location_name: str | None = None,
-    state: str | None = None,
-    max_tokens: int = 512,
+    view_type: Optional[str] = None,
+    location_type: Optional[str] = None,
+    location_name: Optional[str] = None,
+    state: Optional[str] = None,
+    tags: Optional[list] = None,
+    device: Optional[str] = None,
+    max_tokens: int = 1024
 ) -> dict:
-    """Run VLM analysis on image."""
-    global MODEL, PROCESSOR
+    """Analyze image using Qwen2-VL."""
 
-    if MODEL is None:
-        raise RuntimeError("Model not loaded")
+    start_time = time.time()
 
-    # Load image
+    # Load model
+    model, processor = load_model(device)
+    device = get_device() if device is None else device
+
+    # Load and prepare image
     image = Image.open(image_path).convert("RGB")
 
     # Build prompt
-    prompt = build_prompt(view_type, tags, location_type, location_name, state)
+    prompt = build_analysis_prompt(
+        view_type=view_type,
+        location_type=location_type,
+        location_name=location_name,
+        state=state,
+        tags=tags
+    )
 
-    # Prepare inputs (model-specific formatting)
+    # Prepare conversation format for Qwen2-VL
     messages = [
         {
             "role": "user",
             "content": [
                 {"type": "image", "image": image},
-                {"type": "text", "text": prompt},
-            ],
+                {"type": "text", "text": prompt}
+            ]
         }
     ]
 
-    # Process with model
-    try:
-        text = PROCESSOR.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
+    # Process inputs
+    text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    inputs = processor(
+        text=[text],
+        images=[image],
+        padding=True,
+        return_tensors="pt"
+    )
+    inputs = inputs.to(model.device)
+
+    # Generate response
+    with torch.no_grad():
+        generated_ids = model.generate(
+            **inputs,
+            max_new_tokens=max_tokens,
+            do_sample=True,
+            temperature=0.7,
+            top_p=0.9,
         )
-        inputs = PROCESSOR(
-            text=[text],
-            images=[image],
-            padding=True,
-            return_tensors="pt",
-        )
-        inputs = inputs.to(MODEL.device)
 
-        # Generate
-        with torch.no_grad():
-            outputs = MODEL.generate(
-                **inputs,
-                max_new_tokens=max_tokens,
-                do_sample=True,
-                temperature=0.7,
-                top_p=0.9,
-            )
+    # Decode response
+    generated_ids_trimmed = [
+        out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+    ]
+    response_text = processor.batch_decode(
+        generated_ids_trimmed,
+        skip_special_tokens=True,
+        clean_up_tokenization_spaces=False
+    )[0]
 
-        # Decode
-        response = PROCESSOR.batch_decode(
-            outputs[:, inputs.input_ids.shape[1]:],
-            skip_special_tokens=True,
-        )[0]
+    duration_ms = int((time.time() - start_time) * 1000)
 
-        # Parse JSON from response
-        return parse_vlm_response(response)
-
-    except Exception as e:
-        raise RuntimeError(f"VLM inference failed: {e}")
-
-
-def parse_vlm_response(response: str) -> dict:
-    """Parse VLM response, handling various output formats."""
-    # Try to extract JSON from response
-    response = response.strip()
-
-    # Handle markdown code blocks
-    if "```json" in response:
-        start = response.find("```json") + 7
-        end = response.find("```", start)
-        response = response[start:end].strip()
-    elif "```" in response:
-        start = response.find("```") + 3
-        end = response.find("```", start)
-        response = response[start:end].strip()
-
+    # Parse JSON response
     try:
-        return json.loads(response)
+        # Try to extract JSON from response
+        json_match = re.search(r'\{[\s\S]*\}', response_text)
+        if json_match:
+            result = json.loads(json_match.group())
+        else:
+            result = {"description": response_text}
     except json.JSONDecodeError:
-        # If JSON parsing fails, extract what we can
-        return {
-            "description": response[:500] if len(response) > 100 else "Analysis failed",
-            "caption": response[:100] if len(response) > 50 else "No caption",
-            "architectural_style": None,
-            "estimated_period": None,
-            "condition_assessment": None,
-            "notable_features": [],
-            "search_keywords": [],
-        }
+        result = {"description": response_text}
 
+    # Ensure required fields
+    result.setdefault("tags", [])
+    result.setdefault("confidence", {})
+    result.setdefault("description", "")
+    result.setdefault("caption", "")
+
+    # Extract tags from notable_features and search_keywords if present
+    all_tags = list(result.get("notable_features", [])) + list(result.get("search_keywords", []))
+    result["tags"] = list(set(all_tags))[:20]
+
+    # Set confidence for all tags
+    result["confidence"] = {tag: 0.85 for tag in result["tags"]}
+
+    # Add metadata
+    result["duration_ms"] = duration_ms
+    result["model"] = "qwen2-vl-7b"
+    result["device"] = device
+
+    return result
+
+
+# =============================================================================
+# CLI
+# =============================================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="VLM deep image analysis")
+    parser = argparse.ArgumentParser(description="VLM deep image analysis using Qwen2-VL")
     parser.add_argument("--image", required=True, help="Path to image file")
-    parser.add_argument("--model", default="qwen3-vl", choices=["qwen3-vl", "qwen2-vl", "llava"])
-    parser.add_argument("--device", default="auto", choices=["auto", "mps", "cuda", "cpu"])
-    parser.add_argument("--max-tokens", type=int, default=512)
-    parser.add_argument("--output", default="json", choices=["json", "text"])
-
-    # Context parameters
-    parser.add_argument("--view-type", help="View type from Stage 0")
+    parser.add_argument("--view-type", help="View type from Stage 0 (interior/exterior/aerial/detail)")
+    parser.add_argument("--location-type", help="Location type (hospital, factory, school, etc.)")
+    parser.add_argument("--location-name", help="Name of the location")
+    parser.add_argument("--state", help="US state")
     parser.add_argument("--tags", help="Comma-separated tags from Stage 1")
-    parser.add_argument("--location-type", help="Location type from database")
-    parser.add_argument("--location-name", help="Location name")
-    parser.add_argument("--state", help="State/region")
+    parser.add_argument("--device", choices=["mps", "cuda", "cpu"], help="Device to use")
+    parser.add_argument("--max-tokens", type=int, default=1024, help="Max tokens to generate")
+    parser.add_argument("--output", choices=["json", "text"], default="json", help="Output format")
 
     args = parser.parse_args()
 
-    # Validate image exists
-    if not Path(args.image).exists():
-        print(json.dumps({"error": f"Image not found: {args.image}"}))
+    # Validate image path
+    image_path = Path(args.image)
+    if not image_path.exists():
+        print(json.dumps({"error": f"Image not found: {args.image}", "tags": [], "confidence": {}}))
         sys.exit(1)
 
-    start_time = time.time()
+    # Parse tags
+    tags = args.tags.split(",") if args.tags else None
 
     try:
-        # Load model
-        load_model(args.model, args.device)
-
-        # Parse tags
-        tags = args.tags.split(",") if args.tags else None
-
-        # Run analysis
         result = analyze_image(
-            args.image,
+            image_path=str(image_path),
             view_type=args.view_type,
-            tags=tags,
             location_type=args.location_type,
             location_name=args.location_name,
             state=args.state,
-            max_tokens=args.max_tokens,
+            tags=tags,
+            device=args.device,
+            max_tokens=args.max_tokens
         )
-
-        duration_ms = int((time.time() - start_time) * 1000)
-
-        # Add metadata
-        result["duration_ms"] = duration_ms
-        result["model"] = MODEL_NAME or args.model
-        result["device"] = get_device(args.device)
 
         if args.output == "json":
             print(json.dumps(result, indent=2))
         else:
             print(f"Description: {result.get('description', 'N/A')}")
             print(f"Caption: {result.get('caption', 'N/A')}")
-            print(f"Style: {result.get('architectural_style', 'N/A')}")
-            print(f"Features: {', '.join(result.get('notable_features', []))}")
-            print(f"Duration: {duration_ms}ms")
+            print(f"Architectural Style: {result.get('architectural_style', 'N/A')}")
+            if result.get("estimated_period"):
+                period = result["estimated_period"]
+                print(f"Estimated Period: {period.get('start', '?')}-{period.get('end', '?')} "
+                      f"(confidence: {period.get('confidence', 0):.0%})")
+            if result.get("condition_assessment"):
+                cond = result["condition_assessment"]
+                print(f"Condition: {cond.get('overall', 'N/A')} ({cond.get('score', 0):.0%})")
+            print(f"Tags: {', '.join(result.get('tags', []))}")
+            print(f"Duration: {result.get('duration_ms', 0)}ms")
 
     except Exception as e:
-        error_result = {
+        print(json.dumps({
             "error": str(e),
-            "description": "",
-            "caption": "",
-            "notable_features": [],
-            "search_keywords": [],
-            "duration_ms": int((time.time() - start_time) * 1000),
-            "model": args.model,
-            "device": args.device,
-        }
-        print(json.dumps(error_result))
+            "tags": [],
+            "confidence": {}
+        }))
         sys.exit(1)
 
 

@@ -108,9 +108,19 @@ export class LiteLLMProvider extends BaseExtractionProvider {
   async extract(input: ExtractionInput): Promise<ExtractionResult> {
     const startTime = Date.now();
 
-    // Ensure LiteLLM is running
+    // Ensure LiteLLM is running (auto-starts if needed)
     if (!(await LiteLLMLifecycle.ensure())) {
-      throw new Error('LiteLLM proxy not available');
+      const status = await LiteLLMLifecycle.getStatus();
+      if (!status.installed) {
+        throw new Error(
+          'Cloud AI gateway not installed. LiteLLM will be installed automatically on first cloud provider use, or run: ./scripts/setup-litellm.sh'
+        );
+      }
+      throw new Error(
+        status.lastError
+          ? `Cloud AI gateway failed to start: ${status.lastError}`
+          : 'Cloud AI gateway failed to start. Check logs for details.'
+      );
     }
 
     // Reset idle timer

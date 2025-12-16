@@ -3,9 +3,12 @@
    * Offline AI Models Configuration
    *
    * Local Language Models (Ollama, spaCy) and Visual Models (RAM++).
+   * Ollama runs seamlessly in the background - auto-starts when needed,
+   * auto-stops after idle timeout. Zero manual intervention required.
+   *
    * Extracted from ExtractionSettings.svelte and Settings.svelte tagging section.
    */
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
 
   // Types
   interface ProviderConfig {
@@ -38,6 +41,16 @@
     size: number;
   }
 
+  interface OllamaLifecycleStatus {
+    installed: boolean;
+    binaryPath: string | null;
+    running: boolean;
+    managedByApp: boolean;
+    idleTimeoutMs: number;
+    idleTimeRemainingMs: number | null;
+    lastError: string | null;
+  }
+
   interface Props {
     expanded?: boolean;
     onToggle?: () => void;
@@ -55,6 +68,10 @@
   let loading = $state(true);
   let testingProvider = $state<string | null>(null);
   let testResult = $state<{ success: boolean; message: string } | null>(null);
+
+  // Ollama Lifecycle State (auto-managed background service)
+  let ollamaLifecycle = $state<OllamaLifecycleStatus | null>(null);
+  let lifecyclePollingInterval: ReturnType<typeof setInterval> | null = null;
 
   // Ollama configuration modal
   let showOllamaConfig = $state(false);
@@ -86,9 +103,31 @@
     loading = false;
   });
 
+  onDestroy(() => {
+    // Clean up lifecycle polling
+    if (lifecyclePollingInterval) {
+      clearInterval(lifecyclePollingInterval);
+      lifecyclePollingInterval = null;
+    }
+  });
+
   $effect(() => {
     if (expanded && providers.length === 0) {
       loadAll();
+    }
+  });
+
+  // Start/stop lifecycle polling based on expanded state
+  $effect(() => {
+    if (expanded) {
+      // Poll lifecycle status every 5 seconds when expanded
+      loadOllamaLifecycleStatus();
+      lifecyclePollingInterval = setInterval(loadOllamaLifecycleStatus, 5000);
+    } else {
+      if (lifecyclePollingInterval) {
+        clearInterval(lifecyclePollingInterval);
+        lifecyclePollingInterval = null;
+      }
     }
   });
 
@@ -97,7 +136,18 @@
       loadProviders(),
       refreshStatuses(),
       loadRamSettings(),
+      loadOllamaLifecycleStatus(),
     ]);
+  }
+
+  // Ollama Lifecycle functions
+  async function loadOllamaLifecycleStatus() {
+    try {
+      const status = await window.electronAPI.ollama.getStatus();
+      ollamaLifecycle = status;
+    } catch (error) {
+      console.error('Failed to load Ollama lifecycle status:', error);
+    }
   }
 
   // Language Models functions
@@ -378,7 +428,25 @@
           onclick={() => languageModelsExpanded = !languageModelsExpanded}
           class="w-full py-3 px-4 flex items-center justify-between text-left hover:bg-braun-50 transition-colors bg-white"
         >
-          <span class="text-sm font-medium text-braun-900">Language Models</span>
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-medium text-braun-900">Language Models</span>
+            {#if ollamaLifecycle?.running && ollamaLifecycle?.managedByApp}
+              <div class="flex items-center gap-1" title="Ollama running (auto-managed)">
+                <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                <span class="text-xs text-braun-400">active</span>
+              </div>
+            {:else if ollamaLifecycle?.running}
+              <div class="flex items-center gap-1" title="Ollama running (external)">
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                <span class="text-xs text-braun-400">external</span>
+              </div>
+            {:else if ollamaLifecycle?.installed}
+              <div class="flex items-center gap-1" title="Ollama installed, not running">
+                <span class="w-1.5 h-1.5 rounded-full bg-braun-300"></span>
+                <span class="text-xs text-braun-400">ready</span>
+              </div>
+            {/if}
+          </div>
           <svg
             class="w-4 h-4 text-braun-400 transition-transform duration-200 {languageModelsExpanded ? 'rotate-180' : ''}"
             fill="none"

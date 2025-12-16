@@ -2442,6 +2442,8 @@ export interface ElectronAPI {
     test: (modelId: string) => Promise<LiteLLMTestResult>;
     costs: () => Promise<LiteLLMCosts>;
     models: () => Promise<LiteLLMModel[]>;
+    /** Install LiteLLM venv (auto-setup for cloud providers) */
+    install: () => Promise<{ success: boolean; installed?: boolean; message?: string; error?: string }>;
     settings: {
       get: () => Promise<LiteLLMSettings>;
       set: (key: string, value: string) => Promise<{ success: boolean; error?: string }>;
@@ -2474,6 +2476,23 @@ export interface ElectronAPI {
       error?: string;
     }>;
     cleanup: (olderThanDays?: number) => Promise<{ success: boolean; deleted?: number; error?: string }>;
+  };
+
+  // AI Service (Unified Abstraction)
+  ai: {
+    complete: (request: AICompletionRequest) => Promise<{ success: boolean; result?: AICompletionResult; error?: string }>;
+    analyzeImage: (request: AIVisionRequest) => Promise<{ success: boolean; result?: AIVisionResult; error?: string }>;
+    embed: (request: AIEmbedRequest) => Promise<{ success: boolean; result?: AIEmbedResult; error?: string }>;
+    listModels: (filter?: AIModelFilter) => Promise<{ success: boolean; models: AIModel[]; error?: string }>;
+    getModel: (modelId: string) => Promise<{ success: boolean; model?: AIModel; error?: string }>;
+    downloadModel: (modelId: string) => Promise<{ success: boolean; error?: string }>;
+    deleteModel: (modelId: string) => Promise<{ success: boolean; error?: string }>;
+    health: () => Promise<{ success: boolean; health?: AIHealthStatus; error?: string }>;
+    refreshModels: () => Promise<{ success: boolean; summary?: AIModelSummary; error?: string }>;
+    modelsSummary: () => Promise<{ success: boolean; summary?: AIModelRegistrySummary; error?: string }>;
+    onDownloadProgress: (callback: (progress: AIDownloadProgress) => void) => () => void;
+    onDownloadComplete: (callback: (data: { modelId: string }) => void) => () => void;
+    onDownloadError: (callback: (data: { modelId: string; error: string }) => void) => () => void;
   };
 
 }
@@ -3301,6 +3320,186 @@ export interface DailyCost {
   cost: number;
   tokens: number;
   requests: number;
+}
+
+// =============================================================================
+// AI SERVICE (Unified Abstraction)
+// =============================================================================
+
+/** Provider type for AI models */
+export type AIModelProvider = 'ollama' | 'cloud' | 'python' | 'local';
+
+/** Category of AI model */
+export type AIModelCategory = 'text' | 'vision' | 'embed' | 'preprocessing' | 'tagging';
+
+/** Model state in the registry */
+export type AIModelState = 'available' | 'downloading' | 'ready' | 'running' | 'error';
+
+/** Model capabilities */
+export interface AIModelCapabilities {
+  completion: boolean;
+  vision: boolean;
+  embed: boolean;
+  streaming: boolean;
+}
+
+/** Model definition */
+export interface AIModel {
+  id: string;
+  name: string;
+  provider: AIModelProvider;
+  category: AIModelCategory;
+  capabilities: AIModelCapabilities;
+  state: AIModelState;
+  downloadProgress?: number;
+  size?: string;
+  parameterCount?: string;
+  contextLength?: number;
+  description?: string;
+  lastError?: string;
+}
+
+/** Filter for querying models */
+export interface AIModelFilter {
+  provider?: AIModelProvider[];
+  category?: AIModelCategory[];
+  state?: AIModelState[];
+  capabilities?: (keyof AIModelCapabilities)[];
+}
+
+/** Message in a conversation */
+export interface AIMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+/** Request for text completion */
+export interface AICompletionRequest {
+  model: string;
+  messages: AIMessage[];
+  temperature?: number;
+  maxTokens?: number;
+  stop?: string[];
+  timeout?: number;
+}
+
+/** Result from text completion */
+export interface AICompletionResult {
+  content: string;
+  model: string;
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  finishReason?: 'stop' | 'length' | 'error';
+  durationMs: number;
+}
+
+/** Request for image analysis */
+export interface AIVisionRequest {
+  model: string;
+  imagePath: string;
+  prompt?: string;
+  context?: {
+    viewType?: string;
+    locationType?: string;
+    state?: string;
+    existingTags?: string[];
+  };
+  maxTags?: number;
+  timeout?: number;
+}
+
+/** Result from image analysis */
+export interface AIVisionResult {
+  tags: string[];
+  confidence: Record<string, number>;
+  caption?: string;
+  description?: string;
+  qualityScore?: number;
+  viewType?: string;
+  model: string;
+  durationMs: number;
+}
+
+/** Request for text embedding */
+export interface AIEmbedRequest {
+  model: string;
+  text: string | string[];
+  timeout?: number;
+}
+
+/** Result from embedding */
+export interface AIEmbedResult {
+  embeddings: number[][];
+  model: string;
+  durationMs: number;
+}
+
+/** Provider health status */
+export interface AIProviderHealth {
+  provider: AIModelProvider;
+  available: boolean;
+  status: string;
+  error?: string;
+  lastCheck: string;
+}
+
+/** Overall AI system health */
+export interface AIHealthStatus {
+  status: 'healthy' | 'degraded' | 'unavailable';
+  providers: AIProviderHealth[];
+  availableModels: number;
+  readyModels: number;
+  lastCheck: string;
+}
+
+/** Download progress event */
+export interface AIDownloadProgress {
+  modelId: string;
+  progress: number;
+  speed?: number;
+  eta?: number;
+  status: 'starting' | 'downloading' | 'extracting' | 'complete' | 'error';
+  error?: string;
+}
+
+/** Model refresh result summary */
+export interface AIModelSummary {
+  total: number;
+  ready: number;
+  byProvider: {
+    ollama: number;
+    cloud: number;
+    python: number;
+    local: number;
+  };
+}
+
+/** Full model registry summary */
+export interface AIModelRegistrySummary {
+  total: number;
+  byProvider: {
+    ollama: number;
+    cloud: number;
+    python: number;
+    local: number;
+  };
+  byState: {
+    available: number;
+    downloading: number;
+    ready: number;
+    running: number;
+    error: number;
+  };
+  byCategory: {
+    text: number;
+    vision: number;
+    embed: number;
+    preprocessing: number;
+    tagging: number;
+  };
 }
 
 declare global {

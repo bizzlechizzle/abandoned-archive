@@ -36,6 +36,8 @@
   import Setup from './pages/Setup.svelte';
   // Migration 24: Login page
   import Login from './pages/Login.svelte';
+  // Phase 4: Developer Playground for AI model comparison
+  import Playground from './pages/Playground.svelte';
 
   let currentRoute = $state({ path: '/dashboard', params: {} });
   let setupComplete = $state(false);
@@ -301,6 +303,8 @@
         <Research />
       {:else if currentRoute.path === '/settings'}
         <Settings />
+      {:else if currentRoute.path === '/playground'}
+        <Playground />
       {:else if currentRoute.path === '/location/:id'}
         <LocationDetail locationId={currentRoute.params?.id || ''} />
       {:else if currentRoute.path === '/location/:locid/sub/:subid'}

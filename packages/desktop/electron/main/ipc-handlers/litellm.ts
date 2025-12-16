@@ -16,6 +16,7 @@ import {
   getLiteLLMStatus,
   getLiteLLMCosts,
   cleanupOrphanLiteLLM,
+  installLiteLLM,
 } from '../../services/litellm-lifecycle-service';
 import { TestModelSchema } from './litellm-validation';
 import { z } from 'zod';
@@ -292,6 +293,37 @@ export function registerLiteLLMHandlers(): void {
       }
     }
   );
+
+  // -------------------------------------------------------------------------
+  // litellm:install - Install LiteLLM (auto-setup)
+  // -------------------------------------------------------------------------
+  ipcMain.handle('litellm:install', async () => {
+    try {
+      console.log('[LiteLLM IPC] Starting installation...');
+      const result = await installLiteLLM();
+
+      if (result.success) {
+        // Verify installation
+        const status = await getLiteLLMStatus();
+        return {
+          success: true,
+          installed: status.installed,
+          message: 'LiteLLM installed successfully',
+        };
+      }
+
+      return {
+        success: false,
+        error: result.error || 'Installation failed',
+      };
+    } catch (error) {
+      console.error('[LiteLLM IPC] Install error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
 
   console.log('[IPC] LiteLLM handlers registered');
 }

@@ -90,10 +90,17 @@ let configuredModels: string[] = [];
 
 /**
  * Get paths to check for bundled LiteLLM venv.
+ * Priority: extraResources (bundled) > userData (installed) > scripts (development)
  */
 function getVenvPaths(): string[] {
+  // Get resourcesPath for extraResources (production bundled venv)
+  // In packaged app: /Applications/Abandoned Archive.app/Contents/Resources
+  const resourcesPath = process.resourcesPath || '';
+
   return [
-    // Production: in app resources
+    // Production: extraResources bundled venv (highest priority)
+    join(resourcesPath, 'litellm-venv', 'bin', 'python'),
+    // User data: installed via auto-install
     join(app.getPath('userData'), 'litellm-venv', 'bin', 'python'),
     // Development: project root scripts folder (when running from packages/desktop)
     join(process.cwd(), '..', '..', 'scripts', 'litellm-venv', 'bin', 'python'),
@@ -745,6 +752,95 @@ export async function getLiteLLMCosts(): Promise<{
 }
 
 // =============================================================================
+// AUTO-INSTALL
+// =============================================================================
+
+/**
+ * Find the setup-litellm.sh script path.
+ */
+function findSetupScript(): string | null {
+  const candidates = [
+    // From Electron app path (production)
+    join(app.getAppPath(), '../../scripts/setup-litellm.sh'),
+    // Development: project root scripts folder
+    join(process.cwd(), 'scripts', 'setup-litellm.sh'),
+    // Development: when cwd is packages/desktop
+    join(process.cwd(), '..', '..', 'scripts', 'setup-litellm.sh'),
+    // Relative to dist-electron output
+    join(__dirname, '..', '..', '..', 'scripts', 'setup-litellm.sh'),
+    join(__dirname, '..', '..', '..', '..', 'scripts', 'setup-litellm.sh'),
+  ];
+
+  for (const path of candidates) {
+    if (existsSync(path)) {
+      return path;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Install LiteLLM by running the setup script.
+ * Returns a promise that resolves when installation is complete.
+ */
+export async function installLiteLLM(): Promise<{ success: boolean; error?: string }> {
+  console.log('[LiteLLMLifecycle] Starting auto-install...');
+
+  const scriptPath = findSetupScript();
+  if (!scriptPath) {
+    console.error('[LiteLLMLifecycle] Setup script not found');
+    return { success: false, error: 'Setup script not found. Run: ./scripts/setup-litellm.sh manually' };
+  }
+
+  console.log(`[LiteLLMLifecycle] Running setup script: ${scriptPath}`);
+
+  return new Promise((resolve) => {
+    const installProcess = spawn('bash', [scriptPath], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env },
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    installProcess.stdout?.on('data', (data) => {
+      stdout += data.toString();
+      console.log('[LiteLLM Install]', data.toString().trim());
+    });
+
+    installProcess.stderr?.on('data', (data) => {
+      stderr += data.toString();
+      console.error('[LiteLLM Install Error]', data.toString().trim());
+    });
+
+    installProcess.on('error', (error) => {
+      console.error('[LiteLLMLifecycle] Install process error:', error);
+      resolve({ success: false, error: `Failed to run setup script: ${error.message}` });
+    });
+
+    installProcess.on('exit', (code) => {
+      if (code === 0) {
+        console.log('[LiteLLMLifecycle] Installation complete');
+        resolve({ success: true });
+      } else {
+        console.error(`[LiteLLMLifecycle] Installation failed with code ${code}`);
+        resolve({
+          success: false,
+          error: stderr || `Installation failed with exit code ${code}`,
+        });
+      }
+    });
+
+    // Timeout after 5 minutes
+    setTimeout(() => {
+      installProcess.kill('SIGTERM');
+      resolve({ success: false, error: 'Installation timed out after 5 minutes' });
+    }, 5 * 60 * 1000);
+  });
+}
+
+// =============================================================================
 // SINGLETON EXPORTS
 // =============================================================================
 
@@ -759,6 +855,7 @@ export const LiteLLMLifecycle = {
   resetIdleTimer,
   cleanupOrphan: cleanupOrphanLiteLLM,
   getCosts: getLiteLLMCosts,
+  install: installLiteLLM,
 };
 
 export default LiteLLMLifecycle;

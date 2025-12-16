@@ -1,6 +1,7 @@
 <script lang="ts">
   import OnlineModels from './OnlineModels.svelte';
   import OfflineModels from './OfflineModels.svelte';
+  import ModelRepository from './ModelRepository.svelte';
 
   interface Props {
     expanded?: boolean;
@@ -10,8 +11,13 @@
   let { expanded = false, onToggle }: Props = $props();
 
   // Track which sub-section is expanded
+  let repositoryExpanded = $state(false);
   let onlineExpanded = $state(false);
   let offlineExpanded = $state(true); // Default to offline since it's more common
+
+  function toggleRepository() {
+    repositoryExpanded = !repositoryExpanded;
+  }
 
   function toggleOnline() {
     onlineExpanded = !onlineExpanded;
@@ -48,6 +54,7 @@
       </p>
 
       <div class="border border-braun-200 rounded overflow-hidden">
+        <ModelRepository expanded={repositoryExpanded} onToggle={toggleRepository} />
         <OnlineModels expanded={onlineExpanded} onToggle={toggleOnline} />
         <OfflineModels expanded={offlineExpanded} onToggle={toggleOffline} />
       </div>

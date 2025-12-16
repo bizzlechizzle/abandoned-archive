@@ -1227,6 +1227,9 @@ const api = {
     // List available models
     models: () =>
       invokeAuto("litellm:models")(),
+    // Install LiteLLM venv (auto-setup for cloud providers)
+    install: () =>
+      invokeLong("litellm:install")(),
     // Settings management
     settings: {
       get: () =>
@@ -1273,6 +1276,57 @@ const api = {
     // Delete old cost entries
     cleanup: (olderThanDays) =>
       invokeAuto("costs:cleanup")({ olderThanDays }),
+  },
+
+  // AI Service (Unified Abstraction)
+  // Single entry point for all AI operations
+  ai: {
+    // Text completion (chat, extraction, summarization)
+    complete: (request) =>
+      invokeLong("ai:complete")(request),
+    // Image analysis (tagging, captioning)
+    analyzeImage: (request) =>
+      invokeLong("ai:analyzeImage")(request),
+    // Text embeddings
+    embed: (request) =>
+      invokeLong("ai:embed")(request),
+    // List available models
+    listModels: (filter) =>
+      invokeAuto("ai:models:list")(filter),
+    // Get single model
+    getModel: (modelId) =>
+      invokeAuto("ai:models:get")(modelId),
+    // Download model (ollama only)
+    downloadModel: (modelId) =>
+      invokeLong("ai:models:download")(modelId),
+    // Delete model
+    deleteModel: (modelId) =>
+      invokeAuto("ai:models:delete")(modelId),
+    // Health check
+    health: () =>
+      invokeAuto("ai:health")(),
+    // Refresh model registry (re-discover all models)
+    refreshModels: () =>
+      invokeAuto("ai:models:refresh")(),
+    // Get model registry summary
+    modelsSummary: () =>
+      invokeAuto("ai:models:summary")(),
+    // Event listeners for download progress
+    onDownloadProgress: (callback) => {
+      const listener = (_event, progress) => callback(progress);
+      ipcRenderer.on("ai:download:progress", listener);
+      return () => ipcRenderer.removeListener("ai:download:progress", listener);
+    },
+    onDownloadComplete: (callback) => {
+      const listener = (_event, data) => callback(data);
+      ipcRenderer.on("ai:download:complete", listener);
+      return () => ipcRenderer.removeListener("ai:download:complete", listener);
+    },
+    onDownloadError: (callback) => {
+      const listener = (_event, data) => callback(data);
+      ipcRenderer.on("ai:download:error", listener);
+      return () => ipcRenderer.removeListener("ai:download:error", listener);
+    },
   },
 };
 

@@ -61,6 +61,7 @@ import { cleanupOrphanOllama, stopOllama } from '../../services/ollama-lifecycle
 import { registerCredentialHandlers } from './credentials';
 import { registerLiteLLMHandlers, shutdownLiteLLM, cleanupOrphanLiteLLM } from './litellm';
 import { registerCostTrackingHandlers } from './cost-tracking';
+import { registerAIHandlers } from './ai';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
@@ -166,6 +167,10 @@ export function registerIpcHandlers() {
   // Cost Tracking (Migration 88)
   // Track LLM usage costs for cloud providers
   registerCostTrackingHandlers(sqliteDb);
+
+  // AI Service (Unified Abstraction)
+  // Single entry point for all AI operations
+  registerAIHandlers();
 
   // Browser Image Capture (network monitoring, context menu)
   initializeBrowserImageCapture({
