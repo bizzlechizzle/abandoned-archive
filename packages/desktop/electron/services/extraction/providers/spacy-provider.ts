@@ -16,7 +16,8 @@
 
 import { spawn, type ChildProcess } from 'child_process';
 import { existsSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { BaseExtractionProvider, timestamp } from './base-provider';
 import type {
   ExtractionInput,
@@ -28,6 +29,10 @@ import type {
   ExtractedOrganization,
   ExtractedLocation,
 } from '../extraction-types';
+
+// ESM-compatible __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 /**
  * Response format from the spaCy service

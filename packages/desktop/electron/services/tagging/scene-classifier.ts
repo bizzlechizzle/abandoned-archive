@@ -245,10 +245,13 @@ export class SceneClassifierService {
       const results = await this.session.run(feeds);
 
       // Get image embedding
-      const imageEmbedding = results.image_embeds?.data as Float32Array;
-      if (!imageEmbedding) {
+      const rawImageEmbedding = results.image_embeds?.data as Float32Array;
+      if (!rawImageEmbedding) {
         throw new Error('Model did not return image embeddings');
       }
+
+      // Normalize image embedding (text embeddings were normalized in Python)
+      const imageEmbedding = this.normalizeEmbedding(rawImageEmbedding);
 
       // If we have precomputed text embeddings, compute similarities
       let allScores: Record<ViewType, number>;
@@ -268,9 +271,20 @@ export class SceneClassifierService {
         };
       }
 
-      // Find best match
-      const entries = Object.entries(allScores) as [ViewType, number][];
-      const [bestType, bestScore] = entries.reduce((a, b) => a[1] > b[1] ? a : b);
+      // Debug: Log raw scores
+      logger.debug('SceneClassifier',
+        `Raw scores: interior=${allScores.interior.toFixed(3)}, exterior=${allScores.exterior.toFixed(3)}, ` +
+        `aerial=${allScores.aerial.toFixed(3)}, detail=${allScores.detail.toFixed(3)}`
+      );
+
+      // Find best match (excluding 'unknown' from consideration)
+      const validEntries = Object.entries(allScores)
+        .filter(([vt]) => vt !== 'unknown') as [ViewType, number][];
+
+      const [bestType, bestScore] = validEntries.reduce(
+        (a, b) => a[1] >= b[1] ? a : b,  // >= ensures we keep first match on tie
+        ['interior', 0] as [ViewType, number]
+      );
 
       const viewType = bestScore >= this.config.confidenceThreshold ? bestType : 'unknown';
       const confidence = bestScore;
@@ -387,6 +401,29 @@ export class SceneClassifierService {
     }
 
     return scores;
+  }
+
+  /**
+   * Normalize an embedding vector to unit length (L2 normalization)
+   * Required because text embeddings were normalized in Python
+   */
+  private normalizeEmbedding(embedding: Float32Array): Float32Array {
+    let norm = 0;
+    for (let i = 0; i < embedding.length; i++) {
+      norm += embedding[i] * embedding[i];
+    }
+    norm = Math.sqrt(norm);
+
+    if (norm === 0) {
+      logger.warn('SceneClassifier', 'Image embedding has zero norm');
+      return embedding;
+    }
+
+    const normalized = new Float32Array(embedding.length);
+    for (let i = 0; i < embedding.length; i++) {
+      normalized[i] = embedding[i] / norm;
+    }
+    return normalized;
   }
 
   /**

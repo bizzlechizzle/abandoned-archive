@@ -294,14 +294,26 @@ export class ImageTaggingService {
     let source: 'florence' | 'ram++' | 'local';
     let model: string;
 
+    // Try Florence-2 first, fall back to RAM++ on failure
     if (this.florenceAvailable && this.config.taggerModel === 'florence') {
-      rawResult = await this.tagViaFlorence(imagePath, {
-        viewType,
-        locationType: context?.locationType,
-        state: context?.state,
-      });
-      source = 'florence';
-      model = 'florence-2-large';
+      try {
+        rawResult = await this.tagViaFlorence(imagePath, {
+          viewType,
+          locationType: context?.locationType,
+          state: context?.state,
+        });
+        source = 'florence';
+        model = 'florence-2-large';
+      } catch (florenceError) {
+        logger.warn('ImageTagging', `Florence-2 failed, falling back to RAM++: ${florenceError}`);
+        if (this.ramppAvailable) {
+          rawResult = await this.tagViaRampp(imagePath);
+          source = 'ram++';
+          model = 'ram++-swin-large';
+        } else {
+          throw florenceError;  // No fallback available, propagate error
+        }
+      }
     } else if (this.ramppAvailable) {
       rawResult = await this.tagViaRampp(imagePath);
       source = 'ram++';

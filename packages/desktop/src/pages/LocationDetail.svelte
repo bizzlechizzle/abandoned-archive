@@ -9,6 +9,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { router } from '../stores/router';
   import { importStore, isImporting } from '../stores/import-store';
+  import { pendingLocationImport, clearPendingLocationImport } from '../stores/import-modal-store';
   import { toasts } from '../stores/toast-store';
   import LocationEditForm from '../components/LocationEditForm.svelte';
   import NotesSection from '../components/NotesSection.svelte';
@@ -1083,18 +1084,29 @@
     }
     catch (err) { console.error('Error loading user settings:', err); }
 
-    // Auto-scroll to import zone if navigated from new location creation
-    const hash = window.location.hash;
-    if (hash.includes('autoImport=true')) {
-      // Small delay to ensure UI is ready, then scroll to import zone
-      setTimeout(() => {
-        const importZone = document.querySelector('[data-import-zone]');
-        if (importZone) {
-          importZone.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // Check for pending import from drag-drop on New Location button
+    // This triggers the normal import flow with progress UI
+    const pending = $pendingLocationImport;
+    if (pending && pending.locid === locationId && pending.paths.length > 0) {
+      // Clear first to prevent re-triggering on any re-render
+      clearPendingLocationImport();
+
+      // Small delay to ensure UI is ready, then auto-expand paths and trigger import
+      setTimeout(async () => {
+        try {
+          // Expand paths (handles folders recursively)
+          const expandedPaths = await window.electronAPI.media.expandPaths(pending.paths);
+          if (expandedPaths.length > 0) {
+            // Trigger import with current user as author (normal flow)
+            importFilePaths(expandedPaths, currentUser, 0, '');
+          } else {
+            toasts.warning('No supported media files found in dropped folders');
+          }
+        } catch (err) {
+          console.error('[LocationDetail] Auto-import from drag-drop failed:', err);
+          toasts.error('Failed to start import');
         }
-      }, 100);
-      // Clear the query param to prevent re-triggering on refresh
-      router.navigate(`/location/${locationId}`);
+      }, 300);
     }
   });
 

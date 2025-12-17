@@ -7,7 +7,7 @@
    */
   import { onMount } from 'svelte';
   import type { Location } from '@au-archive/core';
-  import { importModal, closeImportModal } from '../stores/import-modal-store';
+  import { importModal, closeImportModal, setPendingLocationImport } from '../stores/import-modal-store';
   import { router } from '../stores/router';
   import { toasts } from '../stores/toast-store';
   import AutocompleteInput from './AutocompleteInput.svelte';
@@ -385,14 +385,25 @@
         }
       }
 
+      // Auto-trigger import if we have pending folder paths (from drag-drop on New Location button)
+      const pendingPaths = $importModal.prefilledData?.pendingImportPaths;
+      if (pendingPaths?.length && newLocation?.locid) {
+        // Store pending import - LocationDetail will pick this up and trigger the import
+        // with proper progress UI (not silent background import)
+        setPendingLocationImport(newLocation.locid, pendingPaths);
+      }
+
       closeImportModal();
       const successMsg = isHostLocation
         ? 'Host location created - add buildings from the location page'
-        : 'Location created';
+        : pendingPaths?.length
+          ? 'Location created'
+          : 'Location created';
       toasts.success(successMsg);
 
       if (newLocation?.locid) {
-        router.navigate(`/location/${newLocation.locid}?autoImport=true`);
+        // Navigate to location - if pendingPaths exist, LocationDetail will auto-trigger import
+        router.navigate(`/location/${newLocation.locid}`);
       }
 
       resetForm();
@@ -656,6 +667,18 @@
             </svg>
             <p class="text-sm text-braun-700">
               GPS: {$importModal.prefilledData.gps_lat.toFixed(6)}, {$importModal.prefilledData.gps_lng.toFixed(6)}
+            </p>
+          </div>
+        {/if}
+
+        <!-- Pending Import Indicator (from folder drag-drop) -->
+        {#if $importModal.prefilledData?.pendingImportPaths?.length}
+          <div class="p-3 bg-braun-100 border border-braun-300 rounded flex items-center gap-2">
+            <svg class="w-4 h-4 text-braun-700 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+            <p class="text-sm text-braun-700">
+              {$importModal.prefilledData.pendingImportPaths.length === 1 ? '1 folder' : `${$importModal.prefilledData.pendingImportPaths.length} folders`} ready to import
             </p>
           </div>
         {/if}

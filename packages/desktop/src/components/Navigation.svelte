@@ -7,6 +7,7 @@
 
   let currentRoute = $state('/dashboard');
   let showUserSwitcher = $state(false);
+  let isDraggingFolder = $state(false);
 
   $effect(() => {
     const unsubscribe = router.subscribe((route) => {
@@ -40,6 +41,61 @@
     showUserSwitcher = false;
   }
 
+  // Drag-drop handlers for "New Location" button
+  function extractFolderName(path: string): string {
+    // Handle both Unix and Windows paths
+    const name = path.split('/').pop() || path.split('\\').pop() || 'Untitled';
+    return name;
+  }
+
+  function handleDragOver(event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    // Only accept if it looks like a file/folder drag
+    if (event.dataTransfer?.types.includes('Files')) {
+      isDraggingFolder = true;
+      event.dataTransfer.dropEffect = 'copy';
+    }
+  }
+
+  function handleDragLeave(event: DragEvent) {
+    event.preventDefault();
+    isDraggingFolder = false;
+  }
+
+  async function handleDrop(event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    isDraggingFolder = false;
+
+    const files = event.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+
+    // Small delay to ensure preload's drop handler has processed the files
+    // The preload captures drop events and extracts paths using webUtils.getPathForFile()
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Get paths extracted by preload's drop event handler
+    const droppedPaths = window.getDroppedFilePaths?.() || [];
+
+    if (droppedPaths.length === 0) {
+      console.warn('[Navigation] No paths found from drop event');
+      return;
+    }
+
+    // Use the first dropped path
+    const filePath = droppedPaths[0];
+
+    // Extract folder name from path for location name
+    const folderName = extractFolderName(filePath);
+
+    // Open modal with prefilled name and pending import path
+    openImportModal({
+      name: folderName,
+      pendingImportPaths: [filePath],
+    });
+  }
+
   // Initialize user store on mount
   onMount(() => {
     userStore.init();
@@ -58,12 +114,17 @@
   </div>
 
   <!-- P1: New Location button - primary action (near-black) -->
+  <!-- Supports drag-drop: drop a folder to create location + auto-import -->
   <div class="px-4 py-4">
     <button
       onclick={() => openImportModal()}
-      class="w-full px-4 py-3 bg-braun-900 text-white rounded text-sm font-medium hover:bg-braun-600 transition-colors flex items-center justify-center"
+      ondragover={handleDragOver}
+      ondragleave={handleDragLeave}
+      ondrop={handleDrop}
+      class="w-full px-4 py-3 bg-braun-900 text-white rounded text-sm font-medium hover:bg-braun-600 transition-colors flex items-center justify-center
+             {isDraggingFolder ? 'ring-2 ring-braun-400 ring-offset-2 bg-braun-600' : ''}"
     >
-      New Location
+      {isDraggingFolder ? 'Drop to Create' : 'New Location'}
     </button>
   </div>
 

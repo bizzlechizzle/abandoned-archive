@@ -91,10 +91,17 @@ def load_model(device: str = DEFAULT_DEVICE):
     start = time.time()
 
     _processor = AutoProcessor.from_pretrained(MODEL_NAME, trust_remote_code=True)
+
+    # MPS and CPU need float32; CUDA can use float16
+    # float16 on MPS causes dtype mismatch errors with Florence-2
+    use_fp16 = device == "cuda"
+    dtype = torch.float16 if use_fp16 else torch.float32
+
     _model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
-        torch_dtype=torch.float16 if device != "cpu" else torch.float32,
+        torch_dtype=dtype,
         trust_remote_code=True,
+        attn_implementation="sdpa",  # Use PyTorch native attention (avoids flash_attn)
     ).to(device)
     _model.eval()
 
@@ -146,13 +153,13 @@ def build_caption_prompt(
     view_type: str | None = None,
     location_type: str | None = None,
 ) -> str:
-    """Build a simpler caption prompt for tag extraction."""
-    if view_type and view_type != "unknown":
-        if location_type:
-            return f"<MORE_DETAILED_CAPTION>An {view_type} view of an abandoned {location_type}"
-        return f"<MORE_DETAILED_CAPTION>An {view_type} view of an abandoned building"
-    if location_type:
-        return f"<MORE_DETAILED_CAPTION>An abandoned {location_type}"
+    """
+    Build task token for Florence-2.
+
+    Note: Florence-2's processor expects ONLY the task token, no additional text.
+    Context (view_type, location_type) is used in post-processing for tag boosting.
+    """
+    # Florence-2 requires task token ONLY - additional text causes assertion error
     return "<MORE_DETAILED_CAPTION>"
 
 
