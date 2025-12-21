@@ -15,7 +15,7 @@ import type {
   TimelineEvent,
   TimelineEventInput,
   TimelineEventWithSource,
-} from '@au-archive/core';
+} from '@abandoned-archive/core';
 
 // Cellphone manufacturers whose dates can be auto-approved
 // These devices sync time automatically via network

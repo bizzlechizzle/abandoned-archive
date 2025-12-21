@@ -4,7 +4,7 @@
    * Per DECISION-019: Complete overhaul to mirror LocationMapSection styling
    * Display order: AKA, Status+Type, Built/Abandoned, Documentation, Flags, Historical Name, Author
    */
-  import type { Location, LocationInput } from '@au-archive/core';
+  import type { Location, LocationInput } from '@abandoned-archive/core';
   import { ACCESS_OPTIONS } from '../../constants/location-enums';
   import { onMount } from 'svelte';
   import { router } from '../../stores/router';

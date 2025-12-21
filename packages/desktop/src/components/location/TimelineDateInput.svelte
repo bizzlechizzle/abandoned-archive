@@ -4,7 +4,7 @@
    * Per PLAN-timeline-feature: Braun approach - progressive disclosure
    * "Start with what you know. Never force false precision."
    */
-  import type { ParsedDate, DatePrecision } from '@au-archive/core';
+  import type { ParsedDate, DatePrecision } from '@abandoned-archive/core';
   import { onMount } from 'svelte';
 
   interface Props {

@@ -6,7 +6,7 @@
    * Per DECISION-017: Country Cultural Region and geographic hierarchy with verify checkboxes
    */
   import { onMount } from 'svelte';
-  import type { Location, LocationInput } from '@au-archive/core';
+  import type { Location, LocationInput } from '@abandoned-archive/core';
   import Map from '../Map.svelte';
   // DECISION-012: Use census-regions for local cultural region options
   import { getCulturalRegionsForState, getCulturalRegionFromCounty, STATE_ADJACENCY } from '../../lib/census-regions';

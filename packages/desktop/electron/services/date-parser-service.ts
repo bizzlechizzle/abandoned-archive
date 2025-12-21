@@ -4,7 +4,7 @@
  * Based on archival standards: EDTF, EAD, DACS
  */
 
-import type { DatePrecision } from '@au-archive/core';
+import type { DatePrecision } from '@abandoned-archive/core';
 
 // Month names for parsing
 const MONTHS: Record<string, number> = {

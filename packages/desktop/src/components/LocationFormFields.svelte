@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { Location } from '@au-archive/core';
-  import { LocationEntity } from '@au-archive/core';
+  import type { Location } from '@abandoned-archive/core';
+  import { LocationEntity } from '@abandoned-archive/core';
   import AutocompleteInput from './AutocompleteInput.svelte';
   import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
   import { DOCUMENTATION_OPTIONS, ACCESS_OPTIONS, GPS_SOURCE_OPTIONS } from '../constants/location-enums';

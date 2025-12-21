@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { router } from '../stores/router';
-  import type { Location } from '@au-archive/core';
+  import type { Location } from '@abandoned-archive/core';
   import ImportForm from '../components/ImportForm.svelte';
   import RecentImports from '../components/RecentImports.svelte';
   import { toasts } from '../stores/toast-store';

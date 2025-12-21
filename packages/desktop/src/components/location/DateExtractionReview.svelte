@@ -12,7 +12,7 @@
    * - Duplicate detection badges
    */
   import { onMount, onDestroy } from 'svelte';
-  import type { DateExtraction } from '@au-archive/core';
+  import type { DateExtraction } from '@abandoned-archive/core';
 
   interface Props {
     locid: string;

@@ -8,7 +8,7 @@ import {
   Location,
   LocationInput,
   LocationEntity
-} from '@au-archive/core';
+} from '@abandoned-archive/core';
 import { generateLocationId } from '../services/crypto-service';
 
 /**

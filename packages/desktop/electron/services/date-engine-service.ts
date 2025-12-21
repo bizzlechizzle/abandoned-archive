@@ -20,12 +20,12 @@ import type {
   DatePrecision,
   ExtractionResult,
   SentencePositionType,
-} from '@au-archive/core';
+} from '@abandoned-archive/core';
 import {
   CATEGORY_KEYWORDS,
   AUTO_APPROVE_CATEGORIES,
   AUTO_APPROVE_MIN_CONFIDENCE,
-} from '@au-archive/core';
+} from '@abandoned-archive/core';
 
 // =============================================================================
 // Types

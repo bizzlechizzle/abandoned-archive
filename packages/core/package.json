@@ -1,5 +1,5 @@
 {
-  "name": "@au-archive/core",
+  "name": "@abandoned-archive/core",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",

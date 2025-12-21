@@ -1,6 +1,8 @@
-# AU Archive
+# Abandoned Archive
 
 Desktop application for archiving and documenting abandoned locations with media management, GPS-based organization, and interactive mapping.
+
+> **History**: This project evolved from [AUPAT](https://github.com/bizzlechizzle/aupat) (Abandoned Upstate Photo & Archive Tracker), a Flask + Electron prototype. Abandoned Archive is a complete rewrite using a modern TypeScript monorepo architecture.
 
 ## Quick Start
 
@@ -13,8 +15,8 @@ Desktop application for archiving and documenting abandoned locations with media
 
 ```bash
 # Clone the repository
-git clone https://github.com/bizzlechizzle/au-archive.git
-cd au-archive
+git clone https://github.com/bizzlechizzle/abandoned-archive.git
+cd abandoned-archive
 
 # Install dependencies (automatically builds core package)
 pnpm install
@@ -46,7 +48,7 @@ pnpm v10+ blocks native build scripts by default. Clean reinstall:
 pnpm reinstall
 ```
 
-### "Failed to resolve entry for package @au-archive/core"
+### "Failed to resolve entry for package @abandoned-archive/core"
 
 The core package needs to be built (postinstall may have failed):
 
@@ -65,7 +67,7 @@ pnpm install
 ## Project Structure
 
 ```
-au-archive/
+abandoned-archive/
 ├── packages/
 │   ├── core/           # Shared business logic (framework-agnostic)
 │   └── desktop/        # Electron + Svelte application

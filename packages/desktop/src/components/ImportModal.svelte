@@ -6,7 +6,7 @@
    * Author auto-filled from current user
    */
   import { onMount } from 'svelte';
-  import type { Location } from '@au-archive/core';
+  import type { Location } from '@abandoned-archive/core';
   import { importModal, closeImportModal, setPendingLocationImport } from '../stores/import-modal-store';
   import { router } from '../stores/router';
   import { toasts } from '../stores/toast-store';

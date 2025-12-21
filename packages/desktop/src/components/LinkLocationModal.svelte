@@ -3,7 +3,7 @@
    * LinkLocationModal - Modal for linking a reference point to an existing location.
    * Used from the Atlas page when clicking the Link button on a reference pin popup.
    */
-  import type { Location } from '@au-archive/core';
+  import type { Location } from '@abandoned-archive/core';
 
   interface Props {
     pointName: string;

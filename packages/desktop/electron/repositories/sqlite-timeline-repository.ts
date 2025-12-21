@@ -17,7 +17,7 @@ export type {
   EventType,
   EstablishedSubtype,
   SourceType,
-} from '@au-archive/core';
+} from '@abandoned-archive/core';
 
 // Import types for internal use
 import type {
@@ -25,7 +25,7 @@ import type {
   TimelineEventInput,
   TimelineEventUpdate,
   TimelineEventWithSource,
-} from '@au-archive/core';
+} from '@abandoned-archive/core';
 
 /**
  * Repository for managing location timeline events

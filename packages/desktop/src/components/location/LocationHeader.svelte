@@ -6,7 +6,7 @@
    * DECISION-015: Removed edit button (edit is in LocationMapSection)
    */
   import { router } from '../../stores/router';
-  import type { Location } from '@au-archive/core';
+  import type { Location } from '@abandoned-archive/core';
 
   interface Props {
     location: Location;

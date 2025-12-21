@@ -3,7 +3,7 @@
    * LocationNerdStats - Technical metadata (IDs, timestamps, GPS details, counts)
    * OPT-100: Settings moved to LocationSettings.svelte for better discoverability
    */
-  import type { Location } from '@au-archive/core';
+  import type { Location } from '@abandoned-archive/core';
 
   interface Props {
     location: Location;

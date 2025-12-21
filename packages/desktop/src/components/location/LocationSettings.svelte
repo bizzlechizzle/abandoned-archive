@@ -4,7 +4,7 @@
    * OPT-100: Separated from NerdStats for better discoverability
    * Braun Design: Accordion box matching NerdStats styling
    */
-  import type { Location } from '@au-archive/core';
+  import type { Location } from '@abandoned-archive/core';
   import { router } from '../../stores/router';
   import AutocompleteInput from '../AutocompleteInput.svelte';
   import { getCategoryForClass } from '../../lib/type-hierarchy';

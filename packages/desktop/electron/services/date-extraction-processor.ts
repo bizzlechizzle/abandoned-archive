@@ -21,7 +21,7 @@ import type {
   BackfillProgress,
   TimelineEvent,
   TimelineEventInput,
-} from '@au-archive/core';
+} from '@abandoned-archive/core';
 
 /**
  * Map date extraction category to timeline event subtype

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { type Location, LocationEntity } from '@au-archive/core';
+  import { type Location, LocationEntity } from '@abandoned-archive/core';
   import AutocompleteInput from './AutocompleteInput.svelte';
   import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
   import { getCategoryForClass } from '../lib/type-hierarchy';

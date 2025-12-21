@@ -4,7 +4,7 @@
    * Per PLAN: Display Status, Category/Class, Built, Abandoned, Flags
    * Click edit to open existing LocationInfo edit modal
    */
-  import type { Location, LocationInput } from '@au-archive/core';
+  import type { Location, LocationInput } from '@abandoned-archive/core';
   import { ACCESS_OPTIONS } from '../../constants/location-enums';
   import { onMount } from 'svelte';
 

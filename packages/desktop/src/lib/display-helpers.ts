@@ -6,7 +6,7 @@
  * to ensure Premium Archive shows something at every state.
  */
 
-import type { Location } from '@au-archive/core';
+import type { Location } from '@abandoned-archive/core';
 
 // State capitals for approximate GPS fallback
 export const STATE_CAPITALS: Record<string, { lat: number; lng: number }> = {

@@ -5,7 +5,7 @@
   import { toasts } from '../stores/toast-store';
   import Map from '../components/Map.svelte';
   import LinkLocationModal from '../components/LinkLocationModal.svelte';
-  import type { Location } from '@au-archive/core';
+  import type { Location } from '@abandoned-archive/core';
   import type { MapLocation } from '../types/electron';
 
   // OPT-041: Track map initialization state for skeleton loader
