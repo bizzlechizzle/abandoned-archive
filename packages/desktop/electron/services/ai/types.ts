@@ -18,7 +18,7 @@
 export type ModelProvider = 'ollama' | 'cloud' | 'python' | 'local';
 
 /** Category of AI model */
-export type ModelCategory = 'text' | 'vision' | 'embed' | 'preprocessing' | 'tagging';
+export type ModelCategory = 'text' | 'vision' | 'embed' | 'preprocessing';
 
 /** Model state in the registry */
 export type ModelState = 'available' | 'downloading' | 'ready' | 'running' | 'error';

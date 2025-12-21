@@ -50,7 +50,6 @@ import { registerTimelineHandlers } from './timeline';
 import { registerImageDownloaderHandlers } from './image-downloader';
 import { registerDateEngineHandlers } from './date-engine';
 import { registerExtractionHandlers, shutdownExtractionHandlers } from './extraction';
-import { registerTaggingHandlers } from './tagging';
 import { registerOllamaLifecycleHandlers } from './ollama-lifecycle';
 import {
   initializeBrowserImageCapture,
@@ -144,10 +143,6 @@ export function registerIpcHandlers() {
   // Document Intelligence Extraction (spaCy + Ollama + Cloud providers)
   const sqliteDb = getRawDatabase();
   registerExtractionHandlers(db, sqliteDb);
-
-  // Migration 76: RAM++ Image Auto-Tagging
-  // Per CLAUDE.md Rule 9: Local LLMs for background tasks only
-  registerTaggingHandlers(db);
 
   // OPT-125: Ollama Lifecycle Management (auto-start/stop)
   // Clean up orphan from previous crash, register handlers

@@ -1,7 +1,7 @@
 /**
- * VLM Enhancement Service (Stage 2)
+ * VLM Enhancement Service
  *
- * Optional deep analysis using Qwen2.5-VL or similar large vision-language model.
+ * Deep analysis using Qwen2.5-VL or similar large vision-language model.
  * Only run for high-value images (hero candidates, manual trigger).
  *
  * Routes through LiteLLM proxy for consistent cost tracking and model switching.
@@ -12,22 +12,22 @@
  * - Historical period estimation
  * - Condition assessment narrative
  *
- * Per CLAUDE.md Rule 9: Local LLMs for background tasks only.
- *
- * @module services/tagging/vlm-enhancement-service
+ * @module services/vlm-enhancement-service
  */
 
 import path from 'path';
 import fs from 'fs/promises';
-import { getLogger } from '../logger-service';
-import { LiteLLMLifecycle, resetIdleTimer } from '../litellm-lifecycle-service';
-import type { ViewType } from './scene-classifier';
+import { getLogger } from './logger-service';
+import { LiteLLMLifecycle, resetIdleTimer } from './litellm-lifecycle-service';
 
 const logger = getLogger();
 
 // ============================================================================
 // Type Definitions
 // ============================================================================
+
+/** View type for context (simplified from removed scene-classifier) */
+export type ViewType = 'interior' | 'exterior' | 'aerial' | 'detail' | 'unknown';
 
 export interface VLMEnhancementResult {
   /** Rich natural language description */

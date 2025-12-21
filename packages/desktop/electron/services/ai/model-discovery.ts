@@ -219,28 +219,13 @@ export async function discoverCloudModels(): Promise<Model[]> {
 interface PythonModelConfig {
   id: string;
   name: string;
-  category: 'vision' | 'tagging' | 'preprocessing';
+  category: 'vision' | 'preprocessing';
   venvPath: string;
   modelFile?: string; // Optional model weights file to check
   scriptFile: string; // Python script that runs this model
 }
 
 const PYTHON_MODELS: PythonModelConfig[] = [
-  {
-    id: 'python/florence-2-large',
-    name: 'Florence-2 Large',
-    category: 'vision',
-    venvPath: 'scripts/ram-server/venv',
-    scriptFile: 'scripts/florence_tagger.py',
-  },
-  {
-    id: 'python/ram++',
-    name: 'RAM++',
-    category: 'tagging',
-    venvPath: 'scripts/ram-server/venv',
-    modelFile: 'scripts/ram-server/ram_plus_swin_large_14m.pth',
-    scriptFile: 'scripts/ram_tagger.py',
-  },
   {
     id: 'python/qwen2-vl-7b',
     name: 'Qwen2-VL 7B',
@@ -291,7 +276,7 @@ export async function discoverPythonModels(): Promise<Model[]> {
       category: pm.category,
       capabilities: {
         completion: false,
-        vision: pm.category === 'vision' || pm.category === 'tagging',
+        vision: pm.category === 'vision',
         embed: false,
         streaming: false,
       },

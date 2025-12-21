@@ -4,8 +4,7 @@
  * SINGLE SOURCE OF TRUTH for image processing jobs.
  * All import paths (local files, web images) MUST use these functions.
  *
- * Per docs/plans/unified-image-processing-pipeline.md:
- * - queueImageProcessingJobs(): Per-file jobs (ExifTool, Thumbnail, Tagging)
+ * - queueImageProcessingJobs(): Per-file jobs (ExifTool, Thumbnail)
  * - queueLocationPostProcessing(): Per-location jobs (GPS, Stats, BagIt, etc.)
  * - needsProcessing(): Skip logic for already-processed images
  *
@@ -45,8 +44,6 @@ export interface LocationJobParams {
   subid: string | null;
   /** Last ExifTool job ID for dependency chain (optional) */
   lastExifJobId?: string;
-  /** Whether images were imported (affects tag aggregation) */
-  hasImages?: boolean;
   /** Whether documents were imported (affects SRT telemetry) */
   hasDocuments?: boolean;
 }
@@ -59,7 +56,6 @@ export interface LocationJobResult {
 export interface ProcessingStatus {
   exiftool: boolean;
   thumbnail: boolean;
-  tagging: boolean;
 }
 
 // ============================================================================
@@ -77,12 +73,10 @@ export interface ProcessingStatus {
 export function needsProcessing(image: {
   meta_exiftool: string | null;
   thumb_path_sm: string | null;
-  auto_tags: string | null;
 }): ProcessingStatus {
   return {
     exiftool: image.meta_exiftool === null,
     thumbnail: image.thumb_path_sm === null,
-    tagging: image.auto_tags === null,
   };
 }
 
@@ -99,7 +93,6 @@ export function needsProcessing(image: {
  * Jobs queued:
  * 1. EXIFTOOL (HIGH priority) - Extracts metadata
  * 2. THUMBNAIL (NORMAL priority, depends on ExifTool) - Generates thumbnails
- * 3. IMAGE_TAGGING (BACKGROUND priority, depends on ExifTool) - RAM++ tagging
  *
  * @param db - Database connection
  * @param params - Image parameters
@@ -124,12 +117,12 @@ export async function queueImageProcessingJobs(
   let exifJobId: string | null = null;
 
   // Check existing processing status if requested
-  let status: ProcessingStatus = { exiftool: true, thumbnail: true, tagging: true };
+  let status: ProcessingStatus = { exiftool: true, thumbnail: true };
 
   if (checkExisting && !forceAll) {
     const image = await db
       .selectFrom('imgs')
-      .select(['meta_exiftool', 'thumb_path_sm', 'auto_tags'])
+      .select(['meta_exiftool', 'thumb_path_sm'])
       .where('imghash', '=', imghash)
       .executeTakeFirst();
 
@@ -179,27 +172,6 @@ export async function queueImageProcessingJobs(
     skipped.push('thumbnail');
   }
 
-  // 3. IMAGE_TAGGING (BACKGROUND priority, depends on ExifTool)
-  if (forceAll || status.tagging) {
-    const tagJobId = generateId();
-    await jobQueue.addJob({
-      queue: IMPORT_QUEUES.IMAGE_TAGGING,
-      priority: JOB_PRIORITY.BACKGROUND,
-      jobId: tagJobId,
-      payload: {
-        imghash,
-        imagePath: archivePath,
-        locid,
-        subid,
-      },
-      dependsOn: exifJobId ?? undefined,
-    });
-    jobs.push(tagJobId);
-    logger.debug('JobBuilder', `Queued IMAGE_TAGGING for ${imghash.slice(0, 8)}...`);
-  } else {
-    skipped.push('tagging');
-  }
-
   if (jobs.length > 0) {
     logger.info('JobBuilder', `Queued ${jobs.length} jobs for image ${imghash.slice(0, 8)}...${skipped.length > 0 ? ` (skipped: ${skipped.join(', ')})` : ''}`);
   }
@@ -223,7 +195,6 @@ export async function queueImageProcessingJobs(
  * 3. SRT_TELEMETRY (NORMAL priority) - Link DJI telemetry (if documents imported)
  * 4. LOCATION_STATS (BACKGROUND priority) - Recalculate counts and dates
  * 5. BAGIT (BACKGROUND priority) - Update RFC 8493 manifest
- * 6. LOCATION_TAG_AGGREGATION (BACKGROUND priority) - Aggregate tags (if images imported)
  *
  * @param db - Database connection
  * @param params - Location parameters
@@ -233,7 +204,7 @@ export async function queueLocationPostProcessing(
   db: Kysely<Database>,
   params: LocationJobParams
 ): Promise<LocationJobResult> {
-  const { locid, subid, lastExifJobId, hasImages = true, hasDocuments = false } = params;
+  const { locid, subid, lastExifJobId, hasDocuments = false } = params;
 
   const jobs: string[] = [];
   const jobQueue = new JobQueue(db);
@@ -302,23 +273,6 @@ export async function queueLocationPostProcessing(
     dependsOn: gpsEnrichmentJobId,
   });
   jobs.push(bagitJobId);
-
-  // 6. LOCATION_TAG_AGGREGATION (BACKGROUND priority) - Only if images imported
-  if (hasImages) {
-    const tagAggJobId = generateId();
-    await jobQueue.addJob({
-      queue: IMPORT_QUEUES.LOCATION_TAG_AGGREGATION,
-      priority: JOB_PRIORITY.BACKGROUND,
-      jobId: tagAggJobId,
-      payload: {
-        locid,
-        applyType: true,
-        applyEra: true,
-      },
-      dependsOn: gpsEnrichmentJobId,
-    });
-    jobs.push(tagAggJobId);
-  }
 
   logger.info('JobBuilder', `Queued ${jobs.length} location jobs for ${locid.slice(0, 8)}...`);
 

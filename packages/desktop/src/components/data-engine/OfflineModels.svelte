@@ -2,11 +2,9 @@
   /**
    * Offline AI Models Configuration
    *
-   * Local Language Models (Ollama, spaCy) and Visual Models (RAM++).
+   * Local Language Models (Ollama, spaCy).
    * Ollama runs seamlessly in the background - auto-starts when needed,
    * auto-stops after idle timeout. Zero manual intervention required.
-   *
-   * Extracted from ExtractionSettings.svelte and Settings.svelte tagging section.
    */
   import { onMount, onDestroy } from 'svelte';
 
@@ -60,7 +58,6 @@
 
   // Sub-accordion state
   let languageModelsExpanded = $state(true);
-  let visualModelsExpanded = $state(false);
 
   // Language Models State (from ExtractionSettings)
   let providers = $state<ProviderConfig[]>([]);
@@ -89,12 +86,6 @@
   let newOllamaPort = $state(11434);
   let newOllamaModel = $state('qwen2.5:7b');
   let addingOllama = $state(false);
-
-  // Visual Models State (RAM++)
-  let ramApiUrl = $state('http://192.168.1.254:8765');
-  let ramApiStatus = $state<'connected' | 'disconnected' | 'testing'>('disconnected');
-  let ramQueueStats = $state<{ pending: number; processing: number; completed: number; failed: number } | null>(null);
-  let loadingRamStatus = $state(false);
 
   onMount(async () => {
     if (expanded) {
@@ -135,7 +126,6 @@
     await Promise.all([
       loadProviders(),
       refreshStatuses(),
-      loadRamSettings(),
       loadOllamaLifecycleStatus(),
     ]);
   }
@@ -332,54 +322,6 @@
     }
   }
 
-  // Visual Models functions (RAM++)
-  async function loadRamSettings() {
-    try {
-      const result = await window.electronAPI.settings.get('ram_api_url');
-      if (result) {
-        ramApiUrl = result;
-      }
-      await testRamConnection();
-      await loadRamQueueStats();
-    } catch (error) {
-      console.error('Failed to load RAM settings:', error);
-    }
-  }
-
-  async function saveRamApiUrl() {
-    try {
-      await window.electronAPI.settings.set('ram_api_url', ramApiUrl);
-      await testRamConnection();
-    } catch (error) {
-      console.error('Failed to save RAM API URL:', error);
-    }
-  }
-
-  async function testRamConnection() {
-    loadingRamStatus = true;
-    ramApiStatus = 'testing';
-
-    try {
-      const result = await window.electronAPI.tagging.testConnection(ramApiUrl);
-      ramApiStatus = result.success ? 'connected' : 'disconnected';
-    } catch {
-      ramApiStatus = 'disconnected';
-    } finally {
-      loadingRamStatus = false;
-    }
-  }
-
-  async function loadRamQueueStats() {
-    try {
-      const result = await window.electronAPI.tagging.getQueueStats();
-      if (result.success) {
-        ramQueueStats = result.stats;
-      }
-    } catch (error) {
-      console.error('Failed to load RAM queue stats:', error);
-    }
-  }
-
   function getStatusBadge(status: ProviderStatus | undefined) {
     if (!status) return { class: 'bg-braun-100 text-braun-600', text: 'Unknown' };
     if (status.available) return { class: 'bg-green-100 text-green-800', text: 'Available' };
@@ -529,96 +471,6 @@
                 </div>
               {/if}
             {/if}
-          </div>
-        {/if}
-      </div>
-
-      <!-- Visual Models Sub-accordion -->
-      <div class="border border-braun-200 rounded overflow-hidden">
-        <button
-          onclick={() => visualModelsExpanded = !visualModelsExpanded}
-          class="w-full py-3 px-4 flex items-center justify-between text-left hover:bg-braun-50 transition-colors bg-white"
-        >
-          <span class="text-sm font-medium text-braun-900">Visual Models</span>
-          <svg
-            class="w-4 h-4 text-braun-400 transition-transform duration-200 {visualModelsExpanded ? 'rotate-180' : ''}"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-
-        {#if visualModelsExpanded}
-          <div class="p-4 space-y-4 border-t border-braun-200 bg-braun-50">
-            <!-- RAM++ API Server -->
-            <div class="bg-white border border-braun-200 rounded p-4">
-              <span class="text-sm font-medium text-braun-800 mb-3 block">RAM++ Image Tagging</span>
-              <p class="text-xs text-braun-500 mb-3">
-                Background auto-tagging for imported images.
-              </p>
-
-              <!-- API URL -->
-              <div class="space-y-3">
-                <div>
-                  <label class="block text-xs font-medium text-braun-600 mb-1">API URL</label>
-                  <div class="flex gap-2">
-                    <input
-                      type="text"
-                      bind:value={ramApiUrl}
-                      placeholder="http://192.168.1.254:8765"
-                      class="flex-1 px-2 py-1.5 text-sm border border-braun-300 rounded focus:outline-none focus:border-braun-600"
-                    />
-                    <button
-                      onclick={saveRamApiUrl}
-                      class="px-2 py-1.5 text-xs bg-braun-900 text-white rounded hover:bg-braun-700"
-                    >
-                      Save
-                    </button>
-                  </div>
-                </div>
-
-                <!-- Connection Status -->
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2">
-                    <div class="w-2 h-2 rounded-full {ramApiStatus === 'connected' ? 'bg-green-500' : ramApiStatus === 'testing' ? 'bg-yellow-500' : 'bg-red-500'}"></div>
-                    <span class="text-xs text-braun-700">
-                      {ramApiStatus === 'connected' ? 'Connected' : ramApiStatus === 'testing' ? 'Testing...' : 'Disconnected'}
-                    </span>
-                  </div>
-                  <button
-                    onclick={testRamConnection}
-                    disabled={loadingRamStatus}
-                    class="px-2 py-1 text-xs border border-braun-300 rounded hover:bg-braun-50 disabled:opacity-50"
-                  >
-                    {loadingRamStatus ? '...' : 'Test'}
-                  </button>
-                </div>
-
-                <!-- Queue Stats -->
-                {#if ramQueueStats}
-                  <div class="grid grid-cols-4 gap-2 text-center pt-2 border-t border-braun-200">
-                    <div>
-                      <p class="text-xs text-braun-400">Pending</p>
-                      <p class="text-sm font-medium text-braun-900">{ramQueueStats.pending}</p>
-                    </div>
-                    <div>
-                      <p class="text-xs text-braun-400">Active</p>
-                      <p class="text-sm font-medium text-braun-900">{ramQueueStats.processing}</p>
-                    </div>
-                    <div>
-                      <p class="text-xs text-braun-400">Done</p>
-                      <p class="text-sm font-medium text-braun-900">{ramQueueStats.completed}</p>
-                    </div>
-                    <div>
-                      <p class="text-xs text-braun-400">Failed</p>
-                      <p class="text-sm font-medium text-braun-900">{ramQueueStats.failed}</p>
-                    </div>
-                  </div>
-                {/if}
-              </div>
-            </div>
           </div>
         {/if}
       </div>

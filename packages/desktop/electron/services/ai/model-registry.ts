@@ -280,26 +280,6 @@ const CLOUD_CATALOG: Omit<Model, 'state'>[] = [
  */
 const PYTHON_CATALOG: Omit<Model, 'state'>[] = [
   {
-    id: 'python/florence-2-large',
-    name: 'Florence-2 Large',
-    provider: 'python',
-    category: 'vision',
-    capabilities: { completion: false, vision: true, embed: false, streaming: false },
-    size: '700MB',
-    description: 'Microsoft vision model. Fast tagging and captioning.',
-    requirements: { venv: 'scripts/ram-server/venv' },
-  },
-  {
-    id: 'python/ram++',
-    name: 'RAM++ (Recognize Anything)',
-    provider: 'python',
-    category: 'tagging',
-    capabilities: { completion: false, vision: true, embed: false, streaming: false },
-    size: '2.8GB',
-    description: 'Open-set image tagging. 14M tag vocabulary.',
-    requirements: { venv: 'scripts/ram-server/venv' },
-  },
-  {
     id: 'python/qwen2-vl-7b',
     name: 'Qwen2-VL 7B',
     provider: 'python',
@@ -589,7 +569,6 @@ class ModelRegistry implements IModelRegistry {
       vision: 0,
       embed: 0,
       preprocessing: 0,
-      tagging: 0,
     };
 
     for (const m of models) {

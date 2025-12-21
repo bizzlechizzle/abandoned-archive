@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git reset:*)",
+      "Bash(git pull:*)",
+      "Bash(git rm:*)",
+      "Bash(git checkout:*)",
+      "Bash(git stash drop:*)",
+      "Bash(git push)",
+      "Bash(cat:*)",
+      "Bash(git add:*)",
+      "Bash(Kanye8.md )",
+      "Bash(Kanye9.md )",
+      "Bash(Kanye10.md )",
+      "Bash(Kanye3.md )",
+      "Bash(Kanye5.md )",
+      "Bash(Kanye6.md )",
+      "Bash(packages/desktop/electron/services/darktable-service.ts )",
+      "Bash(packages/desktop/electron/services/darktable-queue-service.ts )",
+      "Bash(packages/desktop/electron/services/media-path-service.ts )",
+      "Bash(packages/desktop/electron/services/file-import-service.ts )",
+      "Bash(packages/desktop/electron/main/database.ts )",
+      "Bash(packages/desktop/electron/main/database.types.ts )",
+      "Bash(packages/desktop/electron/main/ipc-handlers/media-processing.ts )",
+      "Bash(packages/desktop/electron/repositories/sqlite-media-repository.ts )",
+      "Bash(packages/desktop/electron/preload/index.ts )",
+      "Bash(packages/desktop/src/components/Map.svelte )",
+      "Bash(packages/desktop/src/components/location/LocationAddress.svelte )",
+      "Bash(packages/desktop/src/pages/LocationDetail.svelte )",
+      "Bash(packages/desktop/src/pages/Settings.svelte )",
+      "Bash(packages/desktop/tsconfig.json)",
+      "Bash(git grep:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

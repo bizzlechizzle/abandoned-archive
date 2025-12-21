@@ -129,11 +129,6 @@ export class JobWorkerService extends EventEmitter {
     // Lower priority, background operation after text extraction
     this.registerQueue(IMPORT_QUEUES.DATE_EXTRACTION, 2, this.handleDateExtractionJob.bind(this) as JobHandler);
 
-    // Migration 76: RAM++ Image Auto-Tagging (lowest priority, background only)
-    // Per CLAUDE.md Rule 9: Local LLMs for background tasks only
-    this.registerQueue(IMPORT_QUEUES.IMAGE_TAGGING, 2, this.handleImageTaggingJob.bind(this) as JobHandler);
-    this.registerQueue(IMPORT_QUEUES.LOCATION_TAG_AGGREGATION, 1, this.handleLocationAggregationJob.bind(this) as JobHandler);
-
     // Log configuration
     logger.info('JobWorker', 'Queue configuration (hardware-scaled)', {
       // Per-file
@@ -1396,122 +1391,6 @@ export class JobWorkerService extends EventEmitter {
       const message = error instanceof Error ? error.message : String(error);
       logger.error('JobWorker', `Date extraction job failed: ${message}`);
       return { success: false, extractionsFound: 0, error: message };
-    }
-  }
-
-  // ============ Migration 76: RAM++ Image Tagging Handlers ============
-
-  /**
-   * Handle image tagging job
-   * Per CLAUDE.md Rule 9: Local LLMs for background tasks only
-   *
-   * - Loads RAM++ service (remote API or local inference)
-   * - Processes image to extract tags with urbex taxonomy normalization
-   * - Updates database with tags, view type, quality score
-   * - Lowest priority, runs after all other import jobs complete
-   */
-  private async handleImageTaggingJob(
-    payload: { imghash: string; imagePath: string; locid: string; subid?: string | null; priority?: number },
-    emit: (event: string, data: unknown) => void
-  ): Promise<{ success: boolean; tags?: string[]; error?: string }> {
-    const { imghash, imagePath, locid, subid } = payload;
-
-    emit('progress', { progress: 0, message: `Tagging image ${imghash.slice(0, 8)}...` });
-
-    try {
-      // Import the tagging job handler
-      const { handleImageTaggingJob: processImageTagging } = await import('./import/tagging-job-handler');
-
-      // Process the image
-      const result = await processImageTagging(this.db, {
-        imghash,
-        imagePath,
-        locid,
-        subid,
-      });
-
-      emit('progress', { progress: 100, message: 'Tagging complete' });
-
-      if (result.success) {
-        logger.info('JobWorker', `Image ${imghash.slice(0, 8)} tagged with ${result.tags?.length ?? 0} tags`);
-
-        // Emit tagging complete event for UI reactivity
-        emit('asset:tags-ready', {
-          hash: imghash,
-          tags: result.tags,
-          viewType: result.viewType,
-          qualityScore: result.qualityScore,
-          suggestedType: result.suggestedType,
-        });
-      }
-
-      return {
-        success: result.success,
-        tags: result.tags,
-        error: result.error,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.error('JobWorker', `Image tagging failed: ${message}`);
-      return { success: false, error: message };
-    }
-  }
-
-  /**
-   * Handle location tag aggregation job
-   * Per CLAUDE.md Rule 9: Local LLMs for background tasks only
-   *
-   * - Aggregates image tags across all tagged images for a location
-   * - Generates location-level insights (dominant tags, suggested type, era)
-   * - Updates location_tag_summary table
-   * - Runs after all images for a location have been tagged
-   */
-  private async handleLocationAggregationJob(
-    payload: { locid: string; applyType?: boolean; applyEra?: boolean },
-    emit: (event: string, data: unknown) => void
-  ): Promise<{ success: boolean; taggedImages?: number; suggestedType?: string | null; error?: string }> {
-    const { locid, applyType = true, applyEra = true } = payload;
-
-    emit('progress', { progress: 0, message: `Aggregating tags for location ${locid.slice(0, 8)}...` });
-
-    try {
-      // Import the aggregation job handler
-      const { handleLocationAggregationJob: processAggregation } = await import('./import/tagging-job-handler');
-
-      // Process the aggregation
-      const result = await processAggregation(this.db, {
-        locid,
-        applyType,
-        applyEra,
-      });
-
-      emit('progress', { progress: 100, message: 'Aggregation complete' });
-
-      if (result.success) {
-        logger.info('JobWorker', `Location ${locid.slice(0, 8)} aggregated: ${result.taggedImages}/${result.totalImages} images`);
-
-        // Emit aggregation complete event for UI reactivity
-        emit('location:tags-aggregated', {
-          locid,
-          taggedImages: result.taggedImages,
-          totalImages: result.totalImages,
-          dominantTags: result.dominantTags,
-          suggestedType: result.suggestedType,
-          typeApplied: result.typeApplied,
-          eraApplied: result.eraApplied,
-        });
-      }
-
-      return {
-        success: result.success,
-        taggedImages: result.taggedImages,
-        suggestedType: result.suggestedType,
-        error: result.error,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.error('JobWorker', `Location aggregation failed: ${message}`);
-      return { success: false, error: message };
     }
   }
 

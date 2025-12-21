@@ -578,7 +578,6 @@ export function registerImageDownloaderHandlers(db: Kysely<Database>) {
           locid: validInput.locationId,
           subid: null,
           lastExifJobId: imageJobResult.exifJobId ?? undefined,
-          hasImages: true,
           hasDocuments: false,
         });
 
