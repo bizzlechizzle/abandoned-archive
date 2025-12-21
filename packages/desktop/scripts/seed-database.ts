@@ -1,6 +1,6 @@
 #!/usr/bin/env npx ts-node
 /**
- * AU Archive Database Seeder
+ * Abandoned Archive Database Seeder
  *
  * Seeds the database with test locations and sets the archive_folder.
  * Run with: npx ts-node scripts/seed-database.ts
@@ -23,7 +23,7 @@ function getDatabasePath(): string {
     os.homedir(),
     'Library',
     'Application Support',
-    '@au-archive',
+    '@abandoned-archive',
     'desktop',
     'data'
   );
@@ -32,7 +32,7 @@ function getDatabasePath(): string {
     fs.mkdirSync(userDataPath, { recursive: true });
   }
 
-  return path.join(userDataPath, 'au-archive.db');
+  return path.join(userDataPath, 'abandoned-archive.db');
 }
 
 // Generate a 12-character short ID
@@ -335,7 +335,7 @@ function main() {
   const args = process.argv.slice(2);
   const dbPath = getDatabasePath();
 
-  console.log('AU Archive Database CLI Tool');
+  console.log('Abandoned Archive Database CLI Tool');
   console.log('============================');
   console.log(`Database path: ${dbPath}`);
   console.log('');
