@@ -23,6 +23,8 @@
   },
   "dependencies": {
     "@abandoned-archive/core": "workspace:*",
+    "wake-n-blake": "workspace:*",
+    "shoemaker": "workspace:*",
     "@aws-sdk/client-s3": "^3.940.0",
     "@skeletonlabs/skeleton": "^4.4.1",
     "@skeletonlabs/tw-plugin": "^0.4.1",

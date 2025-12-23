@@ -4,6 +4,70 @@ Technical implementation guide for developers. Complements CLAUDE.md with specif
 
 ---
 
+## Backbone Submodules
+
+The project uses two git submodules as backbone dependencies:
+
+| Package | Purpose | Location |
+|---------|---------|----------|
+| **wake-n-blake** | BLAKE3 hashing, verification, device detection, XMP custody | `packages/wake-n-blake` |
+| **shoemaker** | Thumbnail generation, RAW preview extraction, video proxies | `packages/shoemaker` |
+| **repo-depot** | Central standards: CLAUDE.md, skills, templates | `packages/repo-depot` |
+
+### First-Time Setup
+
+After cloning the repo, initialize submodules:
+
+```bash
+git submodule update --init --recursive
+pnpm install
+```
+
+### Updating Submodules
+
+```bash
+# Check current status
+./scripts/update-backbone.sh --check
+
+# Update all to latest main
+./scripts/update-backbone.sh
+
+# Update only one
+./scripts/update-backbone.sh wake-n-blake
+./scripts/update-backbone.sh shoemaker
+./scripts/update-backbone.sh repo-depot
+
+# Pin to specific version
+./scripts/update-backbone.sh --pin v1.2.0
+
+# Only sync CLAUDE.md and skills (no git pull)
+./scripts/update-backbone.sh --sync
+```
+
+### What Gets Synced
+
+When updating repo-depot, the script automatically syncs:
+- `CLAUDE.md` → project root (universal development standards)
+- `skills/*` → `.claude/skills/` (user-level skills: sme, llm, ml, vlm, etc.)
+- `.depot-version` → records the synced version
+
+### After Updating
+
+```bash
+# Commit all changes
+git add -A
+git commit -m "chore: update backbone submodules"
+```
+
+### Development Workflow
+
+Both submodules are included in the pnpm workspace. Changes made inside submodules:
+- Are immediately available via workspace linking
+- Must be committed in the submodule first, then pushed upstream
+- Update the parent repo's submodule pointer with a separate commit
+
+---
+
 ## Environment Requirements
 
 | Requirement | Version | Notes |

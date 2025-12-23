@@ -1,0 +1,9 @@
+[submodule "packages/wake-n-blake"]
+	path = packages/wake-n-blake
+	url = https://github.com/bizzlechizzle/wake-n-blake.git
+[submodule "packages/shoemaker"]
+	path = packages/shoemaker
+	url = https://github.com/bizzlechizzle/shoemaker.git
+[submodule "packages/repo-depot"]
+	path = packages/repo-depot
+	url = https://github.com/bizzlechizzle/repo-depot.git
