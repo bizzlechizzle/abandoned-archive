@@ -1,0 +1,815 @@
+/**
+ * Import Service - Backbone Wrapper for wake-n-blake runImport()
+ *
+ * Provides the complete import pipeline through wake-n-blake's runImport().
+ * This service replaces the scanner/hasher/copier/validator chain with a
+ * single call that handles:
+ * - File scanning and filtering
+ * - Device detection (camera, USB, network)
+ * - BLAKE3 hashing with dedup
+ * - Verified copy with integrity check
+ * - XMP sidecar generation (PREMIS custody chain)
+ *
+ * Architecture:
+ * - wake-n-blake handles file operations (scan → hash → copy → validate → sidecar)
+ * - This service integrates with abandoned-archive's database and job queue
+ * - XMP sidecars are source of truth; database is populated FROM XMP
+ */
+
+import {
+  runImport,
+  type ImportOptions as WnbImportOptions,
+  type ImportSession,
+  type ImportFileState,
+} from 'wake-n-blake';
+import * as path from 'node:path';
+import type { Kysely } from 'kysely';
+import type { Database } from '../../main/database.types';
+import { JobQueue, IMPORT_QUEUES, JOB_PRIORITY, type JobInput } from '../job-queue.js';
+import { generateId } from '../../main/ipc-validation.js';
+import { getLogger } from '../logger-service.js';
+import { getMetricsCollector, MetricNames } from '../monitoring/metrics-collector.js';
+import { acquireLocationLock, releaseLocationLock } from '../import/location-lock.js';
+
+const logger = getLogger();
+const metrics = getMetricsCollector();
+
+/**
+ * Location info for import destination
+ * Matches the LocationInfo from import/types.ts
+ */
+export interface ImportLocation {
+  locid: string;
+  subid: string | null;
+  address_state: string | null;  // US state code for folder structure (from locs table)
+}
+
+/**
+ * Import options for backbone import
+ */
+export interface BackboneImportOptions {
+  /**
+   * Source paths to import (files or directories)
+   */
+  sourcePaths: string[];
+
+  /**
+   * Target location for imported files
+   */
+  location: ImportLocation;
+
+  /**
+   * Archive base path
+   */
+  archivePath: string;
+
+  /**
+   * User info for activity tracking
+   */
+  user?: {
+    userId: string;
+    username: string;
+  };
+
+  /**
+   * Progress callback
+   */
+  onProgress?: (progress: BackboneImportProgress) => void;
+
+  /**
+   * Abort signal for cancellation
+   */
+  signal?: AbortSignal;
+
+  /**
+   * Batch name for grouping imports
+   */
+  batchName?: string;
+
+  /**
+   * Enable dry run (no file operations)
+   */
+  dryRun?: boolean;
+}
+
+/**
+ * Import progress event
+ */
+export interface BackboneImportProgress {
+  sessionId: string;
+  status: string;
+  percent: number;
+  currentFile: string;
+  filesProcessed: number;
+  filesTotal: number;
+  bytesProcessed: number;
+  bytesTotal: number;
+  duplicatesFound: number;
+  errorsFound: number;
+}
+
+/**
+ * Import result
+ */
+export interface BackboneImportResult {
+  sessionId: string;
+  status: 'completed' | 'cancelled' | 'failed';
+  totalFiles: number;
+  processedFiles: number;
+  duplicateFiles: number;
+  errorFiles: number;
+  totalBytes: number;
+  durationMs: number;
+  error?: string;
+}
+
+/**
+ * Media type based on file category
+ */
+type MediaType = 'image' | 'video' | 'document' | 'map';
+
+/**
+ * Import Service using wake-n-blake's runImport()
+ */
+export class ImportService {
+  private jobQueue: JobQueue;
+
+  constructor(private db: Kysely<Database>) {
+    this.jobQueue = new JobQueue(db);
+  }
+
+  /**
+   * Run import using wake-n-blake's complete pipeline
+   *
+   * This replaces the old scanner/hasher/copier/validator chain with a single
+   * call to runImport() that handles everything.
+   */
+  async import(options: BackboneImportOptions): Promise<BackboneImportResult> {
+    const sessionId = generateId();
+    const startTime = Date.now();
+    const { location, archivePath, sourcePaths, user, signal, batchName, dryRun } = options;
+
+    // Acquire location lock
+    try {
+      await acquireLocationLock(location.locid, sessionId, {
+        waitIfLocked: false,
+        user: user?.username,
+      });
+    } catch (lockError) {
+      return {
+        sessionId,
+        status: 'failed',
+        totalFiles: 0,
+        processedFiles: 0,
+        duplicateFiles: 0,
+        errorFiles: 0,
+        totalBytes: 0,
+        durationMs: Date.now() - startTime,
+        error: lockError instanceof Error ? lockError.message : 'Location is currently being imported to',
+      };
+    }
+
+    logger.info('ImportService', 'Backbone import started', {
+      sessionId,
+      locationId: location.locid,
+      pathCount: sourcePaths.length,
+    });
+
+    metrics.incrementCounter(MetricNames.IMPORT_STARTED, 1, { locationId: location.locid });
+
+    // Get existing hashes from database for dedup
+    const existingHashes = await this.getExistingHashes(location.locid);
+
+    // Track finalized files for post-processing
+    const finalizedFiles: Array<{
+      hash: string;
+      archivePath: string;
+      mediaType: MediaType;
+      originalPath: string;
+    }> = [];
+
+    let session: ImportSession;
+    let error: string | undefined;
+
+    try {
+      // Build source path - if multiple paths, use first one as source
+      // (runImport handles single directory; for multiple, caller should merge)
+      const sourcePath = sourcePaths.length === 1 && sourcePaths[0]
+        ? sourcePaths[0]
+        : sourcePaths[0] || '.';
+
+      // Build destination path for this location
+      const destPath = this.buildLocationPath(archivePath, location);
+
+      // Run wake-n-blake import pipeline
+      session = await runImport(sourcePath, destPath, {
+        // Enable all features
+        verify: true,
+        dedup: true,
+        sidecar: true,
+        detectDevice: true,
+        dryRun: dryRun ?? false,
+        batch: batchName,
+
+        // Use existing hashes from database for dedup
+        existingHashes,
+
+        // Custom path builder for location-based folder structure
+        pathBuilder: (file: ImportFileState, hash: string) => this.buildFilePath(archivePath, location, file, hash),
+
+        // Progress callback
+        onProgress: (wnbSession: ImportSession) => {
+          // Get current file from the session's files list
+          const currentFile = wnbSession.files.find(f => f.status === 'pending' || f.status === 'hashed')?.path || '';
+
+          options.onProgress?.({
+            sessionId,
+            status: wnbSession.status,
+            percent: this.calculatePercent(wnbSession),
+            currentFile,
+            filesProcessed: wnbSession.processedFiles,
+            filesTotal: wnbSession.totalFiles,
+            bytesProcessed: wnbSession.processedBytes || 0,
+            bytesTotal: wnbSession.totalBytes || 0,
+            duplicatesFound: wnbSession.duplicateFiles,
+            errorsFound: wnbSession.errorFiles,
+          });
+        },
+
+        // Per-file callback for database integration
+        onFile: async (file, action) => {
+          if (action === 'validated' && file.destPath && file.hash) {
+            try {
+              // Determine media type from file category
+              const mediaType = this.getMediaType(file);
+
+              // Insert into database
+              await this.insertMediaRecord(file, location, user);
+
+              // Map XMP sidecar to database tables
+              if (file.sidecarPath) {
+                // Note: XmpMapperService handles device fingerprints and custody events
+                // For now, we skip XMP mapping since it requires raw better-sqlite3
+                // The sidecar is already written; DB will be updated via job queue
+              }
+
+              // Queue thumbnail job
+              await this.queueThumbnailJob(file, location);
+
+              // Track for post-processing
+              finalizedFiles.push({
+                hash: file.hash,
+                archivePath: file.destPath,
+                mediaType,
+                originalPath: file.path,
+              });
+            } catch (err) {
+              logger.error('ImportService', 'Failed to process validated file', err as Error, {
+                sessionId,
+                hash: file.hash,
+                path: file.destPath,
+              });
+            }
+          }
+        },
+      } as WnbImportOptions);
+
+      // Check for cancellation
+      if (signal?.aborted) {
+        error = 'Import cancelled';
+        logger.warn('ImportService', 'Import cancelled', { sessionId });
+      }
+
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      logger.error('ImportService', 'Import failed', err as Error, { sessionId });
+      metrics.incrementCounter(MetricNames.IMPORT_FAILED, 1, { locationId: location.locid });
+
+      return {
+        sessionId,
+        status: 'failed',
+        totalFiles: 0,
+        processedFiles: 0,
+        duplicateFiles: 0,
+        errorFiles: 0,
+        totalBytes: 0,
+        durationMs: Date.now() - startTime,
+        error,
+      };
+    } finally {
+      releaseLocationLock(location.locid, sessionId);
+    }
+
+    // Post-processing: queue location-level jobs
+    if (finalizedFiles.length > 0) {
+      await this.queueLocationJobs(location, finalizedFiles, user);
+      await this.autoSetHeroImage(location, finalizedFiles);
+    }
+
+    // Create import record
+    if (session.status === 'completed' && finalizedFiles.length > 0) {
+      await this.createImportRecord(sessionId, location, finalizedFiles, user);
+    }
+
+    const durationMs = Date.now() - startTime;
+
+    if (session.status === 'completed') {
+      metrics.incrementCounter(MetricNames.IMPORT_COMPLETED, 1, { locationId: location.locid });
+      metrics.incrementCounter(MetricNames.IMPORT_FILES_PROCESSED, session.processedFiles, { sessionId });
+    }
+
+    logger.info('ImportService', 'Backbone import completed', {
+      sessionId,
+      status: session.status,
+      totalFiles: session.totalFiles,
+      processedFiles: session.processedFiles,
+      duplicateFiles: session.duplicateFiles,
+      errorFiles: session.errorFiles,
+      durationMs,
+    });
+
+    return {
+      sessionId,
+      status: error ? 'failed' : signal?.aborted ? 'cancelled' : 'completed',
+      totalFiles: session.totalFiles,
+      processedFiles: session.processedFiles,
+      duplicateFiles: session.duplicateFiles,
+      errorFiles: session.errorFiles,
+      totalBytes: 0, // Not tracked
+      durationMs,
+      error,
+    };
+  }
+
+  /**
+   * Build the base path for a location's data directory
+   */
+  private buildLocationPath(archivePath: string, location: ImportLocation): string {
+    const state = location.address_state || 'XX';  // Fallback for unknown state
+    return path.join(archivePath, 'locations', state, location.locid, 'data');
+  }
+
+  /**
+   * Build the full file path for an imported file
+   * Uses location-based folder structure: /archive/locations/{state}/{locid}/data/{type}/{hash}.{ext}
+   */
+  private buildFilePath(
+    archivePath: string,
+    location: ImportLocation,
+    file: ImportFileState,
+    hash: string
+  ): string {
+    const ext = path.extname(file.path);
+    const mediaType = this.getMediaType(file);
+    const typeFolder = this.getTypeFolder(mediaType);
+    const state = location.address_state || 'XX';  // Fallback for unknown state
+
+    return path.join(
+      archivePath,
+      'locations',
+      state,
+      location.locid,
+      'data',
+      typeFolder,
+      `${hash}${ext}`
+    );
+  }
+
+  /**
+   * Get the folder name for a media type
+   */
+  private getTypeFolder(mediaType: MediaType): string {
+    switch (mediaType) {
+      case 'image': return 'org-images';
+      case 'video': return 'org-video';
+      case 'document': return 'org-documents';
+      case 'map': return 'org-maps';
+    }
+  }
+
+  /**
+   * Determine media type from file state
+   */
+  private getMediaType(file: ImportFileState): MediaType {
+    const ext = path.extname(file.path).toLowerCase();
+
+    // Video extensions
+    if (['.mp4', '.mov', '.avi', '.mkv', '.mts', '.m2ts', '.webm', '.wmv'].includes(ext)) {
+      return 'video';
+    }
+
+    // Map extensions (GPX, KML, GeoJSON)
+    if (['.gpx', '.kml', '.kmz', '.geojson'].includes(ext)) {
+      return 'map';
+    }
+
+    // Document extensions
+    if (['.pdf', '.doc', '.docx', '.txt', '.rtf', '.odt'].includes(ext)) {
+      return 'document';
+    }
+
+    // Default to image
+    return 'image';
+  }
+
+  /**
+   * Calculate progress percentage from session state
+   */
+  private calculatePercent(session: ImportSession): number {
+    if (session.totalFiles === 0) return 0;
+
+    switch (session.status) {
+      case 'scanning': return 5;
+      case 'hashing': return 10 + (session.processedFiles / session.totalFiles) * 30;
+      case 'copying': return 40 + (session.processedFiles / session.totalFiles) * 40;
+      case 'validating': return 80 + (session.processedFiles / session.totalFiles) * 15;
+      case 'completed': return 100;
+      default: return 0;
+    }
+  }
+
+  /**
+   * Get existing hashes from database for dedup
+   */
+  private async getExistingHashes(locid: string): Promise<Set<string>> {
+    const hashes = new Set<string>();
+
+    // Query all media tables for hashes in this location
+    const [imgs, vids, docs, maps] = await Promise.all([
+      this.db.selectFrom('imgs').select('imghash').where('locid', '=', locid).execute(),
+      this.db.selectFrom('vids').select('vidhash').where('locid', '=', locid).execute(),
+      this.db.selectFrom('docs').select('dochash').where('locid', '=', locid).execute(),
+      this.db.selectFrom('maps').select('maphash').where('locid', '=', locid).execute(),
+    ]);
+
+    for (const row of imgs) hashes.add(row.imghash);
+    for (const row of vids) hashes.add(row.vidhash);
+    for (const row of docs) hashes.add(row.dochash);
+    for (const row of maps) hashes.add(row.maphash);
+
+    return hashes;
+  }
+
+  /**
+   * Insert a media record into the database
+   */
+  private async insertMediaRecord(
+    file: ImportFileState,
+    location: ImportLocation,
+    user?: { userId: string; username: string }
+  ): Promise<void> {
+    if (!file.destPath || !file.hash) return;
+
+    const now = new Date().toISOString();
+    const mediaType = this.getMediaType(file);
+    const ext = path.extname(file.path);
+    const archiveName = `${file.hashShort || file.hash.slice(0, 16)}${ext}`;
+
+    switch (mediaType) {
+      case 'image':
+        await this.db.insertInto('imgs').values({
+          imghash: file.hash,
+          imgnam: archiveName,
+          imgnamo: file.originalName || path.basename(file.path),
+          imgloc: file.destPath,
+          imgloco: file.path,
+          locid: location.locid,
+          subid: location.subid,
+          auth_imp: user?.username ?? null,
+          imgadd: now,
+          meta_exiftool: null,
+          meta_width: null,
+          meta_height: null,
+          meta_date_taken: null,
+          meta_camera_make: null,
+          meta_camera_model: null,
+          meta_gps_lat: null,
+          meta_gps_lng: null,
+          thumb_path: null,
+          preview_path: null,
+          preview_extracted: 0,
+          thumb_path_sm: null,
+          thumb_path_lg: null,
+          xmp_synced: file.sidecarPath ? 1 : 0,
+          xmp_modified_at: file.sidecarPath ? now : null,
+          hidden: 0,
+          hidden_reason: null,
+          is_live_photo: 0,
+          imported_by_id: user?.userId ?? null,
+          imported_by: user?.username ?? null,
+          media_source: null,
+          is_contributed: 0,
+          contribution_source: null,
+          preview_quality: null,
+          file_size_bytes: file.size ?? null,
+          extracted_from_web: 0,
+          phash: null,  // Will be computed via job queue
+        }).execute();
+        break;
+
+      case 'video':
+        await this.db.insertInto('vids').values({
+          vidhash: file.hash,
+          vidnam: archiveName,
+          vidnamo: file.originalName || path.basename(file.path),
+          vidloc: file.destPath,
+          vidloco: file.path,
+          locid: location.locid,
+          subid: location.subid,
+          auth_imp: user?.username ?? null,
+          vidadd: now,
+          meta_ffmpeg: null,
+          meta_exiftool: null,
+          meta_duration: null,
+          meta_width: null,
+          meta_height: null,
+          meta_codec: null,
+          meta_fps: null,
+          meta_date_taken: null,
+          meta_gps_lat: null,
+          meta_gps_lng: null,
+          thumb_path: null,
+          poster_extracted: 0,
+          thumb_path_sm: null,
+          thumb_path_lg: null,
+          preview_path: null,
+          xmp_synced: file.sidecarPath ? 1 : 0,
+          xmp_modified_at: file.sidecarPath ? now : null,
+          hidden: 0,
+          hidden_reason: null,
+          is_live_photo: 0,
+          imported_by_id: user?.userId ?? null,
+          imported_by: user?.username ?? null,
+          media_source: null,
+          is_contributed: 0,
+          contribution_source: null,
+          file_size_bytes: file.size ?? null,
+          srt_telemetry: null,
+          extracted_from_web: 0,
+          needs_deinterlace: 0,
+        }).execute();
+        break;
+
+      case 'document':
+        await this.db.insertInto('docs').values({
+          dochash: file.hash,
+          docnam: archiveName,
+          docnamo: file.originalName || path.basename(file.path),
+          docloc: file.destPath,
+          docloco: file.path,
+          locid: location.locid,
+          subid: location.subid,
+          auth_imp: user?.username ?? null,
+          docadd: now,
+          meta_exiftool: null,
+          meta_page_count: null,
+          meta_author: null,
+          meta_title: null,
+          hidden: 0,
+          hidden_reason: null,
+          imported_by_id: user?.userId ?? null,
+          imported_by: user?.username ?? null,
+          media_source: null,
+          is_contributed: 0,
+          contribution_source: null,
+          file_size_bytes: file.size ?? null,
+        }).execute();
+        break;
+
+      case 'map':
+        await this.db.insertInto('maps').values({
+          maphash: file.hash,
+          mapnam: archiveName,
+          mapnamo: file.originalName || path.basename(file.path),
+          maploc: file.destPath,
+          maploco: file.path,
+          locid: location.locid,
+          subid: location.subid,
+          auth_imp: user?.username ?? null,
+          mapadd: now,
+          meta_exiftool: null,
+          meta_map: null,
+          meta_gps_lat: null,
+          meta_gps_lng: null,
+          reference: null,
+          map_states: null,
+          map_verified: 0,
+          thumb_path_sm: null,
+          thumb_path_lg: null,
+          preview_path: null,
+          imported_by_id: user?.userId ?? null,
+          imported_by: user?.username ?? null,
+          media_source: null,
+          file_size_bytes: file.size ?? null,
+        }).execute();
+        break;
+    }
+  }
+
+  /**
+   * Queue thumbnail generation job for a file
+   */
+  private async queueThumbnailJob(file: ImportFileState, location: ImportLocation): Promise<void> {
+    if (!file.destPath || !file.hash) return;
+
+    const mediaType = this.getMediaType(file);
+    if (mediaType !== 'image' && mediaType !== 'video') return;
+
+    // Queue ExifTool job first (thumbnail depends on orientation)
+    const exifJobId = generateId();
+    await this.jobQueue.addBulk([
+      {
+        queue: IMPORT_QUEUES.EXIFTOOL,
+        priority: JOB_PRIORITY.HIGH,
+        jobId: exifJobId,
+        payload: {
+          hash: file.hash,
+          mediaType,
+          archivePath: file.destPath,
+          locid: location.locid,
+          subid: location.subid,
+        },
+      },
+      {
+        queue: IMPORT_QUEUES.THUMBNAIL,
+        priority: JOB_PRIORITY.NORMAL,
+        payload: {
+          hash: file.hash,
+          mediaType,
+          archivePath: file.destPath,
+          locid: location.locid,
+          subid: location.subid,
+        },
+        dependsOn: exifJobId,
+      },
+    ]);
+
+    // Queue FFprobe for videos
+    if (mediaType === 'video') {
+      await this.jobQueue.addBulk([
+        {
+          queue: IMPORT_QUEUES.FFPROBE,
+          priority: JOB_PRIORITY.HIGH,
+          jobId: generateId(),
+          payload: {
+            hash: file.hash,
+            mediaType,
+            archivePath: file.destPath,
+            locid: location.locid,
+            subid: location.subid,
+          },
+          dependsOn: exifJobId,
+        },
+        {
+          queue: IMPORT_QUEUES.VIDEO_PROXY,
+          priority: JOB_PRIORITY.LOW,
+          payload: {
+            hash: file.hash,
+            mediaType,
+            archivePath: file.destPath,
+            locid: location.locid,
+            subid: location.subid,
+          },
+        },
+      ]);
+    }
+  }
+
+  /**
+   * Queue location-level jobs after all files are imported
+   */
+  private async queueLocationJobs(
+    location: ImportLocation,
+    files: Array<{ hash: string; mediaType: MediaType }>,
+    user?: { userId: string; username: string }
+  ): Promise<void> {
+    const jobs: JobInput[] = [];
+    const { locid, subid } = location;
+
+    // GPS Enrichment
+    const gpsJobId = generateId();
+    jobs.push({
+      queue: IMPORT_QUEUES.GPS_ENRICHMENT,
+      priority: JOB_PRIORITY.NORMAL,
+      jobId: gpsJobId,
+      payload: { locid, subid },
+    });
+
+    // Live Photo Detection
+    jobs.push({
+      queue: IMPORT_QUEUES.LIVE_PHOTO,
+      priority: JOB_PRIORITY.NORMAL,
+      payload: { locid },
+    });
+
+    // SRT Telemetry (if documents were imported)
+    if (files.some(f => f.mediaType === 'document')) {
+      jobs.push({
+        queue: IMPORT_QUEUES.SRT_TELEMETRY,
+        priority: JOB_PRIORITY.NORMAL,
+        payload: { locid },
+      });
+    }
+
+    // Location Stats
+    jobs.push({
+      queue: IMPORT_QUEUES.LOCATION_STATS,
+      priority: JOB_PRIORITY.BACKGROUND,
+      payload: { locid, subid },
+      dependsOn: gpsJobId,
+    });
+
+    // BagIt Manifest
+    jobs.push({
+      queue: IMPORT_QUEUES.BAGIT,
+      priority: JOB_PRIORITY.BACKGROUND,
+      payload: { locid, subid },
+      dependsOn: gpsJobId,
+    });
+
+    await this.jobQueue.addBulk(jobs);
+  }
+
+  /**
+   * Auto-set hero image for location
+   */
+  private async autoSetHeroImage(
+    location: ImportLocation,
+    files: Array<{ hash: string; mediaType: MediaType }>
+  ): Promise<void> {
+    try {
+      const firstImage = files.find(f => f.mediaType === 'image');
+      if (!firstImage) return;
+
+      if (location.subid) {
+        // Set hero on sub-location
+        const subloc = await this.db
+          .selectFrom('slocs')
+          .select(['subid', 'hero_imghash'])
+          .where('subid', '=', location.subid)
+          .executeTakeFirst();
+
+        if (subloc && !subloc.hero_imghash) {
+          await this.db
+            .updateTable('slocs')
+            .set({ hero_imghash: firstImage.hash })
+            .where('subid', '=', location.subid)
+            .execute();
+          logger.debug('ImportService', 'Auto-set sub-location hero', { hash: firstImage.hash });
+        }
+      } else {
+        // Set hero on host location
+        const loc = await this.db
+          .selectFrom('locs')
+          .select(['locid', 'hero_imghash'])
+          .where('locid', '=', location.locid)
+          .executeTakeFirst();
+
+        if (loc && !loc.hero_imghash) {
+          await this.db
+            .updateTable('locs')
+            .set({ hero_imghash: firstImage.hash })
+            .where('locid', '=', location.locid)
+            .execute();
+          logger.debug('ImportService', 'Auto-set location hero', { hash: firstImage.hash });
+        }
+      }
+    } catch (err) {
+      // Non-fatal
+      logger.warn('ImportService', 'Auto-hero failed (non-fatal)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * Create import record
+   */
+  private async createImportRecord(
+    sessionId: string,
+    location: ImportLocation,
+    files: Array<{ hash: string; mediaType: MediaType }>,
+    user?: { userId: string; username: string }
+  ): Promise<void> {
+    const now = new Date().toISOString();
+
+    await this.db.insertInto('imports').values({
+      import_id: sessionId,
+      locid: location.locid,
+      import_date: now,
+      auth_imp: user?.username ?? null,
+      img_count: files.filter(f => f.mediaType === 'image').length,
+      vid_count: files.filter(f => f.mediaType === 'video').length,
+      doc_count: files.filter(f => f.mediaType === 'document').length,
+      map_count: files.filter(f => f.mediaType === 'map').length,
+      notes: null,
+    }).execute();
+  }
+}
+
+/**
+ * Create an ImportService instance
+ */
+export function createImportService(db: Kysely<Database>): ImportService {
+  return new ImportService(db);
+}

@@ -1,33 +1,28 @@
 /**
  * Copier - Atomic file copy (Step 3)
  *
- * v2.2 SMB-OPTIMIZED: Inline hashing for network sources
+ * v2.3 BACKBONE: Uses wake-n-blake copyWithHash for inline hashing
  *
  * Philosophy: WE ARE AN ARCHIVE APP. WE COPY DATA. PERIOD.
- * - Streaming copy with inline BLAKE3 hash for network sources (single read)
- * - fs.copyFile() for local sources (pre-hashed)
- * - Atomic temp-file-then-rename
+ * - Streaming copy with inline BLAKE3 hash via wake-n-blake (single read)
  * - PARALLEL I/O with PQueue + hardware-scaled concurrency
  * - SMB-aware: throttled concurrency for network paths
  * - Pre-create directories in batch to reduce SMB round-trips
- * - Retry with exponential backoff for network errors
+ * - Retry with exponential backoff (handled by wake-n-blake)
  *
  * ADR: ADR-046-smb-optimized-import
  *
  * @module services/import/copier
  */
 
-import { promises as fs, createReadStream, createWriteStream } from 'fs';
-import { pipeline } from 'stream/promises';
+import { promises as fs } from 'fs';
 import path from 'path';
-import { generateId } from '../../main/ipc-validation';
 import PQueue from 'p-queue';
-import { createHash as createBlake3Hash } from 'blake3';
 import type { HashedFile } from './hasher';
 import { getHardwareProfile } from '../hardware-profile';
 import type { LocationInfo } from './types';
-import { HASH_LENGTH } from '../crypto-service';
-import { isNetworkPath, getStorageConfig } from './storage-detection';
+import { isNetworkPath } from './storage-detection';
+import { HashService } from '../backbone/hash-service.js';
 
 /**
  * Network failure error - thrown when sustained network failure is detected
@@ -179,39 +174,22 @@ export class Copier {
   }
 
   /**
-   * Stream copy with inline BLAKE3 hash computation
-   * Single read from source, hash computed while streaming, written to dest
-   * Returns computed hash - eliminates double-read for network sources
-   *
-   * SMB optimization: 1MB buffer reduces round-trips significantly
+   * Copy file with inline hash using backbone HashService (wake-n-blake)
+   * Uses wake-n-blake copyWithHash for network-aware streaming with inline hashing
    */
-  private async copyFileStreaming(
+  private async copyFileWithBackbone(
     sourcePath: string,
-    tempPath: string
+    destPath: string
   ): Promise<{ hash: string; bytesCopied: number }> {
-    const hasher = createBlake3Hash();
-    let bytesCopied = 0;
-
-    // 1MB buffer for SMB efficiency - reduces round-trips
-    // Default Node.js buffer is 64KB which creates too many SMB operations
-    const BUFFER_SIZE = 1024 * 1024; // 1MB
-
-    const source = createReadStream(sourcePath, { highWaterMark: BUFFER_SIZE });
-    const dest = createWriteStream(tempPath, { highWaterMark: BUFFER_SIZE });
-
-    // Hash bytes as they stream through
-    source.on('data', (chunk: Buffer | string) => {
-      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      hasher.update(buf);
-      bytesCopied += buf.length;
+    const result = await HashService.copyWithHash(sourcePath, destPath, {
+      verify: false, // We'll verify separately if needed
+      algorithm: 'blake3',
     });
 
-    // Use pipeline for proper backpressure handling
-    await pipeline(source, dest);
-
-    // Get hash (truncated to 16 hex chars per HASH_LENGTH)
-    const hash = hasher.digest('hex').substring(0, HASH_LENGTH);
-    return { hash, bytesCopied };
+    return {
+      hash: result.hash,
+      bytesCopied: result.size,
+    };
   }
 
   /**
@@ -528,7 +506,9 @@ export class Copier {
 
   /**
    * Copy a single file - supports both pre-hashed and inline hashing modes
-   * v2.2: Uses streaming with inline hash for network sources (single read)
+   * v2.3: Uses backbone HashService.copyWithHash for network-aware streaming
+   *
+   * Note: Retry logic is now handled by wake-n-blake internally
    */
   private async copyFileFast(
     file: HashedFile,
@@ -542,76 +522,66 @@ export class Copier {
       bytesCopied: 0,
     };
 
-    // Retry config for network errors
-    const isNetwork = this.isNetworkDest || this.isNetworkSource;
-    const MAX_RETRIES = isNetwork ? 3 : 0;
-    const RETRY_DELAYS = [1000, 3000, 5000]; // ms - exponential backoff
-    // Use module-level NETWORK_ERROR_CODES for retry decisions
-    const RETRYABLE_ERRORS = NETWORK_ERROR_CODES;
-
     // Inline hashing mode: hash is null, compute during copy
     const useInlineHash = file.hash === null;
 
-    // Temp file path (we'll rename to final after we know the hash)
-    const tempDir = this.buildLocationPath(location);
-    const tempPath = path.join(tempDir, `${generateId()}.tmp`);
+    try {
+      let finalHash: string;
+      let bytesCopied: number;
 
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        let finalHash: string;
-        let bytesCopied: number;
+      if (useInlineHash) {
+        // INLINE HASH MODE: Use backbone copyWithHash to temp, get hash, then rename
+        // We need temp because we don't know the final filename until we have the hash
+        const tempDir = this.buildLocationPath(location);
+        await fs.mkdir(tempDir, { recursive: true }).catch(() => {});
+        const tempPath = path.join(tempDir, `${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`);
 
-        if (useInlineHash) {
-          // INLINE HASH MODE: Stream copy with hash computation (single read)
-          const streamResult = await this.copyFileStreaming(file.originalPath, tempPath);
-          finalHash = streamResult.hash;
-          bytesCopied = streamResult.bytesCopied;
-        } else {
-          // PRE-HASHED MODE: Simple copy (hash already computed)
-          await fs.copyFile(file.originalPath, tempPath);
-          finalHash = file.hash!;
-          bytesCopied = file.size;
+        try {
+          const copyResult = await this.copyFileWithBackbone(file.originalPath, tempPath);
+          finalHash = copyResult.hash;
+          bytesCopied = copyResult.bytesCopied;
+
+          // Build final path with the computed hash
+          const destPath = this.buildFilePathWithHash(finalHash, file, location);
+
+          // Ensure destination directory exists
+          await fs.mkdir(path.dirname(destPath), { recursive: true }).catch(() => {});
+
+          // Atomic rename from temp to final
+          await fs.rename(tempPath, destPath);
+
+          result.hash = finalHash;
+          result.archivePath = destPath;
+          result.bytesCopied = bytesCopied;
+        } catch (err) {
+          // Clean up temp file on error
+          await fs.unlink(tempPath).catch(() => {});
+          throw err;
         }
-
-        // Build final path with the (computed or pre-existing) hash
+      } else {
+        // PRE-HASHED MODE: Copy directly to final destination using backbone
+        finalHash = file.hash!;
         const destPath = this.buildFilePathWithHash(finalHash, file, location);
 
-        // Ensure destination directory exists (may be new for inline hash)
+        // Ensure destination directory exists
         await fs.mkdir(path.dirname(destPath), { recursive: true }).catch(() => {});
 
-        // Atomic rename from temp to final
-        await fs.rename(tempPath, destPath);
+        const copyResult = await this.copyFileWithBackbone(file.originalPath, destPath);
+        bytesCopied = copyResult.bytesCopied;
 
-        result.hash = finalHash;  // Update with computed hash (important for inline mode)
+        result.hash = finalHash;
         result.archivePath = destPath;
         result.bytesCopied = bytesCopied;
-
-        return result;
-
-      } catch (error) {
-        const errorCode = (error as NodeJS.ErrnoException).code;
-        const isRetryable = isNetwork && errorCode && RETRYABLE_ERRORS.includes(errorCode);
-
-        if (isRetryable && attempt < MAX_RETRIES) {
-          // Log retry attempt
-          console.log(`[Copier] Network error ${errorCode} on ${file.filename}, retry ${attempt + 1}/${MAX_RETRIES} after ${RETRY_DELAYS[attempt]}ms`);
-
-          // Clean up partial temp file before retry
-          await fs.unlink(tempPath).catch(() => {});
-
-          // Wait with exponential backoff
-          await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS[attempt]));
-          continue;
-        }
-
-        // Non-retryable or max retries exceeded - clean up and fail
-        await fs.unlink(tempPath).catch(() => {});
-        result.copyError = error instanceof Error ? error.message : String(error);
-        return result;
       }
-    }
 
-    return result;
+      return result;
+
+    } catch (error) {
+      // Network errors and retries are handled by wake-n-blake
+      // If we get here, it's a final failure
+      result.copyError = error instanceof Error ? error.message : String(error);
+      return result;
+    }
   }
 
   /**

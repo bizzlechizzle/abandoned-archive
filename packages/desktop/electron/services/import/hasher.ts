@@ -2,7 +2,7 @@
  * Hasher - Parallel BLAKE3 hashing (Step 2)
  *
  * Per Import Spec v2.0:
- * - Parallel hashing using WorkerPool
+ * - Parallel hashing using backbone HashService (wake-n-blake)
  * - Batch duplicate detection (single WHERE IN query)
  * - Progress reporting (5-40%)
  *
@@ -12,7 +12,7 @@
 import type { Kysely } from 'kysely';
 import type { Database } from '../../main/database.types';
 import type { ScannedFile } from './scanner';
-import { getWorkerPool, type WorkerPool } from '../worker-pool';
+import { HashService } from '../backbone/hash-service.js';
 
 /**
  * Hash result for a single file
@@ -59,82 +59,76 @@ export interface HasherOptions {
 
 /**
  * Hasher class for parallel file hashing
+ * Uses backbone HashService (wake-n-blake) for BLAKE3 hashing
  */
 export class Hasher {
-  private pool: WorkerPool | null = null;
-
   constructor(private readonly db: Kysely<Database>) {}
 
   /**
-   * Initialize the worker pool
+   * Initialize - no-op for backbone (wake-n-blake handles initialization)
    */
   async initialize(): Promise<void> {
-    if (!this.pool) {
-      this.pool = await getWorkerPool();
-    }
+    // HashService is static and doesn't need initialization
   }
 
   /**
    * Hash all files and check for duplicates
    */
   async hash(files: ScannedFile[], options?: HasherOptions): Promise<HashResult> {
-    await this.initialize();
-
     const startTime = Date.now();
     const totalFiles = files.length;
-    let completedFiles = 0;
     let totalDuplicates = 0;
     let totalErrors = 0;
 
     // Filter out files that should be skipped
     const filesToHash = files.filter(f => !f.shouldSkip);
+    const filePathToScanned = new Map<string, ScannedFile>();
+    for (const file of filesToHash) {
+      filePathToScanned.set(file.originalPath, file);
+    }
+
+    // Hash files in parallel using backbone HashService
+    const batchResults = await HashService.hashBatch(
+      filesToHash.map(f => f.originalPath),
+      {
+        signal: options?.signal,
+        onProgress: (completed, total, filePath) => {
+          if (options?.onProgress) {
+            // Map to 5-40% range
+            const percent = 5 + ((completed / total) * 35);
+            const file = filePathToScanned.get(filePath);
+            options.onProgress(percent, file?.filename ?? filePath, completed);
+          }
+        },
+      }
+    );
+
+    // Map results back to HashedFile format
     const results: HashedFile[] = [];
+    let completedCount = 0;
 
-    // Hash files in parallel batches
-    const batchSize = 50; // Process 50 files at a time for progress updates
+    for (const batchResult of batchResults) {
+      const scannedFile = filePathToScanned.get(batchResult.path);
+      if (!scannedFile) continue;
 
-    for (let i = 0; i < filesToHash.length; i += batchSize) {
-      if (options?.signal?.aborted) {
-        throw new Error('Hashing cancelled');
+      const hashedFile: HashedFile = {
+        ...scannedFile,
+        hash: batchResult.hash,
+        hashError: batchResult.error,
+        isDuplicate: false,
+        duplicateIn: null,
+      };
+
+      if (batchResult.error) {
+        totalErrors++;
       }
 
-      const batch = filesToHash.slice(i, i + batchSize);
-      const batchPaths = batch.map(f => f.originalPath);
+      results.push(hashedFile);
+      completedCount++;
 
-      // Hash the batch
-      const hashResults = await this.pool!.hashBatch(batchPaths);
-
-      // Map results back to files
-      for (let j = 0; j < batch.length; j++) {
-        const file = batch[j];
-        const hashResult = hashResults[j];
-
-        const hashedFile: HashedFile = {
-          ...file,
-          hash: hashResult.hash ?? null,
-          hashError: hashResult.error ?? null,
-          isDuplicate: false,
-          duplicateIn: null,
-        };
-
-        if (hashResult.error) {
-          totalErrors++;
-        }
-
-        results.push(hashedFile);
-        completedFiles++;
-
-        // Report progress (5-40% range)
-        // ADR-050: Pass completedFiles for incremental progress tracking
-        if (options?.onProgress) {
-          const percent = 5 + ((completedFiles / totalFiles) * 35);
-          options.onProgress(percent, file.filename, completedFiles);
-        }
-
-        // FIX 6: Stream result to caller for incremental persistence
-        if (options?.onFileComplete) {
-          await options.onFileComplete(hashedFile, completedFiles - 1, totalFiles);
-        }
+      // Stream result to caller for incremental persistence
+      if (options?.onFileComplete) {
+        await options.onFileComplete(hashedFile, completedCount - 1, totalFiles);
       }
     }
 

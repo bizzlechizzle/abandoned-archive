@@ -20,6 +20,14 @@ import {
   type FastHashResult,
   type Algorithm,
 } from 'wake-n-blake';
+import PQueue from 'p-queue';
+import os from 'node:os';
+
+export interface BatchHashResult {
+  path: string;
+  hash: string | null;
+  error: string | null;
+}
 
 export interface HashServiceOptions {
   algorithm?: Algorithm;
@@ -123,6 +131,62 @@ export class HashService {
   static async generateId(): Promise<string> {
     const { generateBlake3Id } = await import('wake-n-blake');
     return generateBlake3Id();
+  }
+
+  /**
+   * Batch hash multiple files in parallel
+   * Uses CPU core count for concurrency
+   */
+  static async hashBatch(
+    filePaths: string[],
+    options: {
+      concurrency?: number;
+      onProgress?: (completed: number, total: number, file: string) => void;
+      signal?: AbortSignal;
+    } = {}
+  ): Promise<BatchHashResult[]> {
+    const concurrency = options.concurrency ?? Math.max(1, os.cpus().length - 1);
+    const queue = new PQueue({ concurrency });
+    const results: BatchHashResult[] = [];
+    let completed = 0;
+
+    const tasks = filePaths.map((filePath, index) => {
+      return queue.add(async () => {
+        if (options.signal?.aborted) {
+          throw new Error('Hashing cancelled');
+        }
+
+        try {
+          const hash = await hashBlake3(filePath, { full: false });
+          const result: BatchHashResult = { path: filePath, hash, error: null };
+          results[index] = result;
+
+          completed++;
+          if (options.onProgress) {
+            options.onProgress(completed, filePaths.length, filePath);
+          }
+
+          return result;
+        } catch (err) {
+          const result: BatchHashResult = {
+            path: filePath,
+            hash: null,
+            error: err instanceof Error ? err.message : String(err),
+          };
+          results[index] = result;
+
+          completed++;
+          if (options.onProgress) {
+            options.onProgress(completed, filePaths.length, filePath);
+          }
+
+          return result;
+        }
+      });
+    });
+
+    await Promise.all(tasks);
+    return results;
   }
 }
 

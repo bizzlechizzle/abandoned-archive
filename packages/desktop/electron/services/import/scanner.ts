@@ -1,8 +1,10 @@
 /**
  * Scanner - File discovery and initial analysis (Step 1)
  *
+ * v2.5 BACKBONE: Uses wake-n-blake ScanService for file discovery
+ *
  * Per Import Spec v2.0:
- * - Recursive directory walk
+ * - Recursive directory walk via backbone ScanService (wake-n-blake)
  * - Exclusion patterns (.DS_Store, Thumbs.db, etc.)
  * - Sidecar detection (.XMP, .SRT, .THM, .LRF)
  * - RAW+JPEG pair detection
@@ -10,13 +12,18 @@
  * - File size collection for progress estimation
  * - Progress reporting (0-5%)
  *
+ * Security features (kept locally):
+ * - Path traversal prevention
+ * - External symlink blocking
+ *
  * @module services/import/scanner
  */
 
-import { promises as fs, constants as fsConstants } from 'fs';
+import { promises as fs } from 'fs';
 import path from 'path';
 import { generateId } from '../../main/ipc-validation';
 import { realpath, lstat } from 'fs/promises';
+import { ScanService } from '../backbone/scan-service.js';
 
 /**
  * Supported file extensions by media type
@@ -273,11 +280,25 @@ async function isSameDevice(path1: string, path2: string): Promise<boolean> {
 
 /**
  * Get media type from extension
+ * Uses backbone ScanService for category detection where available
  */
 function getMediaType(ext: string): ScannedFile['mediaType'] {
   const lowerExt = ext.toLowerCase();
 
+  // Check sidecars first (local knowledge)
   if (SIDECAR_EXTENSIONS.has(lowerExt)) return 'sidecar';
+
+  // Try backbone ScanService for media category
+  const category = ScanService.getCategory(lowerExt);
+  if (category) {
+    // Map backbone category to our media type
+    if (category === 'image' || category === 'raw') return 'image';
+    if (category === 'video') return 'video';
+    if (category === 'audio') return 'document'; // Audio goes to documents
+    if (category === 'document') return 'document';
+  }
+
+  // Fall back to local extension sets
   if (SUPPORTED_EXTENSIONS.image.has(lowerExt)) return 'image';
   if (SUPPORTED_EXTENSIONS.video.has(lowerExt)) return 'video';
   if (SUPPORTED_EXTENSIONS.document.has(lowerExt)) return 'document';
@@ -540,6 +561,7 @@ export class Scanner {
 
   /**
    * Scan a single file and extract metadata
+   * Uses backbone ScanService for sidecar/skip detection
    */
   private async scanFile(filePath: string): Promise<ScannedFile> {
     const filename = path.basename(filePath);
@@ -555,10 +577,12 @@ export class Scanner {
     }
 
     const mediaType = getMediaType(extension);
-    const isSidecar = SIDECAR_EXTENSIONS.has(extension);
+    // Use backbone ScanService with local fallback
+    const isSidecar = ScanService.isSidecar(filePath) || SIDECAR_EXTENSIONS.has(extension);
     const isRaw = RAW_EXTENSIONS.has(extension);
     const shouldHide = HIDDEN_EXTENSIONS.has(extension);
-    const shouldSkip = SKIP_EXTENSIONS.has(extension) || mediaType === 'unknown';
+    // Use backbone for skip detection with local fallback
+    const shouldSkip = ScanService.isSkipped(filePath) || SKIP_EXTENSIONS.has(extension) || mediaType === 'unknown';
 
     return {
       id: generateId(),

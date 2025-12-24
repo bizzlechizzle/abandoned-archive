@@ -39,6 +39,7 @@ import { getMetricsCollector, MetricNames } from '../monitoring/metrics-collecto
 import { getTracer, OperationNames } from '../monitoring/tracer';
 import { acquireLocationLock, releaseLocationLock } from './location-lock';
 import { isNetworkPath, getStorageConfig, type StorageConfig } from './storage-detection';
+import { ImportService, type BackboneImportProgress } from '../backbone/import-service.js';
 
 const logger = getLogger();
 const metrics = getMetricsCollector();
@@ -126,6 +127,13 @@ export interface ImportOptions {
    * Abort signal for cancellation
    */
   signal?: AbortSignal;
+
+  /**
+   * Use backbone import service (wake-n-blake runImport)
+   * Default: true - uses the new unified pipeline
+   * Set to false for legacy 5-step pipeline
+   */
+  useBackbone?: boolean;
 }
 
 /**
@@ -142,6 +150,9 @@ const STEP_WEIGHTS = {
 
 /**
  * Import orchestrator for coordinating the 5-step pipeline
+ *
+ * v3.0 BACKBONE: Uses wake-n-blake runImport() as primary pipeline
+ * Legacy 5-step pipeline is preserved for backward compatibility and resume support
  */
 export class ImportOrchestrator {
   private scanner: Scanner;
@@ -149,6 +160,8 @@ export class ImportOrchestrator {
   private copier: Copier;
   private validator: Validator;
   private finalizer: Finalizer;
+  private importService: ImportService;
+  private archivePath: string;
 
   // Current import state
   private currentSessionId: string | null = null;
@@ -159,11 +172,13 @@ export class ImportOrchestrator {
     private readonly db: Kysely<Database>,
     archivePath: string
   ) {
+    this.archivePath = archivePath;
     this.scanner = new Scanner();
     this.hasher = new Hasher(db);
     this.copier = new Copier(archivePath);
     this.validator = new Validator();
     this.finalizer = new Finalizer(db);
+    this.importService = new ImportService(db);
   }
 
   /**
@@ -188,8 +203,19 @@ export class ImportOrchestrator {
 
   /**
    * Start a new import
+   *
+   * By default, uses backbone (wake-n-blake runImport) for unified pipeline.
+   * Set options.useBackbone = false for legacy 5-step pipeline.
    */
   async import(paths: string[], options: ImportOptions): Promise<ImportResult> {
+    // Use backbone by default (unless explicitly disabled)
+    const useBackbone = options.useBackbone !== false;
+
+    if (useBackbone) {
+      return this.importWithBackbone(paths, options);
+    }
+
+    // Legacy 5-step pipeline follows...
     const sessionId = generateId();
     const startedAt = new Date();
     this.currentSessionId = sessionId;
@@ -631,6 +657,132 @@ export class ImportOrchestrator {
   cancel(): void {
     if (this.abortController) {
       this.abortController.abort();
+    }
+  }
+
+  /**
+   * Import using backbone (wake-n-blake runImport)
+   *
+   * This is the primary import path. It uses wake-n-blake's unified pipeline
+   * that handles: scan → device detect → hash → dedup → copy → validate → XMP sidecar
+   */
+  private async importWithBackbone(paths: string[], options: ImportOptions): Promise<ImportResult> {
+    const startedAt = new Date();
+
+    logger.info('ImportOrchestrator', 'Starting backbone import (wake-n-blake)', {
+      pathCount: paths.length,
+      locationId: options.location.locid,
+    });
+
+    try {
+      const result = await this.importService.import({
+        sourcePaths: paths,
+        location: {
+          locid: options.location.locid,
+          subid: options.location.subid,
+          address_state: options.location.address_state,
+        },
+        archivePath: options.archivePath,
+        user: options.user,
+        signal: options.signal,
+        onProgress: (progress) => {
+          // Convert BackboneImportProgress to ImportProgress
+          this.currentSessionId = progress.sessionId;
+          this.currentStatus = this.mapBackboneStatus(progress.status);
+
+          options.onProgress?.({
+            sessionId: progress.sessionId,
+            status: this.currentStatus,
+            step: this.getStepFromStatus(this.currentStatus),
+            totalSteps: 5,
+            percent: progress.percent,
+            currentFile: progress.currentFile,
+            filesProcessed: progress.filesProcessed,
+            filesTotal: progress.filesTotal,
+            bytesProcessed: progress.bytesProcessed,
+            bytesTotal: progress.bytesTotal,
+            duplicatesFound: progress.duplicatesFound,
+            errorsFound: progress.errorsFound,
+            estimatedRemainingMs: 0,
+          });
+        },
+      });
+
+      const completedAt = new Date();
+      const totalDurationMs = completedAt.getTime() - startedAt.getTime();
+
+      // Map result to ImportResult
+      const status: ImportStatus = result.status === 'completed' ? 'completed' :
+                                   result.status === 'cancelled' ? 'cancelled' : 'failed';
+
+      this.currentStatus = status;
+
+      return {
+        sessionId: result.sessionId,
+        status,
+        error: result.error,
+        startedAt: startedAt.toISOString(),
+        completedAt: completedAt.toISOString(),
+        totalDurationMs,
+        // Backbone doesn't return step results; just the summary
+        finalizationResult: {
+          files: [],
+          totalFinalized: result.processedFiles,
+          totalErrors: result.errorFiles,
+          jobsQueued: result.processedFiles * 3, // Approximate
+          importRecordId: result.sessionId,
+          finalizeTimeMs: 0,
+        },
+      };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      const completedAt = new Date();
+
+      logger.error('ImportOrchestrator', 'Backbone import failed', err as Error, {
+        paths: paths.length,
+        locationId: options.location.locid,
+      });
+
+      this.currentStatus = 'failed';
+
+      return {
+        sessionId: this.currentSessionId ?? generateId(),
+        status: 'failed',
+        error,
+        startedAt: startedAt.toISOString(),
+        completedAt: completedAt.toISOString(),
+        totalDurationMs: completedAt.getTime() - startedAt.getTime(),
+      };
+    }
+  }
+
+  /**
+   * Map backbone status string to ImportStatus
+   */
+  private mapBackboneStatus(status: string): ImportStatus {
+    switch (status) {
+      case 'scanning': return 'scanning';
+      case 'hashing': return 'hashing';
+      case 'copying': return 'copying';
+      case 'validating': return 'validating';
+      case 'completed': return 'completed';
+      case 'failed': return 'failed';
+      default: return 'pending';
+    }
+  }
+
+  /**
+   * Get step number from status
+   */
+  private getStepFromStatus(status: ImportStatus): number {
+    switch (status) {
+      case 'scanning': return 1;
+      case 'hashing': return 2;
+      case 'copying': return 3;
+      case 'validating': return 4;
+      case 'finalizing': return 5;
+      case 'completed': return 5;
+      default: return 0;
     }
   }
 

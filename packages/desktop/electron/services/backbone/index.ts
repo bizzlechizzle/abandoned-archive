@@ -9,7 +9,7 @@
  */
 
 export { HashService } from './hash-service.js';
-export type { HashServiceOptions, HashResult, CopyResult, FastHashResult, Algorithm } from './hash-service.js';
+export type { HashServiceOptions, HashResult, CopyResult, FastHashResult, Algorithm, BatchHashResult } from './hash-service.js';
 
 export { ScanService } from './scan-service.js';
 export type {
@@ -51,6 +51,14 @@ export type {
   XmpMappingResult,
   RebuildResult,
 } from './xmp-mapper-service.js';
+
+export { ImportService, createImportService } from './import-service.js';
+export type {
+  ImportLocation,
+  BackboneImportOptions,
+  BackboneImportProgress,
+  BackboneImportResult,
+} from './import-service.js';
 
 /**
  * Initialize all backbone services

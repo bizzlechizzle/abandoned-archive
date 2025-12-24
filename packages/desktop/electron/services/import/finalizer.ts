@@ -464,6 +464,7 @@ export class Finalizer {
             file_size_bytes: file.size,
             srt_telemetry: null,
             extracted_from_web: 0,
+            needs_deinterlace: 0,
           })
           .execute();
         return file.hash!;
@@ -700,6 +701,7 @@ export class Finalizer {
       file_size_bytes: file.size,
       srt_telemetry: null,
       extracted_from_web: 0,
+      needs_deinterlace: 0,
     }));
 
     // Single batch insert

@@ -1,16 +1,16 @@
 /**
  * Validator - Post-copy integrity verification (Step 4)
  *
- * v2.3 PROPERLY ARCHITECTED: Unified storage detection, retry, timeout
+ * v2.4 BACKBONE: Uses wake-n-blake HashService for verification
  *
  * Per Import Spec v2.0 + ADR-046:
- * - Parallel re-hash using WorkerPool
+ * - Parallel re-hash using backbone HashService (wake-n-blake)
  * - Hash comparison (BLAKE3)
  * - Rollback on mismatch (auto-delete invalid files)
  * - Continue-on-error (don't abort batch)
  * - Progress reporting (80-95%)
  * - SMB-aware: throttled concurrency for network archives
- * - Retry with exponential backoff for network errors
+ * - Retry with exponential backoff (handled by wake-n-blake)
  * - Per-file timeout to prevent hangs
  *
  * Integrity guarantee per NDSA/Library of Congress standards:
@@ -27,9 +27,9 @@ import { promises as fs } from 'fs';
 import PQueue from 'p-queue';
 import type { CopiedFile } from './copier';
 import { NetworkFailureError } from './copier';
-import { getWorkerPool, type WorkerPool, type HashResult } from '../worker-pool';
 import { getHardwareProfile } from '../hardware-profile';
 import { isNetworkPath, getStorageConfig } from './storage-detection';
+import { HashService } from '../backbone/hash-service.js';
 
 /**
  * Validation result for a single file
@@ -116,20 +116,21 @@ const VALIDATION_TIMEOUT_MS = 120000; // 2 minutes per file
  */
 const NETWORK_ABORT_THRESHOLD = 5;
 
+interface HashResult {
+  hash: string | null;
+  error: string | null;
+}
+
 /**
  * Validator class for integrity verification
- * v2.3: Unified storage detection, retry logic, per-file timeout
+ * v2.4: Uses backbone HashService (wake-n-blake) for hashing
  */
 export class Validator {
-  private pool: WorkerPool | null = null;
-
   /**
-   * Initialize the worker pool
+   * Initialize - no-op for backbone (wake-n-blake handles initialization)
    */
   async initialize(): Promise<void> {
-    if (!this.pool) {
-      this.pool = await getWorkerPool();
-    }
+    // HashService is static and doesn't need initialization
   }
 
   /**
@@ -141,7 +142,7 @@ export class Validator {
   }
 
   /**
-   * Hash a file with retry logic
+   * Hash a file with retry logic using backbone HashService
    */
   private async hashWithRetry(
     filePath: string,
@@ -151,26 +152,20 @@ export class Validator {
     let retryCount = 0;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      // Add timeout wrapper
-      const timeoutPromise = new Promise<HashResult>((_, reject) => {
-        setTimeout(() => reject(new Error('Validation timed out')), VALIDATION_TIMEOUT_MS);
-      });
-
       try {
-        const hashPromise = this.pool!.hash(filePath);
-        const result = await Promise.race([hashPromise, timeoutPromise]);
+        // Add timeout wrapper
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Validation timed out')), VALIDATION_TIMEOUT_MS);
+        });
 
-        if (result.error && this.isRetryableError(result.error) && attempt < maxRetries) {
-          // Retryable error - wait and try again
-          lastError = result.error;
-          retryCount++;
-          const delay = RETRY_CONFIG.delays[attempt] || RETRY_CONFIG.delays[RETRY_CONFIG.delays.length - 1];
-          console.log(`[Validator] Retryable error on ${filePath}, retry ${attempt + 1}/${maxRetries} after ${delay}ms: ${result.error}`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
-        }
+        const hashPromise = HashService.hashFile(filePath);
+        const hash = await Promise.race([hashPromise, timeoutPromise]);
 
-        return { result, retryCount };
+        return {
+          result: { hash, error: null },
+          retryCount,
+        };
+
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
 
@@ -185,7 +180,7 @@ export class Validator {
 
         // Non-retryable error or max retries exceeded
         return {
-          result: { filePath, error: errorMsg },
+          result: { hash: null, error: errorMsg },
           retryCount,
         };
       }
@@ -193,14 +188,14 @@ export class Validator {
 
     // Max retries exceeded
     return {
-      result: { filePath, error: lastError || 'Max retries exceeded' },
+      result: { hash: null, error: lastError || 'Max retries exceeded' },
       retryCount,
     };
   }
 
   /**
    * Validate all copied files by re-hashing and comparing
-   * v2.3: Uses unified storage detection, retry, timeout
+   * v2.4: Uses backbone HashService for hashing
    */
   async validate(files: CopiedFile[], options?: ValidatorOptions): Promise<ValidationResult> {
     await this.initialize();
