@@ -473,130 +473,75 @@ export class JobWorkerService extends EventEmitter {
   /**
    * Thumbnail generation job
    *
-   * OPT-085: Fixed to use generateAllSizes() for proper 400/800/1920 thumbnails
-   * Previous bug: Called deprecated generateThumbnail() which only created 256px
-   *
-   * OPT-085 Part 2: Videos need poster frame extraction first
-   * Sharp cannot process video files - must extract frame with FFmpeg first
+   * Backbone: Now uses shoemaker via ThumbnailService wrapper
+   * - Automatic RAW/HEIC preview extraction
+   * - Automatic video frame extraction via FFmpeg
+   * - Configurable output sizes and formats
    */
   private async handleThumbnailJob(
     payload: { hash: string; mediaType: string; archivePath: string },
     emit: (event: string, data: unknown) => void
   ): Promise<{ paths: { sm: string; lg: string; preview?: string } }> {
-    // Import and instantiate the Thumbnail service
-    const { ThumbnailService } = await import('./thumbnail-service');
+    // Import backbone ThumbnailService (wraps shoemaker)
+    const { ThumbnailService } = await import('./backbone/thumbnail-service');
     const { MediaPathService } = await import('./media-path-service');
-    // Get archive path from settings
+
+    // Get archive path from settings for output directory
     const archiveSetting = await this.db
       .selectFrom('settings')
       .select('value')
       .where('key', '=', 'archive_folder')
       .executeTakeFirst();
     const mediaPathService = new MediaPathService(archiveSetting?.value || '');
-    const thumbnailService = new ThumbnailService(mediaPathService);
 
-    // OPT-085: For videos, extract a poster frame first since Sharp can't process video files
-    let sourceForThumbnail = payload.archivePath;
-    let posterPath: string | null = null;
-    let extractedRawPreviewPath: string | null = null; // OPT-105: Track extracted RAW preview separately
-
-    if (payload.mediaType === 'video') {
-      const { FFmpegService } = await import('./ffmpeg-service');
-      const ffmpegService = new FFmpegService();
-
-      // Extract poster frame at 1 second mark (or start for very short videos)
-      posterPath = mediaPathService.getPosterPath(payload.hash);
-
-      // Ensure poster bucket directory exists
-      await mediaPathService.ensureBucketDir(
-        mediaPathService.getPosterDir(),
-        payload.hash
-      );
-
-      try {
-        await ffmpegService.extractFrame(payload.archivePath, posterPath, 1, 1920);
-        sourceForThumbnail = posterPath;
-        logger.info('JobWorker', 'Extracted video poster frame', {
-          hash: payload.hash.slice(0, 12),
-          posterPath,
-        });
-      } catch (error) {
-        // If frame extraction fails, try at 0 seconds (start of video)
-        try {
-          await ffmpegService.extractFrame(payload.archivePath, posterPath, 0, 1920);
-          sourceForThumbnail = posterPath;
-          logger.warn('JobWorker', 'Extracted video poster at 0s (1s failed)', {
-            hash: payload.hash.slice(0, 12),
-          });
-        } catch (fallbackError) {
-          logger.error('JobWorker', 'Failed to extract video poster frame', undefined, {
-            hash: payload.hash.slice(0, 12),
-            error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
-          });
-          // Return empty paths - thumbnails will be missing but import continues
-          return { paths: { sm: '', lg: '', preview: undefined } };
-        }
-      }
-    } else if (payload.mediaType === 'image') {
-      // OPT-088: For RAW/HEIC files, extract embedded preview first since Sharp can't decode them
-      const { PreviewExtractorService } = await import('./preview-extractor-service');
-      const { ExifToolService } = await import('./exiftool-service');
-      const exifToolService = new ExifToolService();
-      const previewExtractor = new PreviewExtractorService(mediaPathService, exifToolService);
-
-      if (previewExtractor.needsPreviewExtraction(payload.archivePath)) {
-        try {
-          const extractedPath = await previewExtractor.extractPreview(payload.archivePath, payload.hash);
-          if (extractedPath) {
-            sourceForThumbnail = extractedPath;
-            extractedRawPreviewPath = extractedPath; // OPT-105: Store for database update
-            logger.info('JobWorker', 'Extracted RAW/HEIC preview for thumbnailing', {
-              hash: payload.hash.slice(0, 12),
-              format: payload.archivePath.split('.').pop()?.toUpperCase(),
-              previewPath: extractedPath,
-            });
-          } else {
-            logger.warn('JobWorker', 'No embedded preview found in RAW/HEIC, thumbnails will fail', {
-              hash: payload.hash.slice(0, 12),
-            });
-          }
-        } catch (error) {
-          logger.error('JobWorker', 'Failed to extract RAW/HEIC preview', undefined, {
-            hash: payload.hash.slice(0, 12),
-            error: error instanceof Error ? error.message : String(error),
-          });
-          // Continue anyway - Sharp will fail gracefully and return null paths
-        }
-      }
-    }
-
-    // OPT-085: Generate all three thumbnail sizes (400px, 800px, 1920px)
-    // Previously called generateThumbnail() which only created 256px legacy thumbnail
-    const thumbResult = await thumbnailService.generateAllSizes(
-      sourceForThumbnail,
+    // Ensure thumbnail bucket directory exists
+    await mediaPathService.ensureBucketDir(
+      mediaPathService.getThumbnailDir(),
       payload.hash
     );
 
-    // Build paths object from actual generated thumbnails
+    // Generate thumbnails via shoemaker (handles RAW, video, and standard images)
+    const thumbResult = await ThumbnailService.generate(payload.archivePath, {
+      preset: 'fast',
+      onProgress: (info) => {
+        emit('progress', { progress: info.completed / info.total * 100, message: info.message });
+      },
+    });
+
+    // Track extracted preview path for RAW files
+    let extractedRawPreviewPath: string | null = null;
+    if (payload.mediaType === 'image' && ThumbnailService.isRaw(payload.archivePath)) {
+      // For RAW files, extract the full-resolution preview if available
+      const preview = await ThumbnailService.extractPreview(payload.archivePath);
+      if (preview) {
+        const previewPath = mediaPathService.getPreviewPath(payload.hash);
+        await mediaPathService.ensureBucketDir(mediaPathService.getPreviewDir(), payload.hash);
+        const fs = await import('node:fs/promises');
+        await fs.writeFile(previewPath, preview);
+        extractedRawPreviewPath = previewPath;
+        logger.info('JobWorker', 'Extracted RAW preview via shoemaker', {
+          hash: payload.hash.slice(0, 12),
+          previewPath,
+        });
+      }
+    }
+
+    // Build paths object from generated thumbnails
     const paths = {
-      sm: thumbResult.thumb_sm ?? mediaPathService.getThumbnailPath(payload.hash, 400),
-      lg: thumbResult.thumb_lg ?? mediaPathService.getThumbnailPath(payload.hash, 800),
-      preview: thumbResult.preview ?? undefined,
+      sm: thumbResult.paths.sm ?? mediaPathService.getThumbnailPath(payload.hash, 400),
+      lg: thumbResult.paths.lg ?? mediaPathService.getThumbnailPath(payload.hash, 800),
+      preview: thumbResult.paths.preview ?? undefined,
     };
 
     // Update database with thumbnail paths
-    // OPT-105: For RAW/HEIC files, preview_path should be the extracted preview (full camera resolution)
-    // For standard images, preview_path is the 1920px generated thumbnail
-    // Fallback chain for display: extracted preview -> 1920px thumb -> 800px thumb -> original
     if (payload.mediaType === 'image') {
       await this.db
         .updateTable('imgs')
         .set({
-          thumb_path_sm: thumbResult.thumb_sm,
-          thumb_path_lg: thumbResult.thumb_lg,
-          // OPT-105: Prefer extracted RAW preview over generated 1920px thumbnail
-          // RAW previews are camera-processed JPEGs with proper color/tone, often higher res than 1920px
-          preview_path: extractedRawPreviewPath || thumbResult.preview,
+          thumb_path_sm: thumbResult.paths.sm ?? null,
+          thumb_path_lg: thumbResult.paths.lg ?? null,
+          // Prefer extracted RAW preview over generated thumbnail
+          preview_path: extractedRawPreviewPath || thumbResult.paths.preview || null,
           preview_extracted: extractedRawPreviewPath ? 1 : 0,
         })
         .where('imghash', '=', payload.hash)
@@ -605,12 +550,10 @@ export class JobWorkerService extends EventEmitter {
       await this.db
         .updateTable('vids')
         .set({
-          thumb_path_sm: thumbResult.thumb_sm,
-          thumb_path_lg: thumbResult.thumb_lg,
-          preview_path: thumbResult.preview,
-          poster_extracted: 1,
-          // Also store the poster path in thumb_path for legacy compatibility
-          thumb_path: posterPath,
+          thumb_path_sm: thumbResult.paths.sm ?? null,
+          thumb_path_lg: thumbResult.paths.lg ?? null,
+          preview_path: thumbResult.paths.preview ?? null,
+          poster_extracted: thumbResult.success ? 1 : 0,
         })
         .where('vidhash', '=', payload.hash)
         .execute();
@@ -618,6 +561,13 @@ export class JobWorkerService extends EventEmitter {
 
     // Emit event
     emit('asset:thumbnail-ready', { hash: payload.hash, paths });
+
+    logger.info('JobWorker', 'Thumbnails generated via shoemaker', {
+      hash: payload.hash.slice(0, 12),
+      method: thumbResult.method,
+      success: thumbResult.success,
+      durationMs: thumbResult.durationMs,
+    });
 
     return { paths };
   }
