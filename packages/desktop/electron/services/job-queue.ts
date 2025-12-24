@@ -687,6 +687,9 @@ export const IMPORT_QUEUES = {
   THUMBNAIL: 'thumbnail',
   VIDEO_PROXY: 'video-proxy',
 
+  // Backbone: XMP sidecar generation (per-file, depends on EXIFTOOL)
+  XMP_SIDECAR: 'xmp-sidecar',
+
   // Per-location jobs (run after all file jobs complete)
   GPS_ENRICHMENT: 'gps-enrichment',
   LIVE_PHOTO: 'live-photo',

@@ -104,6 +104,10 @@ export class JobWorkerService extends EventEmitter {
     // Video proxy queue - scaled to hardware (heavy but modern machines can handle more)
     this.registerQueue(IMPORT_QUEUES.VIDEO_PROXY, hw.videoProxyWorkers, this.handleVideoProxyJob.bind(this) as JobHandler);
 
+    // Backbone: XMP sidecar generation - generates PREMIS-compliant custody chain sidecars
+    // Depends on EXIFTOOL for metadata, runs after metadata extraction
+    this.registerQueue(IMPORT_QUEUES.XMP_SIDECAR, hw.exifToolWorkers, this.handleXmpSidecarJob.bind(this) as JobHandler);
+
     // ============ Per-Location Jobs ============
 
     // GPS enrichment - aggregate GPS from media → location (network-bound)
@@ -136,6 +140,7 @@ export class JobWorkerService extends EventEmitter {
       ffprobe: hw.ffprobeWorkers,
       thumbnail: hw.thumbnailWorkers,
       videoProxy: hw.videoProxyWorkers,
+      xmpSidecar: hw.exifToolWorkers,
       // Per-location
       gpsEnrichment: hw.gpsEnrichmentWorkers,
       livePhoto: hw.livePhotoWorkers,
@@ -1033,6 +1038,192 @@ export class JobWorkerService extends EventEmitter {
     }
 
     return { success: true };
+  }
+
+  /**
+   * XMP Sidecar generation job (Backbone integration)
+   *
+   * Generates PREMIS-compliant XMP sidecars alongside media files.
+   * XMP sidecars are the source of truth for provenance data:
+   * - Content hash (BLAKE3)
+   * - Source device fingerprint
+   * - Custody chain events
+   * - Import metadata
+   *
+   * After generating the sidecar, updates database via XmpMapperService.
+   * This allows database rebuild from XMP if needed (disaster recovery).
+   */
+  private async handleXmpSidecarJob(
+    payload: {
+      hash: string;
+      mediaType: 'image' | 'video' | 'document';
+      archivePath: string;
+      locid: string;
+      subid?: string | null;
+      originalPath?: string;
+      sourceDevice?: unknown;
+    },
+    emit: (event: string, data: unknown) => void
+  ): Promise<{ success: boolean; xmpPath?: string; error?: string }> {
+    const { hash, mediaType, archivePath, locid, originalPath, sourceDevice } = payload;
+
+    try {
+      emit('progress', { progress: 0, message: 'Generating XMP sidecar...' });
+
+      // Lazy load wake-n-blake to avoid circular dependencies
+      const { writeSidecar } = await import('wake-n-blake');
+      const path = await import('node:path');
+      const fs = await import('node:fs/promises');
+      const os = await import('node:os');
+
+      // Determine XMP path (alongside media file)
+      const xmpPath = archivePath + '.xmp';
+
+      // Get file stats for size
+      let fileSize = 0;
+      try {
+        const stats = await fs.stat(archivePath);
+        fileSize = stats.size;
+      } catch {
+        // Continue without file size
+      }
+
+      emit('progress', { progress: 30, message: 'Building XMP data...' });
+
+      // Import types from wake-n-blake
+      const wakeTypes = await import('wake-n-blake');
+
+      // Map mediaType to file category
+      const fileCategory: import('wake-n-blake').FileCategory =
+        mediaType === 'image' ? 'image' : mediaType === 'video' ? 'video' : 'document';
+
+      // Build initial custody event (ingestion = import action)
+      const now = new Date().toISOString();
+      const { generateBlake3Id } = await import('wake-n-blake');
+      const eventId = await generateBlake3Id();
+      const custodyEvent: import('wake-n-blake').CustodyEvent = {
+        eventId,
+        eventTimestamp: now,
+        eventAction: 'ingestion',  // PREMIS: ingestion is the import/ingest action
+        eventOutcome: 'success',
+        eventHost: os.hostname(),
+        eventUser: os.userInfo().username,
+        eventTool: 'abandoned-archive',
+        eventHash: hash,
+        eventHashAlgorithm: 'blake3',
+        eventNotes: `Imported via desktop app to location ${locid}`,
+      };
+
+      // Build XMP sidecar data conforming to XmpSidecarData interface
+      const xmpData: import('wake-n-blake').XmpSidecarData = {
+        schemaVersion: 1,
+        sidecarCreated: now,
+        sidecarUpdated: now,
+        contentHash: hash,
+        hashAlgorithm: 'blake3',
+        fileSize,
+        verified: true,
+        fileCategory,
+        detectedMimeType: this.getMimeType(archivePath),
+        declaredExtension: path.extname(archivePath).toLowerCase(),
+        sourcePath: originalPath ?? archivePath,
+        sourceFilename: path.basename(originalPath ?? archivePath),
+        sourceHost: os.hostname(),
+        sourceType: 'local_disk',
+        originalMtime: now,
+        importTimestamp: now,
+        sessionId: locid, // Use location ID as session reference
+        toolVersion: '0.1.0',
+        importUser: os.userInfo().username,
+        importHost: os.hostname(),
+        importPlatform: os.platform() as 'darwin' | 'linux' | 'win32',
+        sourceDevice: sourceDevice as import('wake-n-blake').ImportSourceDevice | undefined,
+        // Custody chain - required fields
+        custodyChain: [custodyEvent],
+        firstSeen: now,
+        eventCount: 1,
+      };
+
+      emit('progress', { progress: 60, message: 'Writing XMP sidecar...' });
+
+      // Write XMP sidecar
+      await writeSidecar(xmpPath, xmpData);
+
+      emit('progress', { progress: 80, message: 'Updating database from XMP...' });
+
+      // Update database via XmpMapperService
+      const { XmpMapperService } = await import('./backbone/xmp-mapper-service');
+      const xmpMapper = new XmpMapperService(this.db as unknown as import('better-sqlite3').Database);
+      const mappingResult = await xmpMapper.mapXmpToDatabase(xmpPath, locid, mediaType);
+
+      if (!mappingResult.success) {
+        logger.warn('JobWorker', 'XMP database mapping failed', {
+          hash,
+          xmpPath,
+          error: mappingResult.error,
+        });
+      }
+
+      emit('progress', { progress: 100, message: 'XMP sidecar generated' });
+
+      // Update media record with XMP sync status (only imgs and vids have xmp_synced column)
+      if (mediaType === 'image') {
+        await this.db
+          .updateTable('imgs')
+          .set({
+            xmp_synced: 1,
+            xmp_modified_at: new Date().toISOString(),
+          })
+          .where('imghash', '=', hash)
+          .execute();
+      } else if (mediaType === 'video') {
+        await this.db
+          .updateTable('vids')
+          .set({
+            xmp_synced: 1,
+            xmp_modified_at: new Date().toISOString(),
+          })
+          .where('vidhash', '=', hash)
+          .execute();
+      }
+      // docs table doesn't have xmp_synced column - sidecar is still generated
+
+      logger.info('JobWorker', 'XMP sidecar generated', { hash, xmpPath });
+
+      return { success: true, xmpPath };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      logger.error('JobWorker', 'XMP sidecar generation failed', err as Error, { hash, archivePath });
+      return { success: false, error };
+    }
+  }
+
+  /**
+   * Get MIME type from file extension
+   */
+  private getMimeType(filePath: string): string {
+    const ext = filePath.toLowerCase().split('.').pop() || '';
+    const mimeTypes: Record<string, string> = {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      gif: 'image/gif',
+      heic: 'image/heic',
+      heif: 'image/heif',
+      webp: 'image/webp',
+      dng: 'image/x-adobe-dng',
+      arw: 'image/x-sony-arw',
+      cr2: 'image/x-canon-cr2',
+      cr3: 'image/x-canon-cr3',
+      nef: 'image/x-nikon-nef',
+      raf: 'image/x-fuji-raf',
+      mp4: 'video/mp4',
+      mov: 'video/quicktime',
+      avi: 'video/x-msvideo',
+      mkv: 'video/x-matroska',
+      pdf: 'application/pdf',
+    };
+    return mimeTypes[ext] || 'application/octet-stream';
   }
 
   /**

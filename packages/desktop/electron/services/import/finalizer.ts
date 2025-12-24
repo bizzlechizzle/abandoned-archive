@@ -927,6 +927,20 @@ export class Finalizer {
           payload: basePayload,
         });
       }
+
+      // Backbone: XMP sidecar generation (depends on ExifTool for metadata)
+      // Generates PREMIS-compliant custody chain sidecar alongside media file
+      if (file.mediaType === 'image' || file.mediaType === 'video' || file.mediaType === 'document') {
+        jobs.push({
+          queue: IMPORT_QUEUES.XMP_SIDECAR,
+          priority: JOB_PRIORITY.NORMAL,
+          payload: {
+            ...basePayload,
+            originalPath: file.originalPath,
+          },
+          dependsOn: exifJobId,
+        });
+      }
     }
 
     // ============ Per-Location Jobs ============
