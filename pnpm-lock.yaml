@@ -185,6 +185,40 @@ importers:
         specifier: ^1.1.0
         version: 1.6.1(@types/node@22.19.3)
 
+  packages/mapcombine:
+    dependencies:
+      '@xmldom/xmldom':
+        specifier: ^0.8.10
+        version: 0.8.11
+      commander:
+        specifier: ^12.1.0
+        version: 12.1.0
+      ora:
+        specifier: ^8.1.1
+        version: 8.2.0
+      unzipper:
+        specifier: ^0.12.3
+        version: 0.12.3
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.19.3
+      '@types/unzipper':
+        specifier: ^0.10.10
+        version: 0.10.11
+      tsx:
+        specifier: ^4.19.2
+        version: 4.21.0
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.3)
+
   packages/shoemaker:
     dependencies:
       commander:
@@ -5727,7 +5761,7 @@ snapshots:
 
   '@types/better-sqlite3@7.6.13':
     dependencies:
-      '@types/node': 20.19.27
+      '@types/node': 22.19.3
 
   '@types/cacheable-request@6.0.3':
     dependencies:
@@ -5793,7 +5827,7 @@ snapshots:
 
   '@types/unzipper@0.10.11':
     dependencies:
-      '@types/node': 20.19.27
+      '@types/node': 22.19.3
 
   '@types/uuid@10.0.0': {}
 
@@ -5802,7 +5836,7 @@ snapshots:
 
   '@types/ws@8.18.1':
     dependencies:
-      '@types/node': 20.19.27
+      '@types/node': 22.19.3
 
   '@types/yauzl@2.10.3':
     dependencies:
