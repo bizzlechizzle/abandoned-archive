@@ -55,6 +55,10 @@ export interface Database {
   image_tagging_queue: ImageTaggingQueueTable;
   // Migration 84: Extracted Addresses (LLM Tools Overhaul)
   extracted_addresses: ExtractedAddressesTable;
+  // Migration 91-94: Backbone Integration (wake-n-blake)
+  device_fingerprints: DeviceFingerprintsTable;
+  custody_events: CustodyEventsTable;
+  bagit_manifests: BagitManifestsTable;
 }
 
 // Locations table
@@ -343,6 +347,15 @@ export interface ImgsTable {
   vlm_keywords_json: string | null;      // JSON array of search keywords
   vlm_model: string | null;              // Model used (qwen3-vl, llava, etc.)
   vlm_enhanced_at: string | null;        // ISO timestamp of enhancement
+
+  // Migration 94: Backbone Integration (wake-n-blake)
+  device_fingerprint_id: string | null;  // FK to device_fingerprints
+  xmp_sidecar_path: string | null;       // Path to XMP sidecar file
+  source_type: string | null;            // Source type from XMP (memory_card, camera_direct, etc.)
+  raw_pair_hash: string | null;          // Hash of associated RAW file
+  live_photo_pair_hash: string | null;   // Hash of associated Live Photo video
+  dedup_status: 'unique' | 'duplicate' | 'hardlinked' | null;
+  thumb_extraction_method: 'embedded' | 'decoded' | 'failed' | null;
 }
 
 // Videos table
@@ -412,6 +425,16 @@ export interface VidsTable {
   source_id: string | null;        // FK to web_sources - which web source this was extracted from
   source_url: string | null;       // Original URL where this video was found
   extracted_from_web: number;      // 0/1 - Was this extracted from a web source?
+
+  // Migration 94: Backbone Integration (wake-n-blake)
+  device_fingerprint_id: string | null;  // FK to device_fingerprints
+  xmp_sidecar_path: string | null;       // Path to XMP sidecar file
+  source_type: string | null;            // Source type from XMP
+  proxy_path: string | null;             // Path to video proxy
+  proxy_codec: string | null;            // Proxy video codec
+  proxy_bitrate: number | null;          // Proxy bitrate
+  dedup_status: 'unique' | 'duplicate' | 'hardlinked' | null;
+  needs_deinterlace: number;             // 0/1 - Video needs deinterlacing
 }
 
 // Documents table
@@ -450,6 +473,11 @@ export interface DocsTable {
 
   // Migration 44 (OPT-047): File size tracking for archive size queries
   file_size_bytes: number | null;
+
+  // Migration 94: Backbone Integration (wake-n-blake)
+  device_fingerprint_id: string | null;  // FK to device_fingerprints
+  xmp_sidecar_path: string | null;       // Path to XMP sidecar file
+  source_type: string | null;            // Source type from XMP
 }
 
 // Maps table
@@ -1278,4 +1306,142 @@ export interface ExtractedAddressesTable {
   created_at: string;
   applied_at: string | null;
   applied_by: string | null;
+}
+
+// Migration 91: Device Fingerprints table - Backbone/wake-n-blake
+// Stores USB device, camera, card reader, and media info from XMP sidecars
+export interface DeviceFingerprintsTable {
+  fingerprint_id: string;
+  created_at: string;
+  updated_at: string;
+
+  // USB device info
+  usb_vendor_id: string | null;
+  usb_product_id: string | null;
+  usb_serial: string | null;
+  usb_device_path: string | null;
+  usb_device_name: string | null;
+  usb_bus_location: string | null;
+
+  // Card reader info
+  card_reader_vendor: string | null;
+  card_reader_model: string | null;
+  card_reader_serial: string | null;
+  card_reader_port: string | null;
+
+  // Physical media info
+  media_type: 'sd' | 'cf' | 'cfexpress' | 'ssd' | 'hdd' | 'nvme' | null;
+  media_serial: string | null;
+  media_manufacturer: string | null;
+  media_capacity: number | null;
+  media_firmware: string | null;
+
+  // Camera body info
+  camera_body_serial: string | null;
+  camera_internal_name: string | null;
+  phone_device_id: string | null;
+  tethered_connection: 'usb' | 'wifi' | 'bluetooth' | 'thunderbolt' | null;
+
+  // Camera fingerprint (from signature database)
+  camera_signature_id: string | null;
+  camera_match_confidence: number | null;
+  camera_matched_by: 'exif' | 'filename' | 'folder' | 'heuristic' | 'user' | null;
+  camera_make: string | null;
+  camera_model: string | null;
+  camera_category: 'cinema' | 'professional' | 'prosumer' | 'consumer' | 'action' | 'drone' | 'smartphone' | 'scanner' | 'webcam' | 'unknown' | null;
+  camera_era: 'modern' | 'dadcam' | 'super8' | null;
+  camera_year_released: number | null;
+  camera_sensor_width: number | null;
+  camera_sensor_height: number | null;
+  camera_needs_deinterlace: number;
+  camera_audio_channels: 'stereo' | 'mono' | 'none' | null;
+  camera_suggested_lut: string | null;
+  camera_quality_tier: 'pro' | 'prosumer' | 'consumer' | 'legacy' | null;
+
+  // Pro camera sidecar (Sony, Canon, ARRI XML)
+  sidecar_format: 'sony_xdcam' | 'canon_xf' | 'arri' | 'fcpxml' | 'generic' | null;
+  sidecar_source_path: string | null;
+  sidecar_lens: string | null;
+  sidecar_timecode: string | null;
+  sidecar_reel_name: string | null;
+  sidecar_scene: string | null;
+  sidecar_take: string | null;
+  sidecar_notes: string | null;
+
+  // Storage info
+  storage_type: 'local' | 'network' | 'camera_media' | 'unknown' | null;
+  storage_volume_name: string | null;
+  storage_detected_make: string | null;
+}
+
+// Migration 92: Custody Events table - Backbone/wake-n-blake
+// PREMIS-aligned chain of custody audit trail
+export interface CustodyEventsTable {
+  event_id: string;
+  content_hash: string;
+  created_at: string;
+
+  // Event details
+  event_timestamp: string;
+  event_action: 'creation' | 'ingestion' | 'message_digest_calculation' | 'fixity_check' |
+    'virus_check' | 'format_identification' | 'format_validation' |
+    'migration' | 'normalization' | 'replication' | 'deletion' |
+    'modification' | 'metadata_modification' | 'deaccession' |
+    'recovery' | 'quarantine' | 'release' | 'access' | 'redaction' |
+    'decryption' | 'compression' | 'decompression';
+  event_outcome: 'success' | 'failure' | 'partial';
+
+  // Context
+  event_location: string | null;
+  event_host: string | null;
+  event_user: string | null;
+  event_tool: string | null;
+
+  // Verification
+  event_hash: string | null;
+  event_hash_algorithm: string | null;
+
+  // Notes
+  event_notes: string | null;
+  event_details: string | null;
+}
+
+// Migration 93: BagIt Manifests table - Backbone/wake-n-blake
+// RFC 8493 archive manifests for long-term preservation
+export interface BagitManifestsTable {
+  manifest_id: string;
+  created_at: string;
+  updated_at: string;
+
+  // Bag identity
+  bag_path: string;
+  bag_name: string;
+  bag_version: string;
+
+  // Checksums
+  manifest_algorithm: string;
+  manifest_checksum: string | null;
+  tagmanifest_checksum: string | null;
+
+  // Stats
+  payload_file_count: number;
+  payload_byte_count: number;
+  tag_file_count: number;
+
+  // Serialization
+  serialization: 'none' | 'zip' | 'tar' | 'tar.gz' | 'tar.bz2' | null;
+  serialized_path: string | null;
+  serialized_checksum: string | null;
+
+  // Status
+  status: 'valid' | 'invalid' | 'incomplete' | 'sealed';
+  last_verified_at: string | null;
+  verification_errors: string | null;
+
+  // Metadata
+  bag_info_json: string | null;
+  external_description: string | null;
+
+  // Location linkage
+  locid: string | null;
 }

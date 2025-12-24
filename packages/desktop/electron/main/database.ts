@@ -3889,6 +3889,240 @@ function runMigrations(sqlite: Database.Database): void {
       }
     }
 
+    // Migration 91: Device Fingerprints table (backbone/wake-n-blake)
+    // Stores USB device, camera, card reader, and media info from XMP sidecars
+    const hasDeviceFingerprints = sqlite.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='device_fingerprints'"
+    ).get();
+
+    if (!hasDeviceFingerprints) {
+      console.log('Running migration 91: Creating device_fingerprints table');
+      sqlite.exec(`
+        -- Device fingerprints from import source detection
+        CREATE TABLE device_fingerprints (
+          fingerprint_id TEXT PRIMARY KEY,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+
+          -- USB device info
+          usb_vendor_id TEXT,
+          usb_product_id TEXT,
+          usb_serial TEXT,
+          usb_device_path TEXT,
+          usb_device_name TEXT,
+          usb_bus_location TEXT,
+
+          -- Card reader info
+          card_reader_vendor TEXT,
+          card_reader_model TEXT,
+          card_reader_serial TEXT,
+          card_reader_port TEXT,
+
+          -- Physical media info
+          media_type TEXT CHECK(media_type IN ('sd', 'cf', 'cfexpress', 'ssd', 'hdd', 'nvme')),
+          media_serial TEXT,
+          media_manufacturer TEXT,
+          media_capacity INTEGER,
+          media_firmware TEXT,
+
+          -- Camera body info
+          camera_body_serial TEXT,
+          camera_internal_name TEXT,
+          phone_device_id TEXT,
+          tethered_connection TEXT CHECK(tethered_connection IN ('usb', 'wifi', 'bluetooth', 'thunderbolt')),
+
+          -- Camera fingerprint (from signature database)
+          camera_signature_id TEXT,
+          camera_match_confidence REAL,
+          camera_matched_by TEXT CHECK(camera_matched_by IN ('exif', 'filename', 'folder', 'heuristic', 'user')),
+          camera_make TEXT,
+          camera_model TEXT,
+          camera_category TEXT CHECK(camera_category IN ('cinema', 'professional', 'prosumer', 'consumer', 'action', 'drone', 'smartphone', 'scanner', 'webcam', 'unknown')),
+          camera_era TEXT CHECK(camera_era IN ('modern', 'dadcam', 'super8')),
+          camera_year_released INTEGER,
+          camera_sensor_width REAL,
+          camera_sensor_height REAL,
+          camera_needs_deinterlace INTEGER DEFAULT 0,
+          camera_audio_channels TEXT CHECK(camera_audio_channels IN ('stereo', 'mono', 'none')),
+          camera_suggested_lut TEXT,
+          camera_quality_tier TEXT CHECK(camera_quality_tier IN ('pro', 'prosumer', 'consumer', 'legacy')),
+
+          -- Pro camera sidecar (Sony, Canon, ARRI XML)
+          sidecar_format TEXT CHECK(sidecar_format IN ('sony_xdcam', 'canon_xf', 'arri', 'fcpxml', 'generic')),
+          sidecar_source_path TEXT,
+          sidecar_lens TEXT,
+          sidecar_timecode TEXT,
+          sidecar_reel_name TEXT,
+          sidecar_scene TEXT,
+          sidecar_take TEXT,
+          sidecar_notes TEXT,
+
+          -- Storage info
+          storage_type TEXT CHECK(storage_type IN ('local', 'network', 'camera_media', 'unknown')),
+          storage_volume_name TEXT,
+          storage_detected_make TEXT,
+
+          -- Composite unique constraint (common identifying fields)
+          UNIQUE(usb_vendor_id, usb_product_id, usb_serial, camera_body_serial)
+        );
+
+        CREATE INDEX idx_device_fingerprints_camera ON device_fingerprints(camera_make, camera_model);
+        CREATE INDEX idx_device_fingerprints_usb ON device_fingerprints(usb_vendor_id, usb_product_id);
+        CREATE INDEX idx_device_fingerprints_serial ON device_fingerprints(camera_body_serial) WHERE camera_body_serial IS NOT NULL;
+      `);
+      console.log('Migration 91 completed: device_fingerprints table created');
+    }
+
+    // Migration 92: Custody Events table (backbone/wake-n-blake)
+    // PREMIS-aligned chain of custody audit trail
+    const hasCustodyEvents = sqlite.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='custody_events'"
+    ).get();
+
+    if (!hasCustodyEvents) {
+      console.log('Running migration 92: Creating custody_events table');
+      sqlite.exec(`
+        -- PREMIS-aligned custody chain events
+        CREATE TABLE custody_events (
+          event_id TEXT PRIMARY KEY,
+          content_hash TEXT NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+
+          -- Event details
+          event_timestamp TEXT NOT NULL,
+          event_action TEXT NOT NULL CHECK(event_action IN (
+            'creation', 'ingestion', 'message_digest_calculation', 'fixity_check',
+            'virus_check', 'format_identification', 'format_validation',
+            'migration', 'normalization', 'replication', 'deletion',
+            'modification', 'metadata_modification', 'deaccession',
+            'recovery', 'quarantine', 'release', 'access', 'redaction',
+            'decryption', 'compression', 'decompression'
+          )),
+          event_outcome TEXT NOT NULL CHECK(event_outcome IN ('success', 'failure', 'partial')),
+
+          -- Context
+          event_location TEXT,
+          event_host TEXT,
+          event_user TEXT,
+          event_tool TEXT,
+
+          -- Verification
+          event_hash TEXT,
+          event_hash_algorithm TEXT,
+
+          -- Notes
+          event_notes TEXT,
+          event_details TEXT
+        );
+
+        CREATE INDEX idx_custody_events_hash ON custody_events(content_hash);
+        CREATE INDEX idx_custody_events_timestamp ON custody_events(event_timestamp);
+        CREATE INDEX idx_custody_events_action ON custody_events(event_action);
+      `);
+      console.log('Migration 92 completed: custody_events table created');
+    }
+
+    // Migration 93: BagIt Manifests table (backbone/wake-n-blake)
+    // RFC 8493 archive manifests for long-term preservation
+    const hasBagitManifests = sqlite.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='bagit_manifests'"
+    ).get();
+
+    if (!hasBagitManifests) {
+      console.log('Running migration 93: Creating bagit_manifests table');
+      sqlite.exec(`
+        -- BagIt RFC 8493 archive manifests
+        CREATE TABLE bagit_manifests (
+          manifest_id TEXT PRIMARY KEY,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+
+          -- Bag identity
+          bag_path TEXT NOT NULL,
+          bag_name TEXT NOT NULL,
+          bag_version TEXT DEFAULT '1.0',
+
+          -- Checksums
+          manifest_algorithm TEXT DEFAULT 'blake3',
+          manifest_checksum TEXT,
+          tagmanifest_checksum TEXT,
+
+          -- Stats
+          payload_file_count INTEGER DEFAULT 0,
+          payload_byte_count INTEGER DEFAULT 0,
+          tag_file_count INTEGER DEFAULT 0,
+
+          -- Serialization
+          serialization TEXT CHECK(serialization IN ('none', 'zip', 'tar', 'tar.gz', 'tar.bz2')),
+          serialized_path TEXT,
+          serialized_checksum TEXT,
+
+          -- Status
+          status TEXT DEFAULT 'valid' CHECK(status IN ('valid', 'invalid', 'incomplete', 'sealed')),
+          last_verified_at TEXT,
+          verification_errors TEXT,
+
+          -- Metadata
+          bag_info_json TEXT,
+          external_description TEXT,
+
+          -- Location linkage
+          locid TEXT REFERENCES locs(locid) ON DELETE SET NULL
+        );
+
+        CREATE INDEX idx_bagit_manifests_locid ON bagit_manifests(locid) WHERE locid IS NOT NULL;
+        CREATE INDEX idx_bagit_manifests_status ON bagit_manifests(status);
+        CREATE INDEX idx_bagit_manifests_path ON bagit_manifests(bag_path);
+      `);
+      console.log('Migration 93 completed: bagit_manifests table created');
+    }
+
+    // Migration 94: Add backbone columns to media tables
+    // Link to device fingerprints and add XMP-derived fields
+    const imgsColumns = sqlite.prepare('PRAGMA table_info(imgs)').all() as Array<{ name: string }>;
+    const hasDeviceFingerprintId = imgsColumns.some(c => c.name === 'device_fingerprint_id');
+
+    if (!hasDeviceFingerprintId) {
+      console.log('Running migration 94: Adding backbone columns to media tables');
+      sqlite.exec(`
+        -- imgs: Add device fingerprint FK and XMP-derived columns
+        ALTER TABLE imgs ADD COLUMN device_fingerprint_id TEXT REFERENCES device_fingerprints(fingerprint_id);
+        ALTER TABLE imgs ADD COLUMN xmp_sidecar_path TEXT;
+        ALTER TABLE imgs ADD COLUMN source_type TEXT;
+        ALTER TABLE imgs ADD COLUMN raw_pair_hash TEXT;
+        ALTER TABLE imgs ADD COLUMN is_live_photo INTEGER DEFAULT 0;
+        ALTER TABLE imgs ADD COLUMN live_photo_pair_hash TEXT;
+        ALTER TABLE imgs ADD COLUMN file_size_bytes INTEGER;
+        ALTER TABLE imgs ADD COLUMN dedup_status TEXT CHECK(dedup_status IN ('unique', 'duplicate', 'hardlinked'));
+        ALTER TABLE imgs ADD COLUMN thumb_extraction_method TEXT CHECK(thumb_extraction_method IN ('embedded', 'decoded', 'failed'));
+
+        -- vids: Add device fingerprint FK and XMP-derived columns
+        ALTER TABLE vids ADD COLUMN device_fingerprint_id TEXT REFERENCES device_fingerprints(fingerprint_id);
+        ALTER TABLE vids ADD COLUMN xmp_sidecar_path TEXT;
+        ALTER TABLE vids ADD COLUMN source_type TEXT;
+        ALTER TABLE vids ADD COLUMN proxy_path TEXT;
+        ALTER TABLE vids ADD COLUMN proxy_codec TEXT;
+        ALTER TABLE vids ADD COLUMN proxy_bitrate INTEGER;
+        ALTER TABLE vids ADD COLUMN file_size_bytes INTEGER;
+        ALTER TABLE vids ADD COLUMN dedup_status TEXT CHECK(dedup_status IN ('unique', 'duplicate', 'hardlinked'));
+        ALTER TABLE vids ADD COLUMN needs_deinterlace INTEGER DEFAULT 0;
+
+        -- docs: Add device fingerprint FK
+        ALTER TABLE docs ADD COLUMN device_fingerprint_id TEXT REFERENCES device_fingerprints(fingerprint_id);
+        ALTER TABLE docs ADD COLUMN xmp_sidecar_path TEXT;
+        ALTER TABLE docs ADD COLUMN source_type TEXT;
+        ALTER TABLE docs ADD COLUMN file_size_bytes INTEGER;
+
+        -- Create indexes for new FK columns
+        CREATE INDEX IF NOT EXISTS idx_imgs_device_fingerprint ON imgs(device_fingerprint_id) WHERE device_fingerprint_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_vids_device_fingerprint ON vids(device_fingerprint_id) WHERE device_fingerprint_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_docs_device_fingerprint ON docs(device_fingerprint_id) WHERE device_fingerprint_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_imgs_dedup ON imgs(dedup_status) WHERE dedup_status != 'unique';
+        CREATE INDEX IF NOT EXISTS idx_imgs_live_photo ON imgs(is_live_photo) WHERE is_live_photo = 1;
+      `);
+      console.log('Migration 94 completed: backbone columns added to media tables');
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;
