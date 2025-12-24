@@ -15,11 +15,15 @@ import {
   isRawFormat,
   isVideoFormat,
   isDecodedFormat,
+  updateXmpSidecar,
+  hasExistingThumbnails,
   type Config,
   type Preset,
   type GenerationResult,
   type PreviewAnalysis,
   type ProgressInfo,
+  type ThumbnailResult as ShoemakerThumbnailResult,
+  type XmpUpdateData,
 } from 'shoemaker';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
@@ -225,6 +229,37 @@ export class ThumbnailService {
 
     return existing;
   }
+
+  /**
+   * Update XMP sidecar with thumbnail metadata
+   * Called after thumbnail generation to record in XMP
+   * Safe to call even if XMP doesn't exist - will create minimal sidecar
+   */
+  static async updateXmp(
+    filePath: string,
+    thumbnails: ShoemakerThumbnailResult[],
+    method: 'extracted' | 'decoded' | 'direct' | 'video'
+  ): Promise<void> {
+    try {
+      await updateXmpSidecar(filePath, {
+        thumbnails,
+        method,
+      });
+    } catch {
+      // Non-fatal - log but don't throw
+    }
+  }
+
+  /**
+   * Check if thumbnails are already recorded in XMP
+   */
+  static async hasXmpThumbnails(filePath: string): Promise<boolean> {
+    try {
+      return await hasExistingThumbnails(filePath);
+    } catch {
+      return false;
+    }
+  }
 }
 
-export { Config, Preset, GenerationResult, PreviewAnalysis, ProgressInfo };
+export { Config, Preset, GenerationResult, PreviewAnalysis, ProgressInfo, XmpUpdateData };
