@@ -46,6 +46,12 @@ export type {
   ProgressInfo,
 } from './thumbnail-service.js';
 
+export { XmpMapperService } from './xmp-mapper-service.js';
+export type {
+  XmpMappingResult,
+  RebuildResult,
+} from './xmp-mapper-service.js';
+
 /**
  * Initialize all backbone services
  * Call this once at application startup
