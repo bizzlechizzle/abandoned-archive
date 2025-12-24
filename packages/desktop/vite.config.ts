@@ -141,6 +141,9 @@ export default defineConfig({
                 // Sharp is a native module with platform-specific binaries
                 // that use dynamic requires - must be external to the bundle
                 'sharp',
+                // sharp-phash depends on sharp - also native
+                'sharp-phash',
+                'sharp-phash/distance',
                 // unzipper has optional S3 support that requires this package
                 // we don't use S3 features, so mark as external to prevent crash
                 '@aws-sdk/client-s3',
@@ -154,6 +157,15 @@ export default defineConfig({
                 // ONNX Runtime has platform-specific native bindings
                 // Must be external to load correct darwin/arm64 binary
                 'onnxruntime-node',
+                // xxhash-addon is a native module used by wake-n-blake
+                'xxhash-addon',
+                // Backbone packages with native dependencies
+                'wake-n-blake',
+                'shoemaker',
+                // ExifTool vendored binary
+                'exiftool-vendored',
+                'exiftool-vendored.exe',
+                'exiftool-vendored.pl',
               ],
             },
           },
