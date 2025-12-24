@@ -13,3 +13,6 @@ export * from './logger';
 
 // Config
 export * from './config';
+
+// Database Optimization
+export * from './db-optimizer';

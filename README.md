@@ -93,6 +93,7 @@ aa db init                                             # Initialize database
 aa db info                                             # Show database info
 aa db migrate                                          # Run migrations
 aa db vacuum                                           # Optimize size
+aa db optimize [--profile balanced|performance|safety] # Optimize for 100K+ files
 aa db check                                            # Integrity check
 aa db exec "SELECT * FROM locs LIMIT 5"               # Run SQL query
 aa db reset --force                                    # Reset all data
@@ -100,6 +101,16 @@ aa db reset --force                                    # Reset all data
 aa config show                                         # Show configuration
 aa config set <key> <value>                           # Set config value
 aa config keys                                         # List config keys
+```
+
+### Pipeline Orchestration
+```bash
+aa pipeline run <tool> [args...]                        # Run any pipeline tool
+aa pipeline import <source> <dest> [--sidecar] [--dedup] # Import via wake-n-blake
+aa pipeline thumb <path> [-r] [--preset quality]        # Thumbnails via shoemaker
+aa pipeline tag <path> [-r] [--size small]              # ML tagging via visual-buffet
+aa pipeline capture <url> [-f screenshot,pdf]           # Web capture via national-treasure
+aa pipeline status                                       # Show active pipeline jobs
 ```
 
 ### Global Options

@@ -16,6 +16,7 @@ import { registerConfigCommands } from './commands/config';
 import { registerRefmapCommands } from './commands/refmap';
 import { registerCollectionCommands } from './commands/collection';
 import { registerTagCommands } from './commands/tag';
+import { registerPipelineCommands } from './commands/pipeline';
 
 const program = new Command();
 
@@ -39,6 +40,7 @@ registerCollectionCommands(program);
 registerTagCommands(program);
 registerDbCommands(program);
 registerConfigCommands(program);
+registerPipelineCommands(program);
 
 // Parse and run
 program.parse();

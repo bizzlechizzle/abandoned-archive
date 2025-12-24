@@ -202,6 +202,55 @@ export function registerDbCommands(program: Command): void {
       }
     });
 
+  // Optimize database for scale (100K-1M files)
+  db
+    .command('optimize')
+    .description('Optimize database for large-scale usage (100K-1M files)')
+    .option('-p, --profile <profile>', 'Optimization profile: balanced, performance, safety', 'balanced')
+    .option('--cache <kb>', 'Cache size in KB', '65536')
+    .option('--no-fts', 'Skip FTS5 index creation')
+    .option('--json', 'Output stats as JSON')
+    .action(async (options) => {
+      const spinner = ora('Applying performance optimizations...').start();
+
+      try {
+        const database = await getDatabase(program.opts().database);
+        const { optimizeDatabase } = await import('@aa/services');
+
+        const profile = options.profile as 'balanced' | 'performance' | 'safety';
+        const cacheSizeKb = parseInt(options.cache, 10);
+
+        const stats = optimizeDatabase(database, {
+          profile,
+          cacheSizeKb,
+          enableFts: options.fts !== false,
+        });
+
+        spinner.succeed('Database optimized for scale');
+
+        if (options.json || program.opts().json) {
+          console.log(JSON.stringify(stats, null, 2));
+        } else {
+          console.log(chalk.bold('\nDatabase Statistics:'));
+          console.log(`  Locations:    ${stats.locs_count || 0}`);
+          console.log(`  Images:       ${stats.imgs_count || 0}`);
+          console.log(`  Videos:       ${stats.vids_count || 0}`);
+          console.log(`  Documents:    ${stats.docs_count || 0}`);
+          console.log(`  Maps:         ${stats.maps_count || 0}`);
+          console.log(`  DB Size:      ${stats.db_size_mb || 0} MB`);
+          console.log(chalk.bold('\nOptimizations Applied:'));
+          console.log(`  Profile:      ${profile}`);
+          console.log(`  Cache Size:   ${cacheSizeKb} KB`);
+          console.log(`  WAL Mode:     enabled`);
+          console.log(`  FTS5 Search:  ${options.fts !== false ? 'enabled' : 'disabled'}`);
+        }
+      } catch (error) {
+        spinner.fail('Optimization failed');
+        console.error(chalk.red((error as Error).message));
+        process.exit(1);
+      }
+    });
+
   // Check database integrity
   db
     .command('check')
