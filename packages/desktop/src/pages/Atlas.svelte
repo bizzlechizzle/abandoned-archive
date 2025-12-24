@@ -225,7 +225,14 @@
       return;
     }
     try {
-      const points = await window.electronAPI.refMaps.getPointsInBounds(bounds);
+      // Extract plain object from Svelte 5 proxy to allow IPC cloning
+      const plainBounds = {
+        north: bounds.north,
+        south: bounds.south,
+        east: bounds.east,
+        west: bounds.west
+      };
+      const points = await window.electronAPI.refMaps.getPointsInBounds(plainBounds);
       refMapPoints = points;
     } catch (err) {
       console.error('Error loading reference points in bounds:', err);

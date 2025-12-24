@@ -108,6 +108,14 @@ export class JobWorkerService extends EventEmitter {
     // Depends on EXIFTOOL for metadata, runs after metadata extraction
     this.registerQueue(IMPORT_QUEUES.XMP_SIDECAR, hw.exifToolWorkers, this.handleXmpSidecarJob.bind(this) as JobHandler);
 
+    // ============ Phase 2: Background ML Processing ============
+
+    // ML Thumbnail generation - quality preset with full RAW decode (2560px for ML)
+    this.registerQueue(IMPORT_QUEUES.ML_THUMBNAIL, hw.mlThumbnailWorkers, this.handleMlThumbnailJob.bind(this) as JobHandler);
+
+    // Visual-Buffet ML tagging - Python CLI for image tagging (depends on ML_THUMBNAIL)
+    this.registerQueue(IMPORT_QUEUES.VISUAL_BUFFET, hw.visualBuffetWorkers, this.handleVisualBuffetJob.bind(this) as JobHandler);
+
     // ============ Per-Location Jobs ============
 
     // GPS enrichment - aggregate GPS from media → location (network-bound)
@@ -135,12 +143,15 @@ export class JobWorkerService extends EventEmitter {
 
     // Log configuration
     logger.info('JobWorker', 'Queue configuration (hardware-scaled)', {
-      // Per-file
+      // Per-file (Phase 1: Fast UI)
       exifTool: hw.exifToolWorkers,
       ffprobe: hw.ffprobeWorkers,
       thumbnail: hw.thumbnailWorkers,
       videoProxy: hw.videoProxyWorkers,
       xmpSidecar: hw.exifToolWorkers,
+      // Phase 2: Background ML
+      mlThumbnail: hw.mlThumbnailWorkers,
+      visualBuffet: hw.visualBuffetWorkers,
       // Per-location
       gpsEnrichment: hw.gpsEnrichmentWorkers,
       livePhoto: hw.livePhotoWorkers,
@@ -617,6 +628,169 @@ export class JobWorkerService extends EventEmitter {
     }
 
     return { proxyPath };
+  }
+
+  // ============ Phase 2: Background ML Job Handlers ============
+
+  /**
+   * ML Thumbnail generation job (Phase 2)
+   *
+   * Generates high-quality 2560px JPEG thumbnails for ML processing.
+   * Uses 'quality' preset with full RAW decode via RawTherapee/darktable.
+   *
+   * Dependencies: THUMBNAIL job (Phase 1 must complete first)
+   * Priority: BACKGROUND (runs after UI-critical jobs)
+   */
+  private async handleMlThumbnailJob(
+    payload: { hash: string; mediaType: string; archivePath: string; locid: string; subid?: string },
+    emit: (event: string, data: unknown) => void
+  ): Promise<{ mlPath: string | null }> {
+    const { ThumbnailService } = await import('./backbone/thumbnail-service');
+    const { MediaPathService } = await import('./media-path-service');
+
+    emit('progress', { progress: 0, message: 'Generating ML thumbnail...' });
+
+    // Get archive path from settings
+    const archiveSetting = await this.db
+      .selectFrom('settings')
+      .select('value')
+      .where('key', '=', 'archive_folder')
+      .executeTakeFirst();
+
+    const mediaPathService = new MediaPathService(archiveSetting?.value || '');
+    const outputPath = mediaPathService.getMlThumbnailPath(payload.hash);
+
+    // Ensure ML thumbnail bucket directory exists
+    await mediaPathService.ensureBucketDir(
+      mediaPathService.getMlThumbnailDir(),
+      payload.hash
+    );
+
+    emit('progress', { progress: 30, message: 'Processing with quality preset...' });
+
+    // Generate ML tier with quality preset
+    const result = await ThumbnailService.generateMlTier(
+      payload.archivePath,
+      outputPath
+    );
+
+    emit('progress', { progress: 80, message: 'Updating database...' });
+
+    // Update database with ML path
+    if (result.success && result.mlPath) {
+      const table = payload.mediaType === 'image' ? 'imgs' : 'vids';
+      const hashCol = payload.mediaType === 'image' ? 'imghash' : 'vidhash';
+
+      await this.db
+        .updateTable(table)
+        .set({
+          ml_path: result.mlPath,
+          ml_thumb_at: new Date().toISOString(),
+        })
+        .where(hashCol, '=', payload.hash)
+        .execute();
+    }
+
+    emit('progress', { progress: 100, message: 'ML thumbnail complete' });
+    emit('asset:ml-thumbnail-ready', { hash: payload.hash, mlPath: result.mlPath });
+
+    logger.info('JobWorker', 'ML thumbnail generated', {
+      hash: payload.hash.slice(0, 12),
+      method: result.method,
+      success: result.success,
+      durationMs: result.durationMs,
+    });
+
+    return { mlPath: result.mlPath };
+  }
+
+  /**
+   * Visual-Buffet ML tagging job (Phase 2)
+   *
+   * Runs visual-buffet Python CLI for ML-based image tagging.
+   * Uses the ML-tier thumbnail (2560px) for best inference results.
+   *
+   * Outputs:
+   * - auto_tags: JSON array of detected tags
+   * - auto_tags_confidence: JSON object with confidence scores
+   * - quality_score: Image quality score (0-1)
+   * - view_type: interior/exterior/aerial/detail
+   * - auto_caption: Florence-2 generated caption
+   * - ocr_text: Extracted text from PaddleOCR
+   *
+   * Dependencies: ML_THUMBNAIL job must complete first
+   * Priority: BACKGROUND (runs after ML thumbnails)
+   *
+   * Settings: visual_buffet_enabled (on/off toggle in settings)
+   */
+  private async handleVisualBuffetJob(
+    payload: { hash: string; mediaType: string; locid: string; subid?: string },
+    emit: (event: string, data: unknown) => void
+  ): Promise<{ success: boolean; tags?: string[] }> {
+    // Check if visual-buffet is enabled in settings
+    const enabledSetting = await this.db
+      .selectFrom('settings')
+      .select('value')
+      .where('key', '=', 'visual_buffet_enabled')
+      .executeTakeFirst();
+
+    // Default to false if not set (opt-in feature)
+    const isEnabled = enabledSetting?.value === 'true';
+
+    if (!isEnabled) {
+      logger.info('JobWorker', 'Visual-buffet disabled in settings, skipping', { hash: payload.hash.slice(0, 12) });
+      return { success: true, tags: [] }; // Graceful skip
+    }
+
+    emit('progress', { progress: 0, message: 'Starting visual-buffet...' });
+
+    // Get ML path from database
+    const table = payload.mediaType === 'image' ? 'imgs' : 'vids';
+    const hashCol = payload.mediaType === 'image' ? 'imghash' : 'vidhash';
+
+    const record = await this.db
+      .selectFrom(table)
+      .select(['ml_path'])
+      .where(hashCol, '=', payload.hash)
+      .executeTakeFirst();
+
+    if (!record?.ml_path) {
+      logger.warn('JobWorker', 'Visual-buffet skipped: no ML thumbnail', { hash: payload.hash });
+      return { success: false };
+    }
+
+    emit('progress', { progress: 20, message: 'Running ML tagging...' });
+
+    const { getVisualBuffetService } = await import('./visual-buffet-service');
+    const vbService = getVisualBuffetService(this.db);
+
+    const result = await vbService.process({
+      imagePath: record.ml_path,
+      hash: payload.hash,
+      mediaType: payload.mediaType as 'image' | 'video',
+      locid: payload.locid,
+      subid: payload.subid,
+    });
+
+    emit('progress', { progress: 100, message: 'Visual-buffet complete' });
+
+    if (result.success) {
+      emit('asset:tags-ready', {
+        hash: payload.hash,
+        tags: result.tags,
+        viewType: result.viewType,
+        qualityScore: result.qualityScore,
+      });
+    }
+
+    logger.info('JobWorker', 'Visual-buffet processing complete', {
+      hash: payload.hash.slice(0, 12),
+      success: result.success,
+      tagCount: result.tags?.length ?? 0,
+      durationMs: result.durationMs,
+    });
+
+    return { success: result.success, tags: result.tags };
   }
 
   // ============ Per-Location Job Handlers ============

@@ -77,6 +77,7 @@ export interface ImportProgress {
   duplicatesFound: number;
   errorsFound: number;
   estimatedRemainingMs: number;
+  stepName?: string;  // Human-readable step name (e.g., "Computing hashes")
 }
 
 /**

@@ -13,7 +13,7 @@ declare module 'sharp-phash' {
   export default function phash(image: Sharp): Promise<string>;
 }
 
-declare module 'sharp-phash/distance' {
+declare module 'sharp-phash/distance.js' {
   /**
    * Calculate Hamming distance between two pHash strings
    * @param hash1 - First 64-char binary hash

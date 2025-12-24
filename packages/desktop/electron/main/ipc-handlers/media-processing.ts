@@ -14,8 +14,8 @@ import { SQLiteMediaRepository } from '../../repositories/sqlite-media-repositor
 import { ExifToolService } from '../../services/exiftool-service';
 import { FFmpegService } from '../../services/ffmpeg-service';
 import { MediaPathService } from '../../services/media-path-service';
-import { ThumbnailService } from '../../services/thumbnail-service';
-import { PreviewExtractorService } from '../../services/preview-extractor-service';
+// REFACTORED: Now using backbone ThumbnailService (shoemaker) exclusively
+import { ThumbnailService } from '../../services/backbone/thumbnail-service';
 import { PosterFrameService } from '../../services/poster-frame-service';
 import { MediaCacheService } from '../../services/media-cache-service';
 import { PreloadService } from '../../services/preload-service';
@@ -239,11 +239,10 @@ export function registerMediaProcessingHandlers(
   ipcMain.handle('media:generateThumbnail', async (_event, sourcePath: unknown, hash: unknown) => {
     try {
       const validPath = z.string().min(1).parse(sourcePath);
-      const validHash = z.string().min(1).parse(hash);
-      const archivePath = await getArchivePath();
-      const mediaPathService = new MediaPathService(archivePath);
-      const thumbnailService = new ThumbnailService(mediaPathService);
-      return await thumbnailService.generateThumbnail(validPath, validHash);
+      z.string().min(1).parse(hash); // Validate hash format
+      // Use backbone ThumbnailService (shoemaker) - handles RAW, HEIC, video automatically
+      const result = await ThumbnailService.generate(validPath, { preset: 'fast' });
+      return result.success ? result.paths.sm : null;
     } catch (error) {
       console.error('Error generating thumbnail:', error);
       return null;
@@ -254,10 +253,18 @@ export function registerMediaProcessingHandlers(
     try {
       const validPath = z.string().min(1).parse(sourcePath);
       const validHash = z.string().min(1).parse(hash);
+      // Use backbone ThumbnailService (shoemaker) for preview extraction
+      const previewBuffer = await ThumbnailService.extractPreview(validPath);
+      if (!previewBuffer) return null;
+
+      // Save preview to expected location
       const archivePath = await getArchivePath();
       const mediaPathService = new MediaPathService(archivePath);
-      const previewService = new PreviewExtractorService(mediaPathService, exifToolService);
-      return await previewService.extractPreview(validPath, validHash);
+      const previewPath = mediaPathService.getPreviewPath(validHash);
+      await mediaPathService.ensureBucketDir(mediaPathService.getPreviewDir(), validHash);
+      const fsPromises = await import('fs/promises');
+      await fsPromises.writeFile(previewPath, previewBuffer);
+      return previewPath;
     } catch (error) {
       console.error('Error extracting preview:', error);
       return null;
@@ -341,6 +348,7 @@ export function registerMediaProcessingHandlers(
 
   // Kanye6: Regenerate multi-tier thumbnails for all images missing thumb_path_sm
   // When force=true, regenerates ALL thumbnails (useful after fixing extraction bugs)
+  // REFACTORED: Now uses backbone ThumbnailService (shoemaker) which handles RAW/HEIC automatically
   ipcMain.handle('media:regenerateAllThumbnails', async (_event, options?: unknown) => {
     const opts = z.object({ force: z.boolean().optional() }).optional().parse(options);
     const force = opts?.force ?? false;
@@ -348,8 +356,6 @@ export function registerMediaProcessingHandlers(
     try {
       const archivePath = await getArchivePath();
       const mediaPathService = new MediaPathService(archivePath);
-      const thumbnailService = new ThumbnailService(mediaPathService);
-      const previewService = new PreviewExtractorService(mediaPathService, exifToolService);
 
       // Get images to process - all images if force=true, otherwise just missing
       const images = force
@@ -362,43 +368,28 @@ export function registerMediaProcessingHandlers(
 
       for (const img of images) {
         try {
-          // For RAW/HEIC files, extract preview first (sharp can't decode these directly)
-          // For other files, ALWAYS use original when force=true to fix rotation
-          let sourcePath = img.imgloc;
-          const needsPreviewExtraction = /\.(nef|cr2|cr3|arw|srf|sr2|orf|pef|dng|rw2|raf|raw|rwl|3fr|fff|iiq|mrw|x3f|erf|mef|mos|kdc|dcr|heic|heif)$/i.test(img.imgloc);
+          // Use backbone ThumbnailService (shoemaker) - handles RAW, HEIC, video automatically
+          // No need for separate preview extraction - shoemaker uses darktable/rawtherapee
+          const result = await ThumbnailService.generate(img.imgloc, {
+            preset: 'fast',
+            force,
+          });
 
-          if (needsPreviewExtraction) {
-            // Always re-extract preview when force=true (picks highest resolution)
-            const preview = await previewService.extractPreview(img.imgloc, img.imghash, force);
-            if (preview) {
-              sourcePath = preview;
-              await mediaRepo.updateImagePreviewPath(img.imghash, preview);
-            }
-          } else if (!force && img.preview_path) {
-            // Only use existing preview when NOT forcing regeneration
-            // When force=true, use original to apply correct EXIF rotation
-            sourcePath = img.preview_path;
-          }
-
-          // Generate multi-tier thumbnails (400px, 800px, 1920px)
-          const result = await thumbnailService.generateAllSizes(sourcePath, img.imghash, force);
-
-          if (result.thumb_sm) {
+          if (result.success && result.paths.sm) {
             // Update database with all thumbnail paths
-            // FIX: Preserve RAW/HEIC preview_path, don't overwrite with thumbnail preview
             await db
               .updateTable('imgs')
               .set({
-                thumb_path_sm: result.thumb_sm,
-                thumb_path_lg: result.thumb_lg,
-                // For RAW/HEIC files, keep extracted preview; for others, use thumbnail preview
-                preview_path: needsPreviewExtraction ? (sourcePath !== img.imgloc ? sourcePath : img.preview_path) : (result.preview || img.preview_path),
+                thumb_path_sm: result.paths.sm,
+                thumb_path_lg: result.paths.lg || null,
+                preview_path: result.paths.preview || img.preview_path,
               })
               .where('imghash', '=', img.imghash)
               .execute();
 
             generated++;
           } else {
+            console.warn(`[Kanye6] No thumbnails generated for ${img.imghash}: ${result.error || 'unknown'}`);
             failed++;
           }
         } catch (err) {
@@ -419,9 +410,16 @@ export function registerMediaProcessingHandlers(
 
       for (const img of rawWithoutPreviews) {
         try {
-          const preview = await previewService.extractPreview(img.imgloc, img.imghash);
-          if (preview) {
-            await mediaRepo.updateImagePreviewPath(img.imghash, preview);
+          // Use backbone ThumbnailService for preview extraction
+          const previewBuffer = await ThumbnailService.extractPreview(img.imgloc);
+          if (previewBuffer) {
+            // Save preview to expected location
+            const previewPath = mediaPathService.getPreviewPath(img.imghash);
+            await mediaPathService.ensureBucketDir(mediaPathService.getPreviewDir(), img.imghash);
+            const fsPromises = await import('fs/promises');
+            await fsPromises.writeFile(previewPath, previewBuffer);
+
+            await mediaRepo.updateImagePreviewPath(img.imghash, previewPath);
             previewsExtracted++;
             console.log(`[Kanye9] Extracted preview for ${img.imghash}`);
           } else {
@@ -452,17 +450,12 @@ export function registerMediaProcessingHandlers(
   });
 
   // DECISION-020: Regenerate video thumbnails (poster frames)
-  // Generates poster frame from video, then multi-tier thumbnails from poster
+  // REFACTORED: Now uses backbone ThumbnailService (shoemaker) which handles videos via FFmpeg
   ipcMain.handle('media:regenerateVideoThumbnails', async (_event, options?: unknown) => {
     const opts = z.object({ force: z.boolean().optional() }).optional().parse(options);
     const force = opts?.force ?? false;
 
     try {
-      const archivePath = await getArchivePath();
-      const mediaPathService = new MediaPathService(archivePath);
-      const thumbnailService = new ThumbnailService(mediaPathService);
-      const posterService = new PosterFrameService(mediaPathService, ffmpegService);
-
       // Get videos without thumbnails (or all if force)
       const videos = force
         ? await mediaRepo.getAllVideos()
@@ -475,26 +468,20 @@ export function registerMediaProcessingHandlers(
 
       for (const vid of videos) {
         try {
-          // Step 1: Generate poster frame from video
-          const posterPath = await posterService.generatePoster(vid.vidloc, vid.vidhash);
+          // Use backbone ThumbnailService (shoemaker) - handles videos via FFmpeg automatically
+          const result = await ThumbnailService.generate(vid.vidloc, {
+            preset: 'fast',
+            force,
+          });
 
-          if (!posterPath) {
-            console.warn(`[DECISION-020] No poster generated for ${vid.vidhash}`);
-            failed++;
-            continue;
-          }
-
-          // Step 2: Generate multi-tier thumbnails from poster
-          const result = await thumbnailService.generateAllSizes(posterPath, vid.vidhash, force);
-
-          if (result.thumb_sm) {
+          if (result.success && result.paths.sm) {
             // Update database with thumbnail paths
             await db
               .updateTable('vids')
               .set({
-                thumb_path_sm: result.thumb_sm,
-                thumb_path_lg: result.thumb_lg,
-                preview_path: result.preview,
+                thumb_path_sm: result.paths.sm,
+                thumb_path_lg: result.paths.lg || null,
+                preview_path: result.paths.preview || null,
               })
               .where('vidhash', '=', vid.vidhash)
               .execute();
@@ -502,6 +489,7 @@ export function registerMediaProcessingHandlers(
             generated++;
             console.log(`[DECISION-020] Generated thumbnails for video ${vid.vidhash}`);
           } else {
+            console.warn(`[DECISION-020] No thumbnails generated for ${vid.vidhash}: ${result.error || 'unknown'}`);
             failed++;
           }
         } catch (err) {
@@ -522,46 +510,28 @@ export function registerMediaProcessingHandlers(
 
   // Kanye11: Regenerate preview/thumbnails for a single file
   // Used when MediaViewer can't display a file due to missing preview
+  // REFACTORED: Now uses backbone ThumbnailService (shoemaker) which handles RAW/HEIC automatically
   ipcMain.handle('media:regenerateSingleFile', async (_event, hash: unknown, filePath: unknown) => {
     try {
       const validHash = z.string().min(1).parse(hash);
       const validPath = z.string().min(1).parse(filePath);
 
-      const archivePath = await getArchivePath();
-      const mediaPathService = new MediaPathService(archivePath);
-      const thumbnailService = new ThumbnailService(mediaPathService);
-      const previewService = new PreviewExtractorService(mediaPathService, exifToolService);
+      console.log(`[Kanye11] Regenerating thumbnails for: ${validPath}`);
 
-      let sourcePath = validPath;
-      let previewPath: string | null = null;
+      // Use backbone ThumbnailService (shoemaker) - handles RAW, HEIC, video automatically
+      const result = await ThumbnailService.generate(validPath, {
+        preset: 'fast',
+        force: true,
+      });
 
-      // For RAW/HEIC files, extract preview first (sharp can't decode these directly)
-      const needsPreviewExtraction = /\.(nef|cr2|cr3|arw|srf|sr2|orf|pef|dng|rw2|raf|raw|rwl|3fr|fff|iiq|mrw|x3f|erf|mef|mos|kdc|dcr|heic|heif)$/i.test(validPath);
-
-      if (needsPreviewExtraction) {
-        console.log(`[Kanye11] Extracting preview for RAW/HEIC file: ${validHash}`);
-        previewPath = await previewService.extractPreview(validPath, validHash);
-        if (previewPath) {
-          sourcePath = previewPath;
-          console.log(`[Kanye11] Preview extracted: ${previewPath}`);
-        } else {
-          console.warn(`[Kanye11] No embedded preview found in RAW/HEIC file`);
-          return { success: false, error: 'No embedded preview found in RAW/HEIC file' };
-        }
-      }
-
-      // Generate multi-tier thumbnails
-      console.log(`[Kanye11] Generating thumbnails from: ${sourcePath}`);
-      const result = await thumbnailService.generateAllSizes(sourcePath, validHash);
-
-      if (result.thumb_sm) {
+      if (result.success && result.paths.sm) {
         // Update database
         await db
           .updateTable('imgs')
           .set({
-            preview_path: previewPath || result.preview,
-            thumb_path_sm: result.thumb_sm,
-            thumb_path_lg: result.thumb_lg,
+            preview_path: result.paths.preview || null,
+            thumb_path_sm: result.paths.sm,
+            thumb_path_lg: result.paths.lg || null,
           })
           .where('imghash', '=', validHash)
           .execute();
@@ -569,13 +539,13 @@ export function registerMediaProcessingHandlers(
         console.log(`[Kanye11] Regeneration complete for ${validHash}`);
         return {
           success: true,
-          previewPath: previewPath || result.preview,
-          thumbPathSm: result.thumb_sm,
-          thumbPathLg: result.thumb_lg,
+          previewPath: result.paths.preview,
+          thumbPathSm: result.paths.sm,
+          thumbPathLg: result.paths.lg,
         };
       }
 
-      return { success: false, error: 'Failed to generate thumbnails' };
+      return { success: false, error: result.error || 'Failed to generate thumbnails' };
     } catch (error) {
       console.error('Error regenerating single file:', error);
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
@@ -688,39 +658,36 @@ export function registerMediaProcessingHandlers(
     }
   });
 
-  // Migration 30: Regenerate DNG previews using LibRaw for full-quality rendering
+  // Migration 30: Regenerate DNG previews using quality preset for full-quality rendering
   // This fixes "potato quality" drone shots where embedded preview is tiny (960x720 for 5376x3956 image)
+  // REFACTORED: Now uses backbone ThumbnailService (shoemaker) with 'quality' preset
   ipcMain.handle('media:regenerateDngPreviews', async (_event) => {
     try {
       const archivePath = await getArchivePath();
       const mediaPathService = new MediaPathService(archivePath);
-      const previewService = new PreviewExtractorService(mediaPathService, exifToolService);
 
-      // Get DNG files that need LibRaw rendering
+      // Get DNG files that need full quality rendering
       const dngFiles = await mediaRepo.getDngImagesNeedingLibraw();
       let rendered = 0;
       let failed = 0;
 
-      console.log(`[Migration30] Found ${dngFiles.length} DNG files needing LibRaw rendering...`);
+      console.log(`[Migration30] Found ${dngFiles.length} DNG files needing quality rendering...`);
 
       for (const img of dngFiles) {
         try {
-          // Use extractPreviewWithQuality which automatically uses LibRaw when embedded preview is low-quality
-          const result = await previewService.extractPreviewWithQuality(
-            img.imgloc,
-            img.imghash,
-            img.meta_width,
-            img.meta_height,
-            true  // force re-extraction
-          );
+          // Use backbone ThumbnailService with 'quality' preset for full RAW decode
+          const result = await ThumbnailService.generate(img.imgloc, {
+            preset: 'quality',  // Uses darktable/rawtherapee for full quality
+            force: true,
+          });
 
-          if (result.previewPath) {
-            await mediaRepo.updateImagePreviewWithQuality(img.imghash, result.previewPath, result.qualityLevel);
+          if (result.success && result.paths.preview) {
+            await mediaRepo.updateImagePreviewWithQuality(img.imghash, result.paths.preview, 'full');
             rendered++;
-            console.log(`[Migration30] Rendered ${img.imghash}: quality=${result.qualityLevel}`);
+            console.log(`[Migration30] Rendered ${img.imghash}: quality=full`);
           } else {
             failed++;
-            console.warn(`[Migration30] No preview generated for ${img.imghash}`);
+            console.warn(`[Migration30] No preview generated for ${img.imghash}: ${result.error || 'unknown'}`);
           }
         } catch (err) {
           console.error(`[Migration30] Failed to render ${img.imghash}:`, err);
@@ -818,13 +785,10 @@ export function registerMediaProcessingHandlers(
   });
 
   // Location-specific image fix: thumbnails + rotations + DNG quality for one location
+  // REFACTORED: Now uses backbone ThumbnailService (shoemaker)
   ipcMain.handle('media:fixLocationImages', async (_event, locid: unknown) => {
     try {
       const validLocid = Blake3IdSchema.parse(locid);
-      const archivePath = await getArchivePath();
-      const mediaPathService = new MediaPathService(archivePath);
-      const thumbnailService = new ThumbnailService(mediaPathService);
-      const previewService = new PreviewExtractorService(mediaPathService, exifToolService);
 
       // Get images for this location only
       const images = await mediaRepo.getImagesByLocation(validLocid);
@@ -835,31 +799,25 @@ export function registerMediaProcessingHandlers(
 
       for (const img of images) {
         try {
-          let sourcePath = img.imgloc;
-          const needsPreviewExtraction = /\.(nef|cr2|cr3|arw|srf|sr2|orf|pef|dng|rw2|raf|raw|rwl|3fr|fff|iiq|mrw|x3f|erf|mef|mos|kdc|dcr|heic|heif)$/i.test(img.imgloc);
+          // Use backbone ThumbnailService (shoemaker) - handles RAW, HEIC automatically
+          const result = await ThumbnailService.generate(img.imgloc, {
+            preset: 'fast',
+            force: true,
+          });
 
-          if (needsPreviewExtraction) {
-            const preview = await previewService.extractPreview(img.imgloc, img.imghash, true);
-            if (preview) {
-              sourcePath = preview;
-              await mediaRepo.updateImagePreviewPath(img.imghash, preview);
-            }
-          }
-
-          const result = await thumbnailService.generateAllSizes(sourcePath, img.imghash, true);
-
-          if (result.thumb_sm) {
+          if (result.success && result.paths.sm) {
             await db
               .updateTable('imgs')
               .set({
-                thumb_path_sm: result.thumb_sm,
-                thumb_path_lg: result.thumb_lg,
-                preview_path: needsPreviewExtraction ? (sourcePath !== img.imgloc ? sourcePath : img.preview_path) : (result.preview || img.preview_path),
+                thumb_path_sm: result.paths.sm,
+                thumb_path_lg: result.paths.lg || null,
+                preview_path: result.paths.preview || img.preview_path,
               })
               .where('imghash', '=', img.imghash)
               .execute();
             fixed++;
           } else {
+            console.warn(`[media:fixLocationImages] Failed for ${img.imghash}: ${result.error || 'unknown'}`);
             errors++;
           }
         } catch (err) {
@@ -907,13 +865,11 @@ export function registerMediaProcessingHandlers(
   }
 
   // Location-specific video fix: poster frames + thumbnails for one location
+  // REFACTORED: Now uses backbone ThumbnailService (shoemaker) for videos
   ipcMain.handle('media:fixLocationVideos', async (_event, locid: unknown) => {
     try {
       const validLocid = Blake3IdSchema.parse(locid);
       const archivePath = await getArchivePath();
-      const mediaPathService = new MediaPathService(archivePath);
-      const thumbnailService = new ThumbnailService(mediaPathService);
-      const posterService = new PosterFrameService(mediaPathService, ffmpegService);
 
       // Get videos for this location only
       const videos = await mediaRepo.getVideosByLocation(validLocid);
@@ -947,30 +903,25 @@ export function registerMediaProcessingHandlers(
             }
           }
 
-          // Generate poster frame
-          const posterPath = await posterService.generatePoster(sourcePath, vid.vidhash);
+          // Use backbone ThumbnailService (shoemaker) - handles videos via FFmpeg
+          const result = await ThumbnailService.generate(sourcePath, {
+            preset: 'fast',
+            force: true,
+          });
 
-          if (!posterPath) {
-            console.warn(`[media:fixLocationVideos] No poster generated for ${vid.vidhash}`);
-            errors++;
-            continue;
-          }
-
-          // Generate thumbnails from poster
-          const result = await thumbnailService.generateAllSizes(posterPath, vid.vidhash, true);
-
-          if (result.thumb_sm) {
+          if (result.success && result.paths.sm) {
             await db
               .updateTable('vids')
               .set({
-                thumb_path_sm: result.thumb_sm,
-                thumb_path_lg: result.thumb_lg,
-                preview_path: result.preview,
+                thumb_path_sm: result.paths.sm,
+                thumb_path_lg: result.paths.lg || null,
+                preview_path: result.paths.preview || null,
               })
               .where('vidhash', '=', vid.vidhash)
               .execute();
             fixed++;
           } else {
+            console.warn(`[media:fixLocationVideos] No thumbnails generated for ${vid.vidhash}: ${result.error || 'unknown'}`);
             errors++;
           }
         } catch (err) {

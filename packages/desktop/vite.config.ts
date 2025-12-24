@@ -143,7 +143,7 @@ export default defineConfig({
                 'sharp',
                 // sharp-phash depends on sharp - also native
                 'sharp-phash',
-                'sharp-phash/distance',
+                'sharp-phash/distance.js',
                 // unzipper has optional S3 support that requires this package
                 // we don't use S3 features, so mark as external to prevent crash
                 '@aws-sdk/client-s3',

@@ -23,108 +23,8 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { generateId } from '../../main/ipc-validation';
 import { realpath, lstat } from 'fs/promises';
+import { getMediaCategory, type MediaCategory } from 'wake-n-blake';
 import { ScanService } from '../backbone/scan-service.js';
-
-/**
- * Supported file extensions by media type
- */
-export const SUPPORTED_EXTENSIONS = {
-  image: new Set([
-    // Standard formats
-    '.jpg', '.jpeg', '.jpe', '.jfif', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp',
-    '.jp2', '.jpx', '.j2k', '.j2c',    // JPEG 2000
-    '.jxl',                            // JPEG XL
-    '.heic', '.heif', '.hif',          // Apple HEIF/HEVC
-    '.avif',                           // AV1 Image
-    '.ai', '.eps', '.epsf',            // Adobe Illustrator/PostScript
-    '.svg', '.svgz',                   // Vector
-    '.ico', '.cur',                    // Icons
-    '.pcx', '.dcx',                    // PC Paintbrush
-    '.ppm', '.pgm', '.pbm', '.pnm',    // Netpbm
-    '.tga', '.icb', '.vda', '.vst',    // Targa
-    '.dds',                            // DirectDraw Surface
-    '.exr',                            // OpenEXR
-    '.hdr',                            // Radiance HDR
-    '.dpx', '.cin',                    // Digital Picture Exchange
-    '.fits', '.fit', '.fts',           // Flexible Image Transport
-    // RAW camera formats (comprehensive list from ExifTool)
-    '.raw',                            // Generic RAW
-    '.nef', '.nrw',                    // Nikon
-    '.cr2', '.cr3', '.crw', '.ciff',   // Canon
-    '.arw', '.arq', '.srf', '.sr2',    // Sony
-    '.dng',                            // Adobe DNG (universal)
-    '.orf', '.ori',                    // Olympus
-    '.raf',                            // Fujifilm
-    '.rw2', '.rwl',                    // Panasonic/Leica
-    '.pef', '.ptx',                    // Pentax
-    '.srw',                            // Samsung
-    '.x3f',                            // Sigma
-    '.3fr', '.fff',                    // Hasselblad
-    '.dcr', '.k25', '.kdc',            // Kodak
-    '.mef', '.mos',                    // Mamiya/Leaf
-    '.mrw',                            // Minolta
-    '.erf',                            // Epson
-    '.iiq',                            // Phase One
-    '.rwz',                            // Rawzor
-    '.gpr',                            // GoPro RAW
-  ]),
-  video: new Set([
-    '.mp4', '.m4v', '.m4p',            // MPEG-4
-    '.mov', '.qt',                     // QuickTime
-    '.avi', '.divx',                   // AVI
-    '.mkv', '.mka', '.mks', '.mk3d',   // Matroska
-    '.webm',                           // WebM
-    '.wmv', '.wma', '.asf',            // Windows Media
-    '.flv', '.f4v', '.f4p', '.f4a', '.f4b', // Flash Video
-    '.mpg', '.mpeg', '.mpe', '.mpv', '.m2v', // MPEG
-    '.ts', '.mts', '.m2ts', '.tsv', '.tsa', // MPEG Transport Stream
-    '.vob', '.ifo',                    // DVD Video
-    '.3gp', '.3g2',                    // 3GPP
-    '.ogv', '.ogg', '.ogm', '.oga', '.ogx', '.spx', '.opus', // Ogg/Vorbis
-    '.rm', '.rmvb', '.rv',             // RealMedia
-    '.dv', '.dif',                     // DV Video
-    '.mxf',                            // Material eXchange Format
-    '.gxf',                            // General eXchange Format
-    '.nut',                            // NUT
-    '.roq',                            // id RoQ
-    '.nsv',                            // Nullsoft
-    '.amv',                            // AMV
-    '.swf',                            // Flash
-    '.yuv', '.y4m',                    // Raw YUV
-    '.bik', '.bk2',                    // Bink
-    '.smk',                            // Smacker
-    '.dpg',                            // Nintendo DS
-    '.pva',                            // TechnoTrend PVA
-    '.insv', '.lrv',                   // Insta360/GoPro low-res
-  ]),
-  document: new Set([
-    '.pdf',                            // Portable Document Format
-    '.doc', '.docx', '.docm',          // Microsoft Word
-    '.xls', '.xlsx', '.xlsm', '.xlsb', // Microsoft Excel
-    '.ppt', '.pptx', '.pptm',          // Microsoft PowerPoint
-    '.odt', '.ods', '.odp', '.odg',    // OpenDocument
-    '.rtf',                            // Rich Text Format
-    '.txt', '.text', '.log', '.md',    // Plain text
-    '.csv', '.tsv',                    // Data files
-    '.epub', '.mobi', '.azw', '.azw3', // E-books
-    '.djvu', '.djv',                   // DjVu
-    '.xps', '.oxps',                   // XML Paper Specification
-    '.pages', '.numbers', '.key',      // Apple iWork
-    // Archive formats (stored as-is, not extracted)
-    '.zip', '.rar', '.7z', '.tar', '.gz', '.tgz', '.bz2', '.xz',
-  ]),
-  map: new Set([
-    '.geotiff', '.gtiff',              // GeoTIFF
-    '.gpx',                            // GPS Exchange Format
-    '.kml', '.kmz',                    // Google Earth
-    '.shp', '.shx', '.dbf', '.prj',    // Shapefile components
-    '.geojson', '.topojson',           // GeoJSON
-    '.osm',                            // OpenStreetMap
-    '.mbtiles',                        // MapBox Tiles
-    '.sid', '.ecw',                    // MrSID, ECW compressed imagery
-    '.tif',                            // Can be GeoTIFF
-  ]),
-} as const;
 
 /**
  * Sidecar file extensions that accompany main media files
@@ -279,32 +179,55 @@ async function isSameDevice(path1: string, path2: string): Promise<boolean> {
 }
 
 /**
- * Get media type from extension
- * Uses backbone ScanService for category detection where available
+ * Get media type from extension using wake-n-blake's categorization
+ *
+ * Wake-n-blake is the source of truth for file type detection.
+ * Local SIDECAR_EXTENSIONS check is kept for special sidecar handling.
  */
 function getMediaType(ext: string): ScannedFile['mediaType'] {
   const lowerExt = ext.toLowerCase();
 
-  // Check sidecars first (local knowledge)
+  // Check sidecars first (special handling for import flow)
   if (SIDECAR_EXTENSIONS.has(lowerExt)) return 'sidecar';
 
-  // Try backbone ScanService for media category
-  const category = ScanService.getCategory(lowerExt);
-  if (category) {
-    // Map backbone category to our media type
-    if (category === 'image' || category === 'raw') return 'image';
-    if (category === 'video') return 'video';
-    if (category === 'audio') return 'document'; // Audio goes to documents
-    if (category === 'document') return 'document';
+  // Use wake-n-blake for all other categorization
+  const category = getMediaCategory(lowerExt);
+  return mapCategoryToMediaType(category);
+}
+
+/**
+ * Map wake-n-blake MediaCategory to scanner's media type
+ */
+function mapCategoryToMediaType(category: MediaCategory): ScannedFile['mediaType'] {
+  switch (category) {
+    case 'image':
+    case 'raw':
+      return 'image';
+    case 'video':
+      return 'video';
+    case 'geospatial':
+      return 'map';
+    case 'sidecar':
+    case 'subtitle':
+      return 'sidecar';
+    // All other categories go to documents
+    case 'document':
+    case 'archive':
+    case 'audio':
+    case 'ebook':
+    case 'email':
+    case 'font':
+    case 'model3d':
+    case 'calendar':
+    case 'contact':
+    case 'executable':
+    case 'data':
+    case 'game':
+    case 'other':
+      return 'document';
+    default:
+      return 'unknown';
   }
-
-  // Fall back to local extension sets
-  if (SUPPORTED_EXTENSIONS.image.has(lowerExt)) return 'image';
-  if (SUPPORTED_EXTENSIONS.video.has(lowerExt)) return 'video';
-  if (SUPPORTED_EXTENSIONS.document.has(lowerExt)) return 'document';
-  if (SUPPORTED_EXTENSIONS.map.has(lowerExt)) return 'map';
-
-  return 'unknown';
 }
 
 /**

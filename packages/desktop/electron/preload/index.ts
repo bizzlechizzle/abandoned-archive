@@ -543,8 +543,44 @@ const api = {
     },
   },
 
-  // ADR-050: Import v2 progress events
+  // Import System v2.0 - 5-step pipeline with background jobs (wake-n-blake + shoemaker)
   importV2: {
+    // Start a new import with paths and location info
+    start: (input: {
+      paths: string[];
+      locid: string;
+      loc12?: string;
+      address_state: string | null;
+      type?: string | null;
+      slocnam?: string | null;
+      subid?: string | null;
+      auth_imp?: string | null;
+      is_contributed?: number;
+      contribution_source?: string | null;
+    }): Promise<{
+      sessionId: string;
+      status: string;
+      scanResult?: { totalFiles: number };
+      hashResult?: { totalDuplicates: number; totalErrors: number };
+      copyResult?: { totalErrors: number };
+      validationResult?: { totalInvalid: number };
+      finalizationResult?: { totalFinalized: number; totalErrors: number; jobsQueued: number };
+      totalDurationMs: number;
+    }> =>
+      ipcRenderer.invoke('import:v2:start', input),
+    // Cancel running import
+    cancel: (sessionId: string): Promise<{ cancelled: boolean; reason?: string }> =>
+      ipcRenderer.invoke('import:v2:cancel', sessionId),
+    // Get current import status
+    status: (): Promise<{ sessionId: string | null; status: string }> =>
+      ipcRenderer.invoke('import:v2:status'),
+    // Get resumable import sessions
+    resumable: (): Promise<unknown[]> =>
+      ipcRenderer.invoke('import:v2:resumable'),
+    // Resume an incomplete import
+    resume: (sessionId: string): Promise<unknown> =>
+      ipcRenderer.invoke('import:v2:resume', sessionId),
+    // Progress event listener
     onProgress: (callback: (progress: {
       sessionId: string;
       status: string;
@@ -578,6 +614,7 @@ const api = {
       ipcRenderer.on('import:v2:progress', listener);
       return () => ipcRenderer.removeListener('import:v2:progress', listener);
     },
+    // Completion event listener
     onComplete: (callback: (event: {
       sessionId: string;
       status: string;

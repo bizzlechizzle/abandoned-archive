@@ -8,8 +8,7 @@ import { Kysely, SqliteDialect } from 'kysely';
 import type { Database as DatabaseSchema } from '../../main/database.types';
 import { SQLiteLocationRepository } from '../../repositories/sqlite-location-repository';
 import { SQLiteMediaRepository } from '../../repositories/sqlite-media-repository';
-import { MediaPathService } from '../../services/media-path-service';
-import { ThumbnailService } from '../../services/thumbnail-service';
+import { ThumbnailService } from '../../services/backbone/thumbnail-service';
 import { CryptoService } from '../../services/crypto-service';
 import { createLocationInput } from './helpers/test-database';
 import fs from 'fs';
@@ -230,19 +229,18 @@ describe('Kanye7 Integration Test - Full Import Flow', () => {
   });
 
   it('should generate thumbnail paths (Premium Archive)', async () => {
-    const mediaPathService = new MediaPathService(archivePath);
-    const thumbnailService = new ThumbnailService(mediaPathService);
     const images = await mediaRepo.findImagesByLocation(testLocationId);
 
     let thumbnailsGenerated = 0;
     for (const img of images.slice(0, 2)) { // Generate for first 2
       try {
-        const result = await thumbnailService.generateAllSizes(img.imgloc, img.imghash);
-        if (result.thumb_sm) {
+        // Use backbone ThumbnailService (shoemaker) static API
+        const result = await ThumbnailService.generate(img.imgloc, { preset: 'fast' });
+        if (result.success && result.paths.sm) {
           await db.updateTable('imgs')
             .set({
-              thumb_path_sm: result.thumb_sm,
-              thumb_path_lg: result.thumb_lg
+              thumb_path_sm: result.paths.sm,
+              thumb_path_lg: result.paths.lg || null
             })
             .where('imghash', '=', img.imghash)
             .execute();
@@ -254,7 +252,7 @@ describe('Kanye7 Integration Test - Full Import Flow', () => {
     }
 
     console.log(`[Kanye7 Test] Generated ${thumbnailsGenerated} thumbnails`);
-    // May fail if sharp not available, that's ok
+    // May fail if shoemaker dependencies not available, that's ok
   });
 
   it('FINAL: Print test results summary', async () => {

@@ -681,7 +681,7 @@ export class JobQueue {
  * - GPS_ENRICHMENT, LIVE_PHOTO, SRT_TELEMETRY, LOCATION_STATS, BAGIT
  */
 export const IMPORT_QUEUES = {
-  // Per-file jobs
+  // Per-file jobs (Phase 1: Fast UI thumbnails)
   EXIFTOOL: 'exiftool',
   FFPROBE: 'ffprobe',
   THUMBNAIL: 'thumbnail',
@@ -689,6 +689,10 @@ export const IMPORT_QUEUES = {
 
   // Backbone: XMP sidecar generation (per-file, depends on EXIFTOOL)
   XMP_SIDECAR: 'xmp-sidecar',
+
+  // Per-file jobs (Phase 2: Background ML processing)
+  ML_THUMBNAIL: 'ml-thumbnail',       // Quality preset thumbnail (2560px) for ML processing
+  VISUAL_BUFFET: 'visual-buffet',     // Python CLI ML tagging (depends on ML_THUMBNAIL)
 
   // Per-location jobs (run after all file jobs complete)
   GPS_ENRICHMENT: 'gps-enrichment',

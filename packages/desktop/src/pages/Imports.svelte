@@ -132,11 +132,12 @@
       return;
     }
 
+    // Expand to validate files exist (for count/validation)
     const expandedPaths = await window.electronAPI.media.expandPaths(droppedPaths);
 
     if (expandedPaths.length > 0) {
-      // Show attribution modal instead of importing directly
-      pendingImportPaths = expandedPaths;
+      // Pass ORIGINAL paths (folders or files) - wake-n-blake handles scanning
+      pendingImportPaths = droppedPaths;
       isSomeoneElse = false;
       selectedAuthor = '';
       contributionSource = '';

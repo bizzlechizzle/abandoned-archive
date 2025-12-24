@@ -4123,6 +4123,61 @@ function runMigrations(sqlite: Database.Database): void {
       console.log('Migration 94 completed: backbone columns added to media tables');
     }
 
+    // Migration 95: ML Thumbnail + Visual-Buffet Processing
+    // Two-phase thumbnail pipeline: fast UI thumbnails, then background ML processing
+    const imgsMlPathCheck = sqlite.prepare('PRAGMA table_info(imgs)').all() as Array<{ name: string }>;
+    const hasMlPath = imgsMlPathCheck.some(c => c.name === 'ml_path');
+
+    if (!hasMlPath) {
+      console.log('Running migration 95: Adding ML thumbnail and visual-buffet columns');
+      sqlite.exec(`
+        -- imgs: ML thumbnail path (2560px JPEG for visual-buffet/ML processing)
+        ALTER TABLE imgs ADD COLUMN ml_path TEXT;
+        ALTER TABLE imgs ADD COLUMN ml_thumb_at TEXT;
+        ALTER TABLE imgs ADD COLUMN vb_processed_at TEXT;
+        ALTER TABLE imgs ADD COLUMN vb_error TEXT;
+
+        -- vids: ML thumbnail path for video poster frames
+        ALTER TABLE vids ADD COLUMN ml_path TEXT;
+        ALTER TABLE vids ADD COLUMN ml_thumb_at TEXT;
+        ALTER TABLE vids ADD COLUMN vb_processed_at TEXT;
+        ALTER TABLE vids ADD COLUMN vb_error TEXT;
+
+        -- Indexes for finding unprocessed media (Phase 2 background jobs)
+        CREATE INDEX IF NOT EXISTS idx_imgs_ml_pending ON imgs(ml_path) WHERE ml_path IS NULL AND thumb_path_sm IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_vids_ml_pending ON vids(ml_path) WHERE ml_path IS NULL AND thumb_path_sm IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_imgs_vb_pending ON imgs(vb_processed_at) WHERE vb_processed_at IS NULL AND ml_path IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_vids_vb_pending ON vids(vb_processed_at) WHERE vb_processed_at IS NULL AND ml_path IS NOT NULL;
+      `);
+      console.log('Migration 95 completed: ML thumbnail and visual-buffet columns added');
+    }
+
+    // Migration 96: Visual-Buffet Full Integration (OCR, caption, settings)
+    const vbEnhancedCheck = sqlite.prepare(`
+      SELECT COUNT(*) as cnt FROM pragma_table_info('imgs') WHERE name = 'auto_caption'
+    `).get() as { cnt: number };
+
+    if (vbEnhancedCheck.cnt === 0) {
+      sqlite.exec(`
+        -- Visual-Buffet enhanced columns for full model stack
+        ALTER TABLE imgs ADD COLUMN auto_caption TEXT;
+        ALTER TABLE imgs ADD COLUMN ocr_text TEXT;
+        ALTER TABLE imgs ADD COLUMN ocr_has_text INTEGER DEFAULT 0;
+
+        ALTER TABLE vids ADD COLUMN auto_caption TEXT;
+        ALTER TABLE vids ADD COLUMN ocr_text TEXT;
+        ALTER TABLE vids ADD COLUMN ocr_has_text INTEGER DEFAULT 0;
+
+        -- Settings for visual-buffet (on/off toggle)
+        INSERT OR IGNORE INTO settings (key, value) VALUES ('visual_buffet_enabled', 'true');
+
+        -- Index for OCR search
+        CREATE INDEX IF NOT EXISTS idx_imgs_ocr ON imgs(ocr_has_text) WHERE ocr_has_text = 1;
+        CREATE INDEX IF NOT EXISTS idx_vids_ocr ON vids(ocr_has_text) WHERE ocr_has_text = 1;
+      `);
+      console.log('Migration 96 completed: Visual-buffet OCR/caption columns and settings added');
+    }
+
   } catch (error) {
     console.error('Error running migrations:', error);
     throw error;

@@ -2,7 +2,7 @@
  * Shell and Dialog IPC Handlers
  * Handles shell:* and dialog:* IPC channels
  */
-import { ipcMain, shell, dialog } from 'electron';
+import { ipcMain, shell, dialog, BrowserWindow } from 'electron';
 import { z } from 'zod';
 
 export function registerShellHandlers() {
@@ -28,11 +28,18 @@ export function registerShellHandlers() {
 export function registerDialogHandlers() {
   ipcMain.handle('dialog:selectFolder', async () => {
     try {
-      const result = await dialog.showOpenDialog({
-        properties: ['openDirectory', 'createDirectory'],
+      // Get the focused window to use as parent (prevents dialog appearing behind app)
+      const parentWindow = BrowserWindow.getFocusedWindow();
+
+      const dialogOptions = {
+        properties: ['openDirectory', 'createDirectory'] as const,
         title: 'Select Archive Folder',
         buttonLabel: 'Select Folder',
-      });
+      };
+
+      const result = parentWindow
+        ? await dialog.showOpenDialog(parentWindow, dialogOptions)
+        : await dialog.showOpenDialog(dialogOptions);
 
       if (result.canceled || result.filePaths.length === 0) {
         return null;

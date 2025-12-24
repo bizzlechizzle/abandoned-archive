@@ -26,6 +26,8 @@ export interface ImportJob {
   currentFilename?: string;
   // FIX 4.3: Track import ID for cancellation
   importId?: string;
+  // Human-readable step name (e.g., "Computing hashes", "Copying files")
+  stepName?: string;
   status: 'pending' | 'running' | 'completed' | 'error' | 'cancelled';
   startedAt: Date;
   completedAt?: Date;
@@ -92,7 +94,7 @@ function createImportStore() {
      * FIX 4.1: Now includes filename being processed
      * FIX 4.3: Now includes importId for cancellation
      */
-    updateProgress(current: number, total: number, percent: number, filename?: string, importId?: string) {
+    updateProgress(current: number, total: number, percent: number, filename?: string, importId?: string, stepName?: string) {
       update(state => {
         if (state.activeJob) {
           return {
@@ -104,6 +106,7 @@ function createImportStore() {
               percent,  // OPT-088: Use orchestrator's weighted percent
               currentFilename: filename,
               importId: importId || state.activeJob.importId,
+              stepName,
             },
           };
         }
@@ -217,6 +220,7 @@ export const importProgress = derived(importStore, ($store) => {
     locationName: job.locationName,
     locid: job.locid,
     currentFilename: job.currentFilename,
+    stepName: job.stepName,
   };
 });
 

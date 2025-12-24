@@ -27,6 +27,13 @@ export class MediaPathService {
     return path.join(this.archivePath, '.posters');
   }
 
+  /**
+   * Get ML thumbnail directory (2560px JPEG for visual-buffet/ML processing)
+   */
+  getMlThumbnailDir(): string {
+    return path.join(this.archivePath, '.ml-thumbnails');
+  }
+
   // === Path Generators ===
 
   /**
@@ -59,6 +66,16 @@ export class MediaPathService {
   getPosterPath(hash: string): string {
     const bucket = hash.substring(0, 2);
     return path.join(this.getPosterDir(), bucket, `${hash}.jpg`);
+  }
+
+  /**
+   * Get ML thumbnail path for a given file hash
+   * ML tier: 2560px JPEG for visual-buffet/ML processing
+   * Uses first 2 characters of hash as subdirectory for bucketing
+   */
+  getMlThumbnailPath(hash: string): string {
+    const bucket = hash.substring(0, 2);
+    return path.join(this.getMlThumbnailDir(), bucket, `${hash}_ml.jpg`);
   }
 
   /**
@@ -95,6 +112,7 @@ export class MediaPathService {
       this.getThumbnailDir(),
       this.getPreviewDir(),
       this.getPosterDir(),
+      this.getMlThumbnailDir(),
     ];
 
     for (const dir of dirs) {

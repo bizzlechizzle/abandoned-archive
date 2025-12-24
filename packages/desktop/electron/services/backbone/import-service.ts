@@ -21,6 +21,7 @@ import {
   type ImportOptions as WnbImportOptions,
   type ImportSession,
   type ImportFileState,
+  type FileCategory,
 } from 'wake-n-blake';
 import * as path from 'node:path';
 import type { Kysely } from 'kysely';
@@ -106,6 +107,7 @@ export interface BackboneImportProgress {
   bytesTotal: number;
   duplicatesFound: number;
   errorsFound: number;
+  stepName?: string;  // Current pipeline step name (e.g., 'hashing', 'copying')
 }
 
 /**
@@ -219,20 +221,39 @@ export class ImportService {
 
         // Progress callback
         onProgress: (wnbSession: ImportSession) => {
-          // Get current file from the session's files list
-          const currentFile = wnbSession.files.find(f => f.status === 'pending' || f.status === 'hashed')?.path || '';
+          // Use wake-n-blake's detailed progress tracking
+          // currentFile from session's built-in tracking or fallback to file list
+          const currentFile = wnbSession.currentFile ||
+            wnbSession.files.find(f => f.status === 'pending' || f.status === 'hashed')?.path || '';
+
+          // Count files at each stage for accurate progress display
+          const hashingCount = wnbSession.files.filter(f => f.status === 'hashed' || f.status === 'copied' || f.status === 'validated').length;
+          const copyingCount = wnbSession.files.filter(f => f.status === 'copied' || f.status === 'validated').length;
+          const validatedCount = wnbSession.files.filter(f => f.status === 'validated').length;
+
+          // Use stage-appropriate count based on current status
+          let stageProcessed = 0;
+          switch (wnbSession.status) {
+            case 'hashing': stageProcessed = hashingCount; break;
+            case 'copying': stageProcessed = copyingCount; break;
+            case 'validating': stageProcessed = validatedCount; break;
+            default: stageProcessed = wnbSession.processedFiles;
+          }
 
           options.onProgress?.({
             sessionId,
             status: wnbSession.status,
-            percent: this.calculatePercent(wnbSession),
+            // Use wake-n-blake's weighted percent if available, fallback to our calculation
+            percent: wnbSession.overallPercent ?? this.calculatePercent(wnbSession),
             currentFile,
-            filesProcessed: wnbSession.processedFiles,
+            filesProcessed: stageProcessed,
             filesTotal: wnbSession.totalFiles,
             bytesProcessed: wnbSession.processedBytes || 0,
             bytesTotal: wnbSession.totalBytes || 0,
             duplicatesFound: wnbSession.duplicateFiles,
             errorsFound: wnbSession.errorFiles,
+            // Pass step info for UI
+            stepName: wnbSession.stepName,
           });
         },
 
@@ -388,28 +409,48 @@ export class ImportService {
   }
 
   /**
-   * Determine media type from file state
+   * Map wake-n-blake FileCategory to desktop MediaType
+   *
+   * Wake-n-blake is the source of truth for file categorization.
+   * It uses magic bytes + extension analysis to determine file type.
    */
   private getMediaType(file: ImportFileState): MediaType {
-    const ext = path.extname(file.path).toLowerCase();
+    const category = file.category as FileCategory | undefined;
 
-    // Video extensions
-    if (['.mp4', '.mov', '.avi', '.mkv', '.mts', '.m2ts', '.webm', '.wmv'].includes(ext)) {
-      return 'video';
+    switch (category) {
+      // Direct mappings
+      case 'image':
+        return 'image';
+      case 'video':
+        return 'video';
+      case 'geospatial':
+        return 'map';
+
+      // All other categories go to documents
+      case 'document':
+      case 'archive':
+      case 'audio':
+      case 'ebook':
+      case 'email':
+      case 'font':
+      case 'model3d':
+      case 'calendar':
+      case 'contact':
+      case 'subtitle':
+      case 'executable':
+      case 'data':
+      case 'other':
+      case 'sidecar':
+        return 'document';
+
+      default:
+        // Fallback for unknown categories - log and default to document
+        logger.warn('ImportService', 'Unknown file category from wake-n-blake', {
+          path: file.path,
+          category: category ?? 'undefined',
+        });
+        return 'document';
     }
-
-    // Map extensions (GPX, KML, GeoJSON)
-    if (['.gpx', '.kml', '.kmz', '.geojson'].includes(ext)) {
-      return 'map';
-    }
-
-    // Document extensions
-    if (['.pdf', '.doc', '.docx', '.txt', '.rtf', '.odt'].includes(ext)) {
-      return 'document';
-    }
-
-    // Default to image
-    return 'image';
   }
 
   /**
@@ -608,6 +649,10 @@ export class ImportService {
 
   /**
    * Queue thumbnail generation job for a file
+   *
+   * Two-phase pipeline:
+   * - Phase 1 (Fast UI): ExifTool → Thumbnail (fast preset)
+   * - Phase 2 (Background ML): ML_THUMBNAIL (quality preset) → VISUAL_BUFFET
    */
   private async queueThumbnailJob(file: ImportFileState, location: ImportLocation): Promise<void> {
     if (!file.destPath || !file.hash) return;
@@ -615,61 +660,68 @@ export class ImportService {
     const mediaType = this.getMediaType(file);
     if (mediaType !== 'image' && mediaType !== 'video') return;
 
-    // Queue ExifTool job first (thumbnail depends on orientation)
+    // Generate job IDs for dependency chain
     const exifJobId = generateId();
+    const thumbJobId = generateId();
+    const mlThumbJobId = generateId();
+
+    const basePayload = {
+      hash: file.hash,
+      mediaType,
+      archivePath: file.destPath,
+      locid: location.locid,
+      subid: location.subid,
+    };
+
+    // Phase 1: Fast UI thumbnails
+    // Phase 2: Background ML processing (chained)
     await this.jobQueue.addBulk([
+      // Phase 1: ExifTool (HIGH priority)
       {
         queue: IMPORT_QUEUES.EXIFTOOL,
         priority: JOB_PRIORITY.HIGH,
         jobId: exifJobId,
-        payload: {
-          hash: file.hash,
-          mediaType,
-          archivePath: file.destPath,
-          locid: location.locid,
-          subid: location.subid,
-        },
+        payload: basePayload,
       },
+      // Phase 1: Fast Thumbnail (HIGH priority, depends on ExifTool for orientation)
       {
         queue: IMPORT_QUEUES.THUMBNAIL,
-        priority: JOB_PRIORITY.NORMAL,
-        payload: {
-          hash: file.hash,
-          mediaType,
-          archivePath: file.destPath,
-          locid: location.locid,
-          subid: location.subid,
-        },
+        priority: JOB_PRIORITY.HIGH,  // Upgraded for UI responsiveness
+        jobId: thumbJobId,
+        payload: basePayload,
         dependsOn: exifJobId,
+      },
+      // Phase 2: ML Thumbnail (BACKGROUND priority, depends on Phase 1 thumb)
+      {
+        queue: IMPORT_QUEUES.ML_THUMBNAIL,
+        priority: JOB_PRIORITY.BACKGROUND,
+        jobId: mlThumbJobId,
+        payload: basePayload,
+        dependsOn: thumbJobId,
+      },
+      // Phase 2: Visual-Buffet (BACKGROUND priority, depends on ML thumb)
+      {
+        queue: IMPORT_QUEUES.VISUAL_BUFFET,
+        priority: JOB_PRIORITY.BACKGROUND,
+        payload: basePayload,
+        dependsOn: mlThumbJobId,
       },
     ]);
 
-    // Queue FFprobe for videos
+    // Queue FFprobe and video proxy for videos
     if (mediaType === 'video') {
       await this.jobQueue.addBulk([
         {
           queue: IMPORT_QUEUES.FFPROBE,
           priority: JOB_PRIORITY.HIGH,
           jobId: generateId(),
-          payload: {
-            hash: file.hash,
-            mediaType,
-            archivePath: file.destPath,
-            locid: location.locid,
-            subid: location.subid,
-          },
+          payload: basePayload,
           dependsOn: exifJobId,
         },
         {
           queue: IMPORT_QUEUES.VIDEO_PROXY,
           priority: JOB_PRIORITY.LOW,
-          payload: {
-            hash: file.hash,
-            mediaType,
-            archivePath: file.destPath,
-            locid: location.locid,
-            subid: location.subid,
-          },
+          payload: basePayload,
         },
       ]);
     }

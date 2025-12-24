@@ -36,6 +36,10 @@ export interface HardwareProfile {
   locationStatsWorkers: number;
   bagitWorkers: number;
 
+  // Phase 2: Background ML processing
+  mlThumbnailWorkers: number;    // Quality preset RAW decode (CPU-heavy)
+  visualBuffetWorkers: number;   // Python CLI ML tagging (GPU-bound)
+
   // Queue settings
   pollIntervalMs: number;
   pollIntervalIdleMs: number;
@@ -80,6 +84,9 @@ export function detectHardwareProfile(): HardwareProfile {
       srtTelemetryWorkers: 4,                        // File parsing + DB update
       locationStatsWorkers: 8,                       // DB aggregation
       bagitWorkers: 4,                               // File I/O for manifests
+      // Phase 2: Background ML processing
+      mlThumbnailWorkers: 4,                         // CPU-heavy RAW decode
+      visualBuffetWorkers: 2,                        // GPU-bound ML inference
       pollIntervalMs: 25,                            // FAST
       pollIntervalIdleMs: 100,
     },
@@ -99,6 +106,9 @@ export function detectHardwareProfile(): HardwareProfile {
       srtTelemetryWorkers: 2,
       locationStatsWorkers: 4,
       bagitWorkers: 2,
+      // Phase 2: Background ML processing
+      mlThumbnailWorkers: 2,
+      visualBuffetWorkers: 1,
       pollIntervalMs: 50,
       pollIntervalIdleMs: 150,
     },
@@ -118,6 +128,9 @@ export function detectHardwareProfile(): HardwareProfile {
       srtTelemetryWorkers: 1,
       locationStatsWorkers: 2,
       bagitWorkers: 1,
+      // Phase 2: Background ML processing
+      mlThumbnailWorkers: 1,
+      visualBuffetWorkers: 1,
       pollIntervalMs: 100,
       pollIntervalIdleMs: 300,
     },
@@ -137,6 +150,9 @@ export function detectHardwareProfile(): HardwareProfile {
       srtTelemetryWorkers: 1,
       locationStatsWorkers: 1,
       bagitWorkers: 1,
+      // Phase 2: Background ML processing
+      mlThumbnailWorkers: 1,
+      visualBuffetWorkers: 1,
       pollIntervalMs: 200,
       pollIntervalIdleMs: 500,
     },

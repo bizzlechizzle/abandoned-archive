@@ -304,7 +304,6 @@ async function startupOrchestrator(): Promise<void> {
     // Step 5b: Start Bookmark API Server for Research Browser extension
     // OPT-109: Uses WebSourcesRepository (replaces deprecated BookmarksRepository)
     logger.info('Main', 'Starting Bookmark API Server');
-    const db = getDatabase();
     const webSourcesRepo = new SQLiteWebSourcesRepository(db);
     const locationsRepo = new SQLiteLocationRepository(db);
     const subLocationsRepo = new SQLiteSubLocationRepository(db);

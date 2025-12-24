@@ -148,6 +148,9 @@ importers:
       sharp:
         specifier: ^0.33.1
         version: 0.33.5
+      sharp-phash:
+        specifier: ^2.2.0
+        version: 2.2.0(sharp@0.33.5)
       shoemaker:
         specifier: workspace:*
         version: link:../shoemaker
@@ -3858,6 +3861,12 @@ packages:
   shallow-clone@0.1.2:
     resolution: {integrity: sha512-J1zdXCky5GmNnuauESROVu31MQSnLoYvlyEn6j2Ztk6Q5EHFIhxkMhYcv6vuDzl2XEzoRr856QwzMgWM/TmZgw==}
     engines: {node: '>=0.10.0'}
+
+  sharp-phash@2.2.0:
+    resolution: {integrity: sha512-/gBoes9EycJkt/2aakKl9BeSGxFbPpZ5lCDtpRRlnU+vkqqcdXi8YLIlXnJsTtTBmaL82zh1bPkV7uZSSIsj8w==}
+    engines: {node: '>= 10'}
+    peerDependencies:
+      sharp: '>= 0.32.0'
 
   sharp@0.33.5:
     resolution: {integrity: sha512-haPVm1EkS9pgvHrQ/F3Xy+hgcuMV0Wm9vfIBSiwZ05k+xgb0PkBQpGsAA/oWdDobNaZTH5ppvHtzCFbnSEwHVw==}
@@ -8419,6 +8428,10 @@ snapshots:
       kind-of: 2.0.1
       lazy-cache: 0.2.7
       mixin-object: 2.0.1
+
+  sharp-phash@2.2.0(sharp@0.33.5):
+    dependencies:
+      sharp: 0.33.5
 
   sharp@0.33.5:
     dependencies:

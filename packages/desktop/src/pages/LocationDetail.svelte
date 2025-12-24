@@ -715,10 +715,12 @@
     const droppedPaths = window.getDroppedFilePaths?.() || [];
     if (droppedPaths.length === 0) { toasts.warning('No valid files found'); return; }
     if (!window.electronAPI?.media?.expandPaths) { toasts.error('API not available'); return; }
+    // Expand to check if there are valid files (for count/validation)
     const expandedPaths = await window.electronAPI.media.expandPaths(droppedPaths);
     if (expandedPaths.length > 0) {
-      // Show attribution modal instead of importing directly
-      pendingImportPaths = expandedPaths;
+      // Pass ORIGINAL paths (folders or files) to import - wake-n-blake handles scanning
+      // This fixes the bug where only the first expanded file was being imported
+      pendingImportPaths = droppedPaths;
       isSomeoneElse = false;
       selectedAuthor = '';
       contributionSource = '';
@@ -733,10 +735,11 @@
       const filePaths = await window.electronAPI.media.selectFiles();
       if (!filePaths || filePaths.length === 0) return;
       if (window.electronAPI.media.expandPaths) {
+        // Expand to validate files exist (for count/validation)
         const expandedPaths = await window.electronAPI.media.expandPaths(filePaths);
         if (expandedPaths.length > 0) {
-          // Show attribution modal instead of importing directly
-          pendingImportPaths = expandedPaths;
+          // Pass ORIGINAL paths (folders or files) - wake-n-blake handles scanning
+          pendingImportPaths = filePaths;
           isSomeoneElse = false;
           selectedAuthor = '';
           contributionSource = '';

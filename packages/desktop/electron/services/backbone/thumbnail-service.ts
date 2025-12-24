@@ -260,6 +260,108 @@ export class ThumbnailService {
       return false;
     }
   }
+
+  /**
+   * Generate ML-tier thumbnail with quality preset
+   *
+   * Phase 2 background processing:
+   * - Uses 'quality' preset for proper RAW decode via RawTherapee/darktable
+   * - Generates only ml size (2560px JPEG, 95% quality)
+   * - Full RAW decode for best ML input quality
+   *
+   * @param filePath - Path to source media file
+   * @param outputPath - Full output path for ML thumbnail (including filename)
+   * @returns Result with success status and path
+   */
+  static async generateMlTier(
+    filePath: string,
+    outputPath: string
+  ): Promise<{
+    success: boolean;
+    mlPath: string | null;
+    method: 'extracted' | 'decoded' | 'direct' | 'video' | null;
+    durationMs: number;
+    error?: string;
+  }> {
+    const startTime = Date.now();
+
+    try {
+      // Ensure initialized
+      if (!configInstance) {
+        await this.initialize();
+      }
+
+      // Load quality preset for best RAW decode
+      let preset = presetCache.get('quality');
+      if (!preset) {
+        try {
+          preset = await loadPreset('quality', configInstance!);
+          presetCache.set('quality', preset);
+        } catch {
+          // Fall back to fast preset
+          preset = presetCache.get('fast');
+        }
+      }
+
+      const config = preset ? applyPreset(configInstance!, preset) : configInstance!;
+
+      // Override to only generate ml size (2560px JPEG at 95% quality)
+      const mlConfig: Config = {
+        ...config,
+        sizes: {
+          ml: { width: 2560, format: 'jpeg', quality: 95, allowUpscale: false },
+        },
+        output: {
+          ...config.output,
+          location: 'sidecar',  // Generate alongside source
+        },
+      };
+
+      // Generate ML tier
+      const result = await generateForFile(filePath, {
+        config: mlConfig,
+        preset: preset!,
+        force: false,  // Skip if already exists
+      });
+
+      // Find the ML thumbnail from results
+      // Check both dimensions since portrait images have width < height
+      const mlThumb = result.thumbnails.find(t => t.width >= 2500 || t.height >= 2500);
+
+      if (mlThumb) {
+        // Rename to match expected output path if different
+        const actualPath = mlThumb.path;
+        if (actualPath !== outputPath && fs.existsSync(actualPath)) {
+          // Ensure output directory exists
+          fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+          fs.renameSync(actualPath, outputPath);
+        }
+
+        return {
+          success: true,
+          mlPath: outputPath,
+          method: result.method,
+          durationMs: Date.now() - startTime,
+        };
+      }
+
+      return {
+        success: false,
+        mlPath: null,
+        method: result.method,
+        error: 'No ML thumbnail generated',
+        durationMs: Date.now() - startTime,
+      };
+    } catch (err) {
+      return {
+        success: false,
+        mlPath: null,
+        method: null,
+        error: err instanceof Error ? err.message : String(err),
+        durationMs: Date.now() - startTime,
+      };
+    }
+  }
 }
 
 export { Config, Preset, GenerationResult, PreviewAnalysis, ProgressInfo, XmpUpdateData };

@@ -356,6 +356,17 @@ export interface ImgsTable {
   live_photo_pair_hash: string | null;   // Hash of associated Live Photo video
   dedup_status: 'unique' | 'duplicate' | 'hardlinked' | null;
   thumb_extraction_method: 'embedded' | 'decoded' | 'failed' | null;
+
+  // Migration 95: ML Thumbnail + Visual-Buffet Processing
+  ml_path: string | null;                // Path to ML-tier thumbnail (2560px JPEG)
+  ml_thumb_at: string | null;            // ISO timestamp when ML thumbnail generated
+  vb_processed_at: string | null;        // ISO timestamp when visual-buffet processed
+  vb_error: string | null;               // Error message if visual-buffet failed
+
+  // Migration 96: Visual-Buffet Full Integration
+  auto_caption: string | null;           // Florence-2 generated caption
+  ocr_text: string | null;               // Extracted text from OCR
+  ocr_has_text: number;                  // 1 if image contains text, 0 otherwise
 }
 
 // Videos table
@@ -435,6 +446,17 @@ export interface VidsTable {
   proxy_bitrate: number | null;          // Proxy bitrate
   dedup_status: 'unique' | 'duplicate' | 'hardlinked' | null;
   needs_deinterlace: number;             // 0/1 - Video needs deinterlacing
+
+  // Migration 95: ML Thumbnail + Visual-Buffet Processing
+  ml_path: string | null;                // Path to ML-tier thumbnail (2560px JPEG)
+  ml_thumb_at: string | null;            // ISO timestamp when ML thumbnail generated
+  vb_processed_at: string | null;        // ISO timestamp when visual-buffet processed
+  vb_error: string | null;               // Error message if visual-buffet failed
+
+  // Migration 96: Visual-Buffet Full Integration
+  auto_caption: string | null;           // Florence-2 generated caption
+  ocr_text: string | null;               // Extracted text from OCR
+  ocr_has_text: number;                  // 1 if image contains text, 0 otherwise
 }
 
 // Documents table

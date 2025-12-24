@@ -14,7 +14,7 @@
  */
 
 import phash from 'sharp-phash';
-import dist from 'sharp-phash/distance';
+import dist from 'sharp-phash/distance.js';
 import sharp from 'sharp';
 import { readFile } from 'fs/promises';
 import type Database from 'better-sqlite3';
