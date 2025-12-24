@@ -25,7 +25,6 @@ import type {
   PipelineJobConfig,
   PipelineJobResult,
   ProgressMessage,
-  DEFAULT_PIPELINE_CONFIG,
 } from './types';
 
 /**
