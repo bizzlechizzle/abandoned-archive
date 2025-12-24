@@ -22,7 +22,7 @@ import type {
   BackfillOptions,
   ExtractFromTextInput,
   ExtractionSourceType,
-} from '@abandoned-archive/core';
+} from '@aa/core';
 
 let processor: DateExtractionProcessor | null = null;
 let repository: SqliteDateExtractionRepository | null = null;

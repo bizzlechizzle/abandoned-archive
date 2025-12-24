@@ -10,7 +10,7 @@ import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import { DOMParser } from '@xmldom/xmldom';
 import * as unzipper from 'unzipper';
-import { isValidCoordinate } from './geo-utils.js';
+import { isValidCoordinate, getUSStateFromCoords } from './geo-utils.js';
 
 // ============================================================================
 // TYPES
@@ -158,7 +158,7 @@ function parseKML(content: string): ParsedMapPoint[] {
               description,
               lat,
               lng,
-              state: null,
+              state: getUSStateFromCoords(lat, lng),
               category: getKMLCategory(placemark),
               rawMetadata: extractKMLMetadata(placemark)
             });
@@ -183,7 +183,7 @@ function parseKML(content: string): ParsedMapPoint[] {
               description,
               lat,
               lng,
-              state: null,
+              state: getUSStateFromCoords(lat, lng),
               category: getKMLCategory(placemark) || 'line',
               rawMetadata: extractKMLMetadata(placemark)
             });
@@ -216,12 +216,14 @@ function parseKML(content: string): ParsedMapPoint[] {
               }
             }
             if (count > 0) {
+              const centroidLat = sumLat / count;
+              const centroidLng = sumLng / count;
               points.push({
                 name,
                 description,
-                lat: sumLat / count,
-                lng: sumLng / count,
-                state: null,
+                lat: centroidLat,
+                lng: centroidLng,
+                state: getUSStateFromCoords(centroidLat, centroidLng),
                 category: getKMLCategory(placemark) || 'polygon',
                 rawMetadata: extractKMLMetadata(placemark)
               });
@@ -294,7 +296,7 @@ function parseGPX(content: string): ParsedMapPoint[] {
         description: descEl?.textContent?.trim() || null,
         lat,
         lng,
-        state: null,
+        state: getUSStateFromCoords(lat, lng),
         category: typeEl?.textContent?.trim() || 'waypoint',
         rawMetadata: extractGPXMetadata(wpt)
       });
@@ -322,7 +324,7 @@ function parseGPX(content: string): ParsedMapPoint[] {
             description: `Track with ${trkpts.length} points`,
             lat,
             lng,
-            state: null,
+            state: getUSStateFromCoords(lat, lng),
             category: 'track',
             rawMetadata: { pointCount: trkpts.length }
           });
@@ -350,7 +352,7 @@ function parseGPX(content: string): ParsedMapPoint[] {
           description: `Route with ${rtepts.length} points`,
           lat,
           lng,
-          state: null,
+          state: getUSStateFromCoords(lat, lng),
           category: 'route',
           rawMetadata: { pointCount: rtepts.length }
         });
@@ -433,7 +435,7 @@ function parseGeoJSON(content: string): ParsedMapPoint[] {
         description,
         lat,
         lng,
-        state: props.state || props.State || null,
+        state: props.state || props.State || getUSStateFromCoords(lat, lng),
         category: props.category || props.type || type,
         rawMetadata: Object.keys(props).length > 0 ? props : null
       });
@@ -540,12 +542,13 @@ function parseCSV(content: string): ParsedMapPoint[] {
         }
       }
 
+      const csvState = stateCol >= 0 ? values[stateCol] || null : null;
       points.push({
         name: nameCol >= 0 ? values[nameCol] || null : null,
         description: descCol >= 0 ? values[descCol] || null : null,
         lat,
         lng,
-        state: stateCol >= 0 ? values[stateCol] || null : null,
+        state: csvState || getUSStateFromCoords(lat, lng),
         category: 'csv',
         rawMetadata: Object.keys(metadata).length > 0 ? metadata : null
       });

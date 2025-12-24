@@ -120,7 +120,7 @@ export function createTestLocation(overrides: Record<string, unknown> = {}) {
 
 /**
  * Create valid LocationInput for repository.create() calls
- * This matches the LocationInputSchema from @abandoned-archive/core
+ * This matches the LocationInputSchema from @aa/core
  */
 export function createLocationInput(overrides: Record<string, any> = {}) {
   return {

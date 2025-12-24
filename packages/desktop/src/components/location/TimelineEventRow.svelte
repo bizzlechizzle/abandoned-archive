@@ -3,7 +3,7 @@
    * TimelineEventRow - Individual event in the timeline
    * Displays date, event type, source, and approval status
    */
-  import type { TimelineEvent, TimelineEventWithSource } from '@abandoned-archive/core';
+  import type { TimelineEvent, TimelineEventWithSource } from '@aa/core';
   import TimelineDateInput from './TimelineDateInput.svelte';
 
   interface Props {

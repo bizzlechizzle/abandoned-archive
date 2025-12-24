@@ -15,7 +15,7 @@ import type {
   DateEngineLearning,
   DateExtractionStats,
   DateEngineLearningStats,
-} from '@abandoned-archive/core';
+} from '@aa/core';
 
 /**
  * OPT-043: Lean location type for map display - only essential fields

@@ -60,7 +60,16 @@ const VERSION = '0.1.0';
 // OUTPUT FORMATTERS
 // ============================================================================
 
-type OutputFormat = 'json' | 'geojson' | 'csv' | 'table';
+type OutputFormat = 'json' | 'geojson' | 'csv' | 'table' | 'kml' | 'gpx';
+
+function escapeXML(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
 
 function formatOutput(
   points: ParsedMapPoint[],
@@ -116,6 +125,52 @@ function formatOutput(
       return [header, separator, ...rows].join('\n');
     }
 
+    case 'kml': {
+      const placemarks = points.map(p => {
+        const name = p.name ? `<name>${escapeXML(p.name)}</name>` : '';
+        const desc = p.description ? `<description>${escapeXML(p.description)}</description>` : '';
+        const style = p.category ? `<styleUrl>#${escapeXML(p.category)}</styleUrl>` : '';
+        return `    <Placemark>
+      ${name}
+      ${desc}
+      ${style}
+      <Point>
+        <coordinates>${p.lng},${p.lat},0</coordinates>
+      </Point>
+    </Placemark>`;
+      }).join('\n');
+
+      return `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Exported Points</name>
+${placemarks}
+  </Document>
+</kml>`;
+    }
+
+    case 'gpx': {
+      const waypoints = points.map(p => {
+        const name = p.name ? `<name>${escapeXML(p.name)}</name>` : '';
+        const desc = p.description ? `<desc>${escapeXML(p.description)}</desc>` : '';
+        const type = p.category ? `<type>${escapeXML(p.category)}</type>` : '';
+        return `  <wpt lat="${p.lat}" lon="${p.lng}">
+    ${name}
+    ${desc}
+    ${type}
+  </wpt>`;
+      }).join('\n');
+
+      return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="mapcombine" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Exported Points</name>
+    <time>${new Date().toISOString()}</time>
+  </metadata>
+${waypoints}
+</gpx>`;
+    }
+
     default:
       return JSON.stringify(points, null, 2);
   }
@@ -137,7 +192,7 @@ function createParseCommand(): Command {
     .description('Parse map files and extract points')
     .argument('<files...>', 'Map files to parse (KML, KMZ, GPX, GeoJSON, CSV)')
     .option('-o, --output <file>', 'Output file (defaults to stdout)')
-    .option('-f, --format <format>', 'Output format: json, geojson, csv, table', 'json')
+    .option('-f, --format <format>', 'Output format: json, geojson, kml, gpx, csv, table', 'json')
     .option('-q, --quiet', 'Suppress progress output')
     .action(async (files: string[], options) => {
       const spinner = options.quiet ? null : ora('Parsing files...').start();
@@ -184,11 +239,15 @@ function createDedupCommand(): Command {
     .description('Find and merge duplicate points')
     .argument('<files...>', 'Map files to deduplicate')
     .option('-o, --output <file>', 'Output file (defaults to stdout)')
-    .option('-f, --format <format>', 'Output format: json, geojson, csv, table', 'json')
+    .option('-f, --format <format>', 'Output format: json, geojson, kml, gpx, csv, table', 'json')
     .option('-g, --gps-threshold <meters>', 'GPS distance threshold', '50')
     .option('-n, --name-threshold <score>', 'Name similarity threshold (0-1)', '0.85')
     .option('--require-gps', 'Require GPS match for duplicates')
     .option('--no-smart-match', 'Disable word-overlap boost')
+    .option('--max-cluster-size <count>', 'Maximum points per cluster (prevents chain explosion)', '20')
+    .option('--max-diameter <meters>', 'Maximum cluster diameter in meters', '500')
+    .option('--min-confidence <score>', 'Minimum confidence to merge (0-100)', '60')
+    .option('--dry-run', 'Preview what would be merged without outputting deduplicated data')
     .option('-v, --verbose', 'Show detailed match information')
     .option('-q, --quiet', 'Suppress progress output')
     .action(async (files: string[], options) => {
@@ -211,6 +270,9 @@ function createDedupCommand(): Command {
           genericGpsThreshold: 25,
           requireGps: options.requireGps || false,
           useSmartMatch: options.smartMatch !== false,
+          maxClusterSize: parseInt(options.maxClusterSize, 10),
+          maxClusterDiameter: parseFloat(options.maxDiameter),
+          minConfidence: parseInt(options.minConfidence, 10),
         };
 
         const result = deduplicatePoints(merged.points, config);
@@ -222,7 +284,43 @@ function createDedupCommand(): Command {
           );
         }
 
-        if (options.verbose) {
+        // Dry-run mode: show what would be merged
+        if (options.dryRun) {
+          const multiGroups = result.groups.filter(g => g.members.length > 1);
+          console.log(`\n=== Dry Run Report ===\n`);
+          console.log(`Total points: ${result.originalCount}`);
+          console.log(`Would reduce to: ${result.dedupedCount}`);
+          console.log(`Duplicate groups found: ${multiGroups.length}`);
+          console.log(`Singletons (no duplicates): ${result.singletons.length}`);
+
+          if (multiGroups.length > 0) {
+            console.log(`\n=== Duplicate Groups (${multiGroups.length}) ===`);
+            for (const group of multiGroups) {
+              console.log(`\n  [${group.members.length} points, ${group.confidence}% confidence]`);
+              console.log(`    Primary: ${group.mergedName || '(unnamed)'}`);
+              if (group.akaNames.length > 0) {
+                console.log(`    AKA: ${group.akaNames.slice(0, 5).join(', ')}${group.akaNames.length > 5 ? ` (+${group.akaNames.length - 5} more)` : ''}`);
+              }
+              console.log(`    Centroid: ${group.centroid.lat.toFixed(6)}, ${group.centroid.lng.toFixed(6)}`);
+
+              // Show member details in verbose mode
+              if (options.verbose) {
+                console.log(`    Members:`);
+                for (const idx of group.members.slice(0, 10)) {
+                  const p = merged.points[idx];
+                  console.log(`      - "${p.name || '(unnamed)'}" @ ${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}`);
+                }
+                if (group.members.length > 10) {
+                  console.log(`      ... and ${group.members.length - 10} more`);
+                }
+              }
+            }
+          }
+          console.log('');
+          return; // Don't output data in dry-run mode
+        }
+
+        if (options.verbose && !options.dryRun) {
           console.log('\nDuplicate Groups:');
           for (const group of result.groups) {
             if (group.members.length > 1) {
@@ -431,7 +529,7 @@ function createMergeCommand(): Command {
     .description('Merge multiple map files into one (without deduplication)')
     .argument('<files...>', 'Map files to merge')
     .option('-o, --output <file>', 'Output file (required)')
-    .option('-f, --format <format>', 'Output format: json, geojson, csv', 'geojson')
+    .option('-f, --format <format>', 'Output format: json, geojson, kml, gpx, csv', 'geojson')
     .option('-q, --quiet', 'Suppress progress output')
     .action(async (files: string[], options) => {
       if (!options.output) {
@@ -474,6 +572,8 @@ function createMatchCommand(): Command {
     .argument('<target>', 'Target map file to match against reference')
     .option('-g, --gps-threshold <meters>', 'GPS distance threshold', '50')
     .option('-n, --name-threshold <score>', 'Name similarity threshold', '0.85')
+    .option('--require-both', 'Require both GPS and name match (stricter)')
+    .option('--min-confidence <score>', 'Minimum confidence to report (0-100)', '50')
     .option('-o, --output <file>', 'Output matched pairs to file')
     .option('-f, --format <format>', 'Output format: json, csv', 'json')
     .action(async (refFile: string, targetFile: string, options) => {
@@ -498,6 +598,8 @@ function createMatchCommand(): Command {
 
         const gpsThreshold = parseFloat(options.gpsThreshold);
         const nameThreshold = parseFloat(options.nameThreshold);
+        const minConfidence = parseInt(options.minConfidence, 10);
+        const requireBoth = options.requireBoth || false;
 
         interface MatchPair {
           targetIndex: number;
@@ -506,7 +608,10 @@ function createMatchCommand(): Command {
           refName: string;
           gpsDistance: number;
           nameSimilarity: number;
+          tokenSetRatio: number;
           matchType: string;
+          confidence: number;
+          blocked: boolean;
         }
 
         const matches: MatchPair[] = [];
@@ -520,32 +625,88 @@ function createMatchCommand(): Command {
           for (let ri = 0; ri < refResult.points.length; ri++) {
             const ref = refResult.points[ri];
             const gps = haversineDistance(target.lat, target.lng, ref.lat, ref.lng);
-            const nameSim = normalizedSimilarity(target.name || '', ref.name || '');
+            const targetName = target.name || '';
+            const refName = ref.name || '';
+
+            // Use same matching logic as dedup
+            const nameSim = normalizedSimilarity(targetName, refName);
+            const tsr = tokenSetRatio(targetName, refName);
+            const combinedNameScore = Math.max(nameSim, tsr);
+
+            // Check for blocking conflicts (North/South, East/West, etc.)
+            const blocking = checkBlockingConflict(targetName, refName);
+
+            // Check if names are generic
+            const targetGeneric = isGenericName(targetName);
+            const refGeneric = isGenericName(refName);
+            const bothGeneric = targetGeneric && refGeneric;
+
+            const gpsMatch = gps <= gpsThreshold;
+            const nameMatch = combinedNameScore >= nameThreshold;
 
             let score = 0;
             let matchType = 'none';
+            let confidence = 0;
 
-            if (gps <= gpsThreshold && nameSim >= nameThreshold) {
-              score = nameSim * 50 + (1 - gps / gpsThreshold) * 50;
-              matchType = 'both';
-            } else if (gps <= gpsThreshold) {
-              score = (1 - gps / gpsThreshold) * 40;
-              matchType = 'gps';
-            } else if (nameSim >= nameThreshold) {
-              score = nameSim * 40;
-              matchType = 'name';
+            // Skip if blocking conflict
+            if (blocking.hasConflict) {
+              continue;
+            }
+
+            // Require both mode
+            if (requireBoth) {
+              if (gpsMatch && nameMatch) {
+                score = combinedNameScore * 50 + (1 - gps / gpsThreshold) * 50;
+                matchType = 'both';
+                confidence = 95;
+              }
+            } else {
+              // Standard matching with confidence scoring
+              if (gpsMatch && nameMatch) {
+                score = combinedNameScore * 50 + (1 - gps / gpsThreshold) * 50;
+                matchType = 'both';
+                confidence = 95;
+              } else if (gpsMatch && combinedNameScore >= 0.70) {
+                // GPS match with moderate name similarity
+                score = combinedNameScore * 40 + (1 - gps / gpsThreshold) * 30;
+                matchType = 'both';
+                confidence = 75;
+              } else if (gpsMatch && bothGeneric && gps <= 25) {
+                // Both generic names, very close GPS
+                score = (1 - gps / 25) * 30;
+                matchType = 'gps';
+                confidence = 60;
+              } else if (nameMatch && combinedNameScore >= 0.95) {
+                // Very strong name match without GPS
+                score = combinedNameScore * 45;
+                matchType = 'name';
+                confidence = 80;
+              } else if (nameMatch && !targetGeneric && !refGeneric) {
+                // Good name match, not generic names
+                score = combinedNameScore * 35;
+                matchType = 'name';
+                confidence = 65;
+              }
+            }
+
+            // Apply minimum confidence filter
+            if (confidence < minConfidence) {
+              continue;
             }
 
             if (score > bestScore) {
               bestScore = score;
               bestMatch = {
                 targetIndex: ti,
-                targetName: target.name || '',
+                targetName,
                 refIndex: ri,
-                refName: ref.name || '',
+                refName,
                 gpsDistance: Math.round(gps * 10) / 10,
                 nameSimilarity: Math.round(nameSim * 100) / 100,
+                tokenSetRatio: Math.round(tsr * 100) / 100,
                 matchType,
+                confidence,
+                blocked: false,
               };
             }
           }

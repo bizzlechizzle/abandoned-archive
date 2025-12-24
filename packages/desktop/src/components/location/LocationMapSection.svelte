@@ -7,7 +7,7 @@
   import Map from '../Map.svelte';
   import LocationEditModal from './LocationEditModal.svelte';
   import SubLocationGpsModal from './SubLocationGpsModal.svelte';
-  import type { Location, LocationInput } from '@abandoned-archive/core';
+  import type { Location, LocationInput } from '@aa/core';
   import { GPS_ZOOM_LEVELS, GPS_GEOCODE_TIER_ZOOM } from '../../lib/constants';
   import { getDisplayCity } from '../../lib/display-helpers';
   import type { RegionSaveData } from './LocationEditModal.svelte';

@@ -8,7 +8,7 @@ import { Kysely } from 'kysely';
 import { SqliteTimelineRepository } from '../../repositories/sqlite-timeline-repository';
 import { TimelineService } from '../../services/timeline-service';
 import type { Database } from '../database.types';
-import type { TimelineEventInput } from '@abandoned-archive/core';
+import type { TimelineEventInput } from '@aa/core';
 
 let timelineService: TimelineService | null = null;
 let timelineRepository: SqliteTimelineRepository | null = null;

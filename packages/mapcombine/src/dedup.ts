@@ -40,6 +40,15 @@ export interface DedupConfig {
 
   /** Whether to use smart matching with word-overlap boost */
   useSmartMatch: boolean;
+
+  /** Maximum cluster size before splitting (prevents runaway chains) */
+  maxClusterSize: number;
+
+  /** Maximum diameter of a cluster in meters (prevents geographically dispersed clusters) */
+  maxClusterDiameter: number;
+
+  /** Minimum confidence to merge (0-100) */
+  minConfidence: number;
 }
 
 export const DEFAULT_DEDUP_CONFIG: DedupConfig = {
@@ -48,6 +57,9 @@ export const DEFAULT_DEDUP_CONFIG: DedupConfig = {
   genericGpsThreshold: 25,
   requireGps: false,
   useSmartMatch: true,
+  maxClusterSize: 20,
+  maxClusterDiameter: 500,
+  minConfidence: 60,
 };
 
 // ============================================================================
@@ -245,7 +257,27 @@ export interface DuplicateGroup {
 }
 
 /**
- * Find duplicate groups using Union-Find clustering
+ * Calculate maximum distance between any two points in a set
+ */
+function calculateClusterDiameter(points: ParsedMapPoint[], indices: number[]): number {
+  if (indices.length <= 1) return 0;
+
+  let maxDistance = 0;
+  for (let i = 0; i < indices.length; i++) {
+    for (let j = i + 1; j < indices.length; j++) {
+      const p1 = points[indices[i]];
+      const p2 = points[indices[j]];
+      const dist = haversineDistance(p1.lat, p1.lng, p2.lat, p2.lng);
+      if (dist > maxDistance) {
+        maxDistance = dist;
+      }
+    }
+  }
+  return maxDistance;
+}
+
+/**
+ * Find duplicate groups using Union-Find clustering with safeguards
  */
 export function findDuplicateGroups(
   points: ParsedMapPoint[],
@@ -267,18 +299,66 @@ export function findDuplicateGroups(
   const uf = new UnionFind(n);
   const matches: MatchResult[] = [];
 
-  // O(n²) comparison - consider spatial indexing for large datasets
+  // Track cluster membership for safeguard checks
+  const clusterMembers = new Map<number, Set<number>>();
+  for (let i = 0; i < n; i++) {
+    clusterMembers.set(i, new Set([i]));
+  }
+
+  // Collect all potential matches first, sorted by confidence (highest first)
+  const potentialMatches: MatchResult[] = [];
+
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
       const result = checkDuplicate(points[i], points[j], config);
       result.index1 = i;
       result.index2 = j;
 
-      if (result.matchType !== 'none' && result.confidence >= 60) {
-        uf.union(i, j);
-        matches.push(result);
+      if (result.matchType !== 'none' && result.confidence >= config.minConfidence) {
+        potentialMatches.push(result);
       }
     }
+  }
+
+  // Sort by confidence descending - merge highest confidence pairs first
+  potentialMatches.sort((a, b) => b.confidence - a.confidence);
+
+  // Process matches with safeguards
+  for (const match of potentialMatches) {
+    const root1 = uf.find(match.index1);
+    const root2 = uf.find(match.index2);
+
+    // Skip if already in same cluster
+    if (root1 === root2) continue;
+
+    const cluster1 = clusterMembers.get(root1)!;
+    const cluster2 = clusterMembers.get(root2)!;
+
+    // Safeguard 1: Check combined size
+    const combinedSize = cluster1.size + cluster2.size;
+    if (combinedSize > config.maxClusterSize) {
+      continue; // Skip this merge - would exceed max size
+    }
+
+    // Safeguard 2: Check combined diameter
+    const combinedIndices = [...cluster1, ...cluster2];
+    const diameter = calculateClusterDiameter(points, combinedIndices);
+    if (diameter > config.maxClusterDiameter) {
+      continue; // Skip this merge - would exceed max diameter
+    }
+
+    // Safe to merge
+    uf.union(match.index1, match.index2);
+    matches.push(match);
+
+    // Update cluster membership tracking
+    const newRoot = uf.find(match.index1);
+    const mergedCluster = new Set([...cluster1, ...cluster2]);
+    clusterMembers.set(newRoot, mergedCluster);
+
+    // Clean up old roots if they changed
+    if (newRoot !== root1) clusterMembers.delete(root1);
+    if (newRoot !== root2) clusterMembers.delete(root2);
   }
 
   // Build groups from clusters

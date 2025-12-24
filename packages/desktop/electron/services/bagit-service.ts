@@ -18,7 +18,7 @@ import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { LocationEntity } from '@abandoned-archive/core';
+import { LocationEntity } from '@aa/core';
 
 // App version for Bag-Software-Agent field
 const APP_VERSION = '0.1.0';

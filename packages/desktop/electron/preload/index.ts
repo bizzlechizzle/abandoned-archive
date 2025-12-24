@@ -4,7 +4,7 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // Types are import-only, they get stripped at compile time
-import type { Location, LocationInput, LocationFilters } from '@abandoned-archive/core';
+import type { Location, LocationInput, LocationFilters } from '@aa/core';
 
 const api = {
   versions: {

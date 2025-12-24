@@ -5,7 +5,7 @@
    * Visual hierarchy: Major (user visits, established) → Minor (other visits, web pages) → Technical (db entry)
    * Per PLAN: Braun white card styling, view-only mode (no editing)
    */
-  import type { TimelineEvent, TimelineEventWithSource } from '@abandoned-archive/core';
+  import type { TimelineEvent, TimelineEventWithSource } from '@aa/core';
   import { onMount } from 'svelte';
 
   interface Props {

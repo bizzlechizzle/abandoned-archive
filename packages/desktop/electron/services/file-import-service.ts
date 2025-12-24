@@ -16,7 +16,7 @@ import { MediaPathService } from './media-path-service';
 import { calculateRegionFields } from './region-service';
 // Centralized enrichment service - THE canonical way to enrich locations from GPS
 import { LocationEnrichmentService } from './location-enrichment-service';
-import { LocationEntity } from '@abandoned-archive/core';
+import { LocationEntity } from '@aa/core';
 import { ThumbnailService } from './thumbnail-service';
 import { PreviewExtractorService } from './preview-extractor-service';
 import { PosterFrameService } from './poster-frame-service';

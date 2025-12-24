@@ -17,7 +17,7 @@ import type {
   DateEngineStats,
   ExtractionResult,
   ExtractionSourceType,
-} from '@abandoned-archive/core';
+} from '@aa/core';
 
 /**
  * Repository for managing date extractions

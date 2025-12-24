@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { router } from '../stores/router';
   import { createVirtualizer } from '@tanstack/svelte-virtual';
-  import type { Location } from '@abandoned-archive/core';
+  import type { Location } from '@aa/core';
   import SkeletonLoader from '../components/SkeletonLoader.svelte';
 
   // OPT-036: Locations now loaded with database-side filtering

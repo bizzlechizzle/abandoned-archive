@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import type { Map as LeafletMap, TileLayer, LayerGroup, DivIcon } from 'leaflet';
-  import type { Location } from '@abandoned-archive/core';
+  import type { Location } from '@aa/core';
   import Supercluster from 'supercluster';
   import { MAP_CONFIG, TILE_LAYERS, THEME, GPS_CONFIG } from '@/lib/constants';
 

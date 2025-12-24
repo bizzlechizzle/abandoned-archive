@@ -13,7 +13,7 @@
    *   - bookmark browser by state/type/location
    */
   import { onMount, onDestroy } from 'svelte';
-  import type { Location } from '@abandoned-archive/core';
+  import type { Location } from '@aa/core';
   import { openImportModal } from '../stores/import-modal-store';
 
   interface Bookmark {

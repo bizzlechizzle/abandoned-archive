@@ -22,6 +22,8 @@ import { getPreprocessingService } from '../services/extraction/preprocessing-se
 import { SQLiteWebSourcesRepository } from '../repositories/sqlite-websources-repository';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
 import { SQLiteSubLocationRepository } from '../repositories/sqlite-sublocation-repository';
+// CLI-first architecture: Bridge to @aa/services
+import { initCliBridge } from '../services/cli-bridge';
 
 /**
  * OPT-045: GPU mitigation flags for macOS Leaflet/map rendering
@@ -250,8 +252,13 @@ async function startupOrchestrator(): Promise<void> {
 
     // Step 2: Initialize database
     logger.info('Main', 'Step 2/5: Initializing database');
-    getDatabase();
+    const db = getDatabase();
     logger.info('Main', 'Database initialized successfully');
+
+    // Step 2b: Initialize CLI bridge for @aa/services integration
+    logger.info('Main', 'Step 2b: Initializing CLI bridge');
+    initCliBridge(db);
+    logger.info('Main', 'CLI bridge initialized successfully');
 
     // Step 3: Initialize health monitoring
     logger.info('Main', 'Step 3/5: Initializing health monitoring');

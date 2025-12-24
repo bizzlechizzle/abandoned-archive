@@ -1,8 +1,9 @@
 # MapCombine Development Guide
 
-> **Version**: 1.0
+> **Version**: 2.0
 > **Created**: 2025-12-24
 > **Package**: `packages/mapcombine`
+> **Tests**: 180 passing
 
 This guide provides architecture details and development patterns for the mapcombine CLI tool.
 
@@ -36,9 +37,9 @@ This guide provides architecture details and development patterns for the mapcom
 
 ## Module Responsibilities
 
-### `geo-utils.ts` (~120 lines)
+### `geo-utils.ts` (~250 lines)
 
-**Purpose**: GPS coordinate calculations
+**Purpose**: GPS coordinate calculations and US state detection
 
 **Key Functions**:
 - `haversineDistance()` - Great-circle distance in meters
@@ -46,8 +47,11 @@ This guide provides architecture details and development patterns for the mapcom
 - `getBoundingBox()` - Pre-filter for SQL queries
 - `calculateCentroid()` - Average of coordinate array
 - `isValidCoordinate()` - Validate lat/lng bounds
+- `getUSStateFromCoords()` - Auto-detect US state from GPS (50 states + DC)
 
 **Dependencies**: None (pure functions)
+
+**US State Detection**: Uses bounding boxes for all 50 states. Parser calls this automatically to populate state field when parsing map files.
 
 ### `jaro-winkler.ts` (~650 lines)
 
@@ -135,9 +139,9 @@ interface ParsedMapPoint {
 }
 ```
 
-### `dedup.ts` (~350 lines)
+### `dedup.ts` (~450 lines)
 
-**Purpose**: Duplicate detection and clustering
+**Purpose**: Duplicate detection and clustering with safeguards
 
 **Union-Find Data Structure**:
 ```typescript
@@ -148,6 +152,11 @@ class UnionFind {
 }
 ```
 
+**Cluster Safeguards** (prevents over-clustering):
+- `maxClusterSize` (default: 20) - Max points per cluster
+- `maxClusterDiameter` (default: 500m) - Max geographic spread
+- `minConfidence` (default: 60) - Min match confidence
+
 **Deduplication Algorithm**:
 1. O(n²) pairwise comparison (optimize later with spatial index)
 2. For each pair, check:
@@ -155,7 +164,8 @@ class UnionFind {
    - Name similarity (normalized + token set ratio)
    - Blocking word conflicts
    - Generic name handling
-3. Union matching pairs
+   - **Safeguards**: cluster size, diameter, confidence
+3. Union matching pairs (only if safeguards pass)
 4. Extract clusters as duplicate groups
 
 **Output**:
@@ -375,6 +385,15 @@ ipcMain.handle('ref-map:import', async (_, filePath) => {
 ---
 
 ## Changelog
+
+### v0.2.0 (2025-12-24)
+
+- Added cluster safeguards (maxClusterSize, maxClusterDiameter, minConfidence)
+- Added US state detection from GPS coordinates (50 states + DC)
+- Added KML and GPX export formats
+- Added `--dry-run` mode for preview
+- Added parser tests (37 tests) and CLI tests (27 tests)
+- Total: 180 tests passing
 
 ### v0.1.0 (2025-12-24)
 

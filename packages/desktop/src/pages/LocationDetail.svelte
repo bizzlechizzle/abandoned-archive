@@ -24,7 +24,7 @@
   } from '../components/location';
   import WebSourceDetailModal from '../components/location/WebSourceDetailModal.svelte';
   import DateExtractionReview from '../components/location/DateExtractionReview.svelte';
-  import type { Location, LocationInput } from '@abandoned-archive/core';
+  import type { Location, LocationInput } from '@aa/core';
   import { ACCESS_OPTIONS } from '../constants/location-enums';
 
   interface Props {

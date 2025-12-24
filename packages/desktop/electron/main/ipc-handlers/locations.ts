@@ -16,8 +16,8 @@ import { SQLiteLocationRepository } from '../../repositories/sqlite-location-rep
 import { SQLiteLocationAuthorsRepository } from '../../repositories/sqlite-location-authors-repository';
 import { SQLiteLocationViewsRepository } from '../../repositories/sqlite-location-views-repository';
 import { SQLiteLocationExclusionsRepository } from '../../repositories/sqlite-location-exclusions-repository';
-import { LocationInputSchema } from '@abandoned-archive/core';
-import type { LocationFilters } from '@abandoned-archive/core';
+import { LocationInputSchema } from '@aa/core';
+import type { LocationFilters } from '@aa/core';
 import { AddressService, type NormalizedAddress } from '../../services/address-service';
 import { LocationDuplicateService } from '../../services/location-duplicate-service';
 // OPT-031: Use shared user service

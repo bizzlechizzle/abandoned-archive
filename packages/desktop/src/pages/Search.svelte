@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { router } from '../stores/router';
-  import type { Location, LocationFilters } from '@abandoned-archive/core';
+  import type { Location, LocationFilters } from '@aa/core';
 
   let searchResults = $state<Location[]>([]);
   let searching = $state(false);
