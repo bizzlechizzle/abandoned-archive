@@ -20,11 +20,18 @@
  */
 
 import { spawn, execSync } from 'child_process';
+import path from 'path';
+import os from 'os';
+import fs from 'fs';
 import type { Kysely } from 'kysely';
 import type { Database } from '../main/database.types';
 import { getLogger } from './logger-service';
 
 const logger = getLogger();
+
+// Tools directory where pipeline tools are installed
+const TOOLS_DIR = path.join(os.homedir(), '.abandoned-archive', 'tools');
+const VISUAL_BUFFET_VENV = path.join(TOOLS_DIR, 'visual-buffet', '.venv');
 
 export interface TagResult {
   label: string;
@@ -89,13 +96,44 @@ export interface VisualBuffetInput {
   enableOcr?: boolean;
 }
 
-// Common Python paths to check
-const PYTHON_PATHS = [
-  '/opt/homebrew/bin/python3',
-  '/usr/local/bin/python3',
-  '/usr/bin/python3',
-  'python3',
-];
+/**
+ * Get visual-buffet CLI executable paths to check, prioritizing the tools venv.
+ * Visual-buffet is installed as a CLI entry point, not a module.
+ */
+function getVisualBuffetCLIPaths(): string[] {
+  const paths: string[] = [];
+
+  // First, check tools venv (where pipeline-tools-updater installs visual-buffet)
+  const venvCLI =
+    process.platform === 'win32'
+      ? path.join(VISUAL_BUFFET_VENV, 'Scripts', 'visual-buffet.exe')
+      : path.join(VISUAL_BUFFET_VENV, 'bin', 'visual-buffet');
+
+  if (fs.existsSync(venvCLI)) {
+    paths.push(venvCLI);
+  }
+
+  // Check pipx installation (common alternative)
+  const pipxCLI = path.join(os.homedir(), '.local', 'bin', 'visual-buffet');
+  if (fs.existsSync(pipxCLI)) {
+    paths.push(pipxCLI);
+  }
+
+  // Check user-local Python 3.11 bin directory
+  const userLocalCLI = path.join(os.homedir(), 'Library', 'Python', '3.11', 'bin', 'visual-buffet');
+  if (process.platform === 'darwin' && fs.existsSync(userLocalCLI)) {
+    paths.push(userLocalCLI);
+  }
+
+  // Common system paths
+  paths.push(
+    '/opt/homebrew/bin/visual-buffet',
+    '/usr/local/bin/visual-buffet',
+    'visual-buffet' // Check PATH
+  );
+
+  return paths;
+}
 
 /**
  * Visual-Buffet Service for ML-based image tagging
@@ -107,7 +145,8 @@ const PYTHON_PATHS = [
  * - PaddleOCR (text extraction when enabled)
  */
 export class VisualBuffetService {
-  private pythonPath: string | null = null;
+  /** Path to the visual-buffet CLI executable */
+  private cliPath: string | null = null;
   private initialized = false;
   private available = false;
   private version: string | null = null;
@@ -115,47 +154,53 @@ export class VisualBuffetService {
   constructor(private readonly db: Kysely<Database>) {}
 
   /**
-   * Initialize service - detect Python and visual-buffet availability
+   * Initialize service - detect visual-buffet CLI availability
+   *
+   * Search order:
+   * 1. Tools directory venv (pipeline-tools-updater installs here)
+   * 2. pipx installation
+   * 3. User-local Python 3.11 bin
+   * 4. System paths
    */
   async initialize(): Promise<boolean> {
     if (this.initialized) {
       return this.available;
     }
 
-    // Find Python
-    for (const pythonPath of PYTHON_PATHS) {
+    const cliPaths = getVisualBuffetCLIPaths();
+    logger.info('VisualBuffet', 'Searching for visual-buffet CLI', {
+      searchPaths: cliPaths.slice(0, 3), // Log first 3 for debugging
+    });
+
+    // Find a working visual-buffet CLI
+    for (const cliPath of cliPaths) {
       try {
-        execSync(`${pythonPath} --version`, { encoding: 'utf-8', stdio: 'pipe' });
-        this.pythonPath = pythonPath;
-        break;
+        const versionOutput = execSync(`"${cliPath}" --version`, {
+          encoding: 'utf-8',
+          stdio: 'pipe',
+          timeout: 10000,
+        });
+        this.version = versionOutput.trim();
+        this.cliPath = cliPath;
+        this.available = true;
+        logger.info('VisualBuffet', `Found visual-buffet ${this.version}`, {
+          cliPath: this.cliPath,
+        });
+        this.initialized = true;
+        return true;
       } catch {
-        // Try next path
+        // CLI not found at this path, try next
       }
     }
 
-    if (!this.pythonPath) {
-      logger.warn('VisualBuffet', 'Python not found - ML tagging disabled');
-      this.initialized = true;
-      this.available = false;
-      return false;
-    }
-
-    // Check if visual-buffet is installed
-    try {
-      const versionOutput = execSync(`${this.pythonPath} -m visual_buffet --version`, {
-        encoding: 'utf-8',
-        stdio: 'pipe',
-      });
-      this.version = versionOutput.trim();
-      this.available = true;
-      logger.info('VisualBuffet', `Found visual-buffet ${this.version} with Python at: ${this.pythonPath}`);
-    } catch {
-      logger.warn('VisualBuffet', 'visual-buffet not installed - ML tagging disabled. Install with: pip install visual-buffet');
-      this.available = false;
-    }
-
+    // No visual-buffet CLI found
+    logger.warn('VisualBuffet', 'visual-buffet CLI not found - ML tagging disabled', {
+      searchedPaths: cliPaths.length,
+      installHint: 'Run the app once to auto-install via pipeline-tools-updater, or: pip install visual-buffet',
+    });
+    this.available = false;
     this.initialized = true;
-    return this.available;
+    return false;
   }
 
   /**
@@ -183,7 +228,7 @@ export class VisualBuffetService {
       await this.initialize();
     }
 
-    if (!this.available || !this.pythonPath) {
+    if (!this.available || !this.cliPath) {
       return {
         success: false,
         error: 'visual-buffet not available',
@@ -258,7 +303,6 @@ export class VisualBuffetService {
     return new Promise((resolve) => {
       // Full model stack: RAM++, Florence-2, SigLIP with discovery mode
       const args = [
-        '-m', 'visual_buffet',
         'tag',
         input.imagePath,
         '--plugin', 'ram_plus',
@@ -269,7 +313,7 @@ export class VisualBuffetService {
         '-o', '-',              // Output to stdout as JSON
       ];
 
-      const proc = spawn(this.pythonPath!, args, {
+      const proc = spawn(this.cliPath!, args, {
         timeout: 180000,  // 3 minute timeout for full model stack
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -350,14 +394,13 @@ export class VisualBuffetService {
   private async runOcr(imagePath: string): Promise<VisualBuffetResult['ocr'] | undefined> {
     return new Promise((resolve) => {
       const args = [
-        '-m', 'visual_buffet',
         'tag',
         imagePath,
         '--plugin', 'paddle_ocr',
         '-o', '-',
       ];
 
-      const proc = spawn(this.pythonPath!, args, {
+      const proc = spawn(this.cliPath!, args, {
         timeout: 60000,  // 1 minute for OCR
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -420,7 +463,7 @@ export class VisualBuffetService {
     imagePath: string,
     ocrResult: NonNullable<VisualBuffetResult['ocr']>
   ): Promise<VisualBuffetResult['ocr'] | undefined> {
-    if (!this.available || !this.pythonPath) {
+    if (!this.available || !this.cliPath) {
       return ocrResult;
     }
 
@@ -439,7 +482,6 @@ export class VisualBuffetService {
 
       // Use SigLIP to verify detected text is actually in the image
       const args = [
-        '-m', 'visual_buffet',
         'tag',
         imagePath,
         '--plugin', 'siglip',
@@ -448,7 +490,7 @@ export class VisualBuffetService {
         '-o', '-',
       ];
 
-      const proc = spawn(this.pythonPath!, args, {
+      const proc = spawn(this.cliPath!, args, {
         timeout: 30000,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -747,14 +789,13 @@ export class VisualBuffetService {
    * then SigLIP verifies the results. This method is kept for utility purposes.
    */
   async detectTextPresence(imagePath: string): Promise<boolean> {
-    if (!this.available || !this.pythonPath) {
+    if (!this.available || !this.cliPath) {
       return false;
     }
 
     return new Promise((resolve) => {
       // Use SigLIP with text-detection prompts
       const args = [
-        '-m', 'visual_buffet',
         'tag',
         imagePath,
         '--plugin', 'siglip',
@@ -763,7 +804,7 @@ export class VisualBuffetService {
         '-o', '-',
       ];
 
-      const proc = spawn(this.pythonPath!, args, {
+      const proc = spawn(this.cliPath!, args, {
         timeout: 30000,
         stdio: ['ignore', 'pipe', 'pipe'],
       });

@@ -27,7 +27,8 @@ export interface ToolDefinition {
   name: string;
   repo: string;
   type: 'python' | 'node';
-  installCommand?: string; // Custom install command
+  extras?: string; // Python extras (e.g., "all_models" for .[all_models])
+  requiresPython311?: boolean; // Requires Python 3.11 specifically
 }
 
 const PIPELINE_TOOLS: ToolDefinition[] = [
@@ -35,6 +36,8 @@ const PIPELINE_TOOLS: ToolDefinition[] = [
     name: 'visual-buffet',
     repo: 'https://github.com/bizzlechizzle/visual-buffet.git',
     type: 'python',
+    extras: 'all_models', // Install with .[all_models] for all plugins
+    requiresPython311: true, // PaddlePaddle requires Python 3.11
   },
   {
     name: 'shoemaker',
@@ -71,8 +74,17 @@ const PIPELINE_TOOLS: ToolDefinition[] = [
 // Default install location: ~/.abandoned-archive/tools/
 const DEFAULT_TOOLS_DIR = path.join(os.homedir(), '.abandoned-archive', 'tools');
 
-// Common paths
-const PYTHON_PATHS = [
+// Python 3.11 is required for visual-buffet (PaddlePaddle compatibility)
+// Prioritize Python 3.11 paths first
+const PYTHON_311_PATHS = [
+  '/opt/homebrew/bin/python3.11',
+  '/usr/local/bin/python3.11',
+  '/usr/bin/python3.11',
+  'python3.11',
+];
+
+// Fallback to generic Python 3 for other tools
+const PYTHON_FALLBACK_PATHS = [
   '/opt/homebrew/bin/python3',
   '/usr/local/bin/python3',
   '/usr/bin/python3',
@@ -216,31 +228,77 @@ async function pullRepo(repoDir: string): Promise<{ success: boolean; updated: b
 }
 
 /**
- * Install Python package with pip or uv
+ * Install Python package using venv to avoid PEP 668 restrictions
+ *
+ * Creates a venv in the tool directory and installs the package there.
+ * This is the safest approach for macOS and modern Linux systems.
  */
 async function installPythonPackage(
+  tool: ToolDefinition,
   repoDir: string,
   pythonPath: string,
   uvPath: string | null
 ): Promise<{ success: boolean; error?: string }> {
+  const venvDir = path.join(repoDir, '.venv');
+  const venvPython =
+    process.platform === 'win32' ? path.join(venvDir, 'Scripts', 'python.exe') : path.join(venvDir, 'bin', 'python');
+  const venvPip =
+    process.platform === 'win32' ? path.join(venvDir, 'Scripts', 'pip.exe') : path.join(venvDir, 'bin', 'pip');
+
+  // Step 1: Create venv if it doesn't exist
+  if (!fs.existsSync(venvPython)) {
+    logger.info('PipelineToolsUpdater', `Creating venv for ${tool.name}`);
+    try {
+      execSync(`${pythonPath} -m venv "${venvDir}"`, {
+        encoding: 'utf-8',
+        stdio: 'pipe',
+        timeout: 60000,
+      });
+    } catch (err) {
+      return { success: false, error: `Failed to create venv: ${(err as Error).message}` };
+    }
+  }
+
+  // Step 2: Install package in venv
   return new Promise((resolve) => {
+    // Build install target with extras if specified
+    let installTarget = repoDir;
+    if (tool.extras) {
+      installTarget = `${repoDir}[${tool.extras}]`;
+    }
+
     let command: string;
     let args: string[];
 
     if (uvPath) {
+      // uv respects venv by setting VIRTUAL_ENV
       command = uvPath;
-      args = ['pip', 'install', '--upgrade', '-e', repoDir];
+      args = ['pip', 'install', '--upgrade', '-e', installTarget];
     } else {
-      command = pythonPath;
-      args = ['-m', 'pip', 'install', '--upgrade', '-e', repoDir];
+      // Use venv pip directly
+      command = venvPip;
+      args = ['install', '--upgrade', '-e', installTarget];
     }
 
+    const env = { ...process.env, VIRTUAL_ENV: venvDir };
+
+    logger.info('PipelineToolsUpdater', `Installing ${tool.name}`, {
+      installTarget,
+      command,
+    });
+
     const proc = spawn(command, args, {
-      timeout: 300000, // 5 minutes
+      timeout: 600000, // 10 minutes for large packages like PaddlePaddle
       stdio: ['ignore', 'pipe', 'pipe'],
+      env,
     });
 
     let stderr = '';
+    let stdout = '';
+
+    proc.stdout.on('data', (data: Buffer) => {
+      stdout += data.toString();
+    });
 
     proc.stderr.on('data', (data: Buffer) => {
       stderr += data.toString();
@@ -250,6 +308,11 @@ async function installPythonPackage(
       if (code === 0) {
         resolve({ success: true });
       } else {
+        // Log more context on failure
+        logger.warn('PipelineToolsUpdater', `pip install failed for ${tool.name}`, {
+          code,
+          stderr: stderr.slice(0, 1000),
+        });
         resolve({ success: false, error: `pip install failed: ${stderr.slice(0, 500)}` });
       }
     });
@@ -319,7 +382,8 @@ async function installNodePackage(
 async function updateTool(
   tool: ToolDefinition,
   toolsDir: string,
-  pythonPath: string | null,
+  python311Path: string | null,
+  pythonFallbackPath: string | null,
   uvPath: string | null,
   pnpmPath: string | null,
   npmPath: string | null
@@ -329,15 +393,32 @@ async function updateTool(
 
   logger.info('PipelineToolsUpdater', `Updating ${tool.name}`, { type: tool.type });
 
-  // Check prerequisites based on type
-  if (tool.type === 'python' && !pythonPath) {
-    return {
-      name: tool.name,
-      success: false,
-      action: 'skipped',
-      error: 'Python not available',
-      durationMs: Date.now() - startTime,
-    };
+  // Determine which Python to use for this tool
+  let pythonPath: string | null = null;
+  if (tool.type === 'python') {
+    if (tool.requiresPython311) {
+      pythonPath = python311Path;
+      if (!pythonPath) {
+        return {
+          name: tool.name,
+          success: false,
+          action: 'skipped',
+          error: 'Python 3.11 required but not available',
+          durationMs: Date.now() - startTime,
+        };
+      }
+    } else {
+      pythonPath = python311Path || pythonFallbackPath;
+      if (!pythonPath) {
+        return {
+          name: tool.name,
+          success: false,
+          action: 'skipped',
+          error: 'Python not available',
+          durationMs: Date.now() - startTime,
+        };
+      }
+    }
   }
 
   if (tool.type === 'node' && !pnpmPath && !npmPath) {
@@ -396,7 +477,7 @@ async function updateTool(
   let installResult: { success: boolean; error?: string };
 
   if (tool.type === 'python') {
-    installResult = await installPythonPackage(toolDir, pythonPath!, uvPath);
+    installResult = await installPythonPackage(tool, toolDir, pythonPath!, uvPath);
   } else {
     installResult = await installNodePackage(toolDir, pnpmPath, npmPath);
   }
@@ -452,13 +533,16 @@ export async function updateAllPipelineTools(customToolsDir?: string): Promise<A
   }
 
   // Find executables
-  const pythonPath = findExecutable(PYTHON_PATHS);
+  // Python 3.11 is preferred (required for PaddlePaddle in visual-buffet)
+  const python311Path = findExecutable(PYTHON_311_PATHS);
+  const pythonFallbackPath = findExecutable(PYTHON_FALLBACK_PATHS);
   const uvPath = findExecutable(UV_PATHS);
   const pnpmPath = findExecutable(PNPM_PATHS);
   const npmPath = findExecutable(NPM_PATHS);
 
   logger.info('PipelineToolsUpdater', 'Found executables', {
-    python: pythonPath || 'not found',
+    python311: python311Path || 'not found',
+    pythonFallback: pythonFallbackPath || 'not found',
     uv: uvPath || 'not found',
     pnpm: pnpmPath || 'not found',
     npm: npmPath || 'not found',
@@ -467,7 +551,7 @@ export async function updateAllPipelineTools(customToolsDir?: string): Promise<A
   // Update all tools in parallel
   const results = await Promise.all(
     PIPELINE_TOOLS.map((tool) =>
-      updateTool(tool, toolsDir, pythonPath, uvPath, pnpmPath, npmPath)
+      updateTool(tool, toolsDir, python311Path, pythonFallbackPath, uvPath, pnpmPath, npmPath)
     )
   );
 
@@ -519,12 +603,13 @@ export async function updatePipelineTool(
     };
   }
 
-  const pythonPath = findExecutable(PYTHON_PATHS);
+  const python311Path = findExecutable(PYTHON_311_PATHS);
+  const pythonFallbackPath = findExecutable(PYTHON_FALLBACK_PATHS);
   const uvPath = findExecutable(UV_PATHS);
   const pnpmPath = findExecutable(PNPM_PATHS);
   const npmPath = findExecutable(NPM_PATHS);
 
-  return updateTool(tool, toolsDir, pythonPath, uvPath, pnpmPath, npmPath);
+  return updateTool(tool, toolsDir, python311Path, pythonFallbackPath, uvPath, pnpmPath, npmPath);
 }
 
 /**
@@ -548,4 +633,47 @@ export function isToolInstalled(toolName: string, customToolsDir?: string): bool
   const toolsDir = customToolsDir || DEFAULT_TOOLS_DIR;
   const toolDir = path.join(toolsDir, toolName);
   return fs.existsSync(path.join(toolDir, '.git'));
+}
+
+/**
+ * Get the path to a Python tool's executable in its venv
+ *
+ * Returns the path to the tool's CLI command if it exists in the venv,
+ * or null if not found.
+ */
+export function getToolExecutable(toolName: string, customToolsDir?: string): string | null {
+  const toolsDir = customToolsDir || DEFAULT_TOOLS_DIR;
+  const toolDir = path.join(toolsDir, toolName);
+  const venvBin = process.platform === 'win32' ? path.join(toolDir, '.venv', 'Scripts') : path.join(toolDir, '.venv', 'bin');
+
+  // Check for tool-specific executable (same name as tool)
+  const toolExe = process.platform === 'win32' ? path.join(venvBin, `${toolName}.exe`) : path.join(venvBin, toolName);
+
+  if (fs.existsSync(toolExe)) {
+    return toolExe;
+  }
+
+  // Check for Python in venv (can be used with -m)
+  const pythonExe = process.platform === 'win32' ? path.join(venvBin, 'python.exe') : path.join(venvBin, 'python');
+
+  if (fs.existsSync(pythonExe)) {
+    return pythonExe;
+  }
+
+  return null;
+}
+
+/**
+ * Get the venv bin directory for a tool
+ */
+export function getToolVenvBin(toolName: string, customToolsDir?: string): string | null {
+  const toolsDir = customToolsDir || DEFAULT_TOOLS_DIR;
+  const toolDir = path.join(toolsDir, toolName);
+  const venvBin = process.platform === 'win32' ? path.join(toolDir, '.venv', 'Scripts') : path.join(toolDir, '.venv', 'bin');
+
+  if (fs.existsSync(venvBin)) {
+    return venvBin;
+  }
+
+  return null;
 }
