@@ -2,11 +2,17 @@
  * Visual-Buffet Service - Python CLI Wrapper
  *
  * Spawns visual-buffet Python CLI for ML-based image tagging.
- * Uses the FULL model stack:
+ * Uses the FULL model stack per visual-buffet best practices:
+ *
+ * TAGGING (always runs):
  * - RAM++: Image tagging (4585 tags, high recall)
  * - Florence-2: Detailed captions converted to tags
  * - SigLIP: Zero-shot scoring of discovered vocabulary
- * - PaddleOCR: Text extraction when text is detected
+ *
+ * OCR PIPELINE:
+ * 1. PaddleOCR ALWAYS runs first to detect and extract text
+ * 2. If text detected → SigLIP runs on OCR results for verification
+ * 3. Verification score = 50% PaddleOCR confidence + 50% SigLIP score
  *
  * Results stored in database + XMP sidecar.
  *
@@ -30,6 +36,12 @@ export interface OcrResult {
   text: string;
   confidence: number;
   bbox?: [number, number, number, number];
+  /** SigLIP verification score (0-1) */
+  siglipScore?: number;
+  /** Combined verification score: 50% PaddleOCR + 50% SigLIP */
+  verificationScore?: number;
+  /** True if verificationScore >= 0.3 (VERIFIED tier) */
+  verified?: boolean;
 }
 
 export interface VisualBuffetResult {
@@ -182,20 +194,24 @@ export class VisualBuffetService {
     // Run tagging first (RAM++ + Florence-2 + SigLIP at MAX)
     const tagResult = await this.runTagging(input);
 
-    // OCR pipeline: First detect text presence using SigLIP zero-shot, then run full PaddleOCR if detected
-    // This optimization avoids expensive PaddleOCR on images without text
+    // OCR pipeline per visual-buffet best practices:
+    // 1. PaddleOCR ALWAYS runs first to detect text
+    // 2. If text detected, run additional SigLIP on OCR results for verification
     let ocrResult: VisualBuffetResult['ocr'] | undefined;
     if (input.enableOcr !== false) {
-      // Step 1: Quick text detection using SigLIP zero-shot (confidence > 0.3 = text present)
-      const hasText = await this.detectTextPresence(input.imagePath);
+      // Step 1: Run PaddleOCR to detect and extract text
+      ocrResult = await this.runOcr(input.imagePath);
 
-      if (hasText) {
-        // Step 2: If text detected, run full PaddleOCR extraction
-        logger.info('VisualBuffet', 'Text detected, running full OCR', { hash: input.hash.slice(0, 12) });
-        ocrResult = await this.runOcr(input.imagePath);
-      } else {
-        // No text detected, skip expensive OCR
-        ocrResult = { hasText: false, textBlocks: [], fullText: '' };
+      // Step 2: If text detected, run additional SigLIP verification on OCR results
+      if (ocrResult?.hasText && ocrResult.textBlocks.length > 0) {
+        logger.info('VisualBuffet', 'Text detected by PaddleOCR, running SigLIP verification', {
+          hash: input.hash.slice(0, 12),
+          textBlockCount: ocrResult.textBlocks.length,
+        });
+        const verifiedOcr = await this.verifySiglipOcrResults(input.imagePath, ocrResult);
+        if (verifiedOcr) {
+          ocrResult = verifiedOcr;
+        }
       }
     }
 
@@ -391,6 +407,105 @@ export class VisualBuffetService {
 
       proc.on('error', () => {
         resolve(undefined);
+      });
+    });
+  }
+
+  /**
+   * Run SigLIP verification on OCR results
+   * Uses the extracted text as vocabulary for zero-shot scoring
+   * This verifies that the detected text actually appears in the image
+   */
+  private async verifySiglipOcrResults(
+    imagePath: string,
+    ocrResult: NonNullable<VisualBuffetResult['ocr']>
+  ): Promise<VisualBuffetResult['ocr'] | undefined> {
+    if (!this.available || !this.pythonPath) {
+      return ocrResult;
+    }
+
+    return new Promise((resolve) => {
+      // Build vocabulary from OCR text blocks
+      const vocab = ocrResult.textBlocks
+        .map((b) => b.text.trim())
+        .filter((t) => t.length > 1)
+        .slice(0, 20) // Limit to avoid overly long command
+        .join(',');
+
+      if (!vocab) {
+        resolve(ocrResult);
+        return;
+      }
+
+      // Use SigLIP to verify detected text is actually in the image
+      const args = [
+        '-m', 'visual_buffet',
+        'tag',
+        imagePath,
+        '--plugin', 'siglip',
+        '--vocab', vocab,
+        '--threshold', '0.001', // Very low threshold per OCR verification spec
+        '-o', '-',
+      ];
+
+      const proc = spawn(this.pythonPath!, args, {
+        timeout: 30000,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      let stdout = '';
+
+      proc.stdout.on('data', (data: Buffer) => {
+        stdout += data.toString();
+      });
+
+      proc.on('close', (code) => {
+        if (code !== 0) {
+          resolve(ocrResult); // Return original on failure
+          return;
+        }
+
+        try {
+          const result = JSON.parse(stdout);
+          const siglipTags = result.results?.siglip?.tags || [];
+
+          // Create a map of verified text with SigLIP scores
+          const siglipScores = new Map<string, number>();
+          for (const tag of siglipTags) {
+            siglipScores.set(tag.label.toLowerCase(), tag.confidence);
+          }
+
+          // Update OCR blocks with verification scores
+          const verifiedBlocks = ocrResult.textBlocks.map((block) => {
+            const siglipScore = siglipScores.get(block.text.toLowerCase()) ?? 0;
+            // Combined verification score: 50% PaddleOCR + 50% SigLIP
+            const verificationScore = (block.confidence * 0.5) + (siglipScore * 0.5);
+
+            return {
+              ...block,
+              siglipScore,
+              verificationScore,
+              verified: verificationScore >= 0.3, // Verified threshold
+            };
+          });
+
+          logger.info('VisualBuffet', 'SigLIP OCR verification complete', {
+            totalBlocks: verifiedBlocks.length,
+            verifiedBlocks: verifiedBlocks.filter((b) => b.verified).length,
+          });
+
+          resolve({
+            hasText: true,
+            textBlocks: verifiedBlocks,
+            fullText: ocrResult.fullText,
+          });
+        } catch {
+          resolve(ocrResult);
+        }
+      });
+
+      proc.on('error', () => {
+        resolve(ocrResult);
       });
     });
   }
@@ -624,8 +739,12 @@ export class VisualBuffetService {
   }
 
   /**
-   * Quick check if an image has text (fast pre-scan before full OCR)
+   * Utility: Quick check if an image likely has text
    * Uses SigLIP zero-shot with text-related prompts
+   *
+   * NOTE: This is NOT used in the main OCR pipeline.
+   * Per visual-buffet best practices, PaddleOCR runs first to detect text,
+   * then SigLIP verifies the results. This method is kept for utility purposes.
    */
   async detectTextPresence(imagePath: string): Promise<boolean> {
     if (!this.available || !this.pythonPath) {

@@ -80,16 +80,17 @@ Visual-Buffet is a Python package that orchestrates multiple vision models:
 │  └────────────────────────┼──────────────────────────────────┘  │
 │                           │                                      │
 │  ┌────────────────────────▼──────────────────────────────────┐  │
-│  │              OCR Detection (SigLIP zero-shot)              │  │
-│  │         Prompts: "text", "sign", "writing", "document"     │  │
-│  │                   Threshold: confidence > 0.3              │  │
+│  │                     PaddleOCR                              │  │
+│  │         ALWAYS runs first to detect and extract text       │  │
+│  │                   (threshold: 0.3)                         │  │
 │  └────────────────────────┬──────────────────────────────────┘  │
 │                           │                                      │
-│                    if detected                                   │
+│                    if text detected                              │
 │                           │                                      │
 │  ┌────────────────────────▼──────────────────────────────────┐  │
-│  │                     PaddleOCR                              │  │
-│  │              Full text extraction with boxes               │  │
+│  │              SigLIP Verification                           │  │
+│  │         Runs on OCR results to verify text presence        │  │
+│  │    Score = 50% PaddleOCR confidence + 50% SigLIP score     │  │
 │  └────────────────────────┬──────────────────────────────────┘  │
 │                           │                                      │
 └───────────────────────────┼──────────────────────────────────────┘

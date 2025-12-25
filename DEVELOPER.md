@@ -1068,9 +1068,10 @@ The ML tagging system uses Visual-Buffet, a Python-based multi-model inference p
 2. **Florence-2** - Dense captioning + derived tags
 3. **SigLIP** - Zero-shot scoring for quality/view type
 
-**Conditional OCR pipeline:**
-1. **SigLIP zero-shot** - Text detection ("text", "sign", "writing")
-2. If confidence > 0.3 → **PaddleOCR** - Full text extraction
+**OCR pipeline (per visual-buffet best practices):**
+1. **PaddleOCR** - ALWAYS runs first to detect and extract text
+2. If text detected → **SigLIP** runs on OCR results for verification
+3. **Verification score** = 50% PaddleOCR confidence + 50% SigLIP score
 
 ### 12.3 Data Model
 
