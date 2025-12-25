@@ -676,10 +676,10 @@ export function registerExtractionHandlers(
         SELECT * FROM people_profiles
         WHERE locid = ?
         ORDER BY confidence DESC, full_name ASC
-      `).all(locid);
+      `).all(locid) as Record<string, unknown>[];
 
       // Parse JSON fields
-      const parsed = profiles.map((p: Record<string, unknown>) => ({
+      const parsed = profiles.map((p) => ({
         ...p,
         key_facts: JSON.parse((p.key_facts as string) || '[]'),
         source_refs: JSON.parse((p.source_refs as string) || '[]'),
@@ -703,10 +703,10 @@ export function registerExtractionHandlers(
         SELECT * FROM company_profiles
         WHERE locid = ?
         ORDER BY confidence DESC, full_name ASC
-      `).all(locid);
+      `).all(locid) as Record<string, unknown>[];
 
       // Parse JSON fields
-      const parsed = profiles.map((p: Record<string, unknown>) => ({
+      const parsed = profiles.map((p) => ({
         ...p,
         key_facts: JSON.parse((p.key_facts as string) || '[]'),
         source_refs: JSON.parse((p.source_refs as string) || '[]'),
@@ -983,10 +983,10 @@ export function registerExtractionHandlers(
 
       query += ` ORDER BY ea.confidence DESC, ea.created_at DESC`;
 
-      const addresses = sqliteDb.prepare(query).all(locid);
+      const addresses = sqliteDb.prepare(query).all(locid) as Record<string, unknown>[];
 
       // Parse JSON fields if present
-      const parsed = addresses.map((a: Record<string, unknown>) => ({
+      const parsed = addresses.map((a) => ({
         ...a,
         suggested_corrections: a.suggested_corrections
           ? JSON.parse(a.suggested_corrections as string)

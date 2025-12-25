@@ -32,7 +32,7 @@ export function registerDialogHandlers() {
       const parentWindow = BrowserWindow.getFocusedWindow();
 
       const dialogOptions = {
-        properties: ['openDirectory', 'createDirectory'] as const,
+        properties: ['openDirectory', 'createDirectory'],
         title: 'Select Archive Folder',
         buttonLabel: 'Select Folder',
       };

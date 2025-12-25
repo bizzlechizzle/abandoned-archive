@@ -384,10 +384,11 @@ export class ImportOrchestrator {
       } else {
         // LOCAL SOURCE: Use parallel hasher (fast for local disk)
         // ADR-050: Track filesProcessed incrementally during hashing
-      let hashFilesProcessed = 0;
-      hashResult = await this.hasher.hash(scanResult.files, {
+        // Now with byte-level progress for smooth UI updates (no dead spots)
+        let hashFilesProcessed = 0;
+        hashResult = await this.hasher.hash(scanResult.files, {
           signal,
-          onProgress: (percent, currentFile, filesHashed) => {
+          onProgress: (percent, currentFile, filesHashed, bytesProcessed, bytesTotal) => {
             progress.percent = percent;
             progress.currentFile = currentFile;
             progress.duplicatesFound = hashResult?.totalDuplicates ?? 0;
@@ -395,6 +396,11 @@ export class ImportOrchestrator {
             if (filesHashed !== undefined) {
               hashFilesProcessed = filesHashed;
               progress.filesProcessed = filesHashed;
+            }
+            // Byte-level progress for smooth progress bars
+            if (bytesProcessed !== undefined && bytesTotal !== undefined) {
+              progress.bytesProcessed = bytesProcessed;
+              progress.bytesTotal = bytesTotal;
             }
             emitProgress();
           },

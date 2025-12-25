@@ -113,6 +113,23 @@ aa pipeline capture <url> [-f screenshot,pdf]           # Web capture via nation
 aa pipeline status                                       # Show active pipeline jobs
 ```
 
+### ML Tagging (Visual-Buffet)
+```bash
+# Install visual-buffet (Python)
+pip install visual-buffet
+
+# Tag a single image
+python -m visual_buffet tag image.jpg --plugin ram_plus --plugin florence_2 --plugin siglip
+
+# Desktop app commands (via IPC)
+# tagging:getImageTags     - Get tags for an image
+# tagging:retagImage       - Queue image for re-tagging
+# tagging:editImageTags    - Manually edit tags
+# tagging:clearImageTags   - Clear all tags
+# tagging:getLocationSummary - Get aggregated tags for a location
+# tagging:queueUntaggedImages - Queue all untagged images in a location
+```
+
 ### Global Options
 ```bash
 aa --help                    # Show help

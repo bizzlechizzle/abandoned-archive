@@ -179,13 +179,24 @@ export class VisualBuffetService {
       };
     }
 
-    // Run tagging first, then OCR if enabled
+    // Run tagging first (RAM++ + Florence-2 + SigLIP at MAX)
     const tagResult = await this.runTagging(input);
 
-    // If OCR is enabled, run it separately
+    // OCR pipeline: First detect text presence using SigLIP zero-shot, then run full PaddleOCR if detected
+    // This optimization avoids expensive PaddleOCR on images without text
     let ocrResult: VisualBuffetResult['ocr'] | undefined;
     if (input.enableOcr !== false) {
-      ocrResult = await this.runOcr(input.imagePath);
+      // Step 1: Quick text detection using SigLIP zero-shot (confidence > 0.3 = text present)
+      const hasText = await this.detectTextPresence(input.imagePath);
+
+      if (hasText) {
+        // Step 2: If text detected, run full PaddleOCR extraction
+        logger.info('VisualBuffet', 'Text detected, running full OCR', { hash: input.hash.slice(0, 12) });
+        ocrResult = await this.runOcr(input.imagePath);
+      } else {
+        // No text detected, skip expensive OCR
+        ocrResult = { hasText: false, textBlocks: [], fullText: '' };
+      }
     }
 
     // Merge results
@@ -399,35 +410,38 @@ export class VisualBuffetService {
 
     // RAM++ tags
     if (results.ram_plus?.tags) {
-      tagsBySource.rampp = results.ram_plus.tags.map((t: { label: string; confidence: number }) => ({
+      const ramppTags = results.ram_plus.tags.map((t: { label: string; confidence: number }) => ({
         label: t.label,
         confidence: t.confidence,
         source: 'ram++' as const,
       }));
-      allTags.push(...tagsBySource.rampp);
+      tagsBySource.rampp = ramppTags;
+      allTags.push(...ramppTags);
     }
 
     // Florence-2 tags/caption
     if (results.florence_2) {
       caption = results.florence_2.caption;
       if (results.florence_2.tags) {
-        tagsBySource.florence2 = results.florence_2.tags.map((t: { label: string; confidence: number }) => ({
+        const florence2Tags = results.florence_2.tags.map((t: { label: string; confidence: number }) => ({
           label: t.label,
           confidence: t.confidence,
           source: 'florence-2' as const,
         }));
-        allTags.push(...tagsBySource.florence2);
+        tagsBySource.florence2 = florence2Tags;
+        allTags.push(...florence2Tags);
       }
     }
 
     // SigLIP scores
     if (results.siglip?.tags) {
-      tagsBySource.siglip = results.siglip.tags.map((t: { label: string; confidence: number }) => ({
+      const siglipTags = results.siglip.tags.map((t: { label: string; confidence: number }) => ({
         label: t.label,
         confidence: t.confidence,
         source: 'siglip' as const,
       }));
-      allTags.push(...tagsBySource.siglip);
+      tagsBySource.siglip = siglipTags;
+      allTags.push(...siglipTags);
     }
 
     // Deduplicate tags, keeping highest confidence
@@ -480,6 +494,7 @@ export class VisualBuffetService {
         auto_tags: result.tags ? JSON.stringify(result.tags) : null,
         auto_tags_source: 'visual-buffet-full' as const,
         auto_tags_confidence: result.confidence ? JSON.stringify(result.confidence) : null,
+        auto_tags_by_source: result.tagsBySource ? JSON.stringify(result.tagsBySource) : null,
         auto_tags_at: new Date().toISOString(),
         auto_caption: result.caption ?? null,
         quality_score: result.qualityScore ?? null,
@@ -593,8 +608,7 @@ export class VisualBuffetService {
       xmpData['ProcessingTimestamp'] = new Date().toISOString();
 
       await exiftool.write(xmpPath, xmpData, {
-        overwriteOriginal: true,
-        writeArgs: ['-ignoreMinorErrors'],
+        writeArgs: ['-overwrite_original', '-ignoreMinorErrors'],
       });
 
       logger.info('VisualBuffet', 'XMP updated', {

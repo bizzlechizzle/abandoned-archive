@@ -760,7 +760,7 @@
       </div>
     </div>
 
-    <!-- OPT-104: Minimal progress display with pulsing dot -->
+    <!-- OPT-106: Smooth progress bar with longer transition -->
     {#if $storeIsImporting && $storeImportProgress}
       <div class="mt-4 p-4 bg-braun-50 border border-braun-200 rounded">
         <div class="flex items-center justify-between mb-2">
@@ -774,7 +774,7 @@
         </div>
         <div class="relative h-6 bg-braun-200 rounded overflow-hidden">
           <div
-            class="absolute inset-y-0 left-0 bg-braun-900 transition-[width] duration-150 ease-out"
+            class="absolute inset-y-0 left-0 bg-braun-900 transition-[width] duration-300 ease-out"
             style="width: {$storeImportProgress.percent}%"
           ></div>
           <div class="absolute inset-0 flex items-center justify-center">

@@ -13,15 +13,16 @@ import {
   copyWithHash,
   fastHash,
   fastHashBatch,
+  hashBatch as wnbHashBatch,
   type HashResult,
   type CopyOptions,
   type CopyResult,
   type FastHashOptions,
   type FastHashResult,
   type Algorithm,
+  type HashBatchOptions,
+  type HashBatchResult,
 } from 'wake-n-blake';
-import PQueue from 'p-queue';
-import os from 'node:os';
 
 export interface BatchHashResult {
   path: string;
@@ -134,59 +135,40 @@ export class HashService {
   }
 
   /**
-   * Batch hash multiple files in parallel
-   * Uses CPU core count for concurrency
+   * Batch hash multiple files with byte-level progress
+   * Uses wake-n-blake's hashBatch which provides smooth per-chunk progress
    */
   static async hashBatch(
     filePaths: string[],
     options: {
       concurrency?: number;
       onProgress?: (completed: number, total: number, file: string) => void;
+      /** Byte-level progress for smooth UI updates (no dead spots) */
+      onByteProgress?: (bytesProcessed: number, bytesTotal: number, currentFile: string) => void;
       signal?: AbortSignal;
     } = {}
   ): Promise<BatchHashResult[]> {
-    const concurrency = options.concurrency ?? Math.max(1, os.cpus().length - 1);
-    const queue = new PQueue({ concurrency });
-    const results: BatchHashResult[] = [];
-    let completed = 0;
-
-    const tasks = filePaths.map((filePath, index) => {
-      return queue.add(async () => {
-        if (options.signal?.aborted) {
-          throw new Error('Hashing cancelled');
+    // Use wake-n-blake's hashBatch with byte-level progress
+    const results = await wnbHashBatch(filePaths, {
+      signal: options.signal,
+      onProgress: (bytesProcessed, bytesTotal, filesCompleted, totalFiles, currentFile) => {
+        // Fire byte-level progress for smooth UI updates
+        if (options.onByteProgress) {
+          options.onByteProgress(bytesProcessed, bytesTotal, currentFile);
         }
-
-        try {
-          const hash = await hashBlake3(filePath, { full: false });
-          const result: BatchHashResult = { path: filePath, hash, error: null };
-          results[index] = result;
-
-          completed++;
-          if (options.onProgress) {
-            options.onProgress(completed, filePaths.length, filePath);
-          }
-
-          return result;
-        } catch (err) {
-          const result: BatchHashResult = {
-            path: filePath,
-            hash: null,
-            error: err instanceof Error ? err.message : String(err),
-          };
-          results[index] = result;
-
-          completed++;
-          if (options.onProgress) {
-            options.onProgress(completed, filePaths.length, filePath);
-          }
-
-          return result;
+        // Also fire file-level progress for backwards compatibility
+        if (options.onProgress) {
+          options.onProgress(filesCompleted, totalFiles, currentFile);
         }
-      });
+      },
     });
 
-    await Promise.all(tasks);
-    return results;
+    // Map to BatchHashResult format
+    return results.map((r: HashBatchResult) => ({
+      path: r.path,
+      hash: r.hash,
+      error: r.error,
+    }));
   }
 }
 

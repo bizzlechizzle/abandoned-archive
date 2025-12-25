@@ -33,6 +33,89 @@ let orchestrator: ImportOrchestrator | null = null;
 const activeImports = new Map<string, AbortController>();
 
 /**
+ * OPT-106: Throttled progress emitter for smooth UI updates
+ *
+ * Production apps use throttling to:
+ * 1. Limit IPC traffic (15 updates/sec max)
+ * 2. Ensure CSS transitions can complete
+ * 3. Prevent renderer from being overwhelmed
+ *
+ * Always sends: first update, significant changes (>2%), and 100% completion
+ */
+function createThrottledProgressEmitter() {
+  let lastEmitTime = 0;
+  let lastPercent = -1;
+  let pendingProgress: ImportProgress | null = null;
+  let flushTimer: NodeJS.Timeout | null = null;
+
+  const THROTTLE_MS = 66; // ~15 updates/sec - matches 60fps / 4
+  const MIN_PERCENT_CHANGE = 2; // Only emit if change >= 2%
+
+  function emit(progress: ImportProgress) {
+    sendToRenderer('import:v2:progress', progress);
+    lastEmitTime = Date.now();
+    lastPercent = progress.percent;
+    pendingProgress = null;
+  }
+
+  function flush() {
+    if (pendingProgress) {
+      emit(pendingProgress);
+    }
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+  }
+
+  return {
+    send(progress: ImportProgress) {
+      const now = Date.now();
+      const timeSinceLastEmit = now - lastEmitTime;
+      const percentChange = Math.abs(progress.percent - lastPercent);
+
+      // Always emit immediately for:
+      // 1. First update (lastPercent === -1)
+      // 2. Completion (100%)
+      // 3. Status changes (scanning → hashing → copying, etc.)
+      // 4. Significant jumps (>10%)
+      if (
+        lastPercent === -1 ||
+        progress.percent >= 100 ||
+        progress.status !== pendingProgress?.status ||
+        percentChange >= 10
+      ) {
+        flush();
+        emit(progress);
+        return;
+      }
+
+      // Throttle regular updates
+      if (timeSinceLastEmit >= THROTTLE_MS && percentChange >= MIN_PERCENT_CHANGE) {
+        emit(progress);
+        return;
+      }
+
+      // Buffer the update for later
+      pendingProgress = progress;
+
+      // Schedule flush if not already scheduled
+      if (!flushTimer) {
+        flushTimer = setTimeout(() => {
+          flushTimer = null;
+          if (pendingProgress) {
+            emit(pendingProgress);
+          }
+        }, THROTTLE_MS);
+      }
+    },
+
+    // Call when import completes to ensure final state is sent
+    flush,
+  };
+}
+
+/**
  * Get the main browser window for sending events
  */
 function getMainWindow(): BrowserWindow | null {
@@ -133,9 +216,12 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
       // Create abort controller
       const abortController = new AbortController();
 
-      // Progress callback sends events to renderer
+      // OPT-106: Use throttled progress emitter for smooth UI updates
+      const progressEmitter = createThrottledProgressEmitter();
+
+      // Progress callback sends events to renderer (throttled)
       const onProgress = (progress: ImportProgress) => {
-        sendToRenderer('import:v2:progress', progress);
+        progressEmitter.send(progress);
         activeImports.set(progress.sessionId, abortController);
       };
 
@@ -156,6 +242,9 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
         onProgress,
         signal: abortController.signal,
       });
+
+      // OPT-106: Flush any pending progress before completion
+      progressEmitter.flush();
 
       // Clean up
       activeImports.delete(result.sessionId);
@@ -287,8 +376,11 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
       const currentUser = await getCurrentUser(db);
 
       const abortController = new AbortController();
+
+      // OPT-106: Use throttled progress emitter for smooth UI updates
+      const progressEmitter = createThrottledProgressEmitter();
       const onProgress = (progress: ImportProgress) => {
-        sendToRenderer('import:v2:progress', progress);
+        progressEmitter.send(progress);
         activeImports.set(progress.sessionId, abortController);
       };
 
@@ -309,6 +401,9 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
         onProgress,
         signal: abortController.signal,
       });
+
+      // OPT-106: Flush any pending progress before returning
+      progressEmitter.flush();
 
       // OPT-080: Force serialization to prevent structured clone errors
       return safeSerialize(result);

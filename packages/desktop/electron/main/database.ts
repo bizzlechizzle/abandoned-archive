@@ -4090,9 +4090,9 @@ function runMigrations(sqlite: Database.Database): void {
         ALTER TABLE imgs ADD COLUMN xmp_sidecar_path TEXT;
         ALTER TABLE imgs ADD COLUMN source_type TEXT;
         ALTER TABLE imgs ADD COLUMN raw_pair_hash TEXT;
-        ALTER TABLE imgs ADD COLUMN is_live_photo INTEGER DEFAULT 0;
+        -- is_live_photo already added in Migration 23
         ALTER TABLE imgs ADD COLUMN live_photo_pair_hash TEXT;
-        ALTER TABLE imgs ADD COLUMN file_size_bytes INTEGER;
+        -- file_size_bytes already added in Migration 44
         ALTER TABLE imgs ADD COLUMN dedup_status TEXT CHECK(dedup_status IN ('unique', 'duplicate', 'hardlinked'));
         ALTER TABLE imgs ADD COLUMN thumb_extraction_method TEXT CHECK(thumb_extraction_method IN ('embedded', 'decoded', 'failed'));
 
@@ -4103,7 +4103,7 @@ function runMigrations(sqlite: Database.Database): void {
         ALTER TABLE vids ADD COLUMN proxy_path TEXT;
         ALTER TABLE vids ADD COLUMN proxy_codec TEXT;
         ALTER TABLE vids ADD COLUMN proxy_bitrate INTEGER;
-        ALTER TABLE vids ADD COLUMN file_size_bytes INTEGER;
+        -- file_size_bytes already added in Migration 44
         ALTER TABLE vids ADD COLUMN dedup_status TEXT CHECK(dedup_status IN ('unique', 'duplicate', 'hardlinked'));
         ALTER TABLE vids ADD COLUMN needs_deinterlace INTEGER DEFAULT 0;
 
@@ -4111,7 +4111,7 @@ function runMigrations(sqlite: Database.Database): void {
         ALTER TABLE docs ADD COLUMN device_fingerprint_id TEXT REFERENCES device_fingerprints(fingerprint_id);
         ALTER TABLE docs ADD COLUMN xmp_sidecar_path TEXT;
         ALTER TABLE docs ADD COLUMN source_type TEXT;
-        ALTER TABLE docs ADD COLUMN file_size_bytes INTEGER;
+        -- file_size_bytes already added in Migration 44
 
         -- Create indexes for new FK columns
         CREATE INDEX IF NOT EXISTS idx_imgs_device_fingerprint ON imgs(device_fingerprint_id) WHERE device_fingerprint_id IS NOT NULL;

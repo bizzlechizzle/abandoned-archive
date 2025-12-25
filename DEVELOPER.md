@@ -20,6 +20,7 @@ Comprehensive development guide for Abandoned Archive. This document covers arch
 9. [Testing](#9-testing)
 10. [Build & Deploy](#10-build--deploy)
 11. [Troubleshooting](#11-troubleshooting)
+12. [ML Tagging (Visual-Buffet Integration)](#12-ml-tagging-visual-buffet-integration)
 
 ---
 
@@ -1017,6 +1018,169 @@ DEBUG=aa:* pnpm dev
 2. Search documentation
 3. Ask in Discord/Slack
 4. Create new issue with reproduction steps
+
+---
+
+## 12. ML Tagging (Visual-Buffet Integration)
+
+### 12.1 Architecture Overview
+
+The ML tagging system uses Visual-Buffet, a Python-based multi-model inference pipeline:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      Import Pipeline                             │
+│  ┌──────────┐   ┌───────────────────────────────────────────┐  │
+│  │  Image   │   │            Visual-Buffet                   │  │
+│  │  Import  │──▶│  ┌─────────┐ ┌─────────┐ ┌─────────┐     │  │
+│  └──────────┘   │  │ RAM++   │ │Florence │ │ SigLIP  │     │  │
+│                 │  │ (4585   │ │   -2    │ │ (zero-  │     │  │
+│                 │  │  tags)  │ │(caption)│ │  shot)  │     │  │
+│                 │  └────┬────┘ └────┬────┘ └────┬────┘     │  │
+│                 │       │           │           │           │  │
+│                 │       └───────────┴───────────┘           │  │
+│                 │                   │                        │  │
+│                 │            OCR Detection                   │  │
+│                 │          (SigLIP zero-shot)               │  │
+│                 │                   │                        │  │
+│                 │              if detected                   │  │
+│                 │                   ▼                        │  │
+│                 │            ┌───────────┐                   │  │
+│                 │            │PaddleOCR  │                   │  │
+│                 │            │(full text)│                   │  │
+│                 │            └─────┬─────┘                   │  │
+│                 └──────────────────┼────────────────────────┘  │
+│                                    ▼                            │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │                    Output Storage                        │   │
+│  │  ┌─────────────┐                    ┌─────────────────┐ │   │
+│  │  │   SQLite    │◀──────────────────▶│  XMP Sidecar    │ │   │
+│  │  │  (database) │                    │  (.xmp files)   │ │   │
+│  │  └─────────────┘                    └─────────────────┘ │   │
+│  └─────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 12.2 ML Pipeline Execution
+
+**Always run on import (MAX quality):**
+1. **RAM++** - 4,585 tag vocabulary, object-level tagging
+2. **Florence-2** - Dense captioning + derived tags
+3. **SigLIP** - Zero-shot scoring for quality/view type
+
+**Conditional OCR pipeline:**
+1. **SigLIP zero-shot** - Text detection ("text", "sign", "writing")
+2. If confidence > 0.3 → **PaddleOCR** - Full text extraction
+
+### 12.3 Data Model
+
+```typescript
+// Database fields (imgs table)
+interface ImageMLFields {
+  auto_tags: string | null;           // Comma-separated tags
+  auto_tags_source: string | null;    // "visual-buffet"
+  auto_tags_confidence: string | null; // JSON: {"tag": 0.95, ...}
+  auto_tags_by_source: string | null; // JSON: {rampp: [], florence2: [], siglip: []}
+  auto_tags_at: string | null;        // ISO timestamp
+  auto_caption: string | null;        // Florence-2 caption
+  quality_score: number | null;       // 0-1 score
+  view_type: string | null;           // "exterior", "interior", "aerial", etc.
+  ocr_text: string | null;            // Extracted text
+  ocr_has_text: number | null;        // 0 or 1
+  vb_processed_at: string | null;     // Processing timestamp
+  vb_error: string | null;            // Error message if failed
+}
+```
+
+### 12.4 IPC Handlers
+
+**File:** `packages/desktop/electron/main/ipc-handlers/tagging.ts`
+
+| Handler | Description | Parameters |
+|---------|-------------|------------|
+| `tagging:getImageTags` | Get ML insights for image | `imghash: string` |
+| `tagging:editImageTags` | Manually edit tags | `imghash: string, tags: string[]` |
+| `tagging:retagImage` | Queue for re-processing | `imghash: string` |
+| `tagging:clearImageTags` | Clear all ML data | `imghash: string` |
+| `tagging:getLocationSummary` | Aggregated tags for location | `locid: string` |
+| `tagging:reaggregateLocation` | Recalculate location summary | `locid: string` |
+| `tagging:getQueueStats` | Job queue statistics | none |
+| `tagging:queueUntaggedImages` | Queue unprocessed images | `locid?: string` |
+| `tagging:getServiceStatus` | Check visual-buffet availability | none |
+| `tagging:testConnection` | Test Python service | none |
+
+### 12.5 UI Integration (MediaViewer)
+
+**File:** `packages/desktop/src/components/MediaViewer.svelte`
+
+The MediaViewer lightbox includes a two-tier navigation:
+
+1. **Info Tab** - Standard EXIF metadata
+2. **ML Insights Tab** - Visual-buffet results with:
+   - Collapsible sections per model (RAM++, Florence-2, SigLIP)
+   - Confidence bars for each tag
+   - Quality score badge
+   - View type badge
+   - OCR text blocks with confidence
+
+### 12.6 XMP Sidecar Format
+
+Tags are written to XMP sidecars using exiftool:
+
+```xml
+<x:xmpmeta>
+  <rdf:RDF>
+    <rdf:Description>
+      <!-- Standard XMP fields -->
+      <dc:subject>
+        <rdf:Bag>
+          <rdf:li>abandoned</rdf:li>
+          <rdf:li>industrial</rdf:li>
+        </rdf:Bag>
+      </dc:subject>
+      <dc:description>A decaying factory corridor...</dc:description>
+
+      <!-- Custom namespace for ML data -->
+      <aa:MLSource>visual-buffet</aa:MLSource>
+      <aa:MLConfidence>{"abandoned":0.95,...}</aa:MLConfidence>
+      <aa:QualityScore>0.82</aa:QualityScore>
+      <aa:ViewType>interior</aa:ViewType>
+      <aa:OCRText>DANGER: KEEP OUT</aa:OCRText>
+    </rdf:Description>
+  </rdf:RDF>
+</x:xmpmeta>
+```
+
+### 12.7 Service Configuration
+
+**File:** `packages/desktop/electron/services/visual-buffet-service.ts`
+
+```typescript
+interface VisualBuffetConfig {
+  pythonPath: string;        // Path to Python executable
+  modelPath: string;         // Path to model weights
+  plugins: string[];         // ["ram_plus", "florence_2", "siglip"]
+  ocrEnabled: boolean;       // Enable OCR detection
+  ocrThreshold: number;      // SigLIP confidence threshold (0.3)
+  maxConcurrent: number;     // Parallel processing limit
+}
+```
+
+### 12.8 Testing ML Pipeline
+
+```bash
+# Test visual-buffet directly
+python -m visual_buffet tag /path/to/image.jpg \
+  --plugin ram_plus --plugin florence_2 --plugin siglip
+
+# Test IPC handler
+# In Electron DevTools console:
+await window.electron.tagging.testConnection()
+await window.electron.tagging.getServiceStatus()
+
+# Queue test image
+await window.electron.tagging.retagImage('abc123hash')
+```
 
 ---
 

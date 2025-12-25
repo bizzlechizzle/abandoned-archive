@@ -74,7 +74,7 @@ export const TimelineEventSchema = z.object({
   date_override: z.string().nullable(),
   override_reason: z.string().nullable(),
   source_type: SourceTypeSchema.nullable(),
-  source_ref: z.string().nullable(),
+  source_refs: z.string().nullable(), // JSON array of source IDs
   source_device: z.string().nullable(),
   media_count: z.number().default(0),
   media_hashes: z.string().nullable(), // JSON array
@@ -109,7 +109,7 @@ export const TimelineEventInputSchema = z.object({
   date_edtf: z.string().nullable().optional(),
   date_sort: z.number().nullable().optional(),
   source_type: SourceTypeSchema.nullable().optional(),
-  source_ref: z.string().nullable().optional(),
+  source_refs: z.string().nullable().optional(), // JSON array of source IDs
   source_device: z.string().nullable().optional(),
   media_count: z.number().optional(),
   media_hashes: z.string().nullable().optional(),

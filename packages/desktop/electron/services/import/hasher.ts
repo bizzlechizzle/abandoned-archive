@@ -42,8 +42,15 @@ export interface HasherOptions {
   /**
    * Progress callback (5-40% range)
    * ADR-050: Added filesHashed parameter for incremental progress tracking
+   * Now also receives bytesProcessed/bytesTotal for smooth progress bars
    */
-  onProgress?: (percent: number, currentFile: string, filesHashed?: number) => void;
+  onProgress?: (
+    percent: number,
+    currentFile: string,
+    filesHashed?: number,
+    bytesProcessed?: number,
+    bytesTotal?: number
+  ) => void;
 
   /**
    * Abort signal for cancellation
@@ -87,18 +94,24 @@ export class Hasher {
       filePathToScanned.set(file.originalPath, file);
     }
 
-    // Hash files in parallel using backbone HashService
+    // Hash files in parallel using backbone HashService with byte-level progress
+    let lastFilesCompleted = 0;
     const batchResults = await HashService.hashBatch(
       filesToHash.map(f => f.originalPath),
       {
         signal: options?.signal,
-        onProgress: (completed, total, filePath) => {
+        // Byte-level progress for smooth UI updates (no dead spots on large files)
+        onByteProgress: (bytesProcessed, bytesTotal, filePath) => {
           if (options?.onProgress) {
-            // Map to 5-40% range
-            const percent = 5 + ((completed / total) * 35);
+            // Map to 5-40% range based on bytes, not files
+            const percent = 5 + ((bytesProcessed / bytesTotal) * 35);
             const file = filePathToScanned.get(filePath);
-            options.onProgress(percent, file?.filename ?? filePath, completed);
+            options.onProgress(percent, file?.filename ?? filePath, lastFilesCompleted, bytesProcessed, bytesTotal);
           }
+        },
+        // File-level progress to track completed files
+        onProgress: (completed, _total, filePath) => {
+          lastFilesCompleted = completed;
         },
       }
     );

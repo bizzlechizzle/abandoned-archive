@@ -549,7 +549,7 @@ export function registerTimelineHandlers(db: Kysely<Database>): TimelineService 
         .selectFrom('location_timeline')
         .select(({ fn }) => [
           fn.count('event_id').as('total'),
-          fn.sum(fn.cast('needs_review', 'integer')).as('needs_review_count'),
+          fn.sum('needs_review').as('needs_review_count'),
         ])
         .where('locid', '=', locid)
         .executeTakeFirst();

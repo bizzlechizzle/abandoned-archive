@@ -114,10 +114,10 @@
             Cancel
           </button>
         </div>
-        <!-- OPT-105: Granular progress bar with current file display -->
+        <!-- OPT-106: Smooth progress bar with longer transition -->
         <div class="relative h-6 bg-braun-200 rounded overflow-hidden">
           <div
-            class="absolute inset-y-0 left-0 bg-braun-900 transition-[width] duration-100 ease-out"
+            class="absolute inset-y-0 left-0 bg-braun-900 transition-[width] duration-300 ease-out"
             style="width: {$storeProgress.percent}%"
           ></div>
           <div class="absolute inset-0 flex items-center justify-center">

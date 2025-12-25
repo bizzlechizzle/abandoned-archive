@@ -211,6 +211,15 @@ export const importProgress = derived(importStore, ($store) => {
   if (!$store.activeJob) return null;
   const job = $store.activeJob;
 
+  // OPT-107: Extract just the filename, not the full path
+  let displayFilename = job.currentFilename;
+  if (displayFilename) {
+    const lastSlash = displayFilename.lastIndexOf('/');
+    if (lastSlash !== -1) {
+      displayFilename = displayFilename.slice(lastSlash + 1);
+    }
+  }
+
   // OPT-105: Use real values directly from orchestrator
   // UI will use CSS transitions for visual smoothing
   return {
@@ -219,7 +228,7 @@ export const importProgress = derived(importStore, ($store) => {
     percent: Math.round(job.percent),
     locationName: job.locationName,
     locid: job.locid,
-    currentFilename: job.currentFilename,
+    currentFilename: displayFilename,
     stepName: job.stepName,
   };
 });

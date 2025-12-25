@@ -95,7 +95,7 @@ export class SqliteTimelineRepository {
         't.date_override',
         't.override_reason',
         't.source_type',
-        't.source_ref',
+        't.source_refs',
         't.source_device',
         't.media_count',
         't.media_hashes',
@@ -193,7 +193,7 @@ export class SqliteTimelineRepository {
       date_override: null,
       override_reason: null,
       source_type: input.source_type ?? null,
-      source_ref: input.source_ref ?? null,
+      source_refs: input.source_refs ?? null,
       source_device: input.source_device ?? null,
       media_count: input.media_count ?? 0,
       media_hashes: input.media_hashes ?? null,
@@ -239,7 +239,7 @@ export class SqliteTimelineRepository {
     if (updates.date_edtf !== undefined) updateObj.date_edtf = updates.date_edtf;
     if (updates.date_sort !== undefined) updateObj.date_sort = updates.date_sort;
     if (updates.source_type !== undefined) updateObj.source_type = updates.source_type;
-    if (updates.source_ref !== undefined) updateObj.source_ref = updates.source_ref;
+    if (updates.source_refs !== undefined) updateObj.source_refs = updates.source_refs;
     if (updates.source_device !== undefined) updateObj.source_device = updates.source_device;
     if (updates.media_count !== undefined) updateObj.media_count = updates.media_count;
     if (updates.media_hashes !== undefined) updateObj.media_hashes = updates.media_hashes;
@@ -429,8 +429,9 @@ export class SqliteTimelineRepository {
   }
 
   /**
-   * Find a timeline event by source_ref (for duplicate prevention)
+   * Find a timeline event by source_refs (for duplicate prevention)
    * Used to check if a web page event already exists for a websource
+   * Note: source_refs is a JSON array, so we search using LIKE for the source ID
    */
   async findBySourceRef(
     sourceRef: string,
@@ -440,7 +441,7 @@ export class SqliteTimelineRepository {
     let query = this.db
       .selectFrom('location_timeline')
       .selectAll()
-      .where('source_ref', '=', sourceRef)
+      .where('source_refs', 'like', `%"${sourceRef}"%`)
       .where('event_type', '=', eventType);
 
     if (eventSubtype) {
@@ -452,8 +453,9 @@ export class SqliteTimelineRepository {
   }
 
   /**
-   * Delete timeline events by source_ref (for cascade deletion)
+   * Delete timeline events by source_refs (for cascade deletion)
    * Used when a websource is deleted
+   * Note: source_refs is a JSON array, so we search using LIKE for the source ID
    */
   async deleteBySourceRef(
     sourceRef: string,
@@ -462,7 +464,7 @@ export class SqliteTimelineRepository {
   ): Promise<number> {
     let query = this.db
       .deleteFrom('location_timeline')
-      .where('source_ref', '=', sourceRef)
+      .where('source_refs', 'like', `%"${sourceRef}"%`)
       .where('event_type', '=', eventType);
 
     if (eventSubtype) {

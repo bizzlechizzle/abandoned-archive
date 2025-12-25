@@ -5,10 +5,12 @@
  * providers based on model ID prefix:
  * - ollama/* -> Ollama lifecycle + direct API
  * - cloud/* -> LiteLLM lifecycle + proxy
- * - python/* -> Python subprocess (Florence-2, VLM)
  * - local/* -> ONNX runtime (SigLIP)
  *
- * @version 1.0
+ * Note: Legacy Python vision models (RAM++, Florence-2) have been replaced
+ * by visual-buffet, which handles all ML tagging externally.
+ *
+ * @version 1.1
  * @see docs/plans/adaptive-brewing-cherny.md
  */
 
@@ -221,9 +223,11 @@ class AIService implements IAIService {
         case 'ollama':
           return await this.ollamaVision(modelName, request, startTime);
         case 'python':
-          return await this.pythonVision(modelName, request, startTime);
+          throw new Error(
+            'Python vision models (RAM++, Florence-2) removed. Use visual-buffet for ML tagging.'
+          );
         case 'local':
-          throw new Error('Local vision not implemented - use python/siglip');
+          throw new Error('Local vision not implemented');
         case 'cloud':
           return await this.cloudVision(modelName, request, startTime);
         default:
@@ -304,110 +308,6 @@ class AIService implements IAIService {
     } finally {
       clearTimeout(timeoutId);
     }
-  }
-
-  private async pythonVision(
-    modelName: string,
-    request: VisionRequest,
-    startTime: number
-  ): Promise<VisionResult> {
-    // For now, delegate to existing tagging service
-    // This will be expanded when we integrate more Python models
-    const { spawn } = await import('child_process');
-    const { join } = await import('path');
-    const { app } = await import('electron');
-
-    // Map model names to scripts and their venv locations
-    const scriptConfig: Record<string, { script: string; venv: string }> = {
-      'florence-2-large': { script: 'florence_tagger.py', venv: 'scripts/ram-server/venv' },
-      'florence-2': { script: 'florence_tagger.py', venv: 'scripts/ram-server/venv' },
-      'ram++': { script: 'ram_tagger.py', venv: 'scripts/ram-server/venv' },
-      ram: { script: 'ram_tagger.py', venv: 'scripts/ram-server/venv' },
-      'qwen2-vl-7b': { script: 'vlm_enhancer.py', venv: 'scripts/vlm-server/venv' },
-      'qwen2-vl': { script: 'vlm_enhancer.py', venv: 'scripts/vlm-server/venv' },
-    };
-
-    const config = scriptConfig[modelName];
-    if (!config) {
-      throw new Error(
-        `Unknown Python vision model: ${modelName}. Available: florence-2-large, ram++, qwen2-vl-7b`
-      );
-    }
-
-    const resourcesPath = app.isPackaged
-      ? process.resourcesPath
-      : join(__dirname, '..', '..', '..', '..', '..');
-
-    const scriptPath = join(resourcesPath, 'scripts', config.script);
-    const venvPython = join(resourcesPath, config.venv, 'bin', 'python');
-
-    return new Promise((resolve, reject) => {
-      const args = [
-        scriptPath,
-        '--image',
-        request.imagePath,
-        '--output',
-        'json',
-      ];
-
-      if (request.context?.viewType) {
-        args.push('--view-type', request.context.viewType);
-      }
-      if (request.context?.locationType) {
-        args.push('--location-type', request.context.locationType);
-      }
-      if (request.context?.locationName) {
-        args.push('--location-name', request.context.locationName);
-      }
-      if (request.context?.state) {
-        args.push('--state', request.context.state);
-      }
-      if (request.context?.existingTags && request.context.existingTags.length > 0) {
-        args.push('--tags', request.context.existingTags.join(','));
-      }
-      if (request.maxTags) {
-        args.push('--max-tags', String(request.maxTags));
-      }
-
-      const proc = spawn(venvPython, args, {
-        timeout: request.timeout || DEFAULT_TIMEOUT_MS,
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      proc.stdout?.on('data', (data) => {
-        stdout += data.toString();
-      });
-      proc.stderr?.on('data', (data) => {
-        stderr += data.toString();
-      });
-
-      proc.on('close', (code) => {
-        if (code !== 0) {
-          reject(new Error(`Python script failed: ${stderr}`));
-          return;
-        }
-
-        try {
-          const result = JSON.parse(stdout.trim());
-          resolve({
-            tags: result.tags || [],
-            confidence: result.confidence || {},
-            caption: result.caption,
-            description: result.description,
-            qualityScore: result.quality_score,
-            viewType: result.view_type,
-            model: `python/${modelName}`,
-            durationMs: Date.now() - startTime,
-          });
-        } catch {
-          reject(new Error(`Failed to parse Python output: ${stdout}`));
-        }
-      });
-
-      proc.on('error', reject);
-    });
   }
 
   private async cloudVision(
@@ -779,20 +679,19 @@ class AIService implements IAIService {
       lastCheck: now,
     });
 
-    // Check Python (just check if venv exists)
+    // Python provider deprecated - visual-buffet handles ML tagging externally
+    // Keeping provider entry for API compatibility but always unavailable
     const fs = await import('fs');
     const { join } = await import('path');
     const { app } = await import('electron');
     const resourcesPath = app.isPackaged
       ? process.resourcesPath
       : join(__dirname, '..', '..', '..', '..', '..');
-    const venvPath = join(resourcesPath, 'scripts', 'ram-server', 'venv');
-    const pythonAvailable = fs.existsSync(venvPath);
 
     providers.push({
       provider: 'python',
-      available: pythonAvailable,
-      status: pythonAvailable ? 'available' : 'not installed',
+      available: false,
+      status: 'deprecated - use visual-buffet',
       lastCheck: now,
     });
 

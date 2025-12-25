@@ -477,9 +477,10 @@ export class SQLiteWebSourcesRepository {
     await this.db.deleteFrom('web_source_videos').where('source_id', '=', source_id).execute();
 
     // OPT-119: Delete associated timeline events (web page publish dates)
+    // Note: source_refs is a JSON array, so we search using LIKE for the source ID
     await this.db
       .deleteFrom('location_timeline')
-      .where('source_ref', '=', source_id)
+      .where('source_refs', 'like', `%"${source_id}"%`)
       .where('event_type', '=', 'custom')
       .where('event_subtype', '=', 'web_page')
       .execute();

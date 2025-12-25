@@ -2290,9 +2290,9 @@ export interface ElectronAPI {
     onWebSourceSaved: (callback: (payload: { sourceId: string; locid: string | null; subid: string | null; sourceType: string }) => void) => () => void;
   };
 
-  // Migration 76: RAM++ Image Auto-Tagging
+  // Migration 76: RAM++ Image Auto-Tagging + Visual-Buffet ML Insights
   tagging: {
-    // Image tag operations
+    // Image tag operations with full ML insights
     getImageTags: (imghash: string) => Promise<{
       success: boolean;
       imghash?: string;
@@ -2302,6 +2302,19 @@ export interface ElectronAPI {
       taggedAt?: string | null;
       qualityScore?: number | null;
       viewType?: string | null;
+      // ML Insights (Visual-Buffet detailed data)
+      tagsBySource?: {
+        rampp?: Array<{ label: string; confidence: number; source: string }>;
+        florence2?: Array<{ label: string; confidence: number; source: string }>;
+        siglip?: Array<{ label: string; confidence: number; source: string }>;
+      };
+      caption?: string | null;
+      ocr?: {
+        hasText: boolean;
+        fullText: string | null;
+        textBlocks: Array<{ text: string; confidence: number }>;
+      };
+      processedAt?: string | null;
       error?: string;
     }>;
     editImageTags: (input: { imghash: string; tags: string[] }) => Promise<{

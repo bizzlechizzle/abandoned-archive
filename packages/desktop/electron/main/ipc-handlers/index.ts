@@ -61,6 +61,7 @@ import { registerCredentialHandlers } from './credentials';
 import { registerLiteLLMHandlers, shutdownLiteLLM, cleanupOrphanLiteLLM } from './litellm';
 import { registerCostTrackingHandlers } from './cost-tracking';
 import { registerAIHandlers } from './ai';
+import { registerTaggingHandlers } from './tagging';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
@@ -166,6 +167,10 @@ export function registerIpcHandlers() {
   // AI Service (Unified Abstraction)
   // Single entry point for all AI operations
   registerAIHandlers();
+
+  // Tagging Service (Visual-Buffet ML Pipeline)
+  // RAM++, Florence-2, SigLIP, PaddleOCR
+  registerTaggingHandlers(db);
 
   // Browser Image Capture (network monitoring, context menu)
   initializeBrowserImageCapture({

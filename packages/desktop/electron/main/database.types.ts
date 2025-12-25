@@ -329,10 +329,11 @@ export interface ImgsTable {
   // Migration 72: Perceptual hash for duplicate detection
   phash: string | null;            // 16-char hex DCT perceptual hash
 
-  // Migration 76: RAM++ Image Auto-Tagging
+  // Migration 76: RAM++ Image Auto-Tagging + Visual-Buffet ML Insights
   auto_tags: string | null;              // JSON array: ["abandoned", "factory", "graffiti"]
-  auto_tags_source: string | null;       // 'ram++' | 'florence' | 'manual' | 'hybrid'
+  auto_tags_source: string | null;       // 'ram++' | 'florence' | 'manual' | 'hybrid' | 'visual-buffet-full'
   auto_tags_confidence: string | null;   // JSON: {"abandoned": 0.95, "factory": 0.87}
+  auto_tags_by_source: string | null;    // JSON: { rampp: [{label,confidence,source}], florence2: [...], siglip: [...] }
   auto_tags_at: string | null;           // ISO timestamp when tags were generated
   quality_score: number | null;          // 0-1 quality score for hero selection
   view_type: string | null;              // 'interior' | 'exterior' | 'aerial' | 'detail'
@@ -366,7 +367,7 @@ export interface ImgsTable {
   // Migration 96: Visual-Buffet Full Integration
   auto_caption: string | null;           // Florence-2 generated caption
   ocr_text: string | null;               // Extracted text from OCR
-  ocr_has_text: number;                  // 1 if image contains text, 0 otherwise
+  ocr_has_text?: number;                 // 1 if image contains text, 0 otherwise (DEFAULT 0)
 }
 
 // Videos table
@@ -456,7 +457,7 @@ export interface VidsTable {
   // Migration 96: Visual-Buffet Full Integration
   auto_caption: string | null;           // Florence-2 generated caption
   ocr_text: string | null;               // Extracted text from OCR
-  ocr_has_text: number;                  // 1 if image contains text, 0 otherwise
+  ocr_has_text?: number;                 // 1 if image contains text, 0 otherwise (DEFAULT 0)
 }
 
 // Documents table
@@ -1039,7 +1040,7 @@ export interface LocationTimelineTable {
 
   // Source tracking
   source_type: string | null; // 'exif' | 'manual' | 'web' | 'document' | 'system'
-  source_ref: string | null;  // imghash/vidhash for EXIF, URL for web
+  source_refs: string | null; // JSON array of source IDs
   source_device: string | null;
 
   // Visit consolidation

@@ -114,7 +114,7 @@
   // Cache version for busting browser cache after thumbnail regeneration
   const cacheVersion = $derived($thumbnailCache);
 
-  // Migration 76: RAM++ Auto-tagging state
+  // Auto-tagging state (visual-buffet pipeline)
   let imageTags = $state<string[]>([]);
   let tagsSource = $state<string | null>(null);
   let tagsViewType = $state<string | null>(null);
@@ -124,6 +124,29 @@
   let tagEditValue = $state('');
   let savingTags = $state(false);
   let retagging = $state(false);
+
+  // ML Insights state (detailed visual-buffet data)
+  type TagBySource = { label: string; confidence: number; source: string };
+  let mlInsightsTab = $state<'info' | 'ml'>('info');
+  let tagsBySource = $state<{
+    rampp?: TagBySource[];
+    florence2?: TagBySource[];
+    siglip?: TagBySource[];
+  }>({});
+  let mlCaption = $state<string | null>(null);
+  let mlOcr = $state<{
+    hasText: boolean;
+    fullText: string | null;
+    textBlocks: { text: string; confidence: number }[];
+  }>({ hasText: false, fullText: null, textBlocks: [] });
+  let mlProcessedAt = $state<string | null>(null);
+  let mlError = $state<string | null>(null);
+  let mlSectionExpanded = $state<Record<string, boolean>>({
+    rampp: true,
+    florence2: true,
+    siglip: false,
+    ocr: false,
+  });
 
   // Get the best available image source
   // Uses custom media:// protocol registered in main process to bypass file:// restrictions
@@ -591,11 +614,16 @@
     triggerPreload();
   });
 
-  // Migration 76: Load tags when viewing an image
+  // Load tags when viewing an image
   async function loadImageTags() {
     if (!currentMedia || currentMedia.type !== 'image') {
       imageTags = [];
       tagsSource = null;
+      tagsBySource = {};
+      mlCaption = null;
+      mlOcr = { hasText: false, fullText: null, textBlocks: [] };
+      mlProcessedAt = null;
+      mlError = null;
       return;
     }
 
@@ -607,6 +635,12 @@
         tagsSource = result.source || null;
         tagsViewType = result.viewType || null;
         tagsQualityScore = result.qualityScore || null;
+        // ML Insights data
+        tagsBySource = result.tagsBySource || {};
+        mlCaption = result.caption || null;
+        mlOcr = result.ocr || { hasText: false, fullText: null, textBlocks: [] };
+        mlProcessedAt = result.processedAt || null;
+        mlError = result.error || null;
       }
     } catch (err) {
       console.error('Failed to load image tags:', err);
@@ -690,7 +724,7 @@
         imageTags = data.tags || [];
         tagsViewType = data.viewType || null;
         tagsQualityScore = data.qualityScore || null;
-        tagsSource = 'ram++';
+        tagsSource = data.source || 'visual-buffet';
         // Reset retagging state - tags have arrived
         retagging = false;
         console.log('Tags received:', data.tags?.length, 'tags');
@@ -1141,99 +1175,284 @@
               </div>
             {/if}
 
-            <!-- Migration 76: RAM++ Auto Tags (Images only) -->
+            <!-- ML Insights Panel (Images only) -->
             {#if currentMedia.type === 'image'}
               <div class="pb-3 border-b border-braun-100">
-                <div class="flex items-center justify-between mb-2">
-                  <div class="text-xs font-medium text-braun-400 uppercase tracking-wide">Auto Tags</div>
-                  <div class="flex gap-1">
-                    {#if !editingTags}
-                      <button
-                        onclick={startTagEdit}
-                        class="text-xs text-braun-500 hover:text-braun-700 px-1"
-                        title="Edit tags"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onclick={requestRetag}
-                        disabled={retagging}
-                        class="text-xs text-braun-500 hover:text-braun-700 px-1 disabled:opacity-50"
-                        title="Re-analyze with RAM++"
-                      >
-                        {retagging ? 'Tagging...' : 'Re-tag'}
-                      </button>
-                    {/if}
-                  </div>
+                <!-- Two-tier navigation tabs -->
+                <div class="flex border-b border-braun-200 mb-3">
+                  <button
+                    onclick={() => mlInsightsTab = 'info'}
+                    class="px-3 py-1.5 text-xs font-medium transition-colors {mlInsightsTab === 'info'
+                      ? 'text-braun-900 border-b-2 border-braun-900 -mb-px'
+                      : 'text-braun-500 hover:text-braun-700'}"
+                  >
+                    Tags
+                  </button>
+                  <button
+                    onclick={() => mlInsightsTab = 'ml'}
+                    class="px-3 py-1.5 text-xs font-medium transition-colors {mlInsightsTab === 'ml'
+                      ? 'text-braun-900 border-b-2 border-braun-900 -mb-px'
+                      : 'text-braun-500 hover:text-braun-700'}"
+                  >
+                    ML Insights
+                  </button>
                 </div>
 
                 {#if loadingTags}
-                  <div class="text-xs text-braun-400">Loading tags...</div>
-                {:else if editingTags}
-                  <!-- Tag editing mode -->
-                  <div class="space-y-2">
-                    <textarea
-                      bind:value={tagEditValue}
-                      placeholder="Enter tags separated by commas..."
-                      class="w-full px-2 py-1.5 text-xs border border-braun-300 rounded resize-none focus:outline-none focus:border-braun-600"
-                      rows="3"
-                    ></textarea>
-                    <div class="flex gap-2 justify-end">
-                      <button
-                        onclick={cancelTagEdit}
-                        class="px-2 py-1 text-xs text-braun-600 hover:text-braun-800"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onclick={saveTagEdit}
-                        disabled={savingTags}
-                        class="px-2 py-1 text-xs bg-braun-900 text-white rounded hover:bg-braun-600 disabled:opacity-50"
-                      >
-                        {savingTags ? 'Saving...' : 'Save'}
-                      </button>
+                  <div class="text-xs text-braun-400">Loading ML data...</div>
+                {:else if mlInsightsTab === 'info'}
+                  <!-- Basic Tags View -->
+                  <div class="flex items-center justify-between mb-2">
+                    <div class="flex gap-1">
+                      {#if !editingTags}
+                        <button
+                          onclick={startTagEdit}
+                          class="text-xs text-braun-500 hover:text-braun-700 px-1"
+                          title="Edit tags"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onclick={requestRetag}
+                          disabled={retagging}
+                          class="text-xs text-braun-500 hover:text-braun-700 px-1 disabled:opacity-50"
+                          title="Re-analyze with visual-buffet"
+                        >
+                          {retagging ? 'Tagging...' : 'Re-tag'}
+                        </button>
+                      {/if}
                     </div>
                   </div>
-                {:else if imageTags.length > 0}
-                  <!-- Tag display -->
-                  <div class="flex flex-wrap gap-1 mb-2">
-                    {#each imageTags as tag}
-                      <span class="px-2 py-0.5 bg-braun-100 text-braun-700 rounded text-xs">
-                        {tag}
-                      </span>
-                    {/each}
-                  </div>
-                  <!-- Tag metadata -->
-                  <div class="text-xs text-braun-400 space-y-0.5">
-                    {#if tagsSource}
-                      <div class="flex justify-between">
-                        <span>Source</span>
-                        <span class="text-braun-500">{tagsSource}</span>
+
+                  {#if editingTags}
+                    <!-- Tag editing mode -->
+                    <div class="space-y-2">
+                      <textarea
+                        bind:value={tagEditValue}
+                        placeholder="Enter tags separated by commas..."
+                        class="w-full px-2 py-1.5 text-xs border border-braun-300 rounded resize-none focus:outline-none focus:border-braun-600"
+                        rows="3"
+                      ></textarea>
+                      <div class="flex gap-2 justify-end">
+                        <button
+                          onclick={cancelTagEdit}
+                          class="px-2 py-1 text-xs text-braun-600 hover:text-braun-800"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onclick={saveTagEdit}
+                          disabled={savingTags}
+                          class="px-2 py-1 text-xs bg-braun-900 text-white rounded hover:bg-braun-600 disabled:opacity-50"
+                        >
+                          {savingTags ? 'Saving...' : 'Save'}
+                        </button>
                       </div>
-                    {/if}
-                    {#if tagsViewType}
-                      <div class="flex justify-between">
-                        <span>View Type</span>
-                        <span class="text-braun-500 capitalize">{tagsViewType}</span>
-                      </div>
-                    {/if}
-                    {#if tagsQualityScore !== null}
-                      <div class="flex justify-between">
-                        <span>Quality</span>
-                        <span class="text-braun-500">{(tagsQualityScore * 100).toFixed(0)}%</span>
-                      </div>
-                    {/if}
-                  </div>
+                    </div>
+                  {:else if imageTags.length > 0}
+                    <!-- Tag display -->
+                    <div class="flex flex-wrap gap-1 mb-2">
+                      {#each imageTags as tag}
+                        <span class="px-2 py-0.5 bg-braun-100 text-braun-700 rounded text-xs">
+                          {tag}
+                        </span>
+                      {/each}
+                    </div>
+                    <!-- Tag metadata badges -->
+                    <div class="flex flex-wrap gap-2 text-xs">
+                      {#if tagsViewType}
+                        <span class="px-2 py-0.5 bg-braun-50 text-braun-600 rounded border border-braun-200 capitalize">
+                          {tagsViewType}
+                        </span>
+                      {/if}
+                      {#if tagsQualityScore !== null}
+                        <span class="px-2 py-0.5 bg-braun-50 text-braun-600 rounded border border-braun-200">
+                          Quality: {(tagsQualityScore * 100).toFixed(0)}%
+                        </span>
+                      {/if}
+                      {#if tagsSource}
+                        <span class="px-2 py-0.5 bg-braun-50 text-braun-500 rounded border border-braun-200">
+                          {tagsSource}
+                        </span>
+                      {/if}
+                    </div>
+                  {:else}
+                    <div class="text-xs text-braun-400 italic">
+                      No tags yet.
+                      <button
+                        onclick={requestRetag}
+                        disabled={retagging}
+                        class="text-braun-600 hover:underline disabled:opacity-50"
+                      >
+                        {retagging ? 'Analyzing...' : 'Analyze'}
+                      </button>
+                    </div>
+                  {/if}
                 {:else}
-                  <div class="text-xs text-braun-400 italic">
-                    No tags yet.
-                    <button
-                      onclick={requestRetag}
-                      disabled={retagging}
-                      class="text-braun-600 hover:underline disabled:opacity-50"
-                    >
-                      {retagging ? 'Analyzing...' : 'Analyze with RAM++'}
-                    </button>
+                  <!-- ML Insights View - Detailed breakdown by model -->
+                  <div class="space-y-3">
+                    <!-- Processing status -->
+                    {#if mlError}
+                      <div class="text-xs text-red-600 bg-red-50 px-2 py-1 rounded border border-red-200">
+                        Error: {mlError}
+                      </div>
+                    {/if}
+                    {#if mlProcessedAt}
+                      <div class="text-xs text-braun-400">
+                        Processed: {new Date(mlProcessedAt).toLocaleDateString()}
+                      </div>
+                    {/if}
+
+                    <!-- Florence-2 Caption -->
+                    {#if mlCaption}
+                      <div class="bg-braun-50 rounded p-2 border border-braun-100">
+                        <div class="text-xs font-medium text-braun-500 uppercase tracking-wide mb-1">Caption</div>
+                        <div class="text-sm text-braun-800 leading-relaxed">{mlCaption}</div>
+                      </div>
+                    {/if}
+
+                    <!-- RAM++ Tags Section -->
+                    {#if tagsBySource.rampp && tagsBySource.rampp.length > 0}
+                      <div class="border border-braun-100 rounded overflow-hidden">
+                        <button
+                          onclick={() => mlSectionExpanded.rampp = !mlSectionExpanded.rampp}
+                          class="w-full flex items-center justify-between px-2 py-1.5 bg-braun-50 text-xs font-medium text-braun-600 hover:bg-braun-100 transition-colors"
+                        >
+                          <span>RAM++ ({tagsBySource.rampp.length} tags)</span>
+                          <svg class="w-3 h-3 transition-transform {mlSectionExpanded.rampp ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        {#if mlSectionExpanded.rampp}
+                          <div class="p-2 space-y-1.5">
+                            {#each tagsBySource.rampp.slice(0, 15) as tag}
+                              <div class="flex items-center gap-2">
+                                <span class="text-xs text-braun-700 w-24 truncate" title={tag.label}>{tag.label}</span>
+                                <div class="flex-1 h-1.5 bg-braun-100 rounded overflow-hidden">
+                                  <div
+                                    class="h-full bg-braun-600 rounded"
+                                    style="width: {(tag.confidence * 100).toFixed(0)}%"
+                                  ></div>
+                                </div>
+                                <span class="text-xs text-braun-400 w-8 text-right">{(tag.confidence * 100).toFixed(0)}%</span>
+                              </div>
+                            {/each}
+                            {#if tagsBySource.rampp.length > 15}
+                              <div class="text-xs text-braun-400 pt-1">+{tagsBySource.rampp.length - 15} more tags</div>
+                            {/if}
+                          </div>
+                        {/if}
+                      </div>
+                    {/if}
+
+                    <!-- Florence-2 Tags Section -->
+                    {#if tagsBySource.florence2 && tagsBySource.florence2.length > 0}
+                      <div class="border border-braun-100 rounded overflow-hidden">
+                        <button
+                          onclick={() => mlSectionExpanded.florence2 = !mlSectionExpanded.florence2}
+                          class="w-full flex items-center justify-between px-2 py-1.5 bg-braun-50 text-xs font-medium text-braun-600 hover:bg-braun-100 transition-colors"
+                        >
+                          <span>Florence-2 ({tagsBySource.florence2.length} tags)</span>
+                          <svg class="w-3 h-3 transition-transform {mlSectionExpanded.florence2 ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        {#if mlSectionExpanded.florence2}
+                          <div class="p-2 space-y-1.5">
+                            {#each tagsBySource.florence2 as tag}
+                              <div class="flex items-center gap-2">
+                                <span class="text-xs text-braun-700 w-24 truncate" title={tag.label}>{tag.label}</span>
+                                <div class="flex-1 h-1.5 bg-braun-100 rounded overflow-hidden">
+                                  <div
+                                    class="h-full bg-amber-500 rounded"
+                                    style="width: {(tag.confidence * 100).toFixed(0)}%"
+                                  ></div>
+                                </div>
+                                <span class="text-xs text-braun-400 w-8 text-right">{(tag.confidence * 100).toFixed(0)}%</span>
+                              </div>
+                            {/each}
+                          </div>
+                        {/if}
+                      </div>
+                    {/if}
+
+                    <!-- SigLIP Tags Section -->
+                    {#if tagsBySource.siglip && tagsBySource.siglip.length > 0}
+                      <div class="border border-braun-100 rounded overflow-hidden">
+                        <button
+                          onclick={() => mlSectionExpanded.siglip = !mlSectionExpanded.siglip}
+                          class="w-full flex items-center justify-between px-2 py-1.5 bg-braun-50 text-xs font-medium text-braun-600 hover:bg-braun-100 transition-colors"
+                        >
+                          <span>SigLIP ({tagsBySource.siglip.length} scored)</span>
+                          <svg class="w-3 h-3 transition-transform {mlSectionExpanded.siglip ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        {#if mlSectionExpanded.siglip}
+                          <div class="p-2 space-y-1.5">
+                            {#each tagsBySource.siglip as tag}
+                              <div class="flex items-center gap-2">
+                                <span class="text-xs text-braun-700 w-24 truncate" title={tag.label}>{tag.label}</span>
+                                <div class="flex-1 h-1.5 bg-braun-100 rounded overflow-hidden">
+                                  <div
+                                    class="h-full bg-blue-500 rounded"
+                                    style="width: {(tag.confidence * 100).toFixed(0)}%"
+                                  ></div>
+                                </div>
+                                <span class="text-xs text-braun-400 w-8 text-right">{(tag.confidence * 100).toFixed(0)}%</span>
+                              </div>
+                            {/each}
+                          </div>
+                        {/if}
+                      </div>
+                    {/if}
+
+                    <!-- OCR Section -->
+                    {#if mlOcr.hasText}
+                      <div class="border border-braun-100 rounded overflow-hidden">
+                        <button
+                          onclick={() => mlSectionExpanded.ocr = !mlSectionExpanded.ocr}
+                          class="w-full flex items-center justify-between px-2 py-1.5 bg-braun-50 text-xs font-medium text-braun-600 hover:bg-braun-100 transition-colors"
+                        >
+                          <span>OCR Text</span>
+                          <svg class="w-3 h-3 transition-transform {mlSectionExpanded.ocr ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        {#if mlSectionExpanded.ocr && mlOcr.fullText}
+                          <div class="p-2">
+                            <pre class="text-xs text-braun-700 bg-braun-50 p-2 rounded font-mono whitespace-pre-wrap break-words max-h-32 overflow-y-auto">{mlOcr.fullText}</pre>
+                          </div>
+                        {/if}
+                      </div>
+                    {/if}
+
+                    <!-- No ML data message -->
+                    {#if !mlCaption && (!tagsBySource.rampp || tagsBySource.rampp.length === 0) && !mlOcr.hasText}
+                      <div class="text-xs text-braun-400 italic">
+                        No ML insights available.
+                        <button
+                          onclick={requestRetag}
+                          disabled={retagging}
+                          class="text-braun-600 hover:underline disabled:opacity-50"
+                        >
+                          {retagging ? 'Processing...' : 'Run visual-buffet'}
+                        </button>
+                      </div>
+                    {/if}
+
+                    <!-- Re-analyze button -->
+                    {#if mlCaption || (tagsBySource.rampp && tagsBySource.rampp.length > 0)}
+                      <div class="pt-2 border-t border-braun-100">
+                        <button
+                          onclick={requestRetag}
+                          disabled={retagging}
+                          class="text-xs text-braun-500 hover:text-braun-700 disabled:opacity-50"
+                        >
+                          {retagging ? 'Processing...' : 'Re-analyze with visual-buffet'}
+                        </button>
+                      </div>
+                    {/if}
                   </div>
                 {/if}
               </div>
