@@ -24,6 +24,8 @@ import { SQLiteLocationRepository } from '../repositories/sqlite-location-reposi
 import { SQLiteSubLocationRepository } from '../repositories/sqlite-sublocation-repository';
 // CLI-first architecture: Bridge to @aa/services
 import { initCliBridge } from '../services/cli-bridge';
+// Pipeline tools auto-update on startup
+import { updateAllPipelineTools } from '../services/pipeline-tools-updater';
 
 /**
  * OPT-045: GPU mitigation flags for macOS Leaflet/map rendering
@@ -249,6 +251,30 @@ async function startupOrchestrator(): Promise<void> {
     const configService = getConfigService();
     await configService.load();
     logger.info('Main', 'Configuration loaded successfully');
+
+    // Step 1b: Update pipeline tools from GitHub (non-blocking)
+    logger.info('Main', 'Step 1b: Updating pipeline tools');
+    try {
+      const toolsResult = await updateAllPipelineTools();
+      if (toolsResult.success) {
+        logger.info('Main', 'Pipeline tools updated successfully', {
+          updated: toolsResult.results.filter((r) => r.action !== 'already-up-to-date').length,
+          total: toolsResult.results.length,
+          durationMs: toolsResult.totalDurationMs,
+        });
+      } else {
+        const failed = toolsResult.results.filter((r) => !r.success);
+        logger.warn('Main', 'Some pipeline tools failed to update', {
+          failed: failed.map((r) => r.name),
+          durationMs: toolsResult.totalDurationMs,
+        });
+      }
+    } catch (toolsError) {
+      // Non-fatal: log warning but continue startup
+      logger.warn('Main', 'Pipeline tools update failed', {
+        message: (toolsError as Error).message,
+      });
+    }
 
     // Step 2: Initialize database
     logger.info('Main', 'Step 2/5: Initializing database');
