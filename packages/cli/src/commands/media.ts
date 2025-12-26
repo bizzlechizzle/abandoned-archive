@@ -6,7 +6,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
 import Table from 'cli-table3';
-import { getDatabase } from '../database';
+import { getDatabase } from '../database.js';
 
 export function registerMediaCommands(program: Command): void {
   const media = program

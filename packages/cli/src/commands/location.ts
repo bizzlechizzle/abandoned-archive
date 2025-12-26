@@ -6,8 +6,8 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
 import Table from 'cli-table3';
-import { getDatabase } from '../database';
-import { LocationService } from '@aa/services/location';
+import { getDatabase } from '../database.js';
+import { LocationService } from '@aa/services';
 
 export function registerLocationCommands(program: Command): void {
   const location = program

@@ -9,9 +9,8 @@ import { Command } from 'commander';
 import {
   createPipelineOrchestrator,
   PipelineHelpers,
-  type PipelineTool,
-  type ProgressMessage,
 } from '@aa/services';
+import type { PipelineTool, ProgressMessage } from '@aa/services';
 
 /**
  * Format progress for display

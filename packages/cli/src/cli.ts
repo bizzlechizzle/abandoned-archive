@@ -6,17 +6,21 @@
  */
 
 import { Command } from 'commander';
-import { version } from '../package.json' with { type: 'json' };
-import { registerLocationCommands } from './commands/location';
-import { registerMediaCommands } from './commands/media';
-import { registerImportCommands } from './commands/import';
-import { registerExportCommands } from './commands/export';
-import { registerDbCommands } from './commands/db';
-import { registerConfigCommands } from './commands/config';
-import { registerRefmapCommands } from './commands/refmap';
-import { registerCollectionCommands } from './commands/collection';
-import { registerTagCommands } from './commands/tag';
-import { registerPipelineCommands } from './commands/pipeline';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const pkg = require('../package.json');
+const version = pkg.version;
+import { registerLocationCommands } from './commands/location.js';
+import { registerMediaCommands } from './commands/media.js';
+import { registerImportCommands } from './commands/import.js';
+import { registerExportCommands } from './commands/export.js';
+import { registerDbCommands } from './commands/db.js';
+import { registerConfigCommands } from './commands/config.js';
+import { registerRefmapCommands } from './commands/refmap.js';
+import { registerCollectionCommands } from './commands/collection.js';
+import { registerTagCommands } from './commands/tag.js';
+import { registerPipelineCommands } from './commands/pipeline.js';
 
 const program = new Command();
 

@@ -15,15 +15,15 @@
  */
 
 // Re-export commands for programmatic usage
-export { registerLocationCommands } from './commands/location';
-export { registerMediaCommands } from './commands/media';
-export { registerImportCommands } from './commands/import';
-export { registerExportCommands } from './commands/export';
-export { registerRefmapCommands } from './commands/refmap';
-export { registerCollectionCommands } from './commands/collection';
-export { registerTagCommands } from './commands/tag';
-export { registerDbCommands } from './commands/db';
-export { registerConfigCommands } from './commands/config';
+export { registerLocationCommands } from './commands/location.js';
+export { registerMediaCommands } from './commands/media.js';
+export { registerImportCommands } from './commands/import.js';
+export { registerExportCommands } from './commands/export.js';
+export { registerRefmapCommands } from './commands/refmap.js';
+export { registerCollectionCommands } from './commands/collection.js';
+export { registerTagCommands } from './commands/tag.js';
+export { registerDbCommands } from './commands/db.js';
+export { registerConfigCommands } from './commands/config.js';
 
 // Re-export database utilities
-export { getDatabase, initDatabase, closeDatabase } from './database';
+export { getDatabase, initDatabase, closeDatabase } from './database.js';

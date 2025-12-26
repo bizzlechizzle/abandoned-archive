@@ -4,4 +4,4 @@
  * Abandoned Archive CLI entry point
  */
 
-import '../dist/cli.js';
+import '../dist/cli.bundle.js';

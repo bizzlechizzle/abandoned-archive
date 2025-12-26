@@ -9,9 +9,9 @@
     "aa": "./bin/aa.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node build.mjs",
     "dev": "tsc --watch",
-    "start": "node dist/cli.js",
+    "start": "node dist/cli.bundle.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -31,6 +31,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.8",
     "@types/node": "^20.10.0",
+    "esbuild": "^0.24.0",
     "typescript": "^5.3.3",
     "vitest": "^1.0.0"
   },

@@ -11,7 +11,7 @@ import { existsSync, readdirSync } from 'fs';
 import { resolve, extname, basename } from 'path';
 import { createHash } from 'crypto';
 import { readFile } from 'fs/promises';
-import { getDatabase } from '../database';
+import { getDatabase } from '../database.js';
 
 // Supported media extensions
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif', '.tiff', '.tif', '.raw', '.cr2', '.nef', '.arw', '.dng']);

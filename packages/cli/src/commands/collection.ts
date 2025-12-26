@@ -9,7 +9,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import Table from 'cli-table3';
 import { createHash, randomBytes } from 'crypto';
-import { getDatabase } from '../database';
+import { getDatabase } from '../database.js';
 
 export function registerCollectionCommands(program: Command): void {
   const collection = program

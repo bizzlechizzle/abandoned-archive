@@ -11,7 +11,7 @@ import Table from 'cli-table3';
 import { existsSync, readFileSync } from 'fs';
 import { resolve, extname, basename } from 'path';
 import { createHash, randomBytes } from 'crypto';
-import { getDatabase } from '../database';
+import { getDatabase } from '../database.js';
 
 export function registerRefmapCommands(program: Command): void {
   const refmap = program

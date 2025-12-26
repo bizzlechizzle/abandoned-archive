@@ -8,7 +8,7 @@ import ora from 'ora';
 import { existsSync, statSync, mkdirSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { homedir } from 'os';
-import { getDatabase, initDatabase, closeDatabase } from '../database';
+import { getDatabase, initDatabase, closeDatabase } from '../database.js';
 
 const DEFAULT_DB_PATH = resolve(homedir(), '.abandoned-archive', 'archive.db');
 

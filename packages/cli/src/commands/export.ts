@@ -7,7 +7,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { writeFileSync, mkdirSync, existsSync, copyFileSync } from 'fs';
 import { join, basename } from 'path';
-import { getDatabase } from '../database';
+import { getDatabase } from '../database.js';
 
 export function registerExportCommands(program: Command): void {
   const exportCmd = program
