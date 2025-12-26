@@ -1333,15 +1333,22 @@ const api = {
 contextBridge.exposeInMainWorld("electronAPI", api);
 
 // Drag-Drop File Path Extraction
+// IMPORTANT: Always-on logging for drag-drop - this is critical for debugging
 let lastDroppedPaths = [];
 
 const setupDropListener = () => {
+  console.log("[Preload] Setting up drop listener, webUtils available:", !!webUtils);
+
   document.addEventListener("drop", (event) => {
+    console.log("[Preload] Drop event captured");
     lastDroppedPaths = [];
 
     if (!event.dataTransfer?.files || event.dataTransfer.files.length === 0) {
+      console.log("[Preload] No files in drop event");
       return;
     }
+
+    console.log("[Preload] Processing", event.dataTransfer.files.length, "dropped files");
 
     for (const file of Array.from(event.dataTransfer.files)) {
       try {
@@ -1349,10 +1356,12 @@ const setupDropListener = () => {
         let filePath = null;
         if (webUtils && typeof webUtils.getPathForFile === 'function') {
           filePath = webUtils.getPathForFile(file);
+          console.log("[Preload] webUtils.getPathForFile returned:", filePath);
         } else if (file.path) {
           // Fallback: deprecated file.path still works in Electron 28
           filePath = file.path;
-        } else if (DEBUG) {
+          console.log("[Preload] Using file.path fallback:", filePath);
+        } else {
           console.warn("[Preload] Neither webUtils nor file.path available for:", file.name);
         }
 
@@ -1364,9 +1373,7 @@ const setupDropListener = () => {
       }
     }
 
-    if (DEBUG) {
-      console.log("[Preload] Extracted", lastDroppedPaths.length, "paths from drop");
-    }
+    console.log("[Preload] Total paths extracted:", lastDroppedPaths.length, lastDroppedPaths);
   }, { capture: true });
 };
 
@@ -1377,9 +1384,13 @@ if (document.readyState === "loading") {
 }
 
 contextBridge.exposeInMainWorld("getDroppedFilePaths", () => {
-  return [...lastDroppedPaths];
+  const paths = [...lastDroppedPaths];
+  console.log("[Preload] getDroppedFilePaths called, returning", paths.length, "paths:", paths);
+  return paths;
 });
 
 contextBridge.exposeInMainWorld("extractFilePaths", (_files) => {
-  return [...lastDroppedPaths];
+  const paths = [...lastDroppedPaths];
+  console.log("[Preload] extractFilePaths called, returning", paths.length, "paths");
+  return paths;
 });

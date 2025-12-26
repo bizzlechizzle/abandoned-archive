@@ -1055,11 +1055,14 @@ contextBridge.exposeInMainWorld('electronAPI', api);
 // ============================================
 // File objects lose their native path backing when passed through contextBridge.
 // Solution: Capture drop events in preload and extract paths using webUtils.
+// IMPORTANT: Always-on logging for drag-drop - this is critical for debugging
 
 let lastDroppedPaths: string[] = [];
 
 // Set up drop event listener after DOM is ready
 const setupDropListener = () => {
+  console.log('[Preload] Setting up drop listener, webUtils available:', !!webUtils);
+
   document.addEventListener('drop', (event: DragEvent) => {
     console.log('[Preload] Drop event captured');
     lastDroppedPaths = [];
@@ -1074,7 +1077,7 @@ const setupDropListener = () => {
     for (const file of Array.from(event.dataTransfer.files)) {
       try {
         const filePath = webUtils.getPathForFile(file);
-        console.log('[Preload] Extracted path:', filePath, 'for file:', file.name);
+        console.log('[Preload] webUtils.getPathForFile returned:', filePath);
         if (filePath) {
           lastDroppedPaths.push(filePath);
         }
@@ -1083,7 +1086,7 @@ const setupDropListener = () => {
       }
     }
 
-    console.log('[Preload] Total paths extracted:', lastDroppedPaths.length);
+    console.log('[Preload] Total paths extracted:', lastDroppedPaths.length, lastDroppedPaths);
   }, { capture: true });
 };
 
@@ -1097,14 +1100,15 @@ if (document.readyState === 'loading') {
 // Expose function to retrieve the paths extracted from the last drop event
 contextBridge.exposeInMainWorld('getDroppedFilePaths', (): string[] => {
   const paths = [...lastDroppedPaths];
-  console.log('[Preload] getDroppedFilePaths called, returning', paths.length, 'paths');
+  console.log('[Preload] getDroppedFilePaths called, returning', paths.length, 'paths:', paths);
   return paths;
 });
 
 // Also keep extractFilePaths for backwards compatibility
 contextBridge.exposeInMainWorld('extractFilePaths', (files: FileList): string[] => {
-  console.log('[Preload] extractFilePaths called');
-  return [...lastDroppedPaths];
+  const paths = [...lastDroppedPaths];
+  console.log('[Preload] extractFilePaths called, returning', paths.length, 'paths');
+  return paths;
 });
 
 // Type is exported from a separate .d.ts file to avoid CJS compilation issues

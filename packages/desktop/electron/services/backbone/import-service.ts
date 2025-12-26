@@ -24,6 +24,7 @@ import {
   type FileCategory,
 } from 'wake-n-blake';
 import * as path from 'node:path';
+import * as fs from 'node:fs';
 import type { Kysely } from 'kysely';
 import type { Database } from '../../main/database.types';
 import { JobQueue, IMPORT_QUEUES, JOB_PRIORITY, type JobInput } from '../job-queue.js';
@@ -31,6 +32,44 @@ import { generateId } from '../../main/ipc-validation.js';
 import { getLogger } from '../logger-service.js';
 import { getMetricsCollector, MetricNames } from '../monitoring/metrics-collector.js';
 import { acquireLocationLock, releaseLocationLock } from '../import/location-lock.js';
+
+/**
+ * Find the common parent directory of multiple paths
+ * Used when user selects multiple files via file picker
+ */
+function findCommonParent(paths: string[]): string {
+  if (paths.length === 0) return '.';
+  if (paths.length === 1) return paths[0];
+
+  // Normalize and split all paths
+  const allParts = paths.map(p => path.resolve(p).split(path.sep).filter(Boolean));
+
+  // Find common prefix
+  const commonParts: string[] = [];
+  const minLength = Math.min(...allParts.map(parts => parts.length));
+
+  for (let i = 0; i < minLength; i++) {
+    const part = allParts[0][i];
+    if (allParts.every(parts => parts[i] === part)) {
+      commonParts.push(part);
+    } else {
+      break;
+    }
+  }
+
+  return path.sep + commonParts.join(path.sep);
+}
+
+/**
+ * Check if a path is a directory
+ */
+function isDirectory(filePath: string): boolean {
+  try {
+    return fs.statSync(filePath).isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 const logger = getLogger();
 const metrics = getMetricsCollector();
@@ -193,12 +232,56 @@ export class ImportService {
     let session: ImportSession;
     let error: string | undefined;
 
+    // Build a set of allowed file paths for filtering (when specific files are selected)
+    const allowedFilePaths = new Set<string>();
+    let filterToSpecificFiles = false;
+
     try {
-      // Build source path - if multiple paths, use first one as source
-      // (runImport handles single directory; for multiple, caller should merge)
-      const sourcePath = sourcePaths.length === 1 && sourcePaths[0]
-        ? sourcePaths[0]
-        : sourcePaths[0] || '.';
+      // Determine source path based on what was passed
+      let sourcePath: string;
+
+      if (sourcePaths.length === 0) {
+        throw new Error('No source paths provided');
+      } else if (sourcePaths.length === 1) {
+        // Single path - could be file or directory
+        sourcePath = sourcePaths[0];
+        if (!isDirectory(sourcePath)) {
+          // Single file - use parent directory, filter to just this file
+          filterToSpecificFiles = true;
+          allowedFilePaths.add(path.resolve(sourcePath));
+          sourcePath = path.dirname(sourcePath);
+          logger.info('ImportService', 'Single file import - using parent directory', {
+            file: sourcePaths[0],
+            sourceDir: sourcePath,
+          });
+        }
+      } else {
+        // Multiple paths - find common parent and filter to selected files
+        const firstIsDir = isDirectory(sourcePaths[0]);
+
+        if (firstIsDir) {
+          // Multiple directories - use first one (legacy behavior)
+          // TODO: Support multiple directory imports
+          sourcePath = sourcePaths[0];
+          logger.warn('ImportService', 'Multiple directories passed - using first only', {
+            count: sourcePaths.length,
+            first: sourcePaths[0],
+          });
+        } else {
+          // Multiple files - find common parent and filter
+          sourcePath = findCommonParent(sourcePaths);
+          filterToSpecificFiles = true;
+
+          for (const p of sourcePaths) {
+            allowedFilePaths.add(path.resolve(p));
+          }
+
+          logger.info('ImportService', 'Multiple file import - using common parent', {
+            fileCount: sourcePaths.length,
+            commonParent: sourcePath,
+          });
+        }
+      }
 
       // Build destination path for this location
       const destPath = this.buildLocationPath(archivePath, location);
@@ -259,6 +342,19 @@ export class ImportService {
 
         // Per-file callback for database integration
         onFile: async (file, action) => {
+          // Filter to specific files if user selected individual files (not a folder)
+          if (filterToSpecificFiles) {
+            const resolvedPath = path.resolve(file.path);
+            if (!allowedFilePaths.has(resolvedPath)) {
+              // Skip this file - it wasn't in the user's selection
+              // Mark as skipped so wake-n-blake doesn't process it further
+              if (action === 'scanned' || action === 'pending') {
+                file.status = 'skipped' as ImportFileState['status'];
+              }
+              return;
+            }
+          }
+
           if (action === 'validated' && file.destPath && file.hash) {
             try {
               // Determine media type from file category
