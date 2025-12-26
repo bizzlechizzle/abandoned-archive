@@ -82,8 +82,10 @@ export interface VisualBuffetResult {
 }
 
 export interface VisualBuffetInput {
-  /** Path to ML-tier image (2560px JPEG) */
+  /** Path to ML-tier image (2560px JPEG) - used for ML inference */
   imagePath: string;
+  /** Path to original archive file - XMP sidecar is written here */
+  archivePath?: string;
   /** File hash (for database lookup) */
   hash: string;
   /** Media type (image or video) */
@@ -272,23 +274,9 @@ export class VisualBuffetService {
       await this.updateDatabase(input.hash, input.mediaType, finalResult);
 
       // Update XMP sidecar with tags, caption, and OCR
-      // Get the original source path from database
-      const table = input.mediaType === 'image' ? 'imgs' : 'vids';
-      const hashCol = input.mediaType === 'image' ? 'imghash' : 'vidhash';
-      const locCol = input.mediaType === 'image' ? 'imgloco' : 'vidloco';
-
-      const record = await this.db
-        .selectFrom(table)
-        .select([locCol])
-        .where(hashCol, '=', input.hash)
-        .executeTakeFirst();
-
-      if (record) {
-        const sourcePath = (record as Record<string, string>)[locCol];
-        if (sourcePath) {
-          await this.updateXmp(sourcePath, finalResult);
-        }
-      }
+      // XMP is written next to the ARCHIVE file (not the ML derivative or original source)
+      const xmpTargetPath = input.archivePath || input.imagePath;
+      await this.updateXmp(xmpTargetPath, finalResult);
     }
 
     return finalResult;
@@ -310,6 +298,7 @@ export class VisualBuffetService {
         '--plugin', 'siglip',
         '--discover',           // Enable vocabulary discovery
         '--threshold', '0.5',   // Confidence threshold
+        '--no-xmp',             // Disable CLI XMP writing (desktop handles it with correct path)
         '-o', '-',              // Output to stdout as JSON
       ];
 
@@ -397,6 +386,7 @@ export class VisualBuffetService {
         'tag',
         imagePath,
         '--plugin', 'paddle_ocr',
+        '--no-xmp',             // Disable CLI XMP writing (desktop handles it)
         '-o', '-',
       ];
 
@@ -554,9 +544,17 @@ export class VisualBuffetService {
 
   /**
    * Parse the tagging output from visual-buffet
+   * Handles cases where stdout contains non-JSON lines before the JSON object
    */
   private parseTaggingOutput(stdout: string): Partial<VisualBuffetResult> {
-    const data = JSON.parse(stdout);
+    // Extract JSON from stdout (visual-buffet may output text before JSON)
+    const jsonStart = stdout.indexOf('{');
+    const jsonEnd = stdout.lastIndexOf('}');
+    if (jsonStart === -1 || jsonEnd === -1 || jsonEnd < jsonStart) {
+      throw new Error('No valid JSON found in output');
+    }
+    const jsonStr = stdout.slice(jsonStart, jsonEnd + 1);
+    const data = JSON.parse(jsonStr);
     const results = data.results || data;
 
     // Collect tags from all sources
@@ -725,14 +723,15 @@ export class VisualBuffetService {
    * - Custom vb: namespace for OCR text
    */
   async updateXmp(
-    sourcePath: string,
+    archivePath: string,
     result: VisualBuffetResult
   ): Promise<void> {
     if (!result.success) return;
 
     try {
       const { exiftool } = await import('exiftool-vendored');
-      const xmpPath = sourcePath.replace(/\.[^.]+$/, '.xmp');
+      // XMP sidecar naming convention: filename.ext.xmp (not filename.xmp)
+      const xmpPath = `${archivePath}.xmp`;
 
       const xmpData: Record<string, unknown> = {};
 

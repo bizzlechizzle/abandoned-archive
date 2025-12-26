@@ -744,13 +744,14 @@ export class JobWorkerService extends EventEmitter {
 
     emit('progress', { progress: 0, message: 'Starting visual-buffet...' });
 
-    // Get ML path from database
+    // Get ML path and original archive path from database
     const table = payload.mediaType === 'image' ? 'imgs' : 'vids';
     const hashCol = payload.mediaType === 'image' ? 'imghash' : 'vidhash';
+    const locCol = payload.mediaType === 'image' ? 'imgloc' : 'vidloc';
 
     const record = await this.db
       .selectFrom(table)
-      .select(['ml_path'])
+      .select(['ml_path', locCol])
       .where(hashCol, '=', payload.hash)
       .executeTakeFirst();
 
@@ -759,6 +760,9 @@ export class JobWorkerService extends EventEmitter {
       return { success: false };
     }
 
+    // Get archive path for XMP writing (XMP goes next to original, not ML derivative)
+    const archivePath = (record as Record<string, string>)[locCol];
+
     emit('progress', { progress: 20, message: 'Running ML tagging...' });
 
     const { getVisualBuffetService } = await import('./visual-buffet-service');
@@ -766,6 +770,7 @@ export class JobWorkerService extends EventEmitter {
 
     const result = await vbService.process({
       imagePath: record.ml_path,
+      archivePath,  // Original archive path for XMP writing
       hash: payload.hash,
       mediaType: payload.mediaType as 'image' | 'video',
       locid: payload.locid,

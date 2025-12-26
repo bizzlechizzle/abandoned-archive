@@ -163,6 +163,40 @@ function safeSerialize<T>(data: T): T {
 }
 
 /**
+ * OPT-110: Strip large file arrays from import result before IPC transfer
+ *
+ * For massive imports (10K+ files), the result object contains 5 arrays of file objects:
+ * - scanResult.files[], hashResult.files[], copyResult.files[],
+ * - validationResult.files[], finalizationResult.files[]
+ *
+ * This causes the 600000ms timeout because:
+ * 1. JSON.stringify of 50K+ objects is slow
+ * 2. Structured clone for IPC is slow
+ * 3. Memory allocation for 10s of MB of data
+ *
+ * Solution: Strip file arrays, return only summary stats (which is all the UI needs)
+ */
+function stripFileArraysFromResult<T extends Record<string, unknown>>(result: T): T {
+  const stripped = { ...result };
+
+  // Strip file arrays from each result stage
+  const stagesToStrip = ['scanResult', 'hashResult', 'copyResult', 'validationResult', 'finalizationResult'];
+
+  for (const stage of stagesToStrip) {
+    if (stripped[stage] && typeof stripped[stage] === 'object') {
+      const stageData = stripped[stage] as Record<string, unknown>;
+      if (Array.isArray(stageData.files)) {
+        // Keep everything except the files array
+        const { files, ...rest } = stageData;
+        stripped[stage] = { ...rest, fileCount: files.length } as T[keyof T];
+      }
+    }
+  }
+
+  return stripped;
+}
+
+/**
  * Register Import v2.0 IPC handlers
  */
 export function registerImportV2Handlers(db: Kysely<Database>): void {
@@ -260,8 +294,9 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
         jobsQueued: result.finalizationResult?.jobsQueued ?? 0,
       });
 
+      // OPT-110: Strip large file arrays to prevent timeout on massive imports
       // OPT-080: Force serialization to prevent structured clone errors
-      return safeSerialize(result);
+      return safeSerialize(stripFileArraysFromResult(result as Record<string, unknown>));
 
     } catch (error) {
       console.error('[import:v2:start] Error:', error);
@@ -405,8 +440,9 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
       // OPT-106: Flush any pending progress before returning
       progressEmitter.flush();
 
+      // OPT-110: Strip large file arrays to prevent timeout on massive imports
       // OPT-080: Force serialization to prevent structured clone errors
-      return safeSerialize(result);
+      return safeSerialize(stripFileArraysFromResult(result as Record<string, unknown>));
     } catch (error) {
       console.error('[import:v2:resume] Error:', error);
       // OPT-080: Serialize error to prevent structured clone failure in IPC
