@@ -1,13 +1,10 @@
 import Database from 'better-sqlite3';
 import { Kysely, SqliteDialect } from 'kysely';
 import type { Database as DatabaseSchema } from '../../../main/database.types';
+import { SCHEMA_SQL, runMigrations } from '../../../main/database';
 import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import os from 'os';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import path from 'path';
 
 /**
  * Create a test database with schema
@@ -24,11 +21,8 @@ export function createTestDatabase(): {
   sqlite.pragma('journal_mode = WAL');
   sqlite.pragma('foreign_keys = ON');
 
-  // Initialize schema
-  const schemaPath = path.join(__dirname, '../../../main/schema.sql');
-  const schema = fs.readFileSync(schemaPath, 'utf-8');
-
-  const statements = schema
+  // Initialize schema using the same embedded schema as production
+  const statements = SCHEMA_SQL
     .split(';')
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
@@ -36,6 +30,9 @@ export function createTestDatabase(): {
   for (const statement of statements) {
     sqlite.exec(statement);
   }
+
+  // Run migrations to add columns created after base schema
+  runMigrations(sqlite);
 
   const dialect = new SqliteDialect({ database: sqlite });
   const db = new Kysely<DatabaseSchema>({ dialect });

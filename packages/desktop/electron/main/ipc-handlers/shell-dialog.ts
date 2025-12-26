@@ -5,12 +5,15 @@
 import { ipcMain, shell, dialog, BrowserWindow } from 'electron';
 import { z } from 'zod';
 
+const ALLOWED_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
+
 export function registerShellHandlers() {
   ipcMain.handle('shell:openExternal', async (_event, url: unknown) => {
     try {
       const validatedUrl = z.string().url().parse(url);
-      // Security: Only allow http, https, and mailto protocols
-      if (!validatedUrl.match(/^(https?|mailto):/)) {
+      // Security: Parse URL and validate protocol to prevent javascript: and other schemes
+      const parsedUrl = new URL(validatedUrl);
+      if (!ALLOWED_PROTOCOLS.has(parsedUrl.protocol)) {
         throw new Error('Only http, https, and mailto URLs are allowed');
       }
       await shell.openExternal(validatedUrl);

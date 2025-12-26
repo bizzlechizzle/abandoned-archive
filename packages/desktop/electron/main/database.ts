@@ -11,9 +11,9 @@ let sqliteDb: SqliteDatabase | null = null;
 
 /**
  * Database schema SQL - embedded to avoid bundling issues with Vite
- * This schema is kept in sync with schema.sql for reference
+ * This is the source of truth for schema - used by both production and tests
  */
-const SCHEMA_SQL = `
+export const SCHEMA_SQL = `
 -- AU Archive Database Schema
 -- SQLite database for local-first abandoned location archive
 
@@ -269,7 +269,7 @@ function hasSchema(sqlite: Database.Database): boolean {
  * Checks for missing columns and adds them
  * Safe to call on databases that already have all migrations applied
  */
-function runMigrations(sqlite: Database.Database): void {
+export function runMigrations(sqlite: Database.Database): void {
   try {
     // Get current table list for migration checks
     const tables = sqlite.pragma('table_list') as Array<{ name: string }>;

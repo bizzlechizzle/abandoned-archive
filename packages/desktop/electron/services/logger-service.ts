@@ -50,7 +50,14 @@ export class Logger {
     // Always use userData for logs - it's a safe, writable location on all platforms
     // In development, this is ~/Library/Application Support/Electron (or similar)
     // In production, this is ~/Library/Application Support/Abandoned Archive
-    this.logDir = path.join(app.getPath('userData'), 'logs');
+    // In test environment (Vitest), app.getPath is unavailable - use temp dir
+    try {
+      this.logDir = path.join(app.getPath('userData'), 'logs');
+    } catch {
+      // Fallback for test environments where Electron app is not available
+      const os = require('os');
+      this.logDir = path.join(os.tmpdir(), 'au-archive-test-logs');
+    }
     this.currentLogFile = path.join(this.logDir, 'au-archive.log');
     this.ensureLogDirectory();
     // Don't rotate in constructor - config may not be loaded yet

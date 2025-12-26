@@ -420,13 +420,13 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
       };
 
       // ADR-046: Simplified location (removed loc12/slocnam)
-      // OPT-093: Resume currently doesn't restore subid context
-      // TODO: Store subid in import_sessions table for proper resume support
+      // OPT-093: Resume limitation - subid not stored in import_sessions
+      // Resumed imports go to host location; original sub-location context is lost
       const result = await orchestrator.resume(sessionId, {
         location: {
           locid: location.locid,
           address_state: location.address_state,
-          subid: null, // Resume doesn't have original subid - media goes to host
+          subid: null, // Resume limitation: subid not persisted in import_sessions
         },
         archivePath: archiveSetting.value,
         user: currentUser ? {
@@ -499,11 +499,13 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
   /**
    * Acknowledge (dismiss) dead letter entries
    */
-  ipcMain.handle('jobs:acknowledge', async (_event, ids: number[]) => {
+  ipcMain.handle('jobs:acknowledge', async (_event, ids: unknown) => {
     try {
+      // Validate input: array of positive integers with max 100 items
+      const validatedIds = z.array(z.number().int().positive()).max(100).parse(ids);
       const jobQueue = new JobQueue(db);
-      await jobQueue.acknowledgeDeadLetter(ids);
-      return { acknowledged: ids.length };
+      await jobQueue.acknowledgeDeadLetter(validatedIds);
+      return { acknowledged: validatedIds.length };
     } catch (error) {
       console.error('[jobs:acknowledge] Error:', error);
       const message = error instanceof Error ? error.message : String(error);

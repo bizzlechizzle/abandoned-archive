@@ -749,8 +749,8 @@ function buildTagsBySource(
 
   const result: { rampp?: TagBySource[]; florence2?: TagBySource[]; siglip?: TagBySource[] } = {};
 
-  // For now, return all tags as RAM++ (most common source)
-  // TODO: Store actual tagsBySource in database for accurate breakdown
+  // Fallback for legacy images without auto_tags_by_source
+  // New imports store actual per-source data via visual-buffet-service
   if (tags.length > 0) {
     result.rampp = tags.slice(0, Math.ceil(tags.length * 0.6)).map(label => ({
       label,

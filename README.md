@@ -114,21 +114,42 @@ aa pipeline status                                       # Show active pipeline 
 ```
 
 ### ML Tagging (Visual-Buffet)
+
+The visual-buffet pipeline runs automatically on every import:
+
+| Model | Purpose | Tags |
+|-------|---------|------|
+| RAM++ | Image classification | 4585 categories |
+| Florence-2 | Dense captions → tags | Natural language descriptions |
+| SigLIP | Zero-shot scoring | Vocabulary discovery |
+| PaddleOCR | Text extraction | Signs, documents, graffiti |
+
 ```bash
-# Install visual-buffet (Python)
+# Install visual-buffet (Python 3.11 recommended)
 pip install visual-buffet
 
-# Tag a single image
-python -m visual_buffet tag image.jpg --plugin ram_plus --plugin florence_2 --plugin siglip
+# Tag a single image (full pipeline)
+visual-buffet tag image.jpg --plugin ram_plus --plugin florence_2 --plugin siglip --discover
 
-# Desktop app commands (via IPC)
-# tagging:getImageTags     - Get tags for an image
-# tagging:retagImage       - Queue image for re-tagging
-# tagging:editImageTags    - Manually edit tags
-# tagging:clearImageTags   - Clear all tags
+# With OCR detection
+visual-buffet tag image.jpg --plugin paddle_ocr
+
+# Output to JSON
+visual-buffet tag image.jpg -o results.json
+
+# Desktop app IPC channels:
+# tagging:getImageTags       - Get tags for an image
+# tagging:retagImage         - Queue image for re-tagging
+# tagging:editImageTags      - Manually edit tags
+# tagging:clearImageTags     - Clear all tags
 # tagging:getLocationSummary - Get aggregated tags for a location
-# tagging:queueUntaggedImages - Queue all untagged images in a location
+# tagging:syncFromXmp        - Sync XMP sidecar tags to database
+# tagging:getXmpTags         - Read tags directly from XMP sidecar
 ```
+
+**Results Storage:**
+- XMP sidecars: `dc:subject` tags with `ml:` prefix
+- Database: `imgs.auto_tags`, `imgs.auto_caption`, `imgs.auto_tags_by_source`
 
 ### Global Options
 ```bash

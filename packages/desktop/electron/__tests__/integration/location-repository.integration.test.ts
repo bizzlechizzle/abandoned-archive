@@ -142,10 +142,10 @@ describe('SQLiteLocationRepository Integration', () => {
       expect(found).toBeNull();
     });
 
-    it('should not throw when deleting non-existent location', async () => {
+    it('should throw when deleting non-existent location', async () => {
       // ADR-049: Use 16-char hex ID format
       const fakeId = Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-      await expect(repo.delete(fakeId)).resolves.not.toThrow();
+      await expect(repo.delete(fakeId)).rejects.toThrow('Location not found');
     });
   });
 

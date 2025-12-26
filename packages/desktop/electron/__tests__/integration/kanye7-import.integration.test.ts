@@ -6,6 +6,7 @@
 import Database from 'better-sqlite3';
 import { Kysely, SqliteDialect } from 'kysely';
 import type { Database as DatabaseSchema } from '../../main/database.types';
+import { SCHEMA_SQL, runMigrations } from '../../main/database';
 import { SQLiteLocationRepository } from '../../repositories/sqlite-location-repository';
 import { SQLiteMediaRepository } from '../../repositories/sqlite-media-repository';
 import { ThumbnailService } from '../../services/backbone/thumbnail-service';
@@ -36,85 +37,25 @@ describe('Kanye7 Integration Test - Full Import Flow', () => {
     fs.mkdirSync(path.join(archivePath, 'images'), { recursive: true });
     fs.mkdirSync(path.join(archivePath, 'thumbnails'), { recursive: true });
 
-    // Initialize database
+    // Initialize database with shared schema
     sqlite = new Database(dbPath);
     sqlite.pragma('journal_mode = WAL');
     sqlite.pragma('foreign_keys = ON');
 
-    // Create schema
-    sqlite.exec(`
-      CREATE TABLE IF NOT EXISTS locs (
-        locid TEXT PRIMARY KEY,
-        loc12 TEXT UNIQUE NOT NULL,
-        locnam TEXT NOT NULL,
-        slocnam TEXT,
-        akanam TEXT,
-        type TEXT,
-        stype TEXT,
-        gps_lat REAL,
-        gps_lng REAL,
-        gps_accuracy REAL,
-        gps_source TEXT,
-        gps_verified_on_map INTEGER DEFAULT 0,
-        gps_captured_at TEXT,
-        gps_leaflet_data TEXT,
-        address_street TEXT,
-        address_city TEXT,
-        address_county TEXT,
-        address_state TEXT,
-        address_zipcode TEXT,
-        address_confidence TEXT,
-        address_geocoded_at TEXT,
-        condition TEXT,
-        status TEXT,
-        documentation TEXT,
-        access TEXT,
-        historic INTEGER DEFAULT 0,
-        favorite INTEGER DEFAULT 0,
-        sublocs TEXT,
-        sub12 TEXT,
-        locadd TEXT,
-        locup TEXT,
-        auth_imp TEXT,
-        regions TEXT,
-        state TEXT,
-        hero_imghash TEXT
-      );
+    // Use shared schema and run migrations
+    const statements = SCHEMA_SQL
+      .split(';')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
 
-      CREATE TABLE IF NOT EXISTS imgs (
-        imghash TEXT PRIMARY KEY,
-        imgnam TEXT NOT NULL,
-        imgnamo TEXT NOT NULL,
-        imgloc TEXT NOT NULL,
-        imgloco TEXT NOT NULL,
-        locid TEXT REFERENCES locs(locid),
-        subid TEXT,
-        auth_imp TEXT,
-        imgadd TEXT,
-        meta_exiftool TEXT,
-        meta_width INTEGER,
-        meta_height INTEGER,
-        meta_date_taken TEXT,
-        meta_camera_make TEXT,
-        meta_camera_model TEXT,
-        meta_gps_lat REAL,
-        meta_gps_lng REAL,
-        thumb_path TEXT,
-        thumb_path_sm TEXT,
-        thumb_path_lg TEXT,
-        preview_path TEXT,
-        preview_extracted INTEGER DEFAULT 0,
-        xmp_synced INTEGER DEFAULT 0,
-        xmp_modified_at TEXT
-      );
+    for (const statement of statements) {
+      sqlite.exec(statement);
+    }
 
-      CREATE TABLE IF NOT EXISTS settings (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-      );
+    runMigrations(sqlite);
 
-      INSERT INTO settings (key, value) VALUES ('archive_folder', '${archivePath.replace(/\\/g, '\\\\')}');
-    `);
+    // Set archive folder in settings
+    sqlite.exec(`INSERT INTO settings (key, value) VALUES ('archive_folder', '${archivePath.replace(/\\/g, '\\\\')}')`);
 
     const dialect = new SqliteDialect({ database: sqlite });
     db = new Kysely<DatabaseSchema>({ dialect });
