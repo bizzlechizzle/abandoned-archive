@@ -66,19 +66,35 @@ vi.mock('kysely', () => ({
   SqliteDialect: vi.fn(),
 }));
 
-// Mock the worker pool since we're unit testing
-vi.mock('../../services/worker-pool', () => ({
-  getWorkerPool: vi.fn().mockResolvedValue({
-    hashBatch: vi.fn().mockImplementation((paths: string[]) => {
+// Mock the HashService used by Hasher (static methods)
+vi.mock('../../services/backbone/hash-service.js', () => ({
+  HashService: {
+    hashBatch: vi.fn().mockImplementation((paths: string[], options?: any) => {
+      // Check abort signal
+      if (options?.signal?.aborted) {
+        return Promise.reject(new Error('Hashing cancelled'));
+      }
+
+      // Call progress callbacks if provided
+      if (options?.onByteProgress) {
+        options.onByteProgress(50, 100, paths[0] || 'test.jpg');
+      }
+      if (options?.onProgress) {
+        for (let i = 0; i < paths.length; i++) {
+          options.onProgress(i + 1, paths.length, paths[i]);
+        }
+      }
+
       // Generate mock hashes for each file
       return Promise.resolve(
-        paths.map(p => ({
+        paths.map((p: string) => ({
+          path: p,
           hash: 'a7f3b2c1e9d4f086', // Mock BLAKE3 hash (16 chars)
           error: null,
         }))
       );
     }),
-  }),
+  },
 }));
 
 // Import after mocks are set up

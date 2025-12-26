@@ -12,18 +12,22 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-// Mock the worker pool
-vi.mock('../../services/worker-pool', () => ({
-  getWorkerPool: vi.fn().mockResolvedValue({
-    // The validator uses pool.hash(filePath), not hashBatch
-    hash: vi.fn().mockImplementation((_path: string) => {
-      // By default, return matching hash (valid file)
-      return Promise.resolve({
-        hash: 'a7f3b2c1e9d4f086',
-        error: null,
-      });
+// Configurable mock behavior - tests can override this
+let mockHashBehavior: { hash: string | null; error: string | null } = {
+  hash: 'a7f3b2c1e9d4f086',
+  error: null,
+};
+
+// Mock the HashService used by Validator (static method)
+vi.mock('../../services/backbone/hash-service.js', () => ({
+  HashService: {
+    hashFile: vi.fn().mockImplementation(async (_path: string) => {
+      if (mockHashBehavior.error) {
+        throw new Error(mockHashBehavior.error);
+      }
+      return mockHashBehavior.hash;
     }),
-  }),
+  },
 }));
 
 describe('Validator', () => {
@@ -31,6 +35,8 @@ describe('Validator', () => {
   let tempDir: string;
 
   beforeEach(() => {
+    // Reset mock behavior to default (matching hash)
+    mockHashBehavior = { hash: 'a7f3b2c1e9d4f086', error: null };
     validator = new Validator();
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'validator-test-'));
   });
@@ -95,10 +101,7 @@ describe('Validator', () => {
 
     it('should detect hash mismatch', async () => {
       // Override mock to return different hash
-      const { getWorkerPool } = await import('../../services/worker-pool');
-      vi.mocked(getWorkerPool).mockResolvedValueOnce({
-        hash: vi.fn().mockResolvedValue({ hash: 'different_hash_12', error: null }),
-      } as any);
+      mockHashBehavior = { hash: 'different_hash_12', error: null };
 
       const validator2 = new Validator();
       const files: CopiedFile[] = [createCopiedFile()];
@@ -112,10 +115,7 @@ describe('Validator', () => {
 
     it('should rollback invalid files when autoRollback is true', async () => {
       // Override mock to return different hash
-      const { getWorkerPool } = await import('../../services/worker-pool');
-      vi.mocked(getWorkerPool).mockResolvedValueOnce({
-        hash: vi.fn().mockResolvedValue({ hash: 'different_hash_12', error: null }),
-      } as any);
+      mockHashBehavior = { hash: 'different_hash_12', error: null };
 
       const file = createCopiedFile();
       const archivePath = file.archivePath!;
@@ -130,10 +130,7 @@ describe('Validator', () => {
 
     it('should not rollback when autoRollback is false', async () => {
       // Override mock to return different hash
-      const { getWorkerPool } = await import('../../services/worker-pool');
-      vi.mocked(getWorkerPool).mockResolvedValueOnce({
-        hash: vi.fn().mockResolvedValue({ hash: 'different_hash_12', error: null }),
-      } as any);
+      mockHashBehavior = { hash: 'different_hash_12', error: null };
 
       const file = createCopiedFile();
       const archivePath = file.archivePath!;
@@ -243,11 +240,8 @@ describe('Validator', () => {
 
   describe('error handling', () => {
     it('should handle hash errors gracefully', async () => {
-      // Override mock to return error
-      const { getWorkerPool } = await import('../../services/worker-pool');
-      vi.mocked(getWorkerPool).mockResolvedValueOnce({
-        hash: vi.fn().mockResolvedValue({ hash: null, error: 'File read error' }),
-      } as any);
+      // Override mock to throw error
+      mockHashBehavior = { hash: null, error: 'File read error' };
 
       const file = createCopiedFile();
       const validator2 = new Validator();

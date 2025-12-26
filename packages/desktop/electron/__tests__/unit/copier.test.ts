@@ -193,14 +193,16 @@ describe('Copier', () => {
     });
 
     it('should include bytesCopied in result', async () => {
-      const files: HashedFile[] = [createHashedFile({ size: 100 })];
+      // createHashedFile writes 'test content' (12 bytes)
+      const files: HashedFile[] = [createHashedFile()];
 
       const onFileComplete = vi.fn();
 
       await copier.copy(files, testLocation, { onFileComplete });
 
       const copiedFile = onFileComplete.mock.calls[0][0] as CopiedFile;
-      expect(copiedFile.bytesCopied).toBe(100);
+      // bytesCopied reflects actual bytes copied, not metadata size
+      expect(copiedFile.bytesCopied).toBe(12);
     });
   });
 
