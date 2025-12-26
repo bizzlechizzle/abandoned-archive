@@ -22,7 +22,8 @@ import { JobQueue, IMPORT_QUEUES } from '../../services/job-queue';
 let sqliteDbInstance: SqliteDatabase | null = null;
 
 // Validation schemas
-const Blake3IdSchema = z.string().length(16).regex(/^[a-f0-9]+$/, 'Must be 16-char lowercase hex');
+// BLAKE3/SHA256 hashes are 64-char hex, but some legacy may use 16-char truncated
+const Blake3IdSchema = z.string().min(16).max(64).regex(/^[a-f0-9]+$/, 'Must be 16-64 char lowercase hex');
 
 const EditImageTagsSchema = z.object({
   imghash: Blake3IdSchema,
@@ -103,6 +104,7 @@ export function registerTaggingHandlers(
       const hash = Blake3IdSchema.parse(imghash);
 
       // Fetch from database
+      // Note: auto_tags_by_source column doesn't exist yet, we use buildTagsBySource fallback
       const image = await db
         .selectFrom('imgs')
         .select([
@@ -110,7 +112,6 @@ export function registerTaggingHandlers(
           'auto_tags',
           'auto_tags_source',
           'auto_tags_confidence',
-          'auto_tags_by_source',
           'auto_tags_at',
           'auto_caption',
           'quality_score',
@@ -133,10 +134,9 @@ export function registerTaggingHandlers(
         ? JSON.parse(image.auto_tags_confidence)
         : {};
 
-      // Parse per-source breakdown from database, fall back to heuristic if not stored
-      let tagsBySource = image.auto_tags_by_source
-        ? JSON.parse(image.auto_tags_by_source)
-        : buildTagsBySource(tags, confidence);
+      // Build per-source breakdown from aggregated tags
+      // Note: Future enhancement could store actual per-source data in auto_tags_by_source column
+      const tagsBySource = buildTagsBySource(tags, confidence);
 
       // Parse OCR if available
       const ocrBlocks: OcrBlock[] = [];

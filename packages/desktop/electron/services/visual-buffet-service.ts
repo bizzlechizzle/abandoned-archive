@@ -291,17 +291,18 @@ export class VisualBuffetService {
     const tempOutputFile = path.join(os.tmpdir(), `vb-tag-${input.hash.slice(0, 12)}-${Date.now()}.json`);
 
     return new Promise((resolve) => {
-      // Full model stack: RAM++, Florence-2, SigLIP with discovery mode
+      // Full model stack: RAM++, Florence-2, SigLIP, PaddleOCR
+      // No --discover mode so we get all sources separately
       const args = [
         'tag',
         input.imagePath,
         '--plugin', 'ram_plus',
         '--plugin', 'florence_2',
         '--plugin', 'siglip',
-        '--discover',           // Enable vocabulary discovery
-        '--threshold', '0.5',   // Confidence threshold
-        '--no-xmp',             // Disable CLI XMP writing (desktop handles it with correct path)
-        '-o', tempOutputFile,   // Output to temp file
+        '--plugin', 'paddle_ocr', // OCR for text detection
+        '--threshold', '0.1',     // Low threshold to capture more tags
+        '--no-xmp',               // Disable CLI XMP writing (desktop handles it with correct path)
+        '-o', tempOutputFile,     // Output to temp file
       ];
 
       const proc = spawn(this.cliPath!, args, {
