@@ -734,8 +734,8 @@ export class JobWorkerService extends EventEmitter {
       .where('key', '=', 'visual_buffet_enabled')
       .executeTakeFirst();
 
-    // Default to false if not set (opt-in feature)
-    const isEnabled = enabledSetting?.value === 'true';
+    // Default to true if not set (visual-buffet is now on by default)
+    const isEnabled = enabledSetting?.value !== 'false';
 
     if (!isEnabled) {
       logger.info('JobWorker', 'Visual-buffet disabled in settings, skipping', { hash: payload.hash.slice(0, 12) });

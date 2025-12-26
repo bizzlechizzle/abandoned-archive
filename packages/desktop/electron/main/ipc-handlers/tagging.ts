@@ -15,8 +15,11 @@
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
+import type { Database as SqliteDatabase } from 'better-sqlite3';
 import type { Database } from '../database.types';
 import { JobQueue, IMPORT_QUEUES } from '../../services/job-queue';
+
+let sqliteDbInstance: SqliteDatabase | null = null;
 
 // Validation schemas
 const Blake3IdSchema = z.string().length(16).regex(/^[a-f0-9]+$/, 'Must be 16-char lowercase hex');
@@ -82,7 +85,13 @@ interface MlInsights {
 /**
  * Register tagging IPC handlers
  */
-export function registerTaggingHandlers(db: Kysely<Database>): void {
+export function registerTaggingHandlers(
+  db: Kysely<Database>,
+  sqliteDb?: SqliteDatabase
+): void {
+  if (sqliteDb) {
+    sqliteDbInstance = sqliteDb;
+  }
   const jobQueue = new JobQueue(db);
 
   /**
@@ -543,7 +552,8 @@ export function registerTaggingHandlers(db: Kysely<Database>): void {
         .where('key', '=', 'visual_buffet_enabled')
         .executeTakeFirst();
 
-      const enabled = setting?.value === 'true';
+      // Default to true if not set (visual-buffet is now on by default)
+      const enabled = setting?.value !== 'false';
 
       // Get Python/visual-buffet availability
       const { getVisualBuffetService } = await import('../../services/visual-buffet-service');
@@ -586,6 +596,135 @@ export function registerTaggingHandlers(db: Kysely<Database>): void {
       return {
         success: false,
         connected: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  /**
+   * Sync XMP tags to database for a location
+   * Reads dc:subject tags from XMP sidecars and imports them to database
+   */
+  ipcMain.handle('tagging:syncFromXmp', async (_event, input: unknown) => {
+    try {
+      const schema = z.object({
+        locid: Blake3IdSchema.optional(),
+        archivePath: z.string().optional(),
+      });
+      const validated = schema.parse(input);
+
+      // Import the XmpMapperService
+      const { XmpMapperService } = await import('../../services/backbone/xmp-mapper-service');
+      if (!sqliteDbInstance) {
+        return { success: false, error: 'SQLite database not available' };
+      }
+      const xmpMapper = new XmpMapperService(sqliteDbInstance);
+
+      let archivePath = validated.archivePath;
+      let locid = validated.locid;
+
+      // If locid provided but no archivePath, get archive path from location
+      if (locid && !archivePath) {
+        const location = await db
+          .selectFrom('locs')
+          .select(['archive_path'])
+          .where('locid', '=', locid)
+          .executeTakeFirst();
+
+        if (!location?.archive_path) {
+          return { success: false, error: 'Location archive path not found' };
+        }
+        archivePath = location.archive_path;
+      }
+
+      if (!archivePath) {
+        return { success: false, error: 'No archive path provided' };
+      }
+
+      // Run the rebuild
+      const result = await xmpMapper.rebuildFromXmp(
+        archivePath,
+        locid || 'unknown',
+        (current, total) => {
+          // Could emit progress events here
+        }
+      );
+
+      return {
+        success: true,
+        totalFiles: result.totalFiles,
+        successful: result.successful,
+        failed: result.failed,
+        errors: result.errors.slice(0, 10), // Limit error details
+      };
+    } catch (error) {
+      console.error('[tagging:syncFromXmp] Error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  /**
+   * Get XMP tag info for a single image (reads directly from XMP sidecar)
+   */
+  ipcMain.handle('tagging:getXmpTags', async (_event, imghash: unknown) => {
+    try {
+      const hash = Blake3IdSchema.parse(imghash);
+
+      // Get image path from database
+      const image = await db
+        .selectFrom('imgs')
+        .select(['imghash', 'imgloc', 'imgnam', 'xmp_sidecar_path'])
+        .where('imghash', '=', hash)
+        .executeTakeFirst();
+
+      if (!image) {
+        return { success: false, error: 'Image not found' };
+      }
+
+      // Determine XMP path
+      let xmpPath = image.xmp_sidecar_path;
+      if (!xmpPath) {
+        // Try conventional location
+        const { join } = await import('node:path');
+        xmpPath = join(image.imgloc, `${image.imgnam}.xmp`);
+      }
+
+      // Read XMP sidecar
+      const { readSidecar } = await import('wake-n-blake');
+      const { access } = await import('node:fs/promises');
+
+      try {
+        await access(xmpPath);
+      } catch {
+        return { success: false, error: 'XMP sidecar not found' };
+      }
+
+      const parseResult = await readSidecar(xmpPath);
+
+      if (!parseResult.isValid) {
+        return {
+          success: false,
+          error: parseResult.errors.join('; '),
+        };
+      }
+
+      const xmp = parseResult.data;
+
+      return {
+        success: true,
+        imghash: hash,
+        xmpPath,
+        mlTagging: xmp.mlTagging,
+        schemaVersion: xmp.schemaVersion,
+        contentHash: xmp.contentHash,
+      };
+    } catch (error) {
+      console.error('[tagging:getXmpTags] Error:', error);
+      return {
+        success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
       };
     }

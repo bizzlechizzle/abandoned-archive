@@ -287,6 +287,8 @@ export class VisualBuffetService {
    */
   private async runTagging(input: VisualBuffetInput): Promise<VisualBuffetResult> {
     const startTime = Date.now();
+    // Use temp file for output - visual-buffet -o - creates literal '-' file, not stdout
+    const tempOutputFile = path.join(os.tmpdir(), `vb-tag-${input.hash.slice(0, 12)}-${Date.now()}.json`);
 
     return new Promise((resolve) => {
       // Full model stack: RAM++, Florence-2, SigLIP with discovery mode
@@ -299,7 +301,7 @@ export class VisualBuffetService {
         '--discover',           // Enable vocabulary discovery
         '--threshold', '0.5',   // Confidence threshold
         '--no-xmp',             // Disable CLI XMP writing (desktop handles it with correct path)
-        '-o', '-',              // Output to stdout as JSON
+        '-o', tempOutputFile,   // Output to temp file
       ];
 
       const proc = spawn(this.cliPath!, args, {
@@ -307,12 +309,7 @@ export class VisualBuffetService {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
-      let stdout = '';
       let stderr = '';
-
-      proc.stdout.on('data', (data: Buffer) => {
-        stdout += data.toString();
-      });
 
       proc.stderr.on('data', (data: Buffer) => {
         stderr += data.toString();
@@ -324,6 +321,8 @@ export class VisualBuffetService {
         if (code !== 0) {
           const error = `visual-buffet tagging exited with code ${code}: ${stderr.slice(0, 500)}`;
           logger.error('VisualBuffet', error);
+          // Clean up temp file on error
+          try { fs.unlinkSync(tempOutputFile); } catch { /* ignore */ }
 
           await this.updateError(input.hash, input.mediaType, error);
 
@@ -336,7 +335,12 @@ export class VisualBuffetService {
         }
 
         try {
-          const result = this.parseTaggingOutput(stdout);
+          // Read JSON from temp file
+          const jsonContent = fs.readFileSync(tempOutputFile, 'utf-8');
+          // Clean up temp file after reading
+          try { fs.unlinkSync(tempOutputFile); } catch { /* ignore */ }
+
+          const result = this.parseTaggingOutput(jsonContent);
 
           logger.info('VisualBuffet', 'Tagging complete', {
             hash: input.hash.slice(0, 12),
@@ -351,8 +355,10 @@ export class VisualBuffetService {
             durationMs,
           });
         } catch (parseErr) {
-          const error = `Failed to parse visual-buffet tagging output: ${parseErr}. Raw: ${stdout.slice(0, 200)}`;
+          const error = `Failed to parse visual-buffet tagging output: ${parseErr}`;
           logger.error('VisualBuffet', error);
+          // Clean up temp file on parse error
+          try { fs.unlinkSync(tempOutputFile); } catch { /* ignore */ }
           await this.updateError(input.hash, input.mediaType, error);
 
           resolve({
@@ -366,6 +372,8 @@ export class VisualBuffetService {
       proc.on('error', async (err) => {
         const error = `Failed to spawn visual-buffet: ${err.message}`;
         logger.error('VisualBuffet', error);
+        // Clean up temp file on spawn error
+        try { fs.unlinkSync(tempOutputFile); } catch { /* ignore */ }
         await this.updateError(input.hash, input.mediaType, error);
 
         resolve({
@@ -381,13 +389,16 @@ export class VisualBuffetService {
    * Run OCR (PaddleOCR) on the image
    */
   private async runOcr(imagePath: string): Promise<VisualBuffetResult['ocr'] | undefined> {
+    // Use temp file for output - visual-buffet -o - creates literal '-' file, not stdout
+    const tempOutputFile = path.join(os.tmpdir(), `vb-ocr-${Date.now()}.json`);
+
     return new Promise((resolve) => {
       const args = [
         'tag',
         imagePath,
         '--plugin', 'paddle_ocr',
         '--no-xmp',             // Disable CLI XMP writing (desktop handles it)
-        '-o', '-',
+        '-o', tempOutputFile,   // Output to temp file
       ];
 
       const proc = spawn(this.cliPath!, args, {
@@ -395,22 +406,24 @@ export class VisualBuffetService {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
-      let stdout = '';
-
-      proc.stdout.on('data', (data: Buffer) => {
-        stdout += data.toString();
-      });
-
       proc.on('close', (code) => {
         if (code !== 0) {
           logger.warn('VisualBuffet', `OCR exited with code ${code} - skipping OCR results`);
+          try { fs.unlinkSync(tempOutputFile); } catch { /* ignore */ }
           resolve(undefined);
           return;
         }
 
         try {
-          const result = JSON.parse(stdout);
-          const ocrData = result.results?.paddle_ocr || result.results?.easyocr;
+          // Read JSON from temp file
+          const jsonContent = fs.readFileSync(tempOutputFile, 'utf-8');
+          // Clean up temp file after reading
+          try { fs.unlinkSync(tempOutputFile); } catch { /* ignore */ }
+
+          // visual-buffet outputs an array: [{file: "...", results: {...}}, ...]
+          const parsed = JSON.parse(jsonContent);
+          const result = Array.isArray(parsed) ? parsed[0] : parsed;
+          const ocrData = result?.results?.paddle_ocr || result?.results?.easyocr;
 
           if (!ocrData?.texts?.length) {
             resolve({ hasText: false, textBlocks: [], fullText: '' });
@@ -434,11 +447,13 @@ export class VisualBuffetService {
           });
         } catch (err) {
           logger.warn('VisualBuffet', `Failed to parse OCR output: ${err}`);
+          try { fs.unlinkSync(tempOutputFile); } catch { /* ignore */ }
           resolve(undefined);
         }
       });
 
       proc.on('error', () => {
+        try { fs.unlinkSync(tempOutputFile); } catch { /* ignore */ }
         resolve(undefined);
       });
     });
@@ -456,6 +471,9 @@ export class VisualBuffetService {
     if (!this.available || !this.cliPath) {
       return ocrResult;
     }
+
+    // Use temp file for output - visual-buffet -o - creates literal '-' file, not stdout
+    const tempOutputFile = path.join(os.tmpdir(), `vb-siglip-verify-${Date.now()}.json`);
 
     return new Promise((resolve) => {
       // Build vocabulary from OCR text blocks
@@ -477,7 +495,7 @@ export class VisualBuffetService {
         '--plugin', 'siglip',
         '--vocab', vocab,
         '--threshold', '0.001', // Very low threshold per OCR verification spec
-        '-o', '-',
+        '-o', tempOutputFile,   // Output to temp file
       ];
 
       const proc = spawn(this.cliPath!, args, {
@@ -485,21 +503,23 @@ export class VisualBuffetService {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
-      let stdout = '';
-
-      proc.stdout.on('data', (data: Buffer) => {
-        stdout += data.toString();
-      });
-
       proc.on('close', (code) => {
         if (code !== 0) {
+          try { fs.unlinkSync(tempOutputFile); } catch { /* ignore */ }
           resolve(ocrResult); // Return original on failure
           return;
         }
 
         try {
-          const result = JSON.parse(stdout);
-          const siglipTags = result.results?.siglip?.tags || [];
+          // Read JSON from temp file
+          const jsonContent = fs.readFileSync(tempOutputFile, 'utf-8');
+          // Clean up temp file after reading
+          try { fs.unlinkSync(tempOutputFile); } catch { /* ignore */ }
+
+          // visual-buffet outputs an array: [{file: "...", results: {...}}, ...]
+          const parsed = JSON.parse(jsonContent);
+          const result = Array.isArray(parsed) ? parsed[0] : parsed;
+          const siglipTags = result?.results?.siglip?.tags || [];
 
           // Create a map of verified text with SigLIP scores
           const siglipScores = new Map<string, number>();
@@ -532,11 +552,13 @@ export class VisualBuffetService {
             fullText: ocrResult.fullText,
           });
         } catch {
+          try { fs.unlinkSync(tempOutputFile); } catch { /* ignore */ }
           resolve(ocrResult);
         }
       });
 
       proc.on('error', () => {
+        try { fs.unlinkSync(tempOutputFile); } catch { /* ignore */ }
         resolve(ocrResult);
       });
     });
@@ -544,17 +566,25 @@ export class VisualBuffetService {
 
   /**
    * Parse the tagging output from visual-buffet
-   * Handles cases where stdout contains non-JSON lines before the JSON object
+   * Handles both JSON array format (from temp file) and object format
    */
-  private parseTaggingOutput(stdout: string): Partial<VisualBuffetResult> {
-    // Extract JSON from stdout (visual-buffet may output text before JSON)
-    const jsonStart = stdout.indexOf('{');
-    const jsonEnd = stdout.lastIndexOf('}');
-    if (jsonStart === -1 || jsonEnd === -1 || jsonEnd < jsonStart) {
-      throw new Error('No valid JSON found in output');
+  private parseTaggingOutput(jsonContent: string): Partial<VisualBuffetResult> {
+    // Parse the JSON (should be clean JSON from temp file now)
+    const parsed = JSON.parse(jsonContent) as unknown;
+
+    // visual-buffet outputs an array: [{file: "...", results: {...}}, ...]
+    // We only process single images, so take the first element
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let data: any;
+    if (Array.isArray(parsed)) {
+      if (parsed.length === 0) {
+        throw new Error('Empty results array from visual-buffet');
+      }
+      data = parsed[0];
+    } else {
+      data = parsed;
     }
-    const jsonStr = stdout.slice(jsonStart, jsonEnd + 1);
-    const data = JSON.parse(jsonStr);
+
     const results = data.results || data;
 
     // Collect tags from all sources

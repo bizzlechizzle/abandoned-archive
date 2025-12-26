@@ -25,7 +25,9 @@ export function generateId(): string {
 // Semantic aliases for specific ID types (all use same format)
 export const LocIdSchema = Hex16IdSchema;      // Location ID
 export const SubIdSchema = Hex16IdSchema;      // Sub-location ID
-export const UserIdSchema = Hex16IdSchema;     // User ID
+
+// User ID supports both new hex format and legacy string format (e.g., "user_default_1234")
+export const UserIdSchema = z.string().min(1).max(64);
 export const NoteIdSchema = Hex16IdSchema;     // Note ID
 export const BookmarkIdSchema = Hex16IdSchema; // Bookmark ID
 export const ProjectIdSchema = Hex16IdSchema;  // Project ID

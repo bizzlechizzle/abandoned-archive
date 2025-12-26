@@ -170,7 +170,7 @@ export function registerIpcHandlers() {
 
   // Tagging Service (Visual-Buffet ML Pipeline)
   // RAM++, Florence-2, SigLIP, PaddleOCR
-  registerTaggingHandlers(db);
+  registerTaggingHandlers(db, sqliteDb);
 
   // Browser Image Capture (network monitoring, context menu)
   initializeBrowserImageCapture({

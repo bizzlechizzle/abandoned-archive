@@ -332,6 +332,52 @@ export class XmpMapperService {
           xmp.contentHash
         );
       }
+
+      // Update ML tagging data if present (dc:subject tags from visual-buffet)
+      if (xmp.mlTagging) {
+        this.db.prepare(`
+          UPDATE imgs SET
+            auto_tags = ?,
+            auto_tags_source = ?,
+            auto_tags_confidence = ?,
+            auto_tags_by_source = ?,
+            auto_tags_at = ?,
+            auto_caption = ?,
+            view_type = ?,
+            quality_score = ?,
+            ocr_text = ?,
+            ocr_has_text = ?,
+            vb_processed_at = ?
+          WHERE imghash = ?
+        `).run(
+          xmp.mlTagging.tags ? JSON.stringify(xmp.mlTagging.tags) : null,
+          xmp.mlTagging.source ?? 'visual-buffet-full',
+          xmp.mlTagging.tagConfidence ? JSON.stringify(xmp.mlTagging.tagConfidence) : null,
+          xmp.mlTagging.tagsBySource ? JSON.stringify(xmp.mlTagging.tagsBySource) : null,
+          xmp.mlTagging.processedAt ?? new Date().toISOString(),
+          xmp.mlTagging.caption ?? null,
+          xmp.mlTagging.viewType ?? null,
+          xmp.mlTagging.qualityScore ?? null,
+          xmp.mlTagging.ocr?.fullText ?? null,
+          xmp.mlTagging.ocr?.hasText ? 1 : 0,
+          xmp.mlTagging.processedAt ?? new Date().toISOString(),
+          xmp.contentHash
+        );
+      }
+    }
+
+    // For videos, also update ML tagging data if present
+    if (mediaType === 'video' && existing && xmp.mlTagging) {
+      this.db.prepare(`
+        UPDATE vids SET
+          auto_caption = ?,
+          vb_processed_at = ?
+        WHERE vidhash = ?
+      `).run(
+        xmp.mlTagging.caption ?? null,
+        xmp.mlTagging.processedAt ?? new Date().toISOString(),
+        xmp.contentHash
+      );
     }
   }
 
