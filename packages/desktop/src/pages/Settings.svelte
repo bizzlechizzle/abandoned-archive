@@ -217,6 +217,13 @@
   let validationProgress = $state<{ current: number; total: number; currentLocation: string } | null>(null);
   let bagValidationMessage = $state('');
 
+  // ML Tagging state (Visual-Buffet)
+  let mlTaggingExpanded = $state(false);
+  let mlTaggingStatus = $state<{ available: boolean; version?: string; enabled?: boolean } | null>(null);
+  let mlTaggingQueueStats = $state<{ pending: number; processing: number; completed: number; failed: number } | null>(null);
+  let mlTaggingRunning = $state(false);
+  let mlTaggingMessage = $state('');
+
   // Database Archive Export state
   let archiveExportStatus = $state<{
     configured: boolean;
@@ -1837,6 +1844,59 @@
     }
   }
 
+  // ML Tagging functions
+  async function refreshMlTaggingStatus() {
+    try {
+      const [statusResult, queueResult] = await Promise.all([
+        window.electronAPI?.tagging?.getServiceStatus(),
+        window.electronAPI?.tagging?.getQueueStats(),
+      ]);
+
+      if (statusResult?.success) {
+        mlTaggingStatus = {
+          available: statusResult.available ?? false,
+          version: statusResult.version,
+          enabled: statusResult.enabled,
+        };
+      }
+
+      if (queueResult?.success && queueResult.stats) {
+        mlTaggingQueueStats = queueResult.stats;
+      }
+    } catch (error) {
+      console.error('Failed to load ML tagging status:', error);
+    }
+  }
+
+  async function queueAllUntaggedImages() {
+    if (!window.electronAPI?.tagging?.queueAllUntaggedImages) {
+      mlTaggingMessage = 'ML tagging not available';
+      return;
+    }
+
+    try {
+      mlTaggingRunning = true;
+      mlTaggingMessage = 'Queueing untagged images...';
+
+      const result = await window.electronAPI.tagging.queueAllUntaggedImages({ batchSize: 500 });
+
+      if (result.success) {
+        mlTaggingMessage = result.message || `Queued ${result.queued} images`;
+        // Refresh status to show updated queue
+        await refreshMlTaggingStatus();
+      } else {
+        mlTaggingMessage = result.error || 'Failed to queue images';
+      }
+
+      setTimeout(() => { mlTaggingMessage = ''; }, 10000);
+    } catch (error) {
+      console.error('Failed to queue untagged images:', error);
+      mlTaggingMessage = 'Failed to queue images';
+    } finally {
+      mlTaggingRunning = false;
+    }
+  }
+
   onMount(() => {
     loadSettings();
     loadProxyCacheStats();
@@ -1846,6 +1906,7 @@
     loadBagSummary();
     loadArchiveExportStatus();
     loadPendingWebSourceCount();
+    refreshMlTaggingStatus();
 
     // OPT-113: Listen for archive completion to update pending count
     let cleanupArchiveListener: (() => void) | undefined;
@@ -2426,6 +2487,74 @@
                   class="px-3 py-1.5 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
                 >
                   Fix Videos
+                </button>
+              </div>
+            </div>
+            {/if}
+          </div>
+
+          <!-- ML Tagging Sub-Accordion (Visual-Buffet) -->
+          <div>
+            <button
+              onclick={() => mlTaggingExpanded = !mlTaggingExpanded}
+              class="w-full flex items-center justify-between py-2 border-b border-braun-100 text-left hover:bg-braun-50 transition-colors"
+            >
+              <span class="text-sm font-medium text-braun-700">ML Tagging</span>
+              <svg
+                class="w-4 h-4 text-braun-900 transition-transform duration-200 {mlTaggingExpanded ? 'rotate-180' : ''}"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {#if mlTaggingExpanded}
+            <div class="py-3">
+              <!-- Status -->
+              {#if mlTaggingStatus}
+                <div class="bg-braun-50 rounded p-3 mb-3">
+                  <div class="flex flex-wrap gap-4 text-sm">
+                    <div class="flex items-center gap-1">
+                      <span class="w-2 h-2 rounded-full {mlTaggingStatus.available ? 'bg-success' : 'bg-error'}"></span>
+                      <span class="text-braun-500">Visual-Buffet:</span>
+                      <span class="font-medium">{mlTaggingStatus.available ? `v${mlTaggingStatus.version}` : 'Not Found'}</span>
+                    </div>
+                    {#if mlTaggingQueueStats}
+                      <div class="flex items-center gap-1">
+                        <span class="text-braun-500">Pending:</span>
+                        <span class="font-medium">{mlTaggingQueueStats.pending}</span>
+                      </div>
+                      <div class="flex items-center gap-1">
+                        <span class="text-braun-500">Processing:</span>
+                        <span class="font-medium">{mlTaggingQueueStats.processing}</span>
+                      </div>
+                    {/if}
+                  </div>
+                </div>
+              {/if}
+
+              <!-- Message -->
+              {#if mlTaggingMessage}
+                <p class="text-sm text-braun-600 mb-3">{mlTaggingMessage}</p>
+              {/if}
+
+              <!-- Actions -->
+              <div class="flex flex-wrap gap-2">
+                <button
+                  onclick={queueAllUntaggedImages}
+                  disabled={mlTaggingRunning || !mlTaggingStatus?.available}
+                  class="px-3 py-1.5 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
+                >
+                  {mlTaggingRunning ? 'Queueing...' : 'Tag All Untagged Images'}
+                </button>
+                <button
+                  onclick={refreshMlTaggingStatus}
+                  disabled={mlTaggingRunning}
+                  class="px-3 py-1.5 text-sm border border-braun-300 rounded hover:bg-braun-50 transition disabled:opacity-50"
+                >
+                  Refresh Status
                 </button>
               </div>
             </div>

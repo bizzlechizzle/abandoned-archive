@@ -541,6 +541,97 @@ export function registerTaggingHandlers(
   });
 
   /**
+   * Queue ALL untagged images across all locations for tagging
+   * Used for backfilling existing images that weren't tagged during import
+   */
+  ipcMain.handle('tagging:queueAllUntaggedImages', async (_event, options?: { batchSize?: number }) => {
+    try {
+      const batchSize = options?.batchSize ?? 100;
+
+      // Find all untagged images across all locations
+      const untagged = await db
+        .selectFrom('imgs')
+        .select(['imghash', 'locid', 'subid', 'ml_path'])
+        .where((eb) =>
+          eb.or([
+            eb('auto_tags', 'is', null),
+            eb('vb_processed_at', 'is', null),
+          ])
+        )
+        .limit(batchSize)
+        .execute();
+
+      if (untagged.length === 0) {
+        return { success: true, queued: 0, message: 'All images already tagged' };
+      }
+
+      // Get total count for progress reporting
+      const totalResult = await db
+        .selectFrom('imgs')
+        .select(db.fn.count<number>('imghash').as('count'))
+        .where((eb) =>
+          eb.or([
+            eb('auto_tags', 'is', null),
+            eb('vb_processed_at', 'is', null),
+          ])
+        )
+        .executeTakeFirst();
+
+      const totalUntagged = Number(totalResult?.count ?? 0);
+
+      // Queue each image
+      let queued = 0;
+      for (const img of untagged) {
+        // If no ML thumbnail, queue that first
+        if (!img.ml_path) {
+          await jobQueue.addJob({
+            queue: IMPORT_QUEUES.ML_THUMBNAIL,
+            payload: {
+              hash: img.imghash,
+              mediaType: 'image',
+              locid: img.locid,
+              subid: img.subid,
+            },
+            priority: 10, // Low priority for backfill
+          });
+        }
+
+        // Queue visual-buffet (will wait for ML thumbnail via dependency)
+        await jobQueue.addJob({
+          queue: IMPORT_QUEUES.VISUAL_BUFFET,
+          payload: {
+            hash: img.imghash,
+            mediaType: 'image',
+            locid: img.locid,
+            subid: img.subid,
+          },
+          priority: 10, // Low priority for backfill
+        });
+
+        queued++;
+      }
+
+      console.log(`[tagging:queueAllUntaggedImages] Queued ${queued} of ${totalUntagged} untagged images`);
+
+      return {
+        success: true,
+        queued,
+        totalUntagged,
+        batchSize,
+        message: queued < totalUntagged
+          ? `Queued ${queued} images (${totalUntagged - queued} remaining - run again for next batch)`
+          : `Queued all ${queued} untagged images`,
+      };
+    } catch (error) {
+      console.error('[tagging:queueAllUntaggedImages] Error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  /**
    * Get service status
    */
   ipcMain.handle('tagging:getServiceStatus', async () => {

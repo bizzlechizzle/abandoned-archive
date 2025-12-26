@@ -1000,6 +1000,175 @@ const api = {
       ipcRenderer.invoke('research:status'),
   },
 
+  // Tagging Service - Visual-Buffet ML Pipeline (RAM++, Florence-2, SigLIP, PaddleOCR)
+  tagging: {
+    // Get full ML insights for an image
+    getImageTags: (imghash: string): Promise<{
+      success: boolean;
+      error?: string;
+      imghash?: string;
+      tags?: string[];
+      source?: string;
+      confidence?: Record<string, number>;
+      tagsBySource?: {
+        rampp?: Array<{ label: string; confidence: number; source: string }>;
+        florence2?: Array<{ label: string; confidence: number; source: string }>;
+        siglip?: Array<{ label: string; confidence: number; source: string }>;
+      };
+      taggedAt?: string;
+      qualityScore?: number;
+      viewType?: string;
+      caption?: string;
+      ocr?: {
+        hasText: boolean;
+        fullText: string | null;
+        textBlocks: Array<{ text: string; confidence: number }>;
+      };
+      processedAt?: string;
+    }> => ipcRenderer.invoke('tagging:getImageTags', imghash),
+
+    // Edit tags manually
+    editImageTags: (input: { imghash: string; tags: string[] }): Promise<{
+      success: boolean;
+      error?: string;
+      imghash?: string;
+      tags?: string[];
+    }> => ipcRenderer.invoke('tagging:editImageTags', input),
+
+    // Queue image for re-tagging via visual-buffet
+    retagImage: (imghash: string): Promise<{
+      success: boolean;
+      error?: string;
+      message?: string;
+    }> => ipcRenderer.invoke('tagging:retagImage', imghash),
+
+    // Clear all tags from an image
+    clearImageTags: (imghash: string): Promise<{
+      success: boolean;
+      error?: string;
+      imghash?: string;
+    }> => ipcRenderer.invoke('tagging:clearImageTags', imghash),
+
+    // Get aggregated tag summary for a location
+    getLocationSummary: (locid: string): Promise<{
+      success: boolean;
+      error?: string;
+      locid?: string;
+      taggedCount?: number;
+      totalTags?: number;
+      topTags?: Array<{ tag: string; count: number; avgConfidence: number }>;
+      viewTypes?: Record<string, number>;
+    }> => ipcRenderer.invoke('tagging:getLocationSummary', locid),
+
+    // Re-aggregate location tags
+    reaggregateLocation: (locid: string): Promise<{
+      success: boolean;
+      error?: string;
+      locid?: string;
+      taggedImages?: number;
+      uniqueTags?: number;
+    }> => ipcRenderer.invoke('tagging:reaggregateLocation', locid),
+
+    // Apply tag suggestions (placeholder)
+    applySuggestions: (input: unknown): Promise<{
+      success: boolean;
+      error?: string;
+    }> => ipcRenderer.invoke('tagging:applySuggestions', input),
+
+    // Get queue statistics for tagging jobs
+    getQueueStats: (): Promise<{
+      success: boolean;
+      error?: string;
+      stats?: {
+        pending: number;
+        processing: number;
+        completed: number;
+        failed: number;
+      };
+      breakdown?: {
+        mlThumbnail: { pending: number; processing: number; completed: number; failed: number };
+        visualBuffet: { pending: number; processing: number; completed: number; failed: number };
+      };
+    }> => ipcRenderer.invoke('tagging:getQueueStats'),
+
+    // Queue all untagged images in a location
+    queueUntaggedImages: (locid: string): Promise<{
+      success: boolean;
+      error?: string;
+      queued?: number;
+      total?: number;
+      message?: string;
+    }> => ipcRenderer.invoke('tagging:queueUntaggedImages', locid),
+
+    // Queue ALL untagged images across all locations (backfill)
+    queueAllUntaggedImages: (options?: { batchSize?: number }): Promise<{
+      success: boolean;
+      error?: string;
+      queued?: number;
+      totalUntagged?: number;
+      batchSize?: number;
+      message?: string;
+    }> => ipcRenderer.invoke('tagging:queueAllUntaggedImages', options),
+
+    // Get visual-buffet service status
+    getServiceStatus: (): Promise<{
+      success: boolean;
+      error?: string;
+      enabled?: boolean;
+      available?: boolean;
+      version?: string;
+      models?: string[];
+    }> => ipcRenderer.invoke('tagging:getServiceStatus'),
+
+    // Test visual-buffet connection
+    testConnection: (): Promise<{
+      success: boolean;
+      connected?: boolean;
+      version?: string;
+      error?: string;
+    }> => ipcRenderer.invoke('tagging:testConnection'),
+
+    // Sync tags from XMP sidecars to database
+    syncFromXmp: (input: { locid?: string; archivePath?: string }): Promise<{
+      success: boolean;
+      error?: string;
+      totalFiles?: number;
+      successful?: number;
+      failed?: number;
+      errors?: string[];
+    }> => ipcRenderer.invoke('tagging:syncFromXmp', input),
+
+    // Get XMP tags for a single image
+    getXmpTags: (imghash: string): Promise<{
+      success: boolean;
+      error?: string;
+      imghash?: string;
+      xmpPath?: string;
+      mlTagging?: unknown;
+      schemaVersion?: string;
+      contentHash?: string;
+    }> => ipcRenderer.invoke('tagging:getXmpTags', imghash),
+
+    // Real-time tag updates listener
+    onTagsReady: (callback: (data: {
+      hash: string;
+      tags?: string[];
+      viewType?: string;
+      qualityScore?: number;
+      source?: string;
+    }) => void) => {
+      const listener = (_event: unknown, data: {
+        hash: string;
+        tags?: string[];
+        viewType?: string;
+        qualityScore?: number;
+        source?: string;
+      }) => callback(data);
+      ipcRenderer.on('asset:tags-ready', listener);
+      return () => ipcRenderer.removeListener('asset:tags-ready', listener);
+    },
+  },
+
   // Import Intelligence - Smart location matching during import
   importIntelligence: {
     // Full scan for matches near GPS point
