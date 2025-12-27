@@ -1281,25 +1281,8 @@ const api = {
       connected: boolean;
       authenticated: boolean;
       hubUrl: string;
-      queuedJobsCount: number;
     }> =>
       ipcRenderer.invoke('dispatch:getStatus'),
-    getQueuedJobs: (): Promise<Array<{
-      id: string;
-      job: {
-        type: 'import' | 'thumbnail' | 'tag' | 'capture';
-        plugin: string;
-        priority?: 'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW' | 'BULK';
-        data: {
-          source: string;
-          destination?: string;
-          options?: Record<string, unknown>;
-        };
-      };
-      createdAt: number;
-      attempts: number;
-    }>> =>
-      ipcRenderer.invoke('dispatch:getQueuedJobs'),
 
     // Configuration
     setHubUrl: (url: string): Promise<void> =>
@@ -1347,21 +1330,6 @@ const api = {
       const handler = () => callback();
       ipcRenderer.on('dispatch:auth:required', handler);
       return () => ipcRenderer.removeListener('dispatch:auth:required', handler);
-    },
-    onJobQueued: (callback: (data: { queueId: string; job: unknown }) => void) => {
-      const handler = (_event: unknown, data: { queueId: string; job: unknown }) => callback(data);
-      ipcRenderer.on('dispatch:job:queued', handler);
-      return () => ipcRenderer.removeListener('dispatch:job:queued', handler);
-    },
-    onJobQueueSynced: (callback: (data: { queueId: string; jobId: string }) => void) => {
-      const handler = (_event: unknown, data: { queueId: string; jobId: string }) => callback(data);
-      ipcRenderer.on('dispatch:job:queueSynced', handler);
-      return () => ipcRenderer.removeListener('dispatch:job:queueSynced', handler);
-    },
-    onJobQueueFailed: (callback: (data: { id: string; job: unknown }) => void) => {
-      const handler = (_event: unknown, data: { id: string; job: unknown }) => callback(data);
-      ipcRenderer.on('dispatch:job:queueFailed', handler);
-      return () => ipcRenderer.removeListener('dispatch:job:queueFailed', handler);
     },
   },
 
