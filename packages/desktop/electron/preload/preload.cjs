@@ -1362,10 +1362,6 @@ const api = {
     getStatus: () =>
       invokeAuto("dispatch:getStatus")(),
 
-    // Offline queue
-    getQueuedJobs: () =>
-      invokeAuto("dispatch:getQueuedJobs")(),
-
     // Configuration
     setHubUrl: (url) =>
       invokeAuto("dispatch:setHubUrl")(url),
@@ -1396,21 +1392,6 @@ const api = {
       const listener = (_event) => callback();
       ipcRenderer.on("dispatch:auth:required", listener);
       return () => ipcRenderer.removeListener("dispatch:auth:required", listener);
-    },
-    onJobQueued: (callback) => {
-      const listener = (_event, data) => callback(data);
-      ipcRenderer.on("dispatch:job:queued", listener);
-      return () => ipcRenderer.removeListener("dispatch:job:queued", listener);
-    },
-    onJobQueueSynced: (callback) => {
-      const listener = (_event, data) => callback(data);
-      ipcRenderer.on("dispatch:job:queueSynced", listener);
-      return () => ipcRenderer.removeListener("dispatch:job:queueSynced", listener);
-    },
-    onJobQueueFailed: (callback) => {
-      const listener = (_event, data) => callback(data);
-      ipcRenderer.on("dispatch:job:queueFailed", listener);
-      return () => ipcRenderer.removeListener("dispatch:job:queueFailed", listener);
     },
   },
 };

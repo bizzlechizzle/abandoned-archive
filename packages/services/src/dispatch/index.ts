@@ -16,7 +16,6 @@ export type {
   JobSubmission,
   JobProgress,
   JobUpdate,
-  QueuedJob,
   Worker,
   DispatchStatus,
   DispatchClientEvents,
@@ -30,9 +29,6 @@ export {
   createTokenStorage,
   createTokenStorageSync,
 } from './token-storage.js';
-
-// Offline Queue
-export { OfflineQueue } from './offline-queue.js';
 
 // Dispatch Client
 export {

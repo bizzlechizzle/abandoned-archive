@@ -5,7 +5,6 @@
    * Shows dispatch hub connection status with:
    * - Connection indicator (dot + text)
    * - Worker count
-   * - Queued job count (if offline)
    *
    * Adapted from: dispatch/sme/electron-integration-guide.md
    */
@@ -14,7 +13,6 @@
     dispatchStore,
     dispatchConnectionStatus,
     onlineWorkers,
-    queuedJobCount,
   } from '../stores/dispatch-store';
 
   // Status colors
@@ -50,10 +48,4 @@
     </span>
   {/if}
 
-  <!-- Queued jobs if any -->
-  {#if $queuedJobCount > 0}
-    <span class="text-amber-600 dark:text-amber-400" title="Jobs queued for later sync">
-      ({$queuedJobCount} queued)
-    </span>
-  {/if}
 </div>

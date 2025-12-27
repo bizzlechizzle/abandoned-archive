@@ -3,7 +3,7 @@
   import { router } from '../stores/router';
   import { openImportModal } from '../stores/import-modal-store';
   import { userStore, currentUser } from '../stores/user-store';
-  import { dispatchStore, dispatchConnectionStatus, queuedJobCount } from '../stores/dispatch-store';
+  import { dispatchStore, dispatchConnectionStatus } from '../stores/dispatch-store';
   import UserSwitcher from './UserSwitcher.svelte';
 
   let currentRoute = $state('/dashboard');
@@ -168,12 +168,9 @@
       <div
         class="flex items-center gap-1.5 mr-2 cursor-pointer"
         onclick={() => navigate('/settings')}
-        title={dispatchStatusText[$dispatchConnectionStatus] + ($queuedJobCount > 0 ? ` (${$queuedJobCount} queued)` : '')}
+        title={dispatchStatusText[$dispatchConnectionStatus]}
       >
         <span class="w-2 h-2 rounded-full {dispatchStatusColors[$dispatchConnectionStatus]}"></span>
-        {#if $queuedJobCount > 0}
-          <span class="text-xs text-amber-600">{$queuedJobCount}</span>
-        {/if}
       </div>
       <button
         onclick={() => navigate('/search')}

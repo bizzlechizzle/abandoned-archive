@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { thumbnailCache } from '../stores/thumbnail-cache-store';
   import DataEngineSettings from '../components/data-engine/DataEngineSettings.svelte';
-  import { dispatchStore, dispatchConnectionStatus, dispatchWorkers, queuedJobCount } from '../stores/dispatch-store';
+  import { dispatchStore, dispatchConnectionStatus, dispatchWorkers } from '../stores/dispatch-store';
   import DispatchStatus from '../components/DispatchStatus.svelte';
   import DispatchJobProgress from '../components/DispatchJobProgress.svelte';
 
@@ -3009,16 +3009,6 @@
             <h3 class="text-sm font-medium text-braun-700 mb-3">Active Jobs</h3>
             <DispatchJobProgress />
           </div>
-
-          <!-- Queued Jobs (offline) -->
-          {#if $queuedJobCount > 0}
-            <div class="border-t border-braun-200 pt-4">
-              <h3 class="text-sm font-medium text-braun-700 mb-2">Offline Queue</h3>
-              <p class="text-sm text-amber-600">
-                {$queuedJobCount} job{$queuedJobCount !== 1 ? 's' : ''} waiting to sync
-              </p>
-            </div>
-          {/if}
         </div>
         {/if}
       </div>

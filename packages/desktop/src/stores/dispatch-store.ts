@@ -5,8 +5,8 @@
  * - Connection state and authentication
  * - Job submission and tracking
  * - Worker status monitoring
- * - Offline queue management
  *
+ * All job processing goes through the central hub.
  * Adapted from: dispatch/sme/electron-integration-guide.md
  */
 import { writable, derived } from 'svelte/store';
@@ -20,7 +20,7 @@ export interface DispatchJob {
   jobId: string;
   type: 'import' | 'thumbnail' | 'tag' | 'capture';
   plugin: string;
-  status: 'pending' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   progress: number;
   stage?: string;
   result?: unknown;
@@ -40,29 +40,12 @@ export interface DispatchWorker {
   plugins: string[];
 }
 
-export interface QueuedJob {
-  id: string;
-  job: {
-    type: 'import' | 'thumbnail' | 'tag' | 'capture';
-    plugin: string;
-    priority?: 'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW' | 'BULK';
-    data: {
-      source: string;
-      destination?: string;
-      options?: Record<string, unknown>;
-    };
-  };
-  createdAt: number;
-  attempts: number;
-}
-
 interface DispatchState {
   connected: boolean;
   authenticated: boolean;
   hubUrl: string;
   jobs: Map<string, DispatchJob>;
   workers: DispatchWorker[];
-  queuedJobs: QueuedJob[];
   isLoading: boolean;
   error: string | null;
 }
@@ -78,7 +61,6 @@ function createDispatchStore() {
     hubUrl: 'http://192.168.1.199:3000',
     jobs: new Map(),
     workers: [],
-    queuedJobs: [],
     isLoading: false,
     error: null,
   };
@@ -111,10 +93,6 @@ function createDispatchStore() {
           authenticated: status.authenticated,
           hubUrl: status.hubUrl,
         }));
-
-        // Load queued jobs
-        const queued = await api.getQueuedJobs();
-        update(state => ({ ...state, queuedJobs: queued }));
 
         // If connected, load workers
         if (status.connected && status.authenticated) {
@@ -189,27 +167,6 @@ function createDispatchStore() {
             }
             return { ...state, jobs };
           });
-        })
-      );
-
-      cleanupFunctions.push(
-        api.onJobQueued((data) => {
-          toasts.info('Job queued for later (offline mode)');
-          this.refreshQueuedJobs();
-        })
-      );
-
-      cleanupFunctions.push(
-        api.onJobQueueSynced((data) => {
-          toasts.success(`Queued job synced as ${data.jobId.slice(0, 8)}`);
-          this.refreshQueuedJobs();
-        })
-      );
-
-      cleanupFunctions.push(
-        api.onJobQueueFailed((data) => {
-          toasts.error('Failed to sync queued job after 3 attempts');
-          this.refreshQueuedJobs();
         })
       );
     },
@@ -287,12 +244,11 @@ function createDispatchStore() {
         const jobId = await window.electronAPI.dispatch.submitJob(job);
 
         // Track the job locally
-        const isQueued = jobId.startsWith('queued:');
         const dispatchJob: DispatchJob = {
           jobId,
           type: job.type,
           plugin: job.plugin,
-          status: isQueued ? 'queued' : 'pending',
+          status: 'pending',
           progress: 0,
           submittedAt: new Date(),
         };
@@ -377,21 +333,6 @@ function createDispatchStore() {
     },
 
     // ============================================
-    // Queue Operations
-    // ============================================
-
-    async refreshQueuedJobs(): Promise<void> {
-      if (!window.electronAPI?.dispatch) return;
-
-      try {
-        const queuedJobs = await window.electronAPI.dispatch.getQueuedJobs();
-        update(state => ({ ...state, queuedJobs }));
-      } catch (error) {
-        console.error('[DispatchStore] Failed to refresh queued jobs:', error);
-      }
-    },
-
-    // ============================================
     // Configuration
     // ============================================
 
@@ -459,12 +400,6 @@ export const activeJobCount = derived(
   $store => Array.from($store.jobs.values()).filter(j => j.status === 'running').length
 );
 
-/** Number of jobs in offline queue */
-export const queuedJobCount = derived(
-  dispatchStore,
-  $store => $store.queuedJobs.length
-);
-
 /** All workers */
 export const dispatchWorkers = derived(
   dispatchStore,
@@ -481,7 +416,7 @@ export const onlineWorkers = derived(
 export const activeJobs = derived(
   dispatchStore,
   $store => Array.from($store.jobs.values()).filter(
-    j => ['pending', 'running', 'queued'].includes(j.status)
+    j => ['pending', 'running'].includes(j.status)
   )
 );
 

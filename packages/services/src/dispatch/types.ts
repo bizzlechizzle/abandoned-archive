@@ -71,17 +71,6 @@ export interface JobUpdate {
 }
 
 // ============================================
-// Queue
-// ============================================
-
-export interface QueuedJob {
-  id: string;
-  job: JobSubmission;
-  createdAt: number;
-  attempts: number;
-}
-
-// ============================================
 // Workers
 // ============================================
 
@@ -101,7 +90,6 @@ export interface DispatchStatus {
   connected: boolean;
   authenticated: boolean;
   hubUrl: string;
-  queuedJobsCount: number;
 }
 
 // ============================================
@@ -115,8 +103,5 @@ export interface DispatchClientEvents {
   'auth:logout': () => void;
   'job:progress': (data: JobProgress) => void;
   'job:updated': (data: JobUpdate) => void;
-  'job:queued': (data: { queueId: string; job: JobSubmission }) => void;
-  'job:queueSynced': (data: { queueId: string; jobId: string }) => void;
-  'job:queueFailed': (data: { id: string; job: JobSubmission }) => void;
   error: (data: { type: string; error: unknown }) => void;
 }

@@ -34,7 +34,6 @@
   },
   "dependencies": {
     "@aa/core": "workspace:*",
-    "better-sqlite3": "^11.0.0",
     "keytar": "^7.9.0",
     "kysely": "^0.27.0",
     "socket.io-client": "^4.8.3",
@@ -43,7 +42,6 @@
     "exiftool-vendored": "^28.0.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.8",
     "@types/node": "^20.10.0",
     "typescript": "^5.3.3",
     "vitest": "^1.0.0"

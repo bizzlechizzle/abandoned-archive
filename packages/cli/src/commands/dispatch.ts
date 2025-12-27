@@ -47,7 +47,6 @@ export function registerDispatchCommands(program: Command): void {
         console.log(`Hub Reachable:  ${hubReachable ? chalk.green('Yes') : chalk.red('No')}`);
         console.log(`Connected:      ${status.connected ? chalk.green('Yes') : chalk.yellow('No')}`);
         console.log(`Authenticated:  ${status.authenticated ? chalk.green('Yes') : chalk.yellow('No')}`);
-        console.log(`Queued Jobs:    ${status.queuedJobsCount}`);
 
         destroyDispatchClient();
       } catch (error) {
@@ -334,46 +333,6 @@ export function registerDispatchCommands(program: Command): void {
         destroyDispatchClient();
       } catch (error) {
         spinner.fail('Failed to set hub URL');
-        console.error(chalk.red((error as Error).message));
-        destroyDispatchClient();
-        process.exit(1);
-      }
-    });
-
-  // Show queued jobs (offline queue)
-  dispatch
-    .command('queue')
-    .description('Show offline job queue')
-    .option('--json', 'Output as JSON')
-    .action(async (options) => {
-      try {
-        const client = getDispatchClient();
-        const queued = await client.getQueuedJobs();
-
-        if (options.json || program.opts().json) {
-          console.log(JSON.stringify(queued, null, 2));
-          destroyDispatchClient();
-          return;
-        }
-
-        console.log(chalk.bold.cyan('\nOffline Queue\n'));
-        console.log(chalk.gray('─'.repeat(60)));
-
-        if (queued.length === 0) {
-          console.log(chalk.green('Queue is empty'));
-          destroyDispatchClient();
-          return;
-        }
-
-        for (const item of queued) {
-          console.log(
-            `${chalk.gray(item.id.slice(0, 8))} ${item.job.type.padEnd(12)} ${item.job.plugin.padEnd(15)} attempts: ${item.attempts}`
-          );
-        }
-
-        console.log(chalk.gray(`\n${queued.length} jobs queued`));
-        destroyDispatchClient();
-      } catch (error) {
         console.error(chalk.red((error as Error).message));
         destroyDispatchClient();
         process.exit(1);

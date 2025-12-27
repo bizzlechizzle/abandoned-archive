@@ -5,15 +5,14 @@
  * - Authentication (login, logout, token refresh)
  * - Socket.IO connection for real-time updates
  * - Job submission and tracking
- * - Offline queue management
  *
  * Platform-agnostic - uses injected TokenStorage.
+ * All job processing goes through the central hub.
  */
 
 import { io, Socket } from 'socket.io-client';
 import { EventEmitter } from 'events';
 import { FileStorage } from './token-storage.js';
-import type { OfflineQueue } from './offline-queue.js';
 import type {
   DispatchConfig,
   TokenStorage,
@@ -21,7 +20,6 @@ import type {
   JobProgress,
   JobUpdate,
   DispatchStatus,
-  QueuedJob,
   Worker,
 } from './types.js';
 
@@ -38,38 +36,13 @@ export class DispatchClient extends EventEmitter {
   private tokenStorage: TokenStorage;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private pendingJobs: Map<string, JobSubmission> = new Map();
-  private _offlineQueue: OfflineQueue | null = null;
   private isOnline: boolean = false;
 
   constructor(options: DispatchClientOptions) {
     super();
     this.config = options.config;
     this.tokenStorage = options.tokenStorage || new FileStorage(options.config.dataDir);
-    // OfflineQueue is lazy-loaded to avoid importing better-sqlite3 until needed
     this.loadStoredTokens();
-  }
-
-  /**
-   * Lazy-load the offline queue to avoid importing better-sqlite3 at startup.
-   * This allows the CLI to work without native module conflicts when only
-   * using hub-only operations (status, workers, etc).
-   *
-   * Returns null if SQLite fails to load (e.g., native module version mismatch
-   * when running CLI with different Node version than Electron).
-   */
-  private async getOfflineQueue(): Promise<OfflineQueue | null> {
-    if (!this._offlineQueue) {
-      try {
-        const { OfflineQueue } = await import('./offline-queue.js');
-        this._offlineQueue = new OfflineQueue(this.config.dataDir);
-      } catch (error) {
-        // SQLite native module likely has ABI mismatch (Electron vs Node.js)
-        // This is expected when running CLI outside of Electron
-        console.warn('[DispatchClient] Offline queue unavailable (SQLite native module issue)');
-        return null;
-      }
-    }
-    return this._offlineQueue;
   }
 
   // ============================================
@@ -207,7 +180,6 @@ export class DispatchClient extends EventEmitter {
     this.socket.on('connect', () => {
       this.isOnline = true;
       this.emit('connected');
-      this.syncOfflineQueue();
     });
 
     this.socket.on('disconnect', (reason) => {
@@ -249,34 +221,6 @@ export class DispatchClient extends EventEmitter {
   }
 
   // ============================================
-  // Offline Queue Sync
-  // ============================================
-
-  private async syncOfflineQueue(): Promise<void> {
-    const offlineQueue = await this.getOfflineQueue();
-    if (!offlineQueue) return; // Queue unavailable (CLI mode)
-
-    const queued = offlineQueue.getAll();
-
-    for (const item of queued) {
-      if (item.attempts >= 3) {
-        this.emit('job:queueFailed', { id: item.id, job: item.job });
-        offlineQueue.remove(item.id);
-        continue;
-      }
-
-      try {
-        offlineQueue.incrementAttempts(item.id);
-        const jobId = await this.submitJobOnline(item.job);
-        offlineQueue.remove(item.id);
-        this.emit('job:queueSynced', { queueId: item.id, jobId });
-      } catch (error) {
-        console.error(`[DispatchClient] Failed to sync queued job ${item.id}:`, error);
-      }
-    }
-  }
-
-  // ============================================
   // Job Operations
   // ============================================
 
@@ -314,7 +258,11 @@ export class DispatchClient extends EventEmitter {
     return (await response.json()) as T;
   }
 
-  private async submitJobOnline(job: JobSubmission): Promise<string> {
+  async submitJob(job: JobSubmission): Promise<string> {
+    if (!this.isOnline) {
+      throw new Error('Cannot submit job: not connected to dispatch hub');
+    }
+
     const result = await this.apiRequest<{ id: string }>('/api/jobs', {
       method: 'POST',
       body: JSON.stringify({
@@ -325,25 +273,10 @@ export class DispatchClient extends EventEmitter {
       }),
     });
 
-    // Track pending job for offline resilience
+    // Track pending job
     this.pendingJobs.set(result.id, job);
 
     return result.id;
-  }
-
-  async submitJob(job: JobSubmission): Promise<string> {
-    if (!this.isOnline) {
-      // Queue for later
-      const offlineQueue = await this.getOfflineQueue();
-      if (!offlineQueue) {
-        throw new Error('Cannot queue job: offline queue unavailable and hub is not reachable');
-      }
-      const queueId = offlineQueue.add(job);
-      this.emit('job:queued', { queueId, job });
-      return `queued:${queueId}`;
-    }
-
-    return this.submitJobOnline(job);
   }
 
   async getJob(jobId: string): Promise<JobUpdate | null> {
@@ -403,18 +336,7 @@ export class DispatchClient extends EventEmitter {
       connected: this.isOnline,
       authenticated: this.isAuthenticated(),
       hubUrl: this.config.hubUrl,
-      // Return 0 if queue not loaded - avoids importing better-sqlite3 for status checks
-      queuedJobsCount: this._offlineQueue?.getCount() ?? 0,
     };
-  }
-
-  async getQueuedJobs(): Promise<QueuedJob[]> {
-    const offlineQueue = await this.getOfflineQueue();
-    if (!offlineQueue) {
-      // Queue unavailable (CLI mode with native module mismatch)
-      return [];
-    }
-    return offlineQueue.getAll();
   }
 
   // ============================================
@@ -457,8 +379,6 @@ export class DispatchClient extends EventEmitter {
       clearTimeout(this.reconnectTimer);
     }
     this.disconnectSocket();
-    // Only close if it was initialized
-    this._offlineQueue?.close();
     this.removeAllListeners();
   }
 }
