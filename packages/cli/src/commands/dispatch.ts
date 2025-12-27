@@ -348,7 +348,7 @@ export function registerDispatchCommands(program: Command): void {
     .action(async (options) => {
       try {
         const client = getDispatchClient();
-        const queued = client.getQueuedJobs();
+        const queued = await client.getQueuedJobs();
 
         if (options.json || program.opts().json) {
           console.log(JSON.stringify(queued, null, 2));

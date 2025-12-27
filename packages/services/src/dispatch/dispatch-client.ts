@@ -12,8 +12,8 @@
 
 import { io, Socket } from 'socket.io-client';
 import { EventEmitter } from 'events';
-import { OfflineQueue } from './offline-queue.js';
 import { FileStorage } from './token-storage.js';
+import type { OfflineQueue } from './offline-queue.js';
 import type {
   DispatchConfig,
   TokenStorage,
@@ -38,15 +38,38 @@ export class DispatchClient extends EventEmitter {
   private tokenStorage: TokenStorage;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private pendingJobs: Map<string, JobSubmission> = new Map();
-  private offlineQueue: OfflineQueue;
+  private _offlineQueue: OfflineQueue | null = null;
   private isOnline: boolean = false;
 
   constructor(options: DispatchClientOptions) {
     super();
     this.config = options.config;
     this.tokenStorage = options.tokenStorage || new FileStorage(options.config.dataDir);
-    this.offlineQueue = new OfflineQueue(options.config.dataDir);
+    // OfflineQueue is lazy-loaded to avoid importing better-sqlite3 until needed
     this.loadStoredTokens();
+  }
+
+  /**
+   * Lazy-load the offline queue to avoid importing better-sqlite3 at startup.
+   * This allows the CLI to work without native module conflicts when only
+   * using hub-only operations (status, workers, etc).
+   *
+   * Returns null if SQLite fails to load (e.g., native module version mismatch
+   * when running CLI with different Node version than Electron).
+   */
+  private async getOfflineQueue(): Promise<OfflineQueue | null> {
+    if (!this._offlineQueue) {
+      try {
+        const { OfflineQueue } = await import('./offline-queue.js');
+        this._offlineQueue = new OfflineQueue(this.config.dataDir);
+      } catch (error) {
+        // SQLite native module likely has ABI mismatch (Electron vs Node.js)
+        // This is expected when running CLI outside of Electron
+        console.warn('[DispatchClient] Offline queue unavailable (SQLite native module issue)');
+        return null;
+      }
+    }
+    return this._offlineQueue;
   }
 
   // ============================================
@@ -230,19 +253,22 @@ export class DispatchClient extends EventEmitter {
   // ============================================
 
   private async syncOfflineQueue(): Promise<void> {
-    const queued = this.offlineQueue.getAll();
+    const offlineQueue = await this.getOfflineQueue();
+    if (!offlineQueue) return; // Queue unavailable (CLI mode)
+
+    const queued = offlineQueue.getAll();
 
     for (const item of queued) {
       if (item.attempts >= 3) {
         this.emit('job:queueFailed', { id: item.id, job: item.job });
-        this.offlineQueue.remove(item.id);
+        offlineQueue.remove(item.id);
         continue;
       }
 
       try {
-        this.offlineQueue.incrementAttempts(item.id);
+        offlineQueue.incrementAttempts(item.id);
         const jobId = await this.submitJobOnline(item.job);
-        this.offlineQueue.remove(item.id);
+        offlineQueue.remove(item.id);
         this.emit('job:queueSynced', { queueId: item.id, jobId });
       } catch (error) {
         console.error(`[DispatchClient] Failed to sync queued job ${item.id}:`, error);
@@ -308,7 +334,11 @@ export class DispatchClient extends EventEmitter {
   async submitJob(job: JobSubmission): Promise<string> {
     if (!this.isOnline) {
       // Queue for later
-      const queueId = this.offlineQueue.add(job);
+      const offlineQueue = await this.getOfflineQueue();
+      if (!offlineQueue) {
+        throw new Error('Cannot queue job: offline queue unavailable and hub is not reachable');
+      }
+      const queueId = offlineQueue.add(job);
       this.emit('job:queued', { queueId, job });
       return `queued:${queueId}`;
     }
@@ -373,12 +403,18 @@ export class DispatchClient extends EventEmitter {
       connected: this.isOnline,
       authenticated: this.isAuthenticated(),
       hubUrl: this.config.hubUrl,
-      queuedJobsCount: this.offlineQueue.getCount(),
+      // Return 0 if queue not loaded - avoids importing better-sqlite3 for status checks
+      queuedJobsCount: this._offlineQueue?.getCount() ?? 0,
     };
   }
 
-  getQueuedJobs(): QueuedJob[] {
-    return this.offlineQueue.getAll();
+  async getQueuedJobs(): Promise<QueuedJob[]> {
+    const offlineQueue = await this.getOfflineQueue();
+    if (!offlineQueue) {
+      // Queue unavailable (CLI mode with native module mismatch)
+      return [];
+    }
+    return offlineQueue.getAll();
   }
 
   // ============================================
@@ -421,7 +457,8 @@ export class DispatchClient extends EventEmitter {
       clearTimeout(this.reconnectTimer);
     }
     this.disconnectSocket();
-    this.offlineQueue.close();
+    // Only close if it was initialized
+    this._offlineQueue?.close();
     this.removeAllListeners();
   }
 }
