@@ -3,6 +3,7 @@
   import { router } from '../stores/router';
   import { openImportModal } from '../stores/import-modal-store';
   import { userStore, currentUser } from '../stores/user-store';
+  import { dispatchStore, dispatchConnectionStatus, queuedJobCount } from '../stores/dispatch-store';
   import UserSwitcher from './UserSwitcher.svelte';
 
   let currentRoute = $state('/dashboard');
@@ -96,10 +97,24 @@
     });
   }
 
-  // Initialize user store on mount
+  // Initialize user store and dispatch store on mount
   onMount(() => {
     userStore.init();
+    dispatchStore.initialize();
   });
+
+  // Dispatch status colors
+  const dispatchStatusColors: Record<string, string> = {
+    authenticated: 'bg-green-500',
+    connected: 'bg-amber-500',
+    disconnected: 'bg-red-500',
+  };
+
+  const dispatchStatusText: Record<string, string> = {
+    authenticated: 'Dispatch: Connected',
+    connected: 'Dispatch: Not authenticated',
+    disconnected: 'Dispatch: Disconnected',
+  };
 </script>
 
 <nav class="w-64 h-screen bg-braun-50 text-braun-900 flex flex-col border-r border-braun-300">
@@ -146,9 +161,20 @@
     </ul>
   </div>
 
-  <!-- Bottom Icon Bar: Search and Settings (icons only, right-justified) -->
+  <!-- Bottom Icon Bar: Dispatch status + Search and Settings (icons only, right-justified) -->
   <div class="p-4 border-t border-braun-200">
     <div class="flex justify-end items-center gap-2">
+      <!-- Dispatch Status Indicator -->
+      <div
+        class="flex items-center gap-1.5 mr-2 cursor-pointer"
+        onclick={() => navigate('/settings')}
+        title={dispatchStatusText[$dispatchConnectionStatus] + ($queuedJobCount > 0 ? ` (${$queuedJobCount} queued)` : '')}
+      >
+        <span class="w-2 h-2 rounded-full {dispatchStatusColors[$dispatchConnectionStatus]}"></span>
+        {#if $queuedJobCount > 0}
+          <span class="text-xs text-amber-600">{$queuedJobCount}</span>
+        {/if}
+      </div>
       <button
         onclick={() => navigate('/search')}
         class="p-2 rounded hover:bg-braun-100 transition-colors {isActive('/search') ? 'bg-braun-100' : ''}"

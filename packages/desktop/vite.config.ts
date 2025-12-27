@@ -166,6 +166,11 @@ export default defineConfig({
                 'exiftool-vendored',
                 'exiftool-vendored.exe',
                 'exiftool-vendored.pl',
+                // Keytar is a native module for secure credential storage
+                // Used by dispatch client for token storage
+                'keytar',
+                // Socket.io-client for dispatch hub connection
+                'socket.io-client',
               ],
             },
           },

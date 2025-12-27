@@ -18,9 +18,33 @@ import type { Kysely } from 'kysely';
 import type { Database } from '../../main/database.types';
 import type { ValidatedFile } from './validator';
 import type { ScanResult } from './scanner';
-import { JobQueue, IMPORT_QUEUES, JOB_PRIORITY, type JobInput } from '../job-queue';
+import { getDispatchClient, type JobSubmission, type JobPriority } from '@aa/services';
 import type { LocationInfo } from './types';
 import { perceptualHashService } from '../image-downloader/perceptual-hash-service';
+
+// Map local priorities to dispatch priorities
+const DISPATCH_PRIORITY: Record<string, JobPriority> = {
+  HIGH: 'HIGH',
+  NORMAL: 'NORMAL',
+  LOW: 'LOW',
+  BACKGROUND: 'BULK',
+};
+
+// Map local queue names to dispatch plugins
+const DISPATCH_PLUGINS: Record<string, string> = {
+  exiftool: 'national-treasure', // Metadata extraction
+  ffprobe: 'national-treasure',  // Video metadata
+  thumbnail: 'shoemaker',        // Thumbnail generation
+  'video-proxy': 'shoemaker',    // Video proxy generation
+  'xmp-sidecar': 'wake-n-blake', // XMP sidecar
+  'gps-enrichment': 'mapsh-pit', // GPS enrichment
+  'live-photo': 'wake-n-blake',  // Live photo detection
+  'srt-telemetry': 'father-time', // SRT telemetry
+  'location-stats': 'wake-n-blake', // Location stats
+  'bagit': 'wake-n-blake',       // BagIt manifest
+  'ml-thumbnail': 'shoemaker',   // ML thumbnail
+  'visual-buffet': 'visual-buffet', // ML tagging
+};
 
 /**
  * Finalized file with DB record info
@@ -78,11 +102,9 @@ export type { LocationInfo } from './types';
  * Finalizer class for database commits
  */
 export class Finalizer {
-  private jobQueue: JobQueue;
+  private dispatchClient = getDispatchClient();
 
-  constructor(private readonly db: Kysely<Database>) {
-    this.jobQueue = new JobQueue(db);
-  }
+  constructor(private readonly db: Kysely<Database>) {}
 
   /**
    * Finalize import: commit to DB and queue background jobs
@@ -203,11 +225,11 @@ export class Finalizer {
     // Report progress: Queueing background jobs
     options?.onProgress?.(98, 'Queueing background jobs');
 
-    // Queue background jobs for each successfully imported file
+    // Submit background jobs to dispatch for each successfully imported file
     const successfulFiles = results.filter(f => f.dbRecordId);
-    const jobs = this.buildJobList(successfulFiles, location);
+    const jobs = this.buildDispatchJobs(successfulFiles, location);
     if (jobs.length > 0) {
-      await this.jobQueue.addBulk(jobs);
+      await this.submitJobsToDispatch(jobs);
       jobsQueued = jobs.length;
     }
 
@@ -270,10 +292,10 @@ export class Finalizer {
       // Insert single file to DB (no transaction needed for single insert)
       await this.insertMediaRecord(this.db, file, location, options);
 
-      // Queue background jobs for this single file
-      const jobs = this.buildJobList([{ ...file, dbRecordId: file.hash, finalizeError: null }], location);
+      // Submit background jobs to dispatch for this single file
+      const jobs = this.buildDispatchJobs([{ ...file, dbRecordId: file.hash, finalizeError: null }], location);
       if (jobs.length > 0) {
-        await this.jobQueue.addBulk(jobs);
+        await this.submitJobsToDispatch(jobs);
       }
 
       return {
@@ -857,160 +879,157 @@ export class Finalizer {
   }
 
   /**
-   * Build job list for background processing
+   * Submit jobs to dispatch hub
+   */
+  private async submitJobsToDispatch(jobs: JobSubmission[]): Promise<void> {
+    for (const job of jobs) {
+      try {
+        await this.dispatchClient.submitJob(job);
+      } catch (error) {
+        console.error(`[Finalizer] Failed to submit job to dispatch:`, error);
+        // Continue with other jobs - don't fail entire import for job submission errors
+      }
+    }
+  }
+
+  /**
+   * Build dispatch job list for background processing
    *
    * Per Import Spec v2.0:
-   * - Per-file jobs: ExifTool, FFprobe, Thumbnail, Video Proxy
-   * - Per-location jobs: GPS Enrichment, Live Photo, SRT Telemetry, Location Stats, BagIt
+   * - Per-file jobs: Metadata extraction, Thumbnail, Video Proxy
+   * - Per-location jobs: GPS Enrichment, Location Stats
    *
-   * Location-level jobs run after all file-level jobs complete.
-   *
-   * OPT-093: Updated to accept LocationInfo for sub-location support
+   * All jobs are submitted to dispatch hub for processing by workers.
    */
-  private buildJobList(files: FinalizedFile[], location: LocationInfo): JobInput[] {
-    const jobs: JobInput[] = [];
+  private buildDispatchJobs(files: FinalizedFile[], location: LocationInfo): JobSubmission[] {
+    const jobs: JobSubmission[] = [];
     const { locid, subid } = location;
-
-    // Track last per-file job ID for dependencies
-    let lastExifJobId: string | null = null;
 
     // ============ Per-File Jobs ============
 
     for (const file of files) {
       if (!file.dbRecordId || !file.archivePath) continue;
 
-      const basePayload = {
+      const baseOptions = {
         hash: file.hash!,
         mediaType: file.mediaType,
-        archivePath: file.archivePath,
-        locid,  // For timeline event creation
-        subid,  // For timeline event creation
+        locid,
+        subid,
       };
 
-      // ExifTool job for all media types
-      // OPT-087: Pass pre-generated jobId to ensure dependency chain works
-      const exifJobId = generateId();
+      // Metadata extraction job (ExifTool/FFprobe)
       jobs.push({
-        queue: IMPORT_QUEUES.EXIFTOOL,
-        priority: JOB_PRIORITY.HIGH,
-        jobId: exifJobId,  // OPT-087: Use this as actual job_id in database
-        payload: { ...basePayload },
+        type: 'metadata',
+        plugin: 'national-treasure',
+        priority: 'HIGH',
+        data: {
+          source: file.archivePath,
+          options: baseOptions,
+        },
       });
-      lastExifJobId = exifJobId;
 
-      // FFprobe job for videos (depends on ExifTool)
-      // OPT-087: Pass pre-generated jobId for dependency chain
-      if (file.mediaType === 'video') {
-        const ffprobeJobId = generateId();
-        jobs.push({
-          queue: IMPORT_QUEUES.FFPROBE,
-          priority: JOB_PRIORITY.HIGH,
-          jobId: ffprobeJobId,  // OPT-087: Use this as actual job_id
-          payload: { ...basePayload },
-          dependsOn: exifJobId,
-        });
-      }
-
-      // Thumbnail job (depends on ExifTool for orientation)
+      // Thumbnail job
       if (file.mediaType === 'image' || file.mediaType === 'video') {
         jobs.push({
-          queue: IMPORT_QUEUES.THUMBNAIL,
-          priority: JOB_PRIORITY.NORMAL,
-          payload: basePayload,
-          dependsOn: exifJobId,
+          type: 'thumbnail',
+          plugin: 'shoemaker',
+          priority: 'NORMAL',
+          data: {
+            source: file.archivePath,
+            options: {
+              ...baseOptions,
+              width: 400,
+              height: 400,
+              format: 'webp',
+              quality: 80,
+            },
+          },
         });
       }
 
-      // Video proxy job (no dependency - can run in parallel)
+      // Video proxy job
       if (file.mediaType === 'video') {
         jobs.push({
-          queue: IMPORT_QUEUES.VIDEO_PROXY,
-          priority: JOB_PRIORITY.LOW,
-          payload: basePayload,
+          type: 'thumbnail',
+          plugin: 'shoemaker',
+          priority: 'LOW',
+          data: {
+            source: file.archivePath,
+            options: {
+              ...baseOptions,
+              width: 1280,
+              format: 'mp4',
+              isProxy: true,
+            },
+          },
         });
       }
 
-      // Backbone: XMP sidecar generation (depends on ExifTool for metadata)
-      // Generates PREMIS-compliant custody chain sidecar alongside media file
+      // XMP sidecar job
       if (file.mediaType === 'image' || file.mediaType === 'video' || file.mediaType === 'document') {
         jobs.push({
-          queue: IMPORT_QUEUES.XMP_SIDECAR,
-          priority: JOB_PRIORITY.NORMAL,
-          payload: {
-            ...basePayload,
-            originalPath: file.originalPath,
+          type: 'metadata',
+          plugin: 'wake-n-blake',
+          priority: 'NORMAL',
+          data: {
+            source: file.archivePath,
+            options: {
+              ...baseOptions,
+              originalPath: file.originalPath,
+              action: 'xmp-sidecar',
+            },
           },
-          dependsOn: exifJobId,
         });
       }
     }
 
     // ============ Per-Location Jobs ============
-    // These run after all file-level ExifTool jobs complete
-    // Only queue if we have files to process
-
     if (files.length === 0) {
       return jobs;
     }
 
-    // OPT-093: Include subid in payloads for sub-location aware jobs
-    const locationPayload = { locid };
-    const locationWithSubPayload = { locid, subid };
+    const locationOptions = { locid, subid };
 
-    // GPS Enrichment - aggregate GPS from media to location/sub-location
-    // Depends on last ExifTool job (ensures all metadata extracted first)
-    // OPT-087: Pass pre-generated jobId for dependency chain
-    // OPT-093: Pass subid for sub-location GPS enrichment
-    const gpsEnrichmentJobId = generateId();
+    // GPS Enrichment
     jobs.push({
-      queue: IMPORT_QUEUES.GPS_ENRICHMENT,
-      priority: JOB_PRIORITY.NORMAL,
-      jobId: gpsEnrichmentJobId,  // OPT-087: Use this as actual job_id
-      payload: locationWithSubPayload,  // OPT-093: Include subid
-      dependsOn: lastExifJobId ?? undefined,
+      type: 'metadata',
+      plugin: 'mapsh-pit',
+      priority: 'NORMAL',
+      data: {
+        source: locid,
+        options: {
+          ...locationOptions,
+          action: 'gps-enrichment',
+        },
+      },
     });
 
-    // Live Photo Detection - match image/video pairs by ContentIdentifier
-    // Depends on ExifTool (needs ContentIdentifier from metadata)
-    // Note: Live Photo detection is location-wide, not sub-location specific
+    // Location Stats
     jobs.push({
-      queue: IMPORT_QUEUES.LIVE_PHOTO,
-      priority: JOB_PRIORITY.NORMAL,
-      payload: locationPayload,
-      dependsOn: lastExifJobId ?? undefined,
+      type: 'metadata',
+      plugin: 'wake-n-blake',
+      priority: 'BULK',
+      data: {
+        source: locid,
+        options: {
+          ...locationOptions,
+          action: 'location-stats',
+        },
+      },
     });
 
-    // SRT Telemetry - link DJI telemetry to videos
-    // Only queue if we imported any documents (SRT files are imported as documents)
-    // Note: SRT telemetry is location-wide, not sub-location specific
-    const hasDocuments = files.some(f => f.mediaType === 'document');
-    if (hasDocuments) {
-      jobs.push({
-        queue: IMPORT_QUEUES.SRT_TELEMETRY,
-        priority: JOB_PRIORITY.NORMAL,
-        payload: locationPayload,
-        dependsOn: lastExifJobId ?? undefined,
-      });
-    }
-
-    // Location Stats - recalculate media counts and date range
-    // Depends on GPS Enrichment (for complete location state)
-    // OPT-093: Pass subid for sub-location stats calculation
+    // BagIt Manifest
     jobs.push({
-      queue: IMPORT_QUEUES.LOCATION_STATS,
-      priority: JOB_PRIORITY.BACKGROUND,
-      payload: locationWithSubPayload,  // OPT-093: Include subid
-      dependsOn: gpsEnrichmentJobId,
-    });
-
-    // BagIt Manifest - update RFC 8493 archive manifest
-    // Runs last (needs all files + thumbnails + metadata to be complete)
-    // OPT-093: Pass subid for sub-location BagIt support
-    jobs.push({
-      queue: IMPORT_QUEUES.BAGIT,
-      priority: JOB_PRIORITY.BACKGROUND,
-      payload: locationWithSubPayload,  // OPT-093: Include subid
-      dependsOn: gpsEnrichmentJobId, // After enrichment
+      type: 'metadata',
+      plugin: 'wake-n-blake',
+      priority: 'BULK',
+      data: {
+        source: locid,
+        options: {
+          ...locationOptions,
+          action: 'bagit',
+        },
+      },
     });
 
     return jobs;

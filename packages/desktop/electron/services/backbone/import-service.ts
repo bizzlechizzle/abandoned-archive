@@ -27,7 +27,9 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import type { Kysely } from 'kysely';
 import type { Database } from '../../main/database.types';
-import { JobQueue, IMPORT_QUEUES, JOB_PRIORITY, type JobInput } from '../job-queue.js';
+// NOTE: Local job queue disabled - all processing through dispatch hub
+// import { JobQueue, IMPORT_QUEUES, JOB_PRIORITY, type JobInput } from '../job-queue.js';
+import { getDispatchClient, type JobSubmission } from '@aa/services';
 import { generateId } from '../../main/ipc-validation.js';
 import { getLogger } from '../logger-service.js';
 import { getMetricsCollector, MetricNames } from '../monitoring/metrics-collector.js';
@@ -171,12 +173,16 @@ type MediaType = 'image' | 'video' | 'document' | 'map';
 
 /**
  * Import Service using wake-n-blake's runImport()
+ *
+ * NOTE: As of dispatch integration, all post-import jobs are submitted
+ * to dispatch hub instead of local job queue.
  */
 export class ImportService {
-  private jobQueue: JobQueue;
+  private dispatchClient = getDispatchClient();
 
   constructor(private db: Kysely<Database>) {
-    this.jobQueue = new JobQueue(db);
+    // NOTE: Local job queue disabled - using dispatch hub
+    // this.jobQueue = new JobQueue(db);
   }
 
   /**
@@ -746,9 +752,11 @@ export class ImportService {
   /**
    * Queue thumbnail generation job for a file
    *
-   * Two-phase pipeline:
-   * - Phase 1 (Fast UI): ExifTool → Thumbnail (fast preset)
-   * - Phase 2 (Background ML): ML_THUMBNAIL (quality preset) → VISUAL_BUFFET
+   * Submits jobs to dispatch hub:
+   * - Metadata extraction (national-treasure plugin)
+   * - Thumbnail generation (shoemaker plugin)
+   * - ML tagging (visual-buffet plugin)
+   * - Video proxy (shoemaker plugin) for videos
    */
   private async queueThumbnailJob(file: ImportFileState, location: ImportLocation): Promise<void> {
     if (!file.destPath || !file.hash) return;
@@ -756,126 +764,149 @@ export class ImportService {
     const mediaType = this.getMediaType(file);
     if (mediaType !== 'image' && mediaType !== 'video') return;
 
-    // Generate job IDs for dependency chain
-    const exifJobId = generateId();
-    const thumbJobId = generateId();
-    const mlThumbJobId = generateId();
-
-    const basePayload = {
+    const baseOptions = {
       hash: file.hash,
       mediaType,
-      archivePath: file.destPath,
       locid: location.locid,
       subid: location.subid,
     };
 
-    // Phase 1: Fast UI thumbnails
-    // Phase 2: Background ML processing (chained)
-    await this.jobQueue.addBulk([
-      // Phase 1: ExifTool (HIGH priority)
-      {
-        queue: IMPORT_QUEUES.EXIFTOOL,
-        priority: JOB_PRIORITY.HIGH,
-        jobId: exifJobId,
-        payload: basePayload,
-      },
-      // Phase 1: Fast Thumbnail (HIGH priority, depends on ExifTool for orientation)
-      {
-        queue: IMPORT_QUEUES.THUMBNAIL,
-        priority: JOB_PRIORITY.HIGH,  // Upgraded for UI responsiveness
-        jobId: thumbJobId,
-        payload: basePayload,
-        dependsOn: exifJobId,
-      },
-      // Phase 2: ML Thumbnail (BACKGROUND priority, depends on Phase 1 thumb)
-      {
-        queue: IMPORT_QUEUES.ML_THUMBNAIL,
-        priority: JOB_PRIORITY.BACKGROUND,
-        jobId: mlThumbJobId,
-        payload: basePayload,
-        dependsOn: thumbJobId,
-      },
-      // Phase 2: Visual-Buffet (BACKGROUND priority, depends on ML thumb)
-      {
-        queue: IMPORT_QUEUES.VISUAL_BUFFET,
-        priority: JOB_PRIORITY.BACKGROUND,
-        payload: basePayload,
-        dependsOn: mlThumbJobId,
-      },
-    ]);
+    try {
+      // 1. Metadata extraction (national-treasure)
+      await this.dispatchClient.submitJob({
+        type: 'metadata',
+        plugin: 'national-treasure',
+        priority: 'HIGH',
+        data: {
+          source: file.destPath,
+          options: baseOptions,
+        },
+      });
 
-    // Queue FFprobe and video proxy for videos
-    if (mediaType === 'video') {
-      await this.jobQueue.addBulk([
-        {
-          queue: IMPORT_QUEUES.FFPROBE,
-          priority: JOB_PRIORITY.HIGH,
-          jobId: generateId(),
-          payload: basePayload,
-          dependsOn: exifJobId,
+      // 2. Thumbnail generation (shoemaker)
+      await this.dispatchClient.submitJob({
+        type: 'thumbnail',
+        plugin: 'shoemaker',
+        priority: 'HIGH',
+        data: {
+          source: file.destPath,
+          options: {
+            ...baseOptions,
+            width: 400,
+            height: 400,
+            format: 'webp',
+            quality: 80,
+          },
         },
-        {
-          queue: IMPORT_QUEUES.VIDEO_PROXY,
-          priority: JOB_PRIORITY.LOW,
-          payload: basePayload,
+      });
+
+      // 3. ML tagging (visual-buffet)
+      await this.dispatchClient.submitJob({
+        type: 'tag',
+        plugin: 'visual-buffet',
+        priority: 'BULK',
+        data: {
+          source: file.destPath,
+          options: {
+            ...baseOptions,
+            plugins: ['ram_plus', 'siglip', 'florence2'],
+          },
         },
-      ]);
+      });
+
+      // 4. Video-specific jobs
+      if (mediaType === 'video') {
+        // Video proxy generation
+        await this.dispatchClient.submitJob({
+          type: 'proxy',
+          plugin: 'shoemaker',
+          priority: 'BULK',
+          data: {
+            source: file.destPath,
+            options: baseOptions,
+          },
+        });
+      }
+
+      logger.debug('ImportService', `Submitted processing jobs to dispatch for ${file.hash.slice(0, 8)}...`);
+    } catch (error) {
+      logger.error('ImportService', `Failed to submit dispatch jobs: ${error}`);
     }
   }
 
   /**
    * Queue location-level jobs after all files are imported
+   *
+   * Submits jobs to dispatch hub:
+   * - GPS enrichment (mapsh-pit plugin)
+   * - Location stats (wake-n-blake plugin)
+   * - BagIt manifest (wake-n-blake plugin)
+   *
+   * Note: Live Photo detection and SRT telemetry require dispatch plugins (not yet implemented)
    */
   private async queueLocationJobs(
     location: ImportLocation,
     files: Array<{ hash: string; mediaType: MediaType }>,
-    user?: { userId: string; username: string }
+    _user?: { userId: string; username: string }
   ): Promise<void> {
-    const jobs: JobInput[] = [];
     const { locid, subid } = location;
+    const locationOptions = { locid, subid };
 
-    // GPS Enrichment
-    const gpsJobId = generateId();
-    jobs.push({
-      queue: IMPORT_QUEUES.GPS_ENRICHMENT,
-      priority: JOB_PRIORITY.NORMAL,
-      jobId: gpsJobId,
-      payload: { locid, subid },
-    });
-
-    // Live Photo Detection
-    jobs.push({
-      queue: IMPORT_QUEUES.LIVE_PHOTO,
-      priority: JOB_PRIORITY.NORMAL,
-      payload: { locid },
-    });
-
-    // SRT Telemetry (if documents were imported)
-    if (files.some(f => f.mediaType === 'document')) {
-      jobs.push({
-        queue: IMPORT_QUEUES.SRT_TELEMETRY,
-        priority: JOB_PRIORITY.NORMAL,
-        payload: { locid },
+    try {
+      // 1. GPS Enrichment (mapsh-pit)
+      await this.dispatchClient.submitJob({
+        type: 'metadata',
+        plugin: 'mapsh-pit',
+        priority: 'NORMAL',
+        data: {
+          source: locid,
+          options: {
+            ...locationOptions,
+            action: 'gps-enrichment',
+          },
+        },
       });
+
+      // 2. Live Photo Detection - requires dispatch plugin (not yet implemented)
+      logger.debug('ImportService', 'Live Photo detection disabled - requires dispatch plugin');
+
+      // 3. SRT Telemetry - requires dispatch plugin (not yet implemented)
+      if (files.some(f => f.mediaType === 'document')) {
+        logger.debug('ImportService', 'SRT telemetry disabled - requires dispatch plugin');
+      }
+
+      // 4. Location Stats (wake-n-blake)
+      await this.dispatchClient.submitJob({
+        type: 'metadata',
+        plugin: 'wake-n-blake',
+        priority: 'BULK',
+        data: {
+          source: locid,
+          options: {
+            ...locationOptions,
+            action: 'location-stats',
+          },
+        },
+      });
+
+      // 5. BagIt Manifest (wake-n-blake)
+      await this.dispatchClient.submitJob({
+        type: 'metadata',
+        plugin: 'wake-n-blake',
+        priority: 'BULK',
+        data: {
+          source: locid,
+          options: {
+            ...locationOptions,
+            action: 'bagit',
+          },
+        },
+      });
+
+      logger.debug('ImportService', `Submitted location jobs to dispatch for ${locid.slice(0, 8)}...`);
+    } catch (error) {
+      logger.error('ImportService', `Failed to submit location dispatch jobs: ${error}`);
     }
-
-    // Location Stats
-    jobs.push({
-      queue: IMPORT_QUEUES.LOCATION_STATS,
-      priority: JOB_PRIORITY.BACKGROUND,
-      payload: { locid, subid },
-      dependsOn: gpsJobId,
-    });
-
-    // BagIt Manifest
-    jobs.push({
-      queue: IMPORT_QUEUES.BAGIT,
-      priority: JOB_PRIORITY.BACKGROUND,
-      payload: { locid, subid },
-      dependsOn: gpsJobId,
-    });
-
-    await this.jobQueue.addBulk(jobs);
   }
 
   /**

@@ -4,7 +4,10 @@
  * SINGLE SOURCE OF TRUTH for image processing jobs.
  * All import paths (local files, web images) MUST use these functions.
  *
- * - queueImageProcessingJobs(): Per-file jobs (ExifTool, Thumbnail)
+ * NOTE: As of dispatch integration, all jobs are submitted to dispatch hub
+ * instead of local job queue. Workers on silo-1 process the jobs.
+ *
+ * - queueImageProcessingJobs(): Per-file jobs (Metadata, Thumbnail)
  * - queueLocationPostProcessing(): Per-location jobs (GPS, Stats, BagIt, etc.)
  * - needsProcessing(): Skip logic for already-processed images
  *
@@ -14,7 +17,9 @@
 import { generateId } from '../../main/ipc-validation';
 import type { Kysely } from 'kysely';
 import type { Database } from '../../main/database.types';
-import { JobQueue, IMPORT_QUEUES, JOB_PRIORITY, type JobInput } from '../job-queue';
+// NOTE: Local job queue disabled - using dispatch hub
+// import { JobQueue, IMPORT_QUEUES, JOB_PRIORITY, type JobInput } from '../job-queue';
+import { getDispatchClient, type JobSubmission } from '@aa/services';
 import { getLogger } from '../logger-service';
 
 const logger = getLogger();
@@ -90,9 +95,9 @@ export function needsProcessing(image: {
  * This is the SINGLE SOURCE OF TRUTH for image processing.
  * Call this from ANY import path after successful DB insert.
  *
- * Jobs queued:
- * 1. EXIFTOOL (HIGH priority) - Extracts metadata
- * 2. THUMBNAIL (NORMAL priority, depends on ExifTool) - Generates thumbnails
+ * Jobs submitted to dispatch hub:
+ * 1. Metadata extraction (national-treasure plugin) - HIGH priority
+ * 2. Thumbnail generation (shoemaker plugin) - NORMAL priority
  *
  * @param db - Database connection
  * @param params - Image parameters
@@ -131,49 +136,65 @@ export async function queueImageProcessingJobs(
     }
   }
 
-  const jobQueue = new JobQueue(db);
+  const dispatchClient = getDispatchClient();
 
-  const basePayload = {
+  const baseOptions = {
     hash: imghash,
     mediaType: 'image' as const,
-    archivePath,
     locid,
     subid,
   };
 
-  // 1. EXIFTOOL (HIGH priority) - Always first in chain
+  // 1. Metadata extraction (HIGH priority) - national-treasure plugin
   if (forceAll || status.exiftool) {
-    exifJobId = generateId();
-    await jobQueue.addJob({
-      queue: IMPORT_QUEUES.EXIFTOOL,
-      priority: JOB_PRIORITY.HIGH,
-      jobId: exifJobId,
-      payload: basePayload,
-    });
-    jobs.push(exifJobId);
-    logger.debug('JobBuilder', `Queued EXIFTOOL for ${imghash.slice(0, 8)}...`);
+    try {
+      exifJobId = await dispatchClient.submitJob({
+        type: 'metadata',
+        plugin: 'national-treasure',
+        priority: 'HIGH',
+        data: {
+          source: archivePath,
+          options: baseOptions,
+        },
+      });
+      jobs.push(exifJobId);
+      logger.debug('JobBuilder', `Submitted metadata job to dispatch for ${imghash.slice(0, 8)}...`);
+    } catch (error) {
+      logger.error('JobBuilder', `Failed to submit metadata job: ${error}`);
+    }
   } else {
     skipped.push('exiftool');
   }
 
-  // 2. THUMBNAIL (NORMAL priority, depends on ExifTool for orientation)
+  // 2. Thumbnail generation (NORMAL priority) - shoemaker plugin
   if (forceAll || status.thumbnail) {
-    const thumbJobId = generateId();
-    await jobQueue.addJob({
-      queue: IMPORT_QUEUES.THUMBNAIL,
-      priority: JOB_PRIORITY.NORMAL,
-      jobId: thumbJobId,
-      payload: basePayload,
-      dependsOn: exifJobId ?? undefined, // May not have exif job if skipped
-    });
-    jobs.push(thumbJobId);
-    logger.debug('JobBuilder', `Queued THUMBNAIL for ${imghash.slice(0, 8)}...`);
+    try {
+      const thumbJobId = await dispatchClient.submitJob({
+        type: 'thumbnail',
+        plugin: 'shoemaker',
+        priority: 'NORMAL',
+        data: {
+          source: archivePath,
+          options: {
+            ...baseOptions,
+            width: 400,
+            height: 400,
+            format: 'webp',
+            quality: 80,
+          },
+        },
+      });
+      jobs.push(thumbJobId);
+      logger.debug('JobBuilder', `Submitted thumbnail job to dispatch for ${imghash.slice(0, 8)}...`);
+    } catch (error) {
+      logger.error('JobBuilder', `Failed to submit thumbnail job: ${error}`);
+    }
   } else {
     skipped.push('thumbnail');
   }
 
   if (jobs.length > 0) {
-    logger.info('JobBuilder', `Queued ${jobs.length} jobs for image ${imghash.slice(0, 8)}...${skipped.length > 0 ? ` (skipped: ${skipped.join(', ')})` : ''}`);
+    logger.info('JobBuilder', `Submitted ${jobs.length} jobs to dispatch for image ${imghash.slice(0, 8)}...${skipped.length > 0 ? ` (skipped: ${skipped.join(', ')})` : ''}`);
   }
 
   return { jobs, skipped, exifJobId };
@@ -189,12 +210,12 @@ export async function queueImageProcessingJobs(
  * Should be called ONCE per import session, not per image.
  * These jobs aggregate data across all media in a location.
  *
- * Jobs queued:
- * 1. GPS_ENRICHMENT (NORMAL priority) - Aggregate GPS from media to location
- * 2. LIVE_PHOTO (NORMAL priority) - Detect Live Photo pairs
- * 3. SRT_TELEMETRY (NORMAL priority) - Link DJI telemetry (if documents imported)
- * 4. LOCATION_STATS (BACKGROUND priority) - Recalculate counts and dates
- * 5. BAGIT (BACKGROUND priority) - Update RFC 8493 manifest
+ * Jobs submitted to dispatch hub:
+ * 1. GPS enrichment (mapsh-pit plugin) - NORMAL priority
+ * 2. Location stats (wake-n-blake plugin) - BULK priority
+ * 3. BagIt manifest (wake-n-blake plugin) - BULK priority
+ *
+ * Note: Live Photo detection and SRT telemetry require dispatch plugins (not yet implemented)
  *
  * @param db - Database connection
  * @param params - Location parameters
@@ -204,77 +225,85 @@ export async function queueLocationPostProcessing(
   db: Kysely<Database>,
   params: LocationJobParams
 ): Promise<LocationJobResult> {
-  const { locid, subid, lastExifJobId, hasDocuments = false } = params;
+  const { locid, subid, hasDocuments = false } = params;
 
   const jobs: string[] = [];
-  const jobQueue = new JobQueue(db);
+  const dispatchClient = getDispatchClient();
 
-  const locationPayload = { locid };
-  const locationWithSubPayload = { locid, subid };
+  const locationOptions = { locid, subid };
 
-  // 1. GPS_ENRICHMENT (NORMAL priority)
+  // 1. GPS_ENRICHMENT (NORMAL priority) - mapsh-pit plugin
   // Aggregates GPS from media to location/sub-location
-  const gpsEnrichmentJobId = generateId();
-  await jobQueue.addJob({
-    queue: IMPORT_QUEUES.GPS_ENRICHMENT,
-    priority: JOB_PRIORITY.NORMAL,
-    jobId: gpsEnrichmentJobId,
-    payload: locationWithSubPayload,
-    dependsOn: lastExifJobId,
-  });
-  jobs.push(gpsEnrichmentJobId);
-
-  // 2. LIVE_PHOTO (NORMAL priority)
-  // Detects Live Photo pairs by ContentIdentifier
-  // Location-wide, not sub-location specific
-  const livePhotoJobId = generateId();
-  await jobQueue.addJob({
-    queue: IMPORT_QUEUES.LIVE_PHOTO,
-    priority: JOB_PRIORITY.NORMAL,
-    jobId: livePhotoJobId,
-    payload: locationPayload,
-    dependsOn: lastExifJobId,
-  });
-  jobs.push(livePhotoJobId);
-
-  // 3. SRT_TELEMETRY (NORMAL priority) - Only if documents were imported
-  if (hasDocuments) {
-    const srtJobId = generateId();
-    await jobQueue.addJob({
-      queue: IMPORT_QUEUES.SRT_TELEMETRY,
-      priority: JOB_PRIORITY.NORMAL,
-      jobId: srtJobId,
-      payload: locationPayload,
-      dependsOn: lastExifJobId,
+  try {
+    const gpsJobId = await dispatchClient.submitJob({
+      type: 'metadata',
+      plugin: 'mapsh-pit',
+      priority: 'NORMAL',
+      data: {
+        source: locid,
+        options: {
+          ...locationOptions,
+          action: 'gps-enrichment',
+        },
+      },
     });
-    jobs.push(srtJobId);
+    jobs.push(gpsJobId);
+    logger.debug('JobBuilder', `Submitted GPS enrichment job to dispatch for ${locid.slice(0, 8)}...`);
+  } catch (error) {
+    logger.error('JobBuilder', `Failed to submit GPS enrichment job: ${error}`);
   }
 
-  // 4. LOCATION_STATS (BACKGROUND priority)
+  // 2. Live Photo detection - requires dispatch plugin (not yet implemented)
+  logger.debug('JobBuilder', `Live Photo detection disabled - requires dispatch plugin`);
+
+  // 3. SRT Telemetry - requires dispatch plugin (not yet implemented)
+  if (hasDocuments) {
+    logger.debug('JobBuilder', `SRT telemetry disabled - requires dispatch plugin`);
+  }
+
+  // 4. LOCATION_STATS (BULK priority) - wake-n-blake plugin
   // Recalculates media counts and date ranges
-  const statsJobId = generateId();
-  await jobQueue.addJob({
-    queue: IMPORT_QUEUES.LOCATION_STATS,
-    priority: JOB_PRIORITY.BACKGROUND,
-    jobId: statsJobId,
-    payload: locationWithSubPayload,
-    dependsOn: gpsEnrichmentJobId,
-  });
-  jobs.push(statsJobId);
+  try {
+    const statsJobId = await dispatchClient.submitJob({
+      type: 'metadata',
+      plugin: 'wake-n-blake',
+      priority: 'BULK',
+      data: {
+        source: locid,
+        options: {
+          ...locationOptions,
+          action: 'location-stats',
+        },
+      },
+    });
+    jobs.push(statsJobId);
+    logger.debug('JobBuilder', `Submitted location stats job to dispatch for ${locid.slice(0, 8)}...`);
+  } catch (error) {
+    logger.error('JobBuilder', `Failed to submit location stats job: ${error}`);
+  }
 
-  // 5. BAGIT (BACKGROUND priority)
+  // 5. BAGIT (BULK priority) - wake-n-blake plugin
   // Updates RFC 8493 archive manifest
-  const bagitJobId = generateId();
-  await jobQueue.addJob({
-    queue: IMPORT_QUEUES.BAGIT,
-    priority: JOB_PRIORITY.BACKGROUND,
-    jobId: bagitJobId,
-    payload: locationWithSubPayload,
-    dependsOn: gpsEnrichmentJobId,
-  });
-  jobs.push(bagitJobId);
+  try {
+    const bagitJobId = await dispatchClient.submitJob({
+      type: 'metadata',
+      plugin: 'wake-n-blake',
+      priority: 'BULK',
+      data: {
+        source: locid,
+        options: {
+          ...locationOptions,
+          action: 'bagit',
+        },
+      },
+    });
+    jobs.push(bagitJobId);
+    logger.debug('JobBuilder', `Submitted BagIt job to dispatch for ${locid.slice(0, 8)}...`);
+  } catch (error) {
+    logger.error('JobBuilder', `Failed to submit BagIt job: ${error}`);
+  }
 
-  logger.info('JobBuilder', `Queued ${jobs.length} location jobs for ${locid.slice(0, 8)}...`);
+  logger.info('JobBuilder', `Submitted ${jobs.length} location jobs to dispatch for ${locid.slice(0, 8)}...`);
 
   return { jobs };
 }

@@ -462,34 +462,9 @@ async function handleRequest(
           await processExtensionCapture(source.source_id, body.url, capture);
         }
 
-        // OPT-115: Auto-queue Puppeteer job for PDF/WARC/full-page screenshot
-        // This runs AFTER extension capture completes to fill in what extension can't do
-        if (jobQueue && database) {
-          try {
-            // Check if job already exists (duplicate prevention)
-            const existingJobs = await database
-              .selectFrom('jobs')
-              .select('job_id')
-              .where('queue', '=', IMPORT_QUEUES.WEBSOURCE_ARCHIVE)
-              .where('status', 'in', ['pending', 'processing'])
-              .where('payload', 'like', `%"sourceId":"${source.source_id}"%`)
-              .execute();
-
-            if (existingJobs.length === 0) {
-              await jobQueue.addJob({
-                queue: IMPORT_QUEUES.WEBSOURCE_ARCHIVE,
-                payload: { sourceId: source.source_id },
-                priority: 5, // Lower priority than media imports (default 10)
-              });
-              logger.info('BookmarkAPI', `[OPT-115] Auto-queued Puppeteer archive job for ${source.source_id}`);
-            } else {
-              logger.info('BookmarkAPI', `[OPT-115] Archive job already queued for ${source.source_id}`);
-            }
-          } catch (queueError) {
-            // Don't fail create if queue fails - just log and continue
-            logger.error('BookmarkAPI', `[OPT-115] Failed to queue archive job: ${queueError}`);
-          }
-        }
+        // OPT-115: Auto-archive disabled - requires dispatch worker plugin
+        // When dispatch websource-archiver plugin is implemented, this will submit jobs to dispatch hub
+        logger.info('BookmarkAPI', `[OPT-115] Auto-archive disabled for ${source.source_id} - requires dispatch worker plugin`);
 
         // Notify WebSocket clients about the new web source
         notifyWebSourceSaved(source.source_id, source.locid, source.subid, source.source_type);
@@ -744,11 +719,12 @@ export function startBookmarkAPIServer(
     locationsRepository = locationsRepo;
     subLocationsRepository = subLocationsRepo;
 
-    // OPT-115: Initialize job queue for auto-archiving
+    // OPT-115: Job queue disabled - all processing through dispatch hub
+    // Websource archiving will be available when dispatch worker plugin is implemented
     if (db) {
       database = db;
-      jobQueue = new JobQueue(db);
-      logger.info('BookmarkAPI', '[OPT-115] Job queue initialized for auto-archiving');
+      // jobQueue = new JobQueue(db);
+      logger.info('BookmarkAPI', '[OPT-115] Job queue disabled - requires dispatch worker plugin');
     }
 
     server = http.createServer((req, res) => {

@@ -1215,6 +1215,156 @@ const api = {
       ipcRenderer.invoke('import-intelligence:addAkaName', locid, newName),
   },
 
+  // ============================================
+  // Dispatch Hub Integration
+  // ============================================
+  dispatch: {
+    // Authentication
+    login: (username: string, password: string): Promise<boolean> =>
+      ipcRenderer.invoke('dispatch:login', username, password),
+    logout: (): Promise<void> =>
+      ipcRenderer.invoke('dispatch:logout'),
+    isAuthenticated: (): Promise<boolean> =>
+      ipcRenderer.invoke('dispatch:isAuthenticated'),
+
+    // Job operations
+    submitJob: (job: {
+      type: 'import' | 'thumbnail' | 'tag' | 'capture';
+      plugin: string;
+      priority?: 'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW' | 'BULK';
+      data: {
+        source: string;
+        destination?: string;
+        options?: Record<string, unknown>;
+      };
+    }): Promise<string> =>
+      ipcRenderer.invoke('dispatch:submitJob', job),
+    getJob: (jobId: string): Promise<{
+      jobId: string;
+      status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+      result?: unknown;
+      error?: string;
+      workerId?: string;
+      retryCount?: number;
+      movedToDLQ?: boolean;
+    } | null> =>
+      ipcRenderer.invoke('dispatch:getJob', jobId),
+    cancelJob: (jobId: string): Promise<void> =>
+      ipcRenderer.invoke('dispatch:cancelJob', jobId),
+    listJobs: (filter?: { status?: string; limit?: number }): Promise<Array<{
+      jobId: string;
+      status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+      result?: unknown;
+      error?: string;
+      workerId?: string;
+      retryCount?: number;
+      movedToDLQ?: boolean;
+    }>> =>
+      ipcRenderer.invoke('dispatch:listJobs', filter),
+
+    // Worker operations
+    listWorkers: (): Promise<Array<{
+      id: string;
+      name: string;
+      status: string;
+      capabilities: string[];
+      plugins: string[];
+    }>> =>
+      ipcRenderer.invoke('dispatch:listWorkers'),
+
+    // Connection status
+    isConnected: (): Promise<boolean> =>
+      ipcRenderer.invoke('dispatch:isConnected'),
+    checkConnection: (): Promise<boolean> =>
+      ipcRenderer.invoke('dispatch:checkConnection'),
+    getStatus: (): Promise<{
+      connected: boolean;
+      authenticated: boolean;
+      hubUrl: string;
+      queuedJobsCount: number;
+    }> =>
+      ipcRenderer.invoke('dispatch:getStatus'),
+    getQueuedJobs: (): Promise<Array<{
+      id: string;
+      job: {
+        type: 'import' | 'thumbnail' | 'tag' | 'capture';
+        plugin: string;
+        priority?: 'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW' | 'BULK';
+        data: {
+          source: string;
+          destination?: string;
+          options?: Record<string, unknown>;
+        };
+      };
+      createdAt: number;
+      attempts: number;
+    }>> =>
+      ipcRenderer.invoke('dispatch:getQueuedJobs'),
+
+    // Configuration
+    setHubUrl: (url: string): Promise<void> =>
+      ipcRenderer.invoke('dispatch:setHubUrl', url),
+    getHubUrl: (): Promise<string> =>
+      ipcRenderer.invoke('dispatch:getHubUrl'),
+
+    // Lifecycle
+    initialize: (): Promise<void> =>
+      ipcRenderer.invoke('dispatch:initialize'),
+
+    // Event listeners
+    onJobProgress: (callback: (data: { jobId: string; progress: number; stage?: string }) => void) => {
+      const handler = (_event: unknown, data: { jobId: string; progress: number; stage?: string }) => callback(data);
+      ipcRenderer.on('dispatch:job:progress', handler);
+      return () => ipcRenderer.removeListener('dispatch:job:progress', handler);
+    },
+    onJobUpdated: (callback: (data: {
+      jobId: string;
+      status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+      result?: unknown;
+      error?: string;
+      workerId?: string;
+      retryCount?: number;
+      movedToDLQ?: boolean;
+    }) => void) => {
+      const handler = (_event: unknown, data: {
+        jobId: string;
+        status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+        result?: unknown;
+        error?: string;
+        workerId?: string;
+        retryCount?: number;
+        movedToDLQ?: boolean;
+      }) => callback(data);
+      ipcRenderer.on('dispatch:job:updated', handler);
+      return () => ipcRenderer.removeListener('dispatch:job:updated', handler);
+    },
+    onConnectionChange: (callback: (connected: boolean) => void) => {
+      const handler = (_event: unknown, connected: boolean) => callback(connected);
+      ipcRenderer.on('dispatch:connection', handler);
+      return () => ipcRenderer.removeListener('dispatch:connection', handler);
+    },
+    onAuthRequired: (callback: () => void) => {
+      const handler = () => callback();
+      ipcRenderer.on('dispatch:auth:required', handler);
+      return () => ipcRenderer.removeListener('dispatch:auth:required', handler);
+    },
+    onJobQueued: (callback: (data: { queueId: string; job: unknown }) => void) => {
+      const handler = (_event: unknown, data: { queueId: string; job: unknown }) => callback(data);
+      ipcRenderer.on('dispatch:job:queued', handler);
+      return () => ipcRenderer.removeListener('dispatch:job:queued', handler);
+    },
+    onJobQueueSynced: (callback: (data: { queueId: string; jobId: string }) => void) => {
+      const handler = (_event: unknown, data: { queueId: string; jobId: string }) => callback(data);
+      ipcRenderer.on('dispatch:job:queueSynced', handler);
+      return () => ipcRenderer.removeListener('dispatch:job:queueSynced', handler);
+    },
+    onJobQueueFailed: (callback: (data: { id: string; job: unknown }) => void) => {
+      const handler = (_event: unknown, data: { id: string; job: unknown }) => callback(data);
+      ipcRenderer.on('dispatch:job:queueFailed', handler);
+      return () => ipcRenderer.removeListener('dispatch:job:queueFailed', handler);
+    },
+  },
+
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

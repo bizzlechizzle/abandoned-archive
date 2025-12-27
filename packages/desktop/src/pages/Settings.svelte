@@ -2,6 +2,9 @@
   import { onMount } from 'svelte';
   import { thumbnailCache } from '../stores/thumbnail-cache-store';
   import DataEngineSettings from '../components/data-engine/DataEngineSettings.svelte';
+  import { dispatchStore, dispatchConnectionStatus, dispatchWorkers, queuedJobCount } from '../stores/dispatch-store';
+  import DispatchStatus from '../components/DispatchStatus.svelte';
+  import DispatchJobProgress from '../components/DispatchJobProgress.svelte';
 
   interface User {
     user_id: string;
@@ -57,6 +60,14 @@
 
   // Data Engine accordion state (consolidates Date Engine, Image Auto-Tagging, AI & Cloud Providers)
   let dataEngineExpanded = $state(false);
+
+  // Dispatch Hub accordion state
+  let dispatchExpanded = $state(false);
+  let dispatchHubUrl = $state('http://192.168.1.199:3000');
+  let dispatchUsername = $state('');
+  let dispatchPassword = $state('');
+  let dispatchLoggingIn = $state(false);
+  let dispatchError = $state('');
 
   // Storage bar state - OPT-047: Enhanced with database-backed tracking
   let storageStats = $state<{
@@ -2826,6 +2837,188 @@
         {#if dataEngineExpanded}
         <div class="px-6 pb-6">
           <DataEngineSettings />
+        </div>
+        {/if}
+      </div>
+
+      <!-- Dispatch Hub Accordion -->
+      <div class="bg-white rounded border border-braun-300 mb-6 overflow-hidden">
+        <button
+          onclick={() => dispatchExpanded = !dispatchExpanded}
+          class="w-full flex items-center justify-between text-left transition-colors hover:bg-braun-50 {dispatchExpanded ? 'p-6' : 'px-6 py-4'}"
+        >
+          <div class="flex items-center gap-3">
+            <h2 class="text-lg font-semibold text-foreground">Dispatch Hub</h2>
+            <!-- Connection status dot -->
+            <span
+              class="w-2 h-2 rounded-full {$dispatchConnectionStatus === 'authenticated' ? 'bg-green-500' : $dispatchConnectionStatus === 'connected' ? 'bg-amber-500' : 'bg-red-500'}"
+              title={$dispatchConnectionStatus === 'authenticated' ? 'Connected' : $dispatchConnectionStatus === 'connected' ? 'Not authenticated' : 'Disconnected'}
+            ></span>
+          </div>
+          <svg
+            class="w-5 h-5 text-braun-900 transition-transform duration-200 {dispatchExpanded ? 'rotate-180' : ''}"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {#if dispatchExpanded}
+        <div class="px-6 pb-6 space-y-6">
+          <!-- Connection Status -->
+          <div class="bg-braun-50 rounded p-4">
+            <DispatchStatus />
+          </div>
+
+          <!-- Hub URL Configuration -->
+          <div>
+            <label class="block text-sm font-medium text-braun-700 mb-2">Hub URL</label>
+            <div class="flex gap-2">
+              <input
+                type="url"
+                bind:value={dispatchHubUrl}
+                placeholder="http://192.168.1.199:3000"
+                class="flex-1 px-3 py-2 rounded border border-braun-300 focus:border-braun-900 focus:outline-none"
+              />
+              <button
+                onclick={async () => {
+                  await dispatchStore.setHubUrl(dispatchHubUrl);
+                  const connected = await dispatchStore.checkConnection();
+                  if (connected) {
+                    dispatchError = '';
+                  } else {
+                    dispatchError = 'Cannot reach hub at this URL';
+                  }
+                }}
+                class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-700 transition-colors text-sm"
+              >
+                Apply
+              </button>
+            </div>
+            {#if dispatchError}
+              <p class="text-red-600 text-sm mt-1">{dispatchError}</p>
+            {/if}
+          </div>
+
+          <!-- Login Form (only show if not authenticated) -->
+          {#if $dispatchConnectionStatus !== 'authenticated'}
+            <div class="border-t border-braun-200 pt-4">
+              <h3 class="text-sm font-medium text-braun-700 mb-3">Authentication</h3>
+              <div class="space-y-3">
+                <div>
+                  <label class="block text-xs text-braun-500 mb-1">Username</label>
+                  <input
+                    type="text"
+                    bind:value={dispatchUsername}
+                    placeholder="username"
+                    class="w-full px-3 py-2 rounded border border-braun-300 focus:border-braun-900 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs text-braun-500 mb-1">Password</label>
+                  <input
+                    type="password"
+                    bind:value={dispatchPassword}
+                    placeholder="password"
+                    class="w-full px-3 py-2 rounded border border-braun-300 focus:border-braun-900 focus:outline-none"
+                  />
+                </div>
+                <button
+                  onclick={async () => {
+                    dispatchLoggingIn = true;
+                    dispatchError = '';
+                    try {
+                      const success = await dispatchStore.login(dispatchUsername, dispatchPassword);
+                      if (!success) {
+                        dispatchError = 'Login failed. Check credentials.';
+                      } else {
+                        dispatchUsername = '';
+                        dispatchPassword = '';
+                      }
+                    } catch (e) {
+                      dispatchError = e instanceof Error ? e.message : 'Login failed';
+                    } finally {
+                      dispatchLoggingIn = false;
+                    }
+                  }}
+                  disabled={dispatchLoggingIn || !dispatchUsername || !dispatchPassword}
+                  class="w-full px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-700 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {dispatchLoggingIn ? 'Logging in...' : 'Login'}
+                </button>
+              </div>
+            </div>
+          {:else}
+            <!-- Logout button when authenticated -->
+            <div class="border-t border-braun-200 pt-4">
+              <button
+                onclick={() => dispatchStore.logout()}
+                class="px-4 py-2 border border-braun-300 text-braun-700 rounded hover:bg-braun-50 transition-colors text-sm"
+              >
+                Logout
+              </button>
+            </div>
+          {/if}
+
+          <!-- Workers List (only show when authenticated) -->
+          {#if $dispatchConnectionStatus === 'authenticated'}
+            <div class="border-t border-braun-200 pt-4">
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-medium text-braun-700">Workers</h3>
+                <button
+                  onclick={() => dispatchStore.refreshWorkers()}
+                  class="text-xs text-braun-500 hover:text-braun-900"
+                >
+                  Refresh
+                </button>
+              </div>
+              {#if $dispatchWorkers.length === 0}
+                <p class="text-sm text-braun-500">No workers connected</p>
+              {:else}
+                <div class="space-y-2">
+                  {#each $dispatchWorkers as worker}
+                    <div class="bg-braun-50 rounded p-3">
+                      <div class="flex items-center justify-between">
+                        <span class="font-medium text-sm">{worker.name}</span>
+                        <span
+                          class="text-xs px-2 py-0.5 rounded {worker.status === 'online' ? 'bg-green-100 text-green-700' : worker.status === 'busy' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}"
+                        >
+                          {worker.status}
+                        </span>
+                      </div>
+                      {#if worker.plugins.length > 0}
+                        <div class="mt-1 flex flex-wrap gap-1">
+                          {#each worker.plugins as plugin}
+                            <span class="text-xs bg-braun-200 text-braun-600 px-1.5 py-0.5 rounded">
+                              {plugin}
+                            </span>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/if}
+
+          <!-- Active Jobs -->
+          <div class="border-t border-braun-200 pt-4">
+            <h3 class="text-sm font-medium text-braun-700 mb-3">Active Jobs</h3>
+            <DispatchJobProgress />
+          </div>
+
+          <!-- Queued Jobs (offline) -->
+          {#if $queuedJobCount > 0}
+            <div class="border-t border-braun-200 pt-4">
+              <h3 class="text-sm font-medium text-braun-700 mb-2">Offline Queue</h3>
+              <p class="text-sm text-amber-600">
+                {$queuedJobCount} job{$queuedJobCount !== 1 ? 's' : ''} waiting to sync
+              </p>
+            </div>
+          {/if}
         </div>
         {/if}
       </div>

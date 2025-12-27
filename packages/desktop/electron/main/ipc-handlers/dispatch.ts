@@ -1,0 +1,230 @@
+/**
+ * Dispatch IPC Handlers
+ *
+ * Handles communication between renderer and dispatch client service.
+ * Uses @aa/services dispatch module with Electron-specific token storage.
+ */
+
+import { ipcMain, BrowserWindow, safeStorage, app } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
+import {
+  getDispatchClient,
+  destroyDispatchClient,
+  type TokenStorage,
+  type TokenPair,
+  type JobSubmission,
+  type DispatchStatus,
+} from '@aa/services';
+
+let initialized = false;
+
+// ============================================
+// Electron Token Storage (uses safeStorage)
+// ============================================
+
+class ElectronTokenStorage implements TokenStorage {
+  private tokenPath: string;
+
+  constructor() {
+    this.tokenPath = path.join(app.getPath('userData'), '.dispatch-tokens');
+  }
+
+  save(tokens: TokenPair): void {
+    try {
+      const data = JSON.stringify(tokens);
+      const encrypted = safeStorage.encryptString(data);
+      fs.writeFileSync(this.tokenPath, encrypted);
+    } catch (error) {
+      console.error('[ElectronTokenStorage] Failed to save tokens:', error);
+    }
+  }
+
+  load(): TokenPair | null {
+    try {
+      if (fs.existsSync(this.tokenPath)) {
+        const encrypted = fs.readFileSync(this.tokenPath);
+        const decrypted = safeStorage.decryptString(encrypted);
+        return JSON.parse(decrypted) as TokenPair;
+      }
+    } catch (error) {
+      console.error('[ElectronTokenStorage] Failed to load tokens:', error);
+      this.clear();
+    }
+    return null;
+  }
+
+  clear(): void {
+    try {
+      if (fs.existsSync(this.tokenPath)) {
+        fs.unlinkSync(this.tokenPath);
+      }
+    } catch (error) {
+      // Ignore
+    }
+  }
+}
+
+// ============================================
+// Register Handlers
+// ============================================
+
+export function registerDispatchHandlers(): void {
+  if (initialized) return;
+  initialized = true;
+
+  // Create dispatch client with Electron token storage
+  const dispatchClient = getDispatchClient({
+    dataDir: app.getPath('userData'),
+    tokenStorage: new ElectronTokenStorage(),
+  });
+
+  // Forward events to all renderer windows
+  dispatchClient.on('job:progress', (data) => {
+    BrowserWindow.getAllWindows().forEach((win) => {
+      win.webContents.send('dispatch:job:progress', data);
+    });
+  });
+
+  dispatchClient.on('job:updated', (data) => {
+    BrowserWindow.getAllWindows().forEach((win) => {
+      win.webContents.send('dispatch:job:updated', data);
+    });
+  });
+
+  dispatchClient.on('connected', () => {
+    BrowserWindow.getAllWindows().forEach((win) => {
+      win.webContents.send('dispatch:connection', true);
+    });
+  });
+
+  dispatchClient.on('disconnected', () => {
+    BrowserWindow.getAllWindows().forEach((win) => {
+      win.webContents.send('dispatch:connection', false);
+    });
+  });
+
+  dispatchClient.on('auth:required', () => {
+    BrowserWindow.getAllWindows().forEach((win) => {
+      win.webContents.send('dispatch:auth:required');
+    });
+  });
+
+  dispatchClient.on('job:queued', (data) => {
+    BrowserWindow.getAllWindows().forEach((win) => {
+      win.webContents.send('dispatch:job:queued', data);
+    });
+  });
+
+  dispatchClient.on('job:queueSynced', (data) => {
+    BrowserWindow.getAllWindows().forEach((win) => {
+      win.webContents.send('dispatch:job:queueSynced', data);
+    });
+  });
+
+  dispatchClient.on('job:queueFailed', (data) => {
+    BrowserWindow.getAllWindows().forEach((win) => {
+      win.webContents.send('dispatch:job:queueFailed', data);
+    });
+  });
+
+  // ============================================
+  // Authentication Handlers
+  // ============================================
+
+  ipcMain.handle('dispatch:login', async (_event, username: string, password: string) => {
+    return dispatchClient.login(username, password);
+  });
+
+  ipcMain.handle('dispatch:logout', async () => {
+    return dispatchClient.logout();
+  });
+
+  ipcMain.handle('dispatch:isAuthenticated', () => {
+    return dispatchClient.isAuthenticated();
+  });
+
+  // ============================================
+  // Job Handlers
+  // ============================================
+
+  ipcMain.handle('dispatch:submitJob', async (_event, job: JobSubmission) => {
+    return dispatchClient.submitJob(job);
+  });
+
+  ipcMain.handle('dispatch:getJob', async (_event, jobId: string) => {
+    return dispatchClient.getJob(jobId);
+  });
+
+  ipcMain.handle('dispatch:cancelJob', async (_event, jobId: string) => {
+    return dispatchClient.cancelJob(jobId);
+  });
+
+  ipcMain.handle(
+    'dispatch:listJobs',
+    async (_event, filter?: { status?: string; limit?: number }) => {
+      return dispatchClient.listJobs(filter);
+    }
+  );
+
+  // ============================================
+  // Worker Handlers
+  // ============================================
+
+  ipcMain.handle('dispatch:listWorkers', async () => {
+    return dispatchClient.listWorkers();
+  });
+
+  // ============================================
+  // Connection Handlers
+  // ============================================
+
+  ipcMain.handle('dispatch:isConnected', () => {
+    return dispatchClient.isConnected();
+  });
+
+  ipcMain.handle('dispatch:checkConnection', async () => {
+    return dispatchClient.checkConnection();
+  });
+
+  ipcMain.handle('dispatch:getStatus', (): DispatchStatus => {
+    return dispatchClient.getStatus();
+  });
+
+  ipcMain.handle('dispatch:getQueuedJobs', () => {
+    return dispatchClient.getQueuedJobs();
+  });
+
+  // ============================================
+  // Configuration Handlers
+  // ============================================
+
+  ipcMain.handle('dispatch:setHubUrl', (_event, url: string) => {
+    dispatchClient.setHubUrl(url);
+  });
+
+  ipcMain.handle('dispatch:getHubUrl', () => {
+    return dispatchClient.getHubUrl();
+  });
+
+  // ============================================
+  // Lifecycle
+  // ============================================
+
+  ipcMain.handle('dispatch:initialize', async () => {
+    return dispatchClient.initialize();
+  });
+
+  console.log('[IPC] Dispatch handlers registered');
+}
+
+export function initializeDispatchClient(): void {
+  const dispatchClient = getDispatchClient();
+  dispatchClient.initialize().catch((error) => {
+    console.error('[Dispatch] Failed to initialize:', error);
+  });
+}
+
+export function shutdownDispatchClient(): void {
+  destroyDispatchClient();
+}

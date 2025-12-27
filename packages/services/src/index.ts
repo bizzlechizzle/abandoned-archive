@@ -24,3 +24,6 @@ export {
   ProgressServer,
   createProgressServer,
 } from './pipeline';
+
+// Dispatch hub integration
+export * from './dispatch';

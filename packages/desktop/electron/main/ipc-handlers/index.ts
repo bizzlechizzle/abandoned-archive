@@ -62,6 +62,7 @@ import { registerLiteLLMHandlers, shutdownLiteLLM, cleanupOrphanLiteLLM } from '
 import { registerCostTrackingHandlers } from './cost-tracking';
 import { registerAIHandlers } from './ai';
 import { registerTaggingHandlers } from './tagging';
+import { registerDispatchHandlers, initializeDispatchClient, shutdownDispatchClient } from './dispatch';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
@@ -179,6 +180,11 @@ export function registerIpcHandlers() {
     },
   });
 
+  // Dispatch Hub Integration
+  // Connect to distributed job orchestration hub
+  registerDispatchHandlers();
+  initializeDispatchClient();
+
   console.log('IPC handlers registered (modular)');
 }
 
@@ -199,3 +205,6 @@ export { stopOllama as stopOllamaLifecycle };
 
 // Export LiteLLM lifecycle cleanup for app shutdown
 export { shutdownLiteLLM as stopLiteLLMLifecycle };
+
+// Export Dispatch client shutdown for app cleanup
+export { shutdownDispatchClient };

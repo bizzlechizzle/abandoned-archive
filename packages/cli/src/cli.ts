@@ -21,6 +21,7 @@ import { registerRefmapCommands } from './commands/refmap.js';
 import { registerCollectionCommands } from './commands/collection.js';
 import { registerTagCommands } from './commands/tag.js';
 import { registerPipelineCommands } from './commands/pipeline.js';
+import { registerDispatchCommands } from './commands/dispatch.js';
 
 const program = new Command();
 
@@ -45,6 +46,7 @@ registerTagCommands(program);
 registerDbCommands(program);
 registerConfigCommands(program);
 registerPipelineCommands(program);
+registerDispatchCommands(program);
 
 // Parse and run
 program.parse();

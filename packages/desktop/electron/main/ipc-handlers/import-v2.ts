@@ -22,8 +22,9 @@ import {
   type ImportProgress,
   type ImportResult,
 } from '../../services/import';
-import { getJobWorkerService, startJobWorker, stopJobWorker } from '../../services/job-worker-service';
-import { JobQueue, IMPORT_QUEUES } from '../../services/job-queue';
+// NOTE: Local job worker disabled - all processing through dispatch hub
+// import { getJobWorkerService, startJobWorker, stopJobWorker } from '../../services/job-worker-service';
+// import { JobQueue, IMPORT_QUEUES } from '../../services/job-queue';
 import { getCurrentUser } from '../../services/user-service';
 
 // Singleton orchestrator instance
@@ -453,130 +454,87 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
 
   /**
    * Get job queue statistics
+   *
+   * NOTE: Local job worker disabled - use dispatch:getStatus for job status
    */
   ipcMain.handle('jobs:status', async () => {
-    try {
-      const workerService = getJobWorkerService(db);
-      return safeSerialize(await workerService.getStats());
-    } catch (error) {
-      console.error('[jobs:status] Error:', error);
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(message);
-    }
+    console.log('[jobs:status] Local job worker disabled - use dispatch:getStatus');
+    return {
+      queues: {},
+      running: 0,
+      pending: 0,
+      completed: 0,
+      failed: 0,
+      message: 'Local job worker disabled - jobs processed by dispatch hub',
+    };
   });
 
   /**
    * Get dead letter queue entries
+   *
+   * NOTE: Local job queue disabled - dead letter handled by dispatch
    */
-  ipcMain.handle('jobs:deadLetter', async (_event, queue?: string) => {
-    try {
-      const jobQueue = new JobQueue(db);
-      return safeSerialize(await jobQueue.getDeadLetterQueue(queue));
-    } catch (error) {
-      console.error('[jobs:deadLetter] Error:', error);
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(message);
-    }
+  ipcMain.handle('jobs:deadLetter', async () => {
+    console.log('[jobs:deadLetter] Local job queue disabled - use dispatch for job management');
+    return [];
   });
 
   /**
    * Retry a job from dead letter queue
+   *
+   * NOTE: Local job queue disabled - job retry handled by dispatch
    */
-  ipcMain.handle('jobs:retry', async (_event, input: unknown) => {
-    try {
-      const validated = JobRetrySchema.parse(input);
-      const jobQueue = new JobQueue(db);
-
-      const newJobId = await jobQueue.retryDeadLetter(validated.deadLetterId);
-      return { success: newJobId !== null, newJobId };
-    } catch (error) {
-      console.error('[jobs:retry] Error:', error);
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(message);
-    }
+  ipcMain.handle('jobs:retry', async () => {
+    console.log('[jobs:retry] Local job queue disabled - use dispatch for job management');
+    return { success: false, message: 'Local job queue disabled - use dispatch' };
   });
 
   /**
    * Acknowledge (dismiss) dead letter entries
+   *
+   * NOTE: Local job queue disabled
    */
-  ipcMain.handle('jobs:acknowledge', async (_event, ids: unknown) => {
-    try {
-      // Validate input: array of positive integers with max 100 items
-      const validatedIds = z.array(z.number().int().positive()).max(100).parse(ids);
-      const jobQueue = new JobQueue(db);
-      await jobQueue.acknowledgeDeadLetter(validatedIds);
-      return { acknowledged: validatedIds.length };
-    } catch (error) {
-      console.error('[jobs:acknowledge] Error:', error);
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(message);
-    }
+  ipcMain.handle('jobs:acknowledge', async () => {
+    console.log('[jobs:acknowledge] Local job queue disabled');
+    return { acknowledged: 0, message: 'Local job queue disabled' };
   });
 
   /**
    * Clear old completed jobs
+   *
+   * NOTE: Local job queue disabled
    */
-  ipcMain.handle('jobs:clearCompleted', async (_event, olderThanMs?: number) => {
-    try {
-      const jobQueue = new JobQueue(db);
-      const cleared = await jobQueue.clearCompleted(olderThanMs);
-      return { cleared };
-    } catch (error) {
-      console.error('[jobs:clearCompleted] Error:', error);
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(message);
-    }
+  ipcMain.handle('jobs:clearCompleted', async () => {
+    console.log('[jobs:clearCompleted] Local job queue disabled');
+    return { cleared: 0, message: 'Local job queue disabled' };
   });
 
 }
 
 /**
  * Start the job worker service
+ *
+ * NOTE: Local job worker DISABLED - all processing goes through dispatch hub.
+ * Workers on silo-1 process jobs submitted to dispatch.
+ * Event forwarding is handled by dispatch IPC handlers in dispatch.ts.
  */
-export function initializeJobWorker(db: Kysely<Database>): void {
-  const workerService = startJobWorker(db);
-
-  // Forward worker events to renderer
-  workerService.on('asset:thumbnail-ready', (data) => {
-    sendToRenderer('asset:thumbnail-ready', data);
-  });
-
-  workerService.on('asset:metadata-complete', (data) => {
-    sendToRenderer('asset:metadata-complete', data);
-  });
-
-  workerService.on('asset:proxy-ready', (data) => {
-    sendToRenderer('asset:proxy-ready', data);
-  });
-
-  // Forward tagging events to renderer for UI refresh
-  workerService.on('asset:tags-ready', (data) => {
-    sendToRenderer('asset:tags-ready', data);
-  });
-
-  workerService.on('location:tags-aggregated', (data) => {
-    sendToRenderer('location:tags-aggregated', data);
-  });
-
-  workerService.on('job:progress', (data) => {
-    sendToRenderer('jobs:progress', data);
-  });
-
-  // Forward dead letter queue events to renderer for UI notification
-  workerService.on('job:deadLetter', (data) => {
-    sendToRenderer('jobs:deadLetter', data);
-  });
-
-  // OPT-092: Forward GPS enrichment events to renderer
-  workerService.on('location:gps-enriched', (data) => {
-    sendToRenderer('location:gps-enriched', data);
-  });
-
+export function initializeJobWorker(_db: Kysely<Database>): void {
+  console.log('[JobWorker] Local job worker DISABLED - all processing through dispatch hub');
+  // const workerService = startJobWorker(db);
+  //
+  // Event forwarding is now handled by dispatch:
+  // - dispatch:job:progress → asset:thumbnail-ready, asset:metadata-complete, etc.
+  // - dispatch:job:updated → job completion/failure events
+  //
+  // See dispatch.ts for event forwarding implementation.
 }
 
 /**
  * Shutdown job worker service
+ *
+ * NOTE: No-op since local worker is disabled.
  */
 export async function shutdownJobWorker(): Promise<void> {
-  await stopJobWorker();
+  // await stopJobWorker();
+  console.log('[JobWorker] Shutdown called (local worker disabled)');
 }

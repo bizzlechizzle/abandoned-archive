@@ -7,14 +7,18 @@
 
 import * as esbuild from 'esbuild';
 
+import { builtinModules } from 'module';
+
 await esbuild.build({
   entryPoints: ['dist/cli.js'],
   bundle: true,
   platform: 'node',
   format: 'esm',
   outfile: 'dist/cli.bundle.js',
-  // Externalize node_modules but bundle workspace packages
+  // Externalize node_modules and builtins but bundle workspace packages
   external: [
+    ...builtinModules,
+    ...builtinModules.map((m) => `node:${m}`),
     'better-sqlite3',
     'sharp',
     'fluent-ffmpeg',
@@ -27,6 +31,8 @@ await esbuild.build({
     'kysely',
     'zod',
     'blake3',
+    'keytar',
+    'socket.io-client',
   ],
 });
 

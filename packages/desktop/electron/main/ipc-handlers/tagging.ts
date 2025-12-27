@@ -17,7 +17,7 @@ import { z } from 'zod';
 import type { Kysely } from 'kysely';
 import type { Database as SqliteDatabase } from 'better-sqlite3';
 import type { Database } from '../database.types';
-import { JobQueue, IMPORT_QUEUES } from '../../services/job-queue';
+import { getDispatchClient, type JobSubmission } from '@aa/services';
 
 let sqliteDbInstance: SqliteDatabase | null = null;
 
@@ -93,7 +93,9 @@ export function registerTaggingHandlers(
   if (sqliteDb) {
     sqliteDbInstance = sqliteDb;
   }
-  const jobQueue = new JobQueue(db);
+
+  // Get dispatch client for job submission
+  const dispatchClient = getDispatchClient();
 
   /**
    * Get image tags with full ML insights
@@ -210,16 +212,16 @@ export function registerTaggingHandlers(
   });
 
   /**
-   * Queue image for re-tagging via visual-buffet
+   * Queue image for re-tagging via visual-buffet (submits to dispatch hub)
    */
   ipcMain.handle('tagging:retagImage', async (_event, imghash: unknown) => {
     try {
       const hash = Blake3IdSchema.parse(imghash);
 
-      // Get image info
+      // Get image info with archive path
       const image = await db
         .selectFrom('imgs')
-        .select(['imghash', 'locid', 'subid', 'ml_path'])
+        .select(['imghash', 'locid', 'subid', 'ml_path', 'imgloc', 'imgnam'])
         .where('imghash', '=', hash)
         .executeTakeFirst();
 
@@ -227,41 +229,29 @@ export function registerTaggingHandlers(
         return { success: false, error: 'Image not found' };
       }
 
-      // Check if ML thumbnail exists
-      if (!image.ml_path) {
-        // Queue ML thumbnail generation first
-        await jobQueue.addJob({
-          queue: IMPORT_QUEUES.ML_THUMBNAIL,
-          payload: {
+      // Get ML thumbnail path or full image path
+      const imagePath = image.ml_path || `${image.imgloc}/${image.imgnam}`;
+
+      // Submit to dispatch hub for visual-buffet processing
+      const jobId = await dispatchClient.submitJob({
+        type: 'tag',
+        plugin: 'visual-buffet',
+        priority: 'HIGH',
+        data: {
+          source: imagePath,
+          options: {
             hash: image.imghash,
-            mediaType: 'image',
             locid: image.locid,
             subid: image.subid,
+            plugins: ['ram_plus', 'siglip', 'florence2'],
           },
-          priority: 1,
-        });
-
-        return {
-          success: true,
-          message: 'Queued for ML thumbnail generation, then tagging',
-        };
-      }
-
-      // Queue visual-buffet tagging
-      await jobQueue.addJob({
-        queue: IMPORT_QUEUES.VISUAL_BUFFET,
-        payload: {
-          hash: image.imghash,
-          mediaType: 'image',
-          locid: image.locid,
-          subid: image.subid,
         },
-        priority: 1,
       });
 
       return {
         success: true,
-        message: 'Queued for visual-buffet tagging',
+        jobId,
+        message: 'Submitted to dispatch for visual-buffet tagging',
       };
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -441,26 +431,33 @@ export function registerTaggingHandlers(
   });
 
   /**
-   * Get queue statistics for tagging-related queues
+   * Get queue statistics for tagging jobs (from dispatch hub)
    */
   ipcMain.handle('tagging:getQueueStats', async () => {
     try {
-      // Get stats for ML thumbnail and visual-buffet queues
-      const mlThumbnailStats = await jobQueue.getStats(IMPORT_QUEUES.ML_THUMBNAIL);
-      const visualBuffetStats = await jobQueue.getStats(IMPORT_QUEUES.VISUAL_BUFFET);
+      // Get job stats from dispatch
+      const status = dispatchClient.getStatus();
+      const jobs = await dispatchClient.listJobs({ limit: 100 });
+
+      // Count by status
+      const stats = {
+        pending: 0,
+        processing: 0,
+        completed: 0,
+        failed: 0,
+      };
+
+      for (const job of jobs) {
+        if (job.status === 'pending') stats.pending++;
+        else if (job.status === 'running') stats.processing++;
+        else if (job.status === 'completed') stats.completed++;
+        else if (job.status === 'failed') stats.failed++;
+      }
 
       return {
         success: true,
-        stats: {
-          pending: mlThumbnailStats.pending + visualBuffetStats.pending,
-          processing: mlThumbnailStats.processing + visualBuffetStats.processing,
-          completed: mlThumbnailStats.completed + visualBuffetStats.completed,
-          failed: mlThumbnailStats.failed + visualBuffetStats.failed,
-        },
-        breakdown: {
-          mlThumbnail: mlThumbnailStats,
-          visualBuffet: visualBuffetStats,
-        },
+        stats,
+        queuedOffline: status.queuedJobsCount,
       };
     } catch (error) {
       console.error('[tagging:getQueueStats] Error:', error);
@@ -472,16 +469,16 @@ export function registerTaggingHandlers(
   });
 
   /**
-   * Queue all untagged images in a location for tagging
+   * Queue all untagged images in a location for tagging (submits to dispatch hub)
    */
   ipcMain.handle('tagging:queueUntaggedImages', async (_event, locid: unknown) => {
     try {
       const id = Blake3IdSchema.parse(locid);
 
-      // Find untagged images
+      // Find untagged images with paths
       const untagged = await db
         .selectFrom('imgs')
-        .select(['imghash', 'locid', 'subid', 'ml_path'])
+        .select(['imghash', 'locid', 'subid', 'ml_path', 'imgloc', 'imgnam'])
         .where('locid', '=', id)
         .where((eb) =>
           eb.or([
@@ -495,39 +492,33 @@ export function registerTaggingHandlers(
         return { success: true, queued: 0, message: 'All images already tagged' };
       }
 
-      // Queue each image
+      // Submit each image to dispatch
       let queued = 0;
+      const jobIds: string[] = [];
+
       for (const img of untagged) {
-        // If no ML thumbnail, queue that first
-        if (!img.ml_path) {
-          await jobQueue.addJob({
-            queue: IMPORT_QUEUES.ML_THUMBNAIL,
-            payload: {
+        const imagePath = img.ml_path || `${img.imgloc}/${img.imgnam}`;
+
+        const jobId = await dispatchClient.submitJob({
+          type: 'tag',
+          plugin: 'visual-buffet',
+          priority: 'NORMAL',
+          data: {
+            source: imagePath,
+            options: {
               hash: img.imghash,
-              mediaType: 'image',
               locid: img.locid,
               subid: img.subid,
+              plugins: ['ram_plus', 'siglip', 'florence2'],
             },
-            priority: 5,
-          });
-        }
-
-        // Queue visual-buffet (will wait for ML thumbnail via dependency)
-        await jobQueue.addJob({
-          queue: IMPORT_QUEUES.VISUAL_BUFFET,
-          payload: {
-            hash: img.imghash,
-            mediaType: 'image',
-            locid: img.locid,
-            subid: img.subid,
           },
-          priority: 5,
         });
 
+        jobIds.push(jobId);
         queued++;
       }
 
-      return { success: true, queued, total: untagged.length };
+      return { success: true, queued, total: untagged.length, jobIds };
     } catch (error) {
       if (error instanceof z.ZodError) {
         return { success: false, error: 'Invalid location ID' };
@@ -541,17 +532,17 @@ export function registerTaggingHandlers(
   });
 
   /**
-   * Queue ALL untagged images across all locations for tagging
+   * Queue ALL untagged images across all locations for tagging (submits to dispatch hub)
    * Used for backfilling existing images that weren't tagged during import
    */
   ipcMain.handle('tagging:queueAllUntaggedImages', async (_event, options?: { batchSize?: number }) => {
     try {
       const batchSize = options?.batchSize ?? 100;
 
-      // Find all untagged images across all locations
+      // Find all untagged images across all locations with paths
       const untagged = await db
         .selectFrom('imgs')
-        .select(['imghash', 'locid', 'subid', 'ml_path'])
+        .select(['imghash', 'locid', 'subid', 'ml_path', 'imgloc', 'imgnam'])
         .where((eb) =>
           eb.or([
             eb('auto_tags', 'is', null),
@@ -579,48 +570,43 @@ export function registerTaggingHandlers(
 
       const totalUntagged = Number(totalResult?.count ?? 0);
 
-      // Queue each image
+      // Submit each image to dispatch
       let queued = 0;
+      const jobIds: string[] = [];
+
       for (const img of untagged) {
-        // If no ML thumbnail, queue that first
-        if (!img.ml_path) {
-          await jobQueue.addJob({
-            queue: IMPORT_QUEUES.ML_THUMBNAIL,
-            payload: {
+        const imagePath = img.ml_path || `${img.imgloc}/${img.imgnam}`;
+
+        const jobId = await dispatchClient.submitJob({
+          type: 'tag',
+          plugin: 'visual-buffet',
+          priority: 'BULK',
+          data: {
+            source: imagePath,
+            options: {
               hash: img.imghash,
-              mediaType: 'image',
               locid: img.locid,
               subid: img.subid,
+              plugins: ['ram_plus', 'siglip', 'florence2'],
             },
-            priority: 10, // Low priority for backfill
-          });
-        }
-
-        // Queue visual-buffet (will wait for ML thumbnail via dependency)
-        await jobQueue.addJob({
-          queue: IMPORT_QUEUES.VISUAL_BUFFET,
-          payload: {
-            hash: img.imghash,
-            mediaType: 'image',
-            locid: img.locid,
-            subid: img.subid,
           },
-          priority: 10, // Low priority for backfill
         });
 
+        jobIds.push(jobId);
         queued++;
       }
 
-      console.log(`[tagging:queueAllUntaggedImages] Queued ${queued} of ${totalUntagged} untagged images`);
+      console.log(`[tagging:queueAllUntaggedImages] Submitted ${queued} of ${totalUntagged} images to dispatch`);
 
       return {
         success: true,
         queued,
         totalUntagged,
         batchSize,
+        jobIds,
         message: queued < totalUntagged
-          ? `Queued ${queued} images (${totalUntagged - queued} remaining - run again for next batch)`
-          : `Queued all ${queued} untagged images`,
+          ? `Submitted ${queued} images (${totalUntagged - queued} remaining - run again for next batch)`
+          : `Submitted all ${queued} untagged images to dispatch`,
       };
     } catch (error) {
       console.error('[tagging:queueAllUntaggedImages] Error:', error);
@@ -632,31 +618,37 @@ export function registerTaggingHandlers(
   });
 
   /**
-   * Get service status
+   * Get service status (checks dispatch hub and workers)
    */
   ipcMain.handle('tagging:getServiceStatus', async () => {
     try {
-      // Check if visual-buffet is enabled
-      const setting = await db
-        .selectFrom('settings')
-        .select('value')
-        .where('key', '=', 'visual_buffet_enabled')
-        .executeTakeFirst();
+      // Check dispatch connection and workers
+      const status = dispatchClient.getStatus();
+      const hubReachable = await dispatchClient.checkConnection();
 
-      // Default to true if not set (visual-buffet is now on by default)
-      const enabled = setting?.value !== 'false';
+      // Get available workers with visual-buffet capability
+      let workers: { name: string; status: string; plugins: string[] }[] = [];
+      let visualBuffetAvailable = false;
 
-      // Get Python/visual-buffet availability
-      const { getVisualBuffetService } = await import('../../services/visual-buffet-service');
-      const vbService = getVisualBuffetService(db);
-      const available = await vbService.initialize();
-      const version = vbService.getVersion();
+      if (status.authenticated) {
+        try {
+          workers = await dispatchClient.listWorkers();
+          visualBuffetAvailable = workers.some(
+            (w) => w.status === 'online' && w.plugins.includes('visual-buffet')
+          );
+        } catch {
+          // Workers list failed, but hub may still be reachable
+        }
+      }
 
       return {
         success: true,
-        enabled,
-        available,
-        version,
+        enabled: true, // Dispatch is always enabled
+        available: hubReachable && visualBuffetAvailable,
+        hubReachable,
+        authenticated: status.authenticated,
+        connected: status.connected,
+        workers: workers.length,
         models: ['ram++', 'florence-2', 'siglip', 'paddle-ocr'],
       };
     } catch (error) {
@@ -669,18 +661,18 @@ export function registerTaggingHandlers(
   });
 
   /**
-   * Test visual-buffet connection
+   * Test dispatch connection
    */
   ipcMain.handle('tagging:testConnection', async () => {
     try {
-      const { getVisualBuffetService } = await import('../../services/visual-buffet-service');
-      const vbService = getVisualBuffetService(db);
-      const available = await vbService.initialize();
+      const hubReachable = await dispatchClient.checkConnection();
+      const status = dispatchClient.getStatus();
 
       return {
         success: true,
-        connected: available,
-        version: vbService.getVersion(),
+        connected: hubReachable,
+        authenticated: status.authenticated,
+        hubUrl: status.hubUrl,
       };
     } catch (error) {
       console.error('[tagging:testConnection] Error:', error);

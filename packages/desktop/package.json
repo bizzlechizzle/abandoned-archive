@@ -46,6 +46,7 @@
     "sharp": "^0.33.1",
     "sharp-phash": "^2.2.0",
     "shoemaker": "workspace:*",
+    "socket.io-client": "^4.8.3",
     "supercluster": "^8.0.1",
     "tesseract.js": "^5.1.1",
     "utf-8-validate": "^6.0.5",

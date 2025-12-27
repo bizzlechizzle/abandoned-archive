@@ -19,7 +19,9 @@ import {
   ComponentStatus,
 } from '../../repositories/sqlite-websources-repository';
 import { validate, LimitSchema, Blake3IdSchema } from '../ipc-validation';
-import { JobQueue, IMPORT_QUEUES } from '../../services/job-queue';
+// NOTE: Local job queue disabled - all processing goes through dispatch hub
+// Websource archiving requires a dispatch plugin (not yet implemented)
+// import { JobQueue, IMPORT_QUEUES } from '../../services/job-queue';
 import { getExtractionQueueService } from '../../services/extraction/extraction-queue-service';
 import { getRawDatabase } from '../database';
 
@@ -144,7 +146,8 @@ const SearchOptionsSchema = z.object({
 
 export function registerWebSourcesHandlers(db: Kysely<Database>) {
   const webSourcesRepo = new SQLiteWebSourcesRepository(db);
-  const jobQueue = new JobQueue(db);
+  // NOTE: Local job queue disabled - all processing through dispatch
+  // const jobQueue = new JobQueue(db);
 
   // ---------------------------------------------------------------------------
   // Core CRUD Operations
@@ -159,31 +162,10 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
       const validatedInput = WebSourceInputSchema.parse(input) as WebSourceInput;
       const source = await webSourcesRepo.create(validatedInput);
 
-      // OPT-113: Auto-queue archive job (non-blocking)
-      try {
-        // Check if job already exists for this source (duplicate prevention)
-        const existingJobs = await db
-          .selectFrom('jobs')
-          .select('job_id')
-          .where('queue', '=', IMPORT_QUEUES.WEBSOURCE_ARCHIVE)
-          .where('status', 'in', ['pending', 'processing'])
-          .where('payload', 'like', `%"sourceId":"${source.source_id}"%`)
-          .execute();
-
-        if (existingJobs.length === 0) {
-          await jobQueue.addJob({
-            queue: IMPORT_QUEUES.WEBSOURCE_ARCHIVE,
-            payload: { sourceId: source.source_id },
-            priority: 5, // Lower priority than media imports (default 10)
-          });
-          console.log(`[WebSources] Auto-queued archive job for ${source.source_id}`);
-        } else {
-          console.log(`[WebSources] Archive job already queued for ${source.source_id}`);
-        }
-      } catch (queueError) {
-        // Don't fail create if queue fails - just log and continue
-        console.error('[WebSources] Failed to queue archive job:', queueError);
-      }
+      // OPT-113: Auto-queue archive job - DISABLED (dispatch plugin required)
+      // Websource archiving will be available when dispatch worker plugin is implemented
+      // For now, websources are saved but not auto-archived
+      console.log(`[WebSources] Created source ${source.source_id} (auto-archive disabled - requires dispatch plugin)`)
 
       return source;
     } catch (error) {
@@ -1012,97 +994,19 @@ export function registerWebSourcesHandlers(db: Kysely<Database>) {
 
   /**
    * Queue all pending web sources for archiving (global)
-   * Returns count of newly queued jobs
+   * DISABLED: Requires dispatch worker plugin for websource archiving
    */
-  ipcMain.handle('websources:archiveAllPending', async (_event, limit: unknown = 100) => {
-    try {
-      const validatedLimit = validate(LimitSchema, limit) ?? 100;
-
-      // Find pending sources
-      const pendingSources = await db
-        .selectFrom('web_sources')
-        .select('source_id')
-        .where('status', '=', 'pending')
-        .limit(validatedLimit)
-        .execute();
-
-      let queued = 0;
-
-      for (const source of pendingSources) {
-        // Check if job already exists (duplicate prevention)
-        const existing = await db
-          .selectFrom('jobs')
-          .select('job_id')
-          .where('queue', '=', IMPORT_QUEUES.WEBSOURCE_ARCHIVE)
-          .where('status', 'in', ['pending', 'processing'])
-          .where('payload', 'like', `%"sourceId":"${source.source_id}"%`)
-          .execute();
-
-        if (existing.length === 0) {
-          await jobQueue.addJob({
-            queue: IMPORT_QUEUES.WEBSOURCE_ARCHIVE,
-            payload: { sourceId: source.source_id },
-            priority: 5,
-          });
-          queued++;
-        }
-      }
-
-      console.log(`[WebSources] Queued ${queued} of ${pendingSources.length} pending sources for archiving`);
-      return { queued, total: pendingSources.length };
-    } catch (error) {
-      console.error('Error archiving all pending:', error);
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(message);
-    }
+  ipcMain.handle('websources:archiveAllPending', async (_event, _limit: unknown = 100) => {
+    console.log('[WebSources] archiveAllPending disabled - requires dispatch worker plugin');
+    return { queued: 0, total: 0, message: 'Websource archiving requires dispatch worker plugin' };
   });
 
   /**
    * Queue pending web sources for a specific location
-   * Returns count of newly queued jobs
+   * DISABLED: Requires dispatch worker plugin for websource archiving
    */
-  ipcMain.handle('websources:archivePendingByLocation', async (_event, locid: unknown, limit: unknown = 50) => {
-    try {
-      const validatedLocid = Blake3IdSchema.parse(locid);
-      const validatedLimit = validate(LimitSchema, limit) ?? 50;
-
-      // Find pending sources for this location
-      const pendingSources = await db
-        .selectFrom('web_sources')
-        .select('source_id')
-        .where('locid', '=', validatedLocid)
-        .where('status', '=', 'pending')
-        .limit(validatedLimit)
-        .execute();
-
-      let queued = 0;
-
-      for (const source of pendingSources) {
-        // Check if job already exists (duplicate prevention)
-        const existing = await db
-          .selectFrom('jobs')
-          .select('job_id')
-          .where('queue', '=', IMPORT_QUEUES.WEBSOURCE_ARCHIVE)
-          .where('status', 'in', ['pending', 'processing'])
-          .where('payload', 'like', `%"sourceId":"${source.source_id}"%`)
-          .execute();
-
-        if (existing.length === 0) {
-          await jobQueue.addJob({
-            queue: IMPORT_QUEUES.WEBSOURCE_ARCHIVE,
-            payload: { sourceId: source.source_id },
-            priority: 5,
-          });
-          queued++;
-        }
-      }
-
-      console.log(`[WebSources] Queued ${queued} of ${pendingSources.length} pending sources for location ${validatedLocid}`);
-      return { queued, total: pendingSources.length };
-    } catch (error) {
-      console.error('Error archiving pending by location:', error);
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(message);
-    }
+  ipcMain.handle('websources:archivePendingByLocation', async (_event, _locid: unknown, _limit: unknown = 50) => {
+    console.log('[WebSources] archivePendingByLocation disabled - requires dispatch worker plugin');
+    return { queued: 0, total: 0, message: 'Websource archiving requires dispatch worker plugin' };
   });
 }

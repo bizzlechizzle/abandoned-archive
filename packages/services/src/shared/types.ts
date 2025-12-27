@@ -154,6 +154,7 @@ export const JobTypeSchema = z.enum([
   'export',
   'scrape',
   'download',
+  'capture',
 ]);
 export type JobType = z.infer<typeof JobTypeSchema>;
 

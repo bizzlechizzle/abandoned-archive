@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { getDatabase, closeDatabase } from './database';
-import { registerIpcHandlers } from './ipc-handlers';
+import { registerIpcHandlers, shutdownDispatchClient } from './ipc-handlers';
 import { getHealthMonitor } from '../services/health-monitor';
 import { getRecoverySystem } from '../services/recovery-system';
 import { getConfigService } from '../services/config-service';
@@ -617,6 +617,14 @@ app.on('before-quit', async () => {
     console.log('LiteLLM proxy stopped successfully');
   } catch (error) {
     console.error('Failed to stop LiteLLM proxy:', error);
+  }
+
+  // Shutdown Dispatch client (disconnect from hub, close offline queue)
+  try {
+    shutdownDispatchClient();
+    console.log('Dispatch client shut down successfully');
+  } catch (error) {
+    console.error('Failed to shutdown Dispatch client:', error);
   }
 
   // Stop spaCy preprocessing server if we started it

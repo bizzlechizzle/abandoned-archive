@@ -121,12 +121,14 @@ export class WebSourceOrchestrator extends EventEmitter {
   private archiveBasePath: string | null = null;
   private isProcessing = false;
   private currentSourceId: string | null = null;
-  private jobQueue: JobQueue;
+  // NOTE: Local job queue disabled - all processing through dispatch hub
+  // private jobQueue: JobQueue;
 
   constructor(private readonly db: Kysely<Database>) {
     super();
     this.repository = new SQLiteWebSourcesRepository(db);
-    this.jobQueue = new JobQueue(db);
+    // NOTE: Job queue disabled - requires dispatch worker plugin for date extraction
+    // this.jobQueue = new JobQueue(db);
   }
 
   // ===========================================================================
@@ -493,20 +495,10 @@ export class WebSourceOrchestrator extends EventEmitter {
 
           componentStatus.text = 'done';
 
-          // Migration 73: Queue date extraction job if we have text content
-          // Date extraction runs in background after text extraction completes
+          // Migration 73: Date extraction disabled - requires dispatch worker plugin
+          // When dispatch date-extraction plugin is implemented, this will submit jobs to dispatch hub
           if (extractedTextContent && extractedTextContent.length > 0) {
-            try {
-              await this.jobQueue.addJob({
-                queue: IMPORT_QUEUES.DATE_EXTRACTION,
-                payload: { sourceId },
-                priority: JOB_PRIORITY.BACKGROUND,
-              });
-              console.log(`[WebSource] Queued date extraction job for ${sourceId}`);
-            } catch (queueError) {
-              // Don't fail the archive if job queueing fails
-              console.error('[WebSource] Failed to queue date extraction job:', queueError);
-            }
+            console.log(`[WebSource] Date extraction disabled for ${sourceId} - requires dispatch worker plugin`);
           }
         } else {
           componentStatus.text = 'failed';
