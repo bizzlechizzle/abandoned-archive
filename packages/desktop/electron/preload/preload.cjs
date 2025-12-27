@@ -1328,6 +1328,91 @@ const api = {
       return () => ipcRenderer.removeListener("ai:download:error", listener);
     },
   },
+
+  // Dispatch Hub Integration
+  // Connects to central dispatch hub for distributed job processing
+  dispatch: {
+    // Authentication
+    login: (username, password) =>
+      invokeAuto("dispatch:login")(username, password),
+    logout: () =>
+      invokeAuto("dispatch:logout")(),
+    isAuthenticated: () =>
+      invokeAuto("dispatch:isAuthenticated")(),
+
+    // Job management
+    submitJob: (job) =>
+      invokeLong("dispatch:submitJob")(job),
+    getJob: (jobId) =>
+      invokeAuto("dispatch:getJob")(jobId),
+    cancelJob: (jobId) =>
+      invokeAuto("dispatch:cancelJob")(jobId),
+    listJobs: (filter) =>
+      invokeAuto("dispatch:listJobs")(filter),
+
+    // Workers
+    listWorkers: () =>
+      invokeAuto("dispatch:listWorkers")(),
+
+    // Connection status
+    isConnected: () =>
+      invokeAuto("dispatch:isConnected")(),
+    checkConnection: () =>
+      invokeAuto("dispatch:checkConnection")(),
+    getStatus: () =>
+      invokeAuto("dispatch:getStatus")(),
+
+    // Offline queue
+    getQueuedJobs: () =>
+      invokeAuto("dispatch:getQueuedJobs")(),
+
+    // Configuration
+    setHubUrl: (url) =>
+      invokeAuto("dispatch:setHubUrl")(url),
+    getHubUrl: () =>
+      invokeAuto("dispatch:getHubUrl")(),
+
+    // Initialize connection
+    initialize: () =>
+      invokeAuto("dispatch:initialize")(),
+
+    // Event listeners
+    onJobProgress: (callback) => {
+      const listener = (_event, progress) => callback(progress);
+      ipcRenderer.on("dispatch:job:progress", listener);
+      return () => ipcRenderer.removeListener("dispatch:job:progress", listener);
+    },
+    onJobUpdated: (callback) => {
+      const listener = (_event, job) => callback(job);
+      ipcRenderer.on("dispatch:job:updated", listener);
+      return () => ipcRenderer.removeListener("dispatch:job:updated", listener);
+    },
+    onConnectionChange: (callback) => {
+      const listener = (_event, status) => callback(status);
+      ipcRenderer.on("dispatch:connection", listener);
+      return () => ipcRenderer.removeListener("dispatch:connection", listener);
+    },
+    onAuthRequired: (callback) => {
+      const listener = (_event) => callback();
+      ipcRenderer.on("dispatch:auth:required", listener);
+      return () => ipcRenderer.removeListener("dispatch:auth:required", listener);
+    },
+    onJobQueued: (callback) => {
+      const listener = (_event, data) => callback(data);
+      ipcRenderer.on("dispatch:job:queued", listener);
+      return () => ipcRenderer.removeListener("dispatch:job:queued", listener);
+    },
+    onJobQueueSynced: (callback) => {
+      const listener = (_event, data) => callback(data);
+      ipcRenderer.on("dispatch:job:queueSynced", listener);
+      return () => ipcRenderer.removeListener("dispatch:job:queueSynced", listener);
+    },
+    onJobQueueFailed: (callback) => {
+      const listener = (_event, data) => callback(data);
+      ipcRenderer.on("dispatch:job:queueFailed", listener);
+      return () => ipcRenderer.removeListener("dispatch:job:queueFailed", listener);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld("electronAPI", api);
