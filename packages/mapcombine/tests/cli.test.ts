@@ -251,9 +251,9 @@ describe('CLI Integration', () => {
       const outFile = path.join(TEMP_DIR, 'merged.geojson');
       const result = runCLI([
         'merge',
-        `"${path.join(FIXTURES_DIR, 'sample.csv')}"`,
-        `"${path.join(FIXTURES_DIR, 'sample.gpx')}"`,
-        '-o', `"${outFile}"`,
+        path.join(FIXTURES_DIR, 'sample.csv'),
+        path.join(FIXTURES_DIR, 'sample.gpx'),
+        '-o', outFile,
         '--quiet',
       ]);
       expect(result.exitCode).toBe(0);
@@ -351,9 +351,9 @@ describe('CLI Integration', () => {
       const outFile = path.join(TEMP_DIR, 'matches.csv');
       const result = runCLI([
         'match',
-        `"${path.join(FIXTURES_DIR, 'sample.csv')}"`,
-        `"${path.join(FIXTURES_DIR, 'sample.geojson')}"`,
-        '-o', `"${outFile}"`,
+        path.join(FIXTURES_DIR, 'sample.csv'),
+        path.join(FIXTURES_DIR, 'sample.geojson'),
+        '-o', outFile,
         '-f', 'csv',
       ]);
       expect(result.exitCode).toBe(0);

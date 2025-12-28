@@ -226,6 +226,115 @@ interface SitePattern {
 }
 
 const SITE_PATTERNS: SitePattern[] = [
+  // Twitter/X - try name=orig for full-size images
+  {
+    name: 'Twitter',
+    domainMatch: /^pbs\.twimg\.com$/,
+    generateCandidates: (url: URL) => {
+      const candidates: string[] = [];
+      // Try name=orig for original size
+      const urlCopy = new URL(url.href);
+      urlCopy.searchParams.set('name', 'orig');
+      candidates.push(urlCopy.href);
+      // Also try name=large
+      urlCopy.searchParams.set('name', 'large');
+      candidates.push(urlCopy.href);
+      return candidates;
+    },
+  },
+
+  // Instagram CDN - remove size prefix
+  {
+    name: 'Instagram',
+    domainMatch: /\.cdninstagram\.com$/,
+    generateCandidates: (url: URL) => {
+      const candidates: string[] = [];
+      // Remove /s640x640/ or similar size prefix
+      const match = url.pathname.match(/^(\/v)\/s\d+x\d+\/(.+)$/);
+      if (match) {
+        candidates.push(`${url.origin}${match[1]}/${match[2]}`);
+      }
+      return candidates;
+    },
+  },
+
+  // Pinterest - try /originals/ path
+  {
+    name: 'Pinterest',
+    domainMatch: /^i\.pinimg\.com$/,
+    generateCandidates: (url: URL) => {
+      const candidates: string[] = [];
+      // Replace size paths (236x, 474x, 736x, etc.) with originals
+      const match = url.pathname.match(/^\/\d+x\/(.+)$/);
+      if (match) {
+        candidates.push(`${url.origin}/originals/${match[1]}`);
+      }
+      return candidates;
+    },
+  },
+
+  // Wikimedia Commons - remove /thumb/ and size prefix
+  {
+    name: 'Wikimedia',
+    domainMatch: /^upload\.wikimedia\.org$/,
+    generateCandidates: (url: URL) => {
+      const candidates: string[] = [];
+      // /thumb/a/ab/Image.jpg/800px-Image.jpg -> /a/ab/Image.jpg
+      const match = url.pathname.match(/^(.+)\/thumb\/(.+)\/\d+px-[^/]+$/);
+      if (match) {
+        candidates.push(`${url.origin}${match[1]}/${match[2]}`);
+      }
+      return candidates;
+    },
+  },
+
+  // Google Photos - try =w0-h0 or =s0 for original
+  {
+    name: 'Google Photos',
+    domainMatch: /^lh\d\.googleusercontent\.com$/,
+    generateCandidates: (url: URL) => {
+      const candidates: string[] = [];
+      // Replace size params with =w0-h0 or =s0 for original
+      const base = url.pathname.replace(/=w\d+-h\d+.*$/, '').replace(/=s\d+.*$/, '');
+      candidates.push(`${url.origin}${base}=s0`);
+      candidates.push(`${url.origin}${base}=w0-h0`);
+      return candidates;
+    },
+  },
+
+  // Shopify CDN - remove size suffix
+  {
+    name: 'Shopify',
+    domainMatch: /\.shopify\.com$/,
+    generateCandidates: (url: URL) => {
+      const candidates: string[] = [];
+      // Remove _800x or similar size suffix
+      const match = url.pathname.match(/^(.+)_\d+x(\.\w+)$/);
+      if (match) {
+        candidates.push(`${url.origin}${match[1]}${match[2]}`);
+      }
+      return candidates;
+    },
+  },
+
+  // Unsplash - try q=100 for max quality
+  {
+    name: 'Unsplash',
+    domainMatch: /^images\.unsplash\.com$/,
+    generateCandidates: (url: URL) => {
+      const candidates: string[] = [];
+      // Try without query params (original)
+      candidates.push(`${url.origin}${url.pathname}`);
+      // Try with max quality
+      const urlCopy = new URL(url.href);
+      urlCopy.searchParams.set('q', '100');
+      urlCopy.searchParams.delete('w');
+      urlCopy.searchParams.delete('h');
+      candidates.push(urlCopy.href);
+      return candidates;
+    },
+  },
+
   // WordPress - try removing all suffix combinations
   {
     name: 'WordPress',
