@@ -435,6 +435,14 @@ pnpm lint
 | Types out of sync | Run `pnpm --filter core build` first |
 | App starts but shows blank screen | Check DevTools console for errors |
 
+### Test Issues
+
+| Problem | Solution |
+|---------|----------|
+| Services tests skip with "better-sqlite3 not available" | Run `npm rebuild better-sqlite3 --force` from root |
+| Native module ABI mismatch (NODE_MODULE_VERSION) | Rebuild native modules for current Node version |
+| Tests hang in watch mode | Use `npx vitest run` instead of `pnpm test` |
+
 ### Database Issues
 
 | Problem | Solution |
