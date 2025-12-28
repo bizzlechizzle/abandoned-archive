@@ -19,6 +19,23 @@ export type {
   Worker,
   DispatchStatus,
   DispatchClientEvents,
+  // Data API Types (prefixed with Api to avoid conflicts with core types)
+  ApiLocation,
+  ApiLocationFilters,
+  ApiCreateLocationInput,
+  ApiMedia,
+  ApiMediaFilters,
+  ApiCreateMediaInput,
+  MediaTag,
+  AddTagInput,
+  Sublocation,
+  LocationNote,
+  MapPoint,
+  ParsedMapResult,
+  DedupResult,
+  MatchResult,
+  ExportResult,
+  PaginatedResponse,
 } from './types.js';
 
 // Token Storage

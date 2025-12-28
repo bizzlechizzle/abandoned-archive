@@ -105,3 +105,252 @@ export interface DispatchClientEvents {
   'job:updated': (data: JobUpdate) => void;
   error: (data: { type: string; error: unknown }) => void;
 }
+
+// ============================================
+// Data API Types (Locations, Media, Maps)
+// Prefixed with "Api" to avoid conflicts with core types
+// ============================================
+
+export interface ApiLocationFilters {
+  search?: string;
+  status?: 'active' | 'demolished' | 'restricted' | 'unknown';
+  state?: string;
+  city?: string;
+  category?: string;
+  favorite?: boolean;
+  project?: boolean;
+  historic?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ApiLocation {
+  id: string;
+  name: string;
+  shortName?: string;
+  akaName?: string;
+  category?: string;
+  class?: string;
+  gpsLat?: number;
+  gpsLon?: number;
+  gpsAccuracy?: number;
+  gpsSource?: string;
+  gpsVerifiedOnMap?: boolean;
+  addressStreet?: string;
+  addressCity?: string;
+  addressCounty?: string;
+  addressState?: string;
+  addressZipcode?: string;
+  addressCountry?: string;
+  status: string;
+  access?: string;
+  documentation?: string;
+  accessNotes?: string;
+  historic?: boolean;
+  favorite?: boolean;
+  project?: boolean;
+  builtYear?: number;
+  builtType?: string;
+  abandonedYear?: number;
+  abandonedType?: string;
+  imgCount?: number;
+  vidCount?: number;
+  docCount?: number;
+  mapCount?: number;
+  totalSizeBytes?: number;
+  heroMediaId?: string;
+  viewCount?: number;
+  lastViewedAt?: string;
+  timeline?: Array<{ date: string; event: string; notes?: string }>;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  legacyLocid?: string;
+}
+
+export interface ApiCreateLocationInput {
+  name: string;
+  shortName?: string;
+  akaName?: string;
+  category?: string;
+  class?: string;
+  gps?: {
+    lat: number;
+    lng: number;
+    accuracy?: number;
+    source?: string;
+    verifiedOnMap?: boolean;
+  };
+  address?: {
+    street?: string;
+    city?: string;
+    county?: string;
+    state?: string;
+    zipcode?: string;
+    country?: string;
+  };
+  status?: 'active' | 'demolished' | 'restricted' | 'unknown';
+  access?: string;
+  documentation?: string;
+  accessNotes?: string;
+  historic?: boolean;
+  favorite?: boolean;
+  project?: boolean;
+  builtYear?: number;
+  builtType?: string;
+  abandonedYear?: number;
+  abandonedType?: string;
+  timeline?: Array<{ date: string; event: string; notes?: string }>;
+  metadata?: Record<string, unknown>;
+  legacyLocid?: string;
+}
+
+export interface ApiMediaFilters {
+  locationId?: string;
+  sublocationId?: string;
+  mimeType?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ApiMedia {
+  id: string;
+  blake3Hash: string;
+  filename: string;
+  filepath: string;
+  mimeType: string;
+  sizeBytes: number;
+  width?: number;
+  height?: number;
+  duration?: number;
+  gpsLat?: number;
+  gpsLon?: number;
+  gpsAlt?: number;
+  capturedAt?: string;
+  thumbPath?: string;
+  thumbPathSm?: string;
+  thumbPathLg?: string;
+  previewPath?: string;
+  posterPath?: string;
+  hidden?: boolean;
+  hiddenReason?: string;
+  isLivePhoto?: boolean;
+  locationId?: string;
+  sublocationId?: string;
+  xmpData?: Record<string, unknown>;
+  exifData?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  legacyHash?: string;
+}
+
+export interface ApiCreateMediaInput {
+  blake3Hash: string;
+  filename: string;
+  filepath: string;
+  mimeType: string;
+  sizeBytes: number;
+  width?: number;
+  height?: number;
+  duration?: number;
+  gpsLat?: number;
+  gpsLon?: number;
+  gpsAlt?: number;
+  capturedAt?: string;
+  locationId?: string;
+  sublocationId?: string;
+  xmpData?: Record<string, unknown>;
+  exifData?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface MediaTag {
+  id: string;
+  mediaId: string;
+  tag: string;
+  confidence: number;
+  source: 'manual' | 'ml' | 'exif' | 'import';
+  category?: string;
+  createdAt: string;
+}
+
+export interface AddTagInput {
+  tag: string;
+  confidence?: number;
+  source?: 'manual' | 'ml' | 'exif' | 'import';
+  category?: string;
+}
+
+export interface Sublocation {
+  id: string;
+  locationId: string;
+  name: string;
+  shortName?: string;
+  createdAt: string;
+  legacySubid?: string;
+}
+
+export interface LocationNote {
+  id: string;
+  locationId: string;
+  noteText: string;
+  noteType: string;
+  createdAt: string;
+}
+
+export interface MapPoint {
+  name?: string;
+  lat: number;
+  lon: number;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  notes?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ParsedMapResult {
+  points: MapPoint[];
+  count: number;
+  format: string;
+}
+
+export interface DedupResult {
+  unique: MapPoint[];
+  duplicates: Array<{ original: MapPoint; duplicate: MapPoint; distance: number }>;
+  stats: {
+    input: number;
+    output: number;
+    removed: number;
+    threshold: number;
+  };
+}
+
+export interface MatchResult {
+  matches: Array<{ source: MapPoint; target: MapPoint; distance: number; nameSimilarity?: number }>;
+  unmatchedSource: MapPoint[];
+  unmatchedTarget: MapPoint[];
+  stats: {
+    sourceCount: number;
+    targetCount: number;
+    matchCount: number;
+  };
+}
+
+export interface ExportResult {
+  content: string;
+  contentType: string;
+  filename: string;
+  pointCount: number;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+  };
+}

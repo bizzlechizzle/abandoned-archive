@@ -191,8 +191,9 @@ export function registerDispatchHandlers(): void {
     return dispatchClient.getStatus();
   });
 
-  ipcMain.handle('dispatch:getQueuedJobs', () => {
-    return dispatchClient.getQueuedJobs();
+  ipcMain.handle('dispatch:getQueuedJobs', async () => {
+    // Return jobs that are pending/queued
+    return dispatchClient.listJobs({ status: 'pending' });
   });
 
   // ============================================

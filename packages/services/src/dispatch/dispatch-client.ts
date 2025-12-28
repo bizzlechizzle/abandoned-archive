@@ -21,6 +21,22 @@ import type {
   JobUpdate,
   DispatchStatus,
   Worker,
+  ApiLocation,
+  ApiLocationFilters,
+  ApiCreateLocationInput,
+  ApiMedia,
+  ApiMediaFilters,
+  ApiCreateMediaInput,
+  MediaTag,
+  AddTagInput,
+  Sublocation,
+  LocationNote,
+  MapPoint,
+  ParsedMapResult,
+  DedupResult,
+  MatchResult,
+  ExportResult,
+  PaginatedResponse,
 } from './types.js';
 
 export interface DispatchClientOptions {
@@ -312,6 +328,447 @@ export class DispatchClient extends EventEmitter {
   async listWorkers(): Promise<Worker[]> {
     const result = await this.apiRequest<{ workers: Worker[] }>('/api/workers');
     return result.workers;
+  }
+
+  // ============================================
+  // Location Operations
+  // ============================================
+
+  async getLocations(filters?: ApiLocationFilters): Promise<PaginatedResponse<ApiLocation>> {
+    const params = new URLSearchParams();
+    if (filters?.search) params.set('search', filters.search);
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.state) params.set('state', filters.state);
+    if (filters?.city) params.set('city', filters.city);
+    if (filters?.category) params.set('category', filters.category);
+    if (filters?.favorite !== undefined) params.set('favorite', String(filters.favorite));
+    if (filters?.project !== undefined) params.set('project', String(filters.project));
+    if (filters?.historic !== undefined) params.set('historic', String(filters.historic));
+    if (filters?.limit) params.set('limit', String(filters.limit));
+    if (filters?.offset) params.set('offset', String(filters.offset));
+
+    const query = params.toString();
+    return this.apiRequest<PaginatedResponse<ApiLocation>>(
+      `/api/locations${query ? `?${query}` : ''}`
+    );
+  }
+
+  async getLocation(id: string): Promise<ApiLocation> {
+    const result = await this.apiRequest<{ location: ApiLocation }>(`/api/locations/${id}`);
+    return result.location;
+  }
+
+  async createLocation(data: ApiCreateLocationInput): Promise<ApiLocation> {
+    const result = await this.apiRequest<{ location: ApiLocation }>('/api/locations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return result.location;
+  }
+
+  async updateLocation(id: string, data: Partial<ApiCreateLocationInput>): Promise<ApiLocation> {
+    const result = await this.apiRequest<{ location: ApiLocation }>(`/api/locations/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return result.location;
+  }
+
+  async deleteLocation(id: string): Promise<void> {
+    await this.apiRequest(`/api/locations/${id}`, { method: 'DELETE' });
+  }
+
+  async recordLocationView(id: string): Promise<void> {
+    await this.apiRequest(`/api/locations/${id}/view`, { method: 'POST' });
+  }
+
+  async getLocationBounds(filters?: ApiLocationFilters): Promise<{
+    minLat: number;
+    maxLat: number;
+    minLon: number;
+    maxLon: number;
+    count: number;
+  }> {
+    const params = new URLSearchParams();
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.state) params.set('state', filters.state);
+    if (filters?.category) params.set('category', filters.category);
+
+    const query = params.toString();
+    return this.apiRequest(`/api/locations/bounds${query ? `?${query}` : ''}`);
+  }
+
+  async getNearbyLocations(
+    lat: number,
+    lon: number,
+    radiusKm: number = 50,
+    limit: number = 20
+  ): Promise<Array<ApiLocation & { distance: number }>> {
+    const params = new URLSearchParams({
+      lat: String(lat),
+      lon: String(lon),
+      radius: String(radiusKm),
+      limit: String(limit),
+    });
+    const result = await this.apiRequest<{ locations: Array<ApiLocation & { distance: number }> }>(
+      `/api/locations/nearby?${params.toString()}`
+    );
+    return result.locations;
+  }
+
+  async getLocationFilterOptions(): Promise<{
+    states: string[];
+    cities: string[];
+    categories: string[];
+    classes: string[];
+  }> {
+    return this.apiRequest('/api/locations/filter-options');
+  }
+
+  // ============================================
+  // Sublocation Operations
+  // ============================================
+
+  async getSublocations(locationId: string): Promise<Sublocation[]> {
+    const result = await this.apiRequest<{ sublocations: Sublocation[] }>(
+      `/api/locations/${locationId}/sublocations`
+    );
+    return result.sublocations;
+  }
+
+  async createSublocation(
+    locationId: string,
+    data: { name: string; shortName?: string; legacySubid?: string }
+  ): Promise<Sublocation> {
+    const result = await this.apiRequest<{ sublocation: Sublocation }>(
+      `/api/locations/${locationId}/sublocations`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+    return result.sublocation;
+  }
+
+  async deleteSublocation(locationId: string, sublocationId: string): Promise<void> {
+    await this.apiRequest(`/api/locations/${locationId}/sublocations/${sublocationId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // ============================================
+  // Location Note Operations
+  // ============================================
+
+  async getLocationNotes(locationId: string): Promise<LocationNote[]> {
+    const result = await this.apiRequest<{ notes: LocationNote[] }>(
+      `/api/locations/${locationId}/notes`
+    );
+    return result.notes;
+  }
+
+  async createLocationNote(
+    locationId: string,
+    data: { noteText: string; noteType?: string }
+  ): Promise<LocationNote> {
+    const result = await this.apiRequest<{ note: LocationNote }>(
+      `/api/locations/${locationId}/notes`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+    return result.note;
+  }
+
+  async deleteLocationNote(locationId: string, noteId: string): Promise<void> {
+    await this.apiRequest(`/api/locations/${locationId}/notes/${noteId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // ============================================
+  // Media Operations
+  // ============================================
+
+  async getMedia(filters?: ApiMediaFilters): Promise<PaginatedResponse<ApiMedia>> {
+    const params = new URLSearchParams();
+    if (filters?.locationId) params.set('locationId', filters.locationId);
+    if (filters?.sublocationId) params.set('sublocationId', filters.sublocationId);
+    if (filters?.mimeType) params.set('mimeType', filters.mimeType);
+    if (filters?.limit) params.set('limit', String(filters.limit));
+    if (filters?.offset) params.set('offset', String(filters.offset));
+
+    const query = params.toString();
+    return this.apiRequest<PaginatedResponse<ApiMedia>>(`/api/media${query ? `?${query}` : ''}`);
+  }
+
+  async getMediaById(id: string): Promise<ApiMedia> {
+    const result = await this.apiRequest<{ media: ApiMedia }>(`/api/media/${id}`);
+    return result.media;
+  }
+
+  async getMediaByHash(hash: string): Promise<ApiMedia | null> {
+    try {
+      const result = await this.apiRequest<{ media: ApiMedia }>(`/api/media/hash/${hash}`);
+      return result.media;
+    } catch {
+      return null;
+    }
+  }
+
+  async createMedia(data: ApiCreateMediaInput): Promise<ApiMedia> {
+    const result = await this.apiRequest<{ media: ApiMedia }>('/api/media', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return result.media;
+  }
+
+  async updateMedia(id: string, data: Partial<ApiCreateMediaInput>): Promise<ApiMedia> {
+    const result = await this.apiRequest<{ media: ApiMedia }>(`/api/media/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return result.media;
+  }
+
+  async deleteMedia(id: string): Promise<void> {
+    await this.apiRequest(`/api/media/${id}`, { method: 'DELETE' });
+  }
+
+  async setMediaThumbnails(
+    id: string,
+    thumbnails: { thumbPath?: string; thumbPathSm?: string; thumbPathLg?: string; previewPath?: string; posterPath?: string }
+  ): Promise<ApiMedia> {
+    const result = await this.apiRequest<{ media: ApiMedia }>(`/api/media/${id}/thumbnails`, {
+      method: 'PUT',
+      body: JSON.stringify(thumbnails),
+    });
+    return result.media;
+  }
+
+  async hideMedia(id: string, reason?: string): Promise<ApiMedia> {
+    const result = await this.apiRequest<{ media: ApiMedia }>(`/api/media/${id}/hide`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+    return result.media;
+  }
+
+  async unhideMedia(id: string): Promise<ApiMedia> {
+    const result = await this.apiRequest<{ media: ApiMedia }>(`/api/media/${id}/unhide`, {
+      method: 'POST',
+    });
+    return result.media;
+  }
+
+  // ============================================
+  // Media Tag Operations
+  // ============================================
+
+  async getMediaTags(mediaId: string): Promise<MediaTag[]> {
+    const result = await this.apiRequest<{ tags: MediaTag[] }>(`/api/media/${mediaId}/tags`);
+    return result.tags;
+  }
+
+  async addMediaTag(mediaId: string, tag: AddTagInput): Promise<MediaTag> {
+    const result = await this.apiRequest<{ tag: MediaTag }>(`/api/media/${mediaId}/tags`, {
+      method: 'POST',
+      body: JSON.stringify(tag),
+    });
+    return result.tag;
+  }
+
+  async removeMediaTag(mediaId: string, tagId: string): Promise<void> {
+    await this.apiRequest(`/api/media/${mediaId}/tags/${tagId}`, { method: 'DELETE' });
+  }
+
+  // ============================================
+  // Map Operations
+  // ============================================
+
+  async parseMapFile(format: string, content: string, name?: string): Promise<ParsedMapResult> {
+    return this.apiRequest<ParsedMapResult>('/api/maps/parse', {
+      method: 'POST',
+      body: JSON.stringify({ format, content, name }),
+    });
+  }
+
+  async deduplicatePoints(points: MapPoint[], radiusMeters: number = 100): Promise<DedupResult> {
+    return this.apiRequest<DedupResult>('/api/maps/dedup', {
+      method: 'POST',
+      body: JSON.stringify({ points, radiusMeters }),
+    });
+  }
+
+  async matchPointsToLocations(
+    points: MapPoint[],
+    options?: { radiusMeters?: number; requireName?: boolean }
+  ): Promise<MatchResult> {
+    return this.apiRequest<MatchResult>('/api/maps/match', {
+      method: 'POST',
+      body: JSON.stringify({ points, ...options }),
+    });
+  }
+
+  async exportPoints(
+    points: MapPoint[],
+    format: 'kml' | 'gpx' | 'geojson' | 'csv',
+    name?: string
+  ): Promise<ExportResult> {
+    return this.apiRequest<ExportResult>('/api/maps/export', {
+      method: 'POST',
+      body: JSON.stringify({ points, format, name }),
+    });
+  }
+
+  // ============================================
+  // Reference Map Operations
+  // ============================================
+
+  async getReferenceMaps(locationId?: string): Promise<Array<{
+    id: string;
+    name: string;
+    sourceFile: string;
+    format: string;
+    pointCount: number;
+    locationId?: string;
+    createdAt: string;
+  }>> {
+    const params = new URLSearchParams();
+    if (locationId) params.set('locationId', locationId);
+    const query = params.toString();
+    const result = await this.apiRequest<{ maps: Array<{
+      id: string;
+      name: string;
+      sourceFile: string;
+      format: string;
+      pointCount: number;
+      locationId?: string;
+      createdAt: string;
+    }> }>(`/api/maps/references${query ? `?${query}` : ''}`);
+    return result.maps;
+  }
+
+  async createReferenceMap(data: {
+    name: string;
+    sourceFile: string;
+    format: string;
+    locationId?: string;
+  }): Promise<{ id: string }> {
+    return this.apiRequest<{ id: string }>('/api/maps/references', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteReferenceMap(id: string): Promise<void> {
+    await this.apiRequest(`/api/maps/references/${id}`, { method: 'DELETE' });
+  }
+
+  async getReferenceMapPoints(mapId: string): Promise<Array<MapPoint & { id: string; matchedLocationId?: string }>> {
+    const result = await this.apiRequest<{ points: Array<MapPoint & { id: string; matchedLocationId?: string }> }>(
+      `/api/maps/references/${mapId}/points`
+    );
+    return result.points;
+  }
+
+  async addReferenceMapPoints(mapId: string, points: MapPoint[]): Promise<{ count: number }> {
+    return this.apiRequest<{ count: number }>(`/api/maps/references/${mapId}/points/bulk`, {
+      method: 'POST',
+      body: JSON.stringify({ points }),
+    });
+  }
+
+  async matchReferenceMapPoint(mapId: string, pointId: string, locationId: string): Promise<void> {
+    await this.apiRequest(`/api/maps/references/${mapId}/points/${pointId}/match`, {
+      method: 'PUT',
+      body: JSON.stringify({ locationId }),
+    });
+  }
+
+  // ============================================
+  // File Upload Operations
+  // ============================================
+
+  async uploadFile(
+    locationId: string,
+    file: { name: string; data: Buffer | Uint8Array; mimeType: string },
+    sublocationId?: string
+  ): Promise<{ jobId: string }> {
+    // Create FormData-like structure for the upload
+    const boundary = '----FormBoundary' + Math.random().toString(36).substring(2);
+    const parts: Uint8Array[] = [];
+    const encoder = new TextEncoder();
+
+    // Add locationId field
+    parts.push(encoder.encode(`--${boundary}\r\n`));
+    parts.push(encoder.encode('Content-Disposition: form-data; name="locationId"\r\n\r\n'));
+    parts.push(encoder.encode(`${locationId}\r\n`));
+
+    // Add sublocationId if provided
+    if (sublocationId) {
+      parts.push(encoder.encode(`--${boundary}\r\n`));
+      parts.push(encoder.encode('Content-Disposition: form-data; name="sublocationId"\r\n\r\n'));
+      parts.push(encoder.encode(`${sublocationId}\r\n`));
+    }
+
+    // Add file
+    parts.push(encoder.encode(`--${boundary}\r\n`));
+    parts.push(
+      encoder.encode(
+        `Content-Disposition: form-data; name="file"; filename="${file.name}"\r\n`
+      )
+    );
+    parts.push(encoder.encode(`Content-Type: ${file.mimeType}\r\n\r\n`));
+    parts.push(file.data instanceof Buffer ? new Uint8Array(file.data) : file.data);
+    parts.push(encoder.encode('\r\n'));
+    parts.push(encoder.encode(`--${boundary}--\r\n`));
+
+    // Combine all parts
+    const totalLength = parts.reduce((sum, part) => sum + part.length, 0);
+    const body = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const part of parts) {
+      body.set(part, offset);
+      offset += part.length;
+    }
+
+    const url = `${this.config.hubUrl}/api/upload`;
+    const headers: Record<string, string> = {
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+    };
+
+    if (this.accessToken) {
+      headers['Authorization'] = `Bearer ${this.accessToken}`;
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body,
+    });
+
+    if (response.status === 401) {
+      const refreshed = await this.refreshAccessToken();
+      if (refreshed) {
+        headers['Authorization'] = `Bearer ${this.accessToken}`;
+        const retryResponse = await fetch(url, { method: 'POST', headers, body });
+        if (!retryResponse.ok) {
+          throw new Error(`Upload failed: ${retryResponse.statusText}`);
+        }
+        return (await retryResponse.json()) as { jobId: string };
+      }
+      throw new Error('Authentication required');
+    }
+
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as { message?: string };
+      throw new Error(errorData.message || `Upload failed: ${response.statusText}`);
+    }
+
+    return (await response.json()) as { jobId: string };
   }
 
   // ============================================

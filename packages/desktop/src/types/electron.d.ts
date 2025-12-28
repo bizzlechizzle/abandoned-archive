@@ -2508,6 +2508,50 @@ export interface ElectronAPI {
     onDownloadError: (callback: (data: { modelId: string; error: string }) => void) => () => void;
   };
 
+  // Dispatch Hub Integration (distributed job processing)
+  dispatch: {
+    login: (username: string, password: string) => Promise<boolean>;
+    logout: () => Promise<void>;
+    getStatus: () => Promise<{ connected: boolean; authenticated: boolean; hubUrl: string }>;
+    submitJob: (job: {
+      type: 'import' | 'thumbnail' | 'tag' | 'capture';
+      plugin: string;
+      priority?: 'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW' | 'BULK';
+      data: { source: string; destination?: string; options?: Record<string, unknown> };
+    }) => Promise<string>;
+    getJob: (jobId: string) => Promise<{
+      jobId: string;
+      status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+      result?: unknown;
+      error?: string;
+      workerId?: string;
+      retryCount?: number;
+      movedToDLQ?: boolean;
+    } | null>;
+    cancelJob: (jobId: string) => Promise<void>;
+    listWorkers: () => Promise<Array<{
+      id: string;
+      name: string;
+      status: string;
+      capabilities: string[];
+      plugins: string[];
+    }>>;
+    setHubUrl: (url: string) => Promise<void>;
+    checkConnection: () => Promise<boolean>;
+    onConnectionChange: (callback: (connected: boolean) => void) => () => void;
+    onAuthRequired: (callback: () => void) => () => void;
+    onJobProgress: (callback: (data: { jobId: string; progress: number; stage?: string }) => void) => () => void;
+    onJobUpdated: (callback: (data: {
+      jobId: string;
+      status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+      result?: unknown;
+      error?: string;
+      workerId?: string;
+      retryCount?: number;
+      movedToDLQ?: boolean;
+    }) => void) => () => void;
+  };
+
 }
 
 // Migration 76: Location Tag Summary type
