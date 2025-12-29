@@ -42,6 +42,7 @@ import type {
 export interface DispatchClientOptions {
   config: DispatchConfig;
   tokenStorage?: TokenStorage;
+  authDisabled?: boolean;
 }
 
 export class DispatchClient extends EventEmitter {
@@ -53,12 +54,16 @@ export class DispatchClient extends EventEmitter {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private pendingJobs: Map<string, JobSubmission> = new Map();
   private isOnline: boolean = false;
+  private authDisabled: boolean = false;
 
   constructor(options: DispatchClientOptions) {
     super();
     this.config = options.config;
+    this.authDisabled = options.authDisabled ?? false;
     this.tokenStorage = options.tokenStorage || new FileStorage(options.config.dataDir);
-    this.loadStoredTokens();
+    if (!this.authDisabled) {
+      this.loadStoredTokens();
+    }
   }
 
   // ============================================
@@ -104,14 +109,20 @@ export class DispatchClient extends EventEmitter {
 
   async login(username: string, password: string): Promise<boolean> {
     try {
-      const response = await fetch(`${this.config.hubUrl}/api/auth/login`, {
+      const loginUrl = `${this.config.hubUrl}/api/auth/login`;
+      console.log(`[DispatchClient] Attempting login to ${loginUrl} as ${username}`);
+
+      const response = await fetch(loginUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
       });
 
+      console.log(`[DispatchClient] Login response status: ${response.status}`);
+
       if (!response.ok) {
         const errorData = (await response.json()) as { message?: string };
+        console.error(`[DispatchClient] Login failed:`, errorData);
         throw new Error(errorData.message || 'Login failed');
       }
 
@@ -174,7 +185,18 @@ export class DispatchClient extends EventEmitter {
   }
 
   isAuthenticated(): boolean {
-    return this.accessToken !== null;
+    return this.authDisabled || this.accessToken !== null;
+  }
+
+  /**
+   * Connect directly without authentication.
+   * Use this when the dispatch hub has DISPATCH_AUTH_DISABLED=true.
+   */
+  async connectWithoutAuth(): Promise<void> {
+    if (!this.authDisabled) {
+      console.warn('[DispatchClient] connectWithoutAuth called but authDisabled is false');
+    }
+    this.connectSocket();
   }
 
   // ============================================
@@ -186,8 +208,11 @@ export class DispatchClient extends EventEmitter {
       return;
     }
 
+    // When auth is disabled, connect without a token
+    const auth = this.authDisabled ? {} : { token: this.accessToken };
+
     this.socket = io(this.config.hubUrl, {
-      auth: { token: this.accessToken },
+      auth,
       reconnection: this.config.autoReconnect,
       reconnectionDelay: this.config.reconnectInterval,
       reconnectionAttempts: 10,
@@ -247,13 +272,15 @@ export class DispatchClient extends EventEmitter {
       ...(options.headers as Record<string, string>),
     };
 
-    if (this.accessToken) {
+    // Only add auth header if auth is enabled and we have a token
+    if (!this.authDisabled && this.accessToken) {
       headers['Authorization'] = `Bearer ${this.accessToken}`;
     }
 
     const response = await fetch(url, { ...options, headers });
 
-    if (response.status === 401) {
+    // Skip auth retry logic when auth is disabled
+    if (!this.authDisabled && response.status === 401) {
       const refreshed = await this.refreshAccessToken();
       if (refreshed) {
         headers['Authorization'] = `Bearer ${this.accessToken}`;
@@ -740,7 +767,8 @@ export class DispatchClient extends EventEmitter {
       'Content-Type': `multipart/form-data; boundary=${boundary}`,
     };
 
-    if (this.accessToken) {
+    // Only add auth header if auth is enabled and we have a token
+    if (!this.authDisabled && this.accessToken) {
       headers['Authorization'] = `Bearer ${this.accessToken}`;
     }
 
@@ -750,7 +778,8 @@ export class DispatchClient extends EventEmitter {
       body,
     });
 
-    if (response.status === 401) {
+    // Skip auth retry logic when auth is disabled
+    if (!this.authDisabled && response.status === 401) {
       const refreshed = await this.refreshAccessToken();
       if (refreshed) {
         headers['Authorization'] = `Bearer ${this.accessToken}`;
@@ -818,6 +847,13 @@ export class DispatchClient extends EventEmitter {
   // ============================================
 
   async initialize(): Promise<void> {
+    // If auth is disabled, just connect directly
+    if (this.authDisabled) {
+      console.log('[DispatchClient] Auth disabled - connecting without authentication');
+      this.connectSocket();
+      return;
+    }
+
     if (this.accessToken) {
       // Validate existing token
       const valid = await this.refreshAccessToken();
@@ -850,6 +886,7 @@ export interface CreateDispatchClientOptions {
   hubUrl?: string;
   dataDir?: string;
   tokenStorage?: TokenStorage;
+  authDisabled?: boolean;
 }
 
 /**
@@ -859,6 +896,7 @@ export function getDispatchClient(options?: CreateDispatchClientOptions): Dispat
   if (!dispatchClientInstance) {
     const hubUrl = options?.hubUrl || process.env.DISPATCH_HUB_URL || 'http://192.168.1.199:3000';
     const dataDir = options?.dataDir || process.env.DISPATCH_DATA_DIR;
+    const authDisabled = options?.authDisabled ?? process.env.DISPATCH_AUTH_DISABLED === 'true';
 
     dispatchClientInstance = new DispatchClient({
       config: {
@@ -868,6 +906,7 @@ export function getDispatchClient(options?: CreateDispatchClientOptions): Dispat
         dataDir: dataDir || '',
       },
       tokenStorage: options?.tokenStorage,
+      authDisabled,
     });
   }
   return dispatchClientInstance;

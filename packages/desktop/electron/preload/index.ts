@@ -1331,6 +1331,22 @@ const api = {
       ipcRenderer.on('dispatch:auth:required', handler);
       return () => ipcRenderer.removeListener('dispatch:auth:required', handler);
     },
+    // Asset-ready events for UI refresh
+    onThumbnailReady: (callback: (data: { hash: string; mediaType?: string; locid?: string }) => void) => {
+      const handler = (_event: unknown, data: { hash: string; mediaType?: string; locid?: string }) => callback(data);
+      ipcRenderer.on('media:thumbnailReady', handler);
+      return () => ipcRenderer.removeListener('media:thumbnailReady', handler);
+    },
+    onMetadataReady: (callback: (data: { hash: string; mediaType?: string; locid?: string }) => void) => {
+      const handler = (_event: unknown, data: { hash: string; mediaType?: string; locid?: string }) => callback(data);
+      ipcRenderer.on('media:metadataReady', handler);
+      return () => ipcRenderer.removeListener('media:metadataReady', handler);
+    },
+    onLocationAssetsUpdated: (callback: (data: { locid: string }) => void) => {
+      const handler = (_event: unknown, data: { locid: string }) => callback(data);
+      ipcRenderer.on('location:assetsUpdated', handler);
+      return () => ipcRenderer.removeListener('location:assetsUpdated', handler);
+    },
   },
 
 };

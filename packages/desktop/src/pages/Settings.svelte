@@ -20,6 +20,7 @@
   let currentUsername = $state('default');
   let importMap = $state(true);
   let mapImport = $state(true);
+  let importSkipAcr = $state(true); // Skip .acr files during import (default: true)
   let loading = $state(true);
   let saveMessage = $state('');
 
@@ -276,6 +277,7 @@
       requireLogin = settings.require_login === 'true';
       importMap = settings.import_map !== 'false'; // Default true
       mapImport = settings.map_import !== 'false'; // Default true
+      importSkipAcr = settings.import_skip_acr !== 'false'; // Default true (skip .acr files)
 
       // Load users for multi-user mode
       await loadUsers();
@@ -329,6 +331,19 @@
       setTimeout(() => saveMessage = '', 3000);
     } catch (error) {
       console.error('Error toggling require login:', error);
+    }
+  }
+
+  async function toggleImportSkipAcr() {
+    if (!window.electronAPI?.settings) return;
+    try {
+      const newValue = !importSkipAcr;
+      await window.electronAPI.settings.set('import_skip_acr', newValue.toString());
+      importSkipAcr = newValue;
+      saveMessage = newValue ? 'Adobe Camera Raw (.acr) files will be skipped during import' : 'Adobe Camera Raw (.acr) files will be imported';
+      setTimeout(() => saveMessage = '', 3000);
+    } catch (error) {
+      console.error('Error toggling import skip ACR:', error);
     }
   }
 
@@ -2352,6 +2367,20 @@
               </div>
             </div>
             {/if}
+          </div>
+
+          <!-- Import Settings Row -->
+          <div class="flex items-center justify-between py-2 border-b border-braun-100">
+            <div>
+              <span class="text-sm font-medium text-braun-700">Skip .acr Files</span>
+              <p class="text-xs text-braun-500">Adobe Camera Raw settings files are skipped during import</p>
+            </div>
+            <button
+              onclick={toggleImportSkipAcr}
+              class="text-sm px-2 py-0.5 rounded transition {importSkipAcr ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-braun-100 text-braun-600 hover:bg-braun-200'}"
+            >
+              {importSkipAcr ? 'Enabled' : 'Disabled'}
+            </button>
           </div>
 
           <!-- Maps Sub-Accordion (Reference Maps) -->

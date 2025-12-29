@@ -135,6 +135,12 @@ export interface ImportOptions {
    * Set to false for legacy 5-step pipeline
    */
   useBackbone?: boolean;
+
+  /**
+   * Skip .acr files during import (default: true)
+   * Set to false to import Adobe Camera Raw settings files
+   */
+  skipAcrFiles?: boolean;
 }
 
 /**
@@ -314,6 +320,7 @@ export class ImportOrchestrator {
       scanResult = await this.scanner.scan(paths, {
         signal,
         archivePath: options.archivePath,
+        skipAcrFiles: options.skipAcrFiles,
         onProgress: (percent, currentPath) => {
           progress.percent = percent;
           progress.currentFile = currentPath;

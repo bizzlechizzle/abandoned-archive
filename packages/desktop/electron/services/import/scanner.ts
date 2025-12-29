@@ -60,13 +60,42 @@ export const SKIP_PATTERNS = new Set([
 ]);
 
 /**
- * Extensions to skip completely (not even import hidden)
+ * Extensions to always skip (not configurable)
+ */
+export const SKIP_EXTENSIONS_ALWAYS = new Set([
+  '.aae',    // Apple adjustments (useless without original)
+  '.psb',    // Photoshop large document
+  '.psd',    // Photoshop document (can be huge, rarely needed)
+]);
+
+/**
+ * Extensions that can be configured to skip (user preference)
+ */
+export const SKIP_EXTENSIONS_CONFIGURABLE = {
+  acr: '.acr',  // Adobe Camera Raw settings
+} as const;
+
+/**
+ * Get the full set of extensions to skip based on options
+ */
+export function getSkipExtensions(options?: { skipAcrFiles?: boolean }): Set<string> {
+  const extensions = new Set(SKIP_EXTENSIONS_ALWAYS);
+  // Default: skip ACR files unless explicitly disabled
+  if (options?.skipAcrFiles !== false) {
+    extensions.add(SKIP_EXTENSIONS_CONFIGURABLE.acr);
+  }
+  return extensions;
+}
+
+/**
+ * Legacy export for backwards compatibility
+ * @deprecated Use getSkipExtensions() instead
  */
 export const SKIP_EXTENSIONS = new Set([
   '.aae',    // Apple adjustments (useless without original)
   '.psb',    // Photoshop large document
   '.psd',    // Photoshop document (can be huge, rarely needed)
-  '.acr',    // Adobe Camera Raw settings
+  '.acr',    // Adobe Camera Raw settings (configurable via settings)
 ]);
 
 /**
@@ -138,6 +167,12 @@ export interface ScannerOptions {
    * Archive base path (for same-device detection)
    */
   archivePath?: string;
+
+  /**
+   * Skip .acr files during import (default: true)
+   * Set to false to import Adobe Camera Raw settings files
+   */
+  skipAcrFiles?: boolean;
 }
 
 /**
@@ -237,6 +272,8 @@ export class Scanner {
   /** Counters for path security logging */
   private pathTraversalBlocked = 0;
   private symlinkBlocked = 0;
+  /** Current scan options (set during scan()) */
+  private currentScanOptions?: ScannerOptions;
 
   /**
    * Validate that a path doesn't escape the allowed root directory
@@ -310,6 +347,8 @@ export class Scanner {
     // Reset security counters for this scan
     this.pathTraversalBlocked = 0;
     this.symlinkBlocked = 0;
+    // Store options for use in scanFile
+    this.currentScanOptions = options;
 
     const sessionId = generateId();
     const files: ScannedFile[] = [];
@@ -504,8 +543,10 @@ export class Scanner {
     const isSidecar = ScanService.isSidecar(filePath) || SIDECAR_EXTENSIONS.has(extension);
     const isRaw = RAW_EXTENSIONS.has(extension);
     const shouldHide = HIDDEN_EXTENSIONS.has(extension);
+    // Get skip extensions based on current scan options (respects user preferences)
+    const skipExtensions = getSkipExtensions({ skipAcrFiles: this.currentScanOptions?.skipAcrFiles });
     // Use backbone for skip detection with local fallback
-    const shouldSkip = ScanService.isSkipped(filePath) || SKIP_EXTENSIONS.has(extension) || mediaType === 'unknown';
+    const shouldSkip = ScanService.isSkipped(filePath) || skipExtensions.has(extension) || mediaType === 'unknown';
 
     return {
       id: generateId(),

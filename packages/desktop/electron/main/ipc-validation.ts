@@ -115,6 +115,8 @@ export const SettingKeySchema = z.enum([
   'login_required',
   'import_map',
   'map_import',
+  // Import settings
+  'import_skip_acr',  // Skip .acr files during import (Adobe Camera Raw settings)
 ]);
 
 export const SettingValueSchema = z.union([

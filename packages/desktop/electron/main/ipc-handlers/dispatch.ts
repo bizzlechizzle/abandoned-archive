@@ -90,6 +90,34 @@ export function registerDispatchHandlers(): void {
     BrowserWindow.getAllWindows().forEach((win) => {
       win.webContents.send('dispatch:job:updated', data);
     });
+
+    // Emit asset-ready events for completed thumbnail/metadata jobs
+    // This triggers UI refresh without polling
+    if (data.status === 'completed') {
+      const jobData = data.data as { options?: { hash?: string; mediaType?: string; locid?: string } } | undefined;
+      const hash = jobData?.options?.hash;
+      const mediaType = jobData?.options?.mediaType;
+      const locid = jobData?.options?.locid;
+
+      if (data.type === 'thumbnail' && hash) {
+        console.log(`[Dispatch] Thumbnail ready for ${hash.slice(0, 12)}...`);
+        BrowserWindow.getAllWindows().forEach((win) => {
+          win.webContents.send('media:thumbnailReady', { hash, mediaType, locid });
+        });
+      } else if (data.type === 'metadata' && hash) {
+        console.log(`[Dispatch] Metadata ready for ${hash.slice(0, 12)}...`);
+        BrowserWindow.getAllWindows().forEach((win) => {
+          win.webContents.send('media:metadataReady', { hash, mediaType, locid });
+        });
+      }
+
+      // Emit location-level refresh for any completed job with locid
+      if (locid) {
+        BrowserWindow.getAllWindows().forEach((win) => {
+          win.webContents.send('location:assetsUpdated', { locid });
+        });
+      }
+    }
   });
 
   dispatchClient.on('connected', () => {
@@ -125,6 +153,14 @@ export function registerDispatchHandlers(): void {
   dispatchClient.on('job:queueFailed', (data) => {
     BrowserWindow.getAllWindows().forEach((win) => {
       win.webContents.send('dispatch:job:queueFailed', data);
+    });
+  });
+
+  // Handle errors to prevent ERR_UNHANDLED_ERROR
+  dispatchClient.on('error', (data) => {
+    console.error('[Dispatch] Error:', data.type, data.error);
+    BrowserWindow.getAllWindows().forEach((win) => {
+      win.webContents.send('dispatch:error', data);
     });
   });
 

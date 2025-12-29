@@ -240,6 +240,15 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
 
       const archivePath = archiveSetting.value;
 
+      // Get import_skip_acr setting (default: true - skip ACR files)
+      const skipAcrSetting = await db
+        .selectFrom('settings')
+        .select('value')
+        .where('key', '=', 'import_skip_acr')
+        .executeTakeFirst();
+      // Default is true (skip ACR files), only false if explicitly set to 'false'
+      const skipAcrFiles = skipAcrSetting?.value !== 'false';
+
       // Get current user for activity tracking
       const currentUser = await getCurrentUser(db);
 
@@ -270,6 +279,7 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
           subid: validated.subid ?? null,
         },
         archivePath,
+        skipAcrFiles,
         user: currentUser ? {
           userId: currentUser.userId,
           username: currentUser.username,
