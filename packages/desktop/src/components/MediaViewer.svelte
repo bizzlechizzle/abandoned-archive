@@ -10,6 +10,7 @@
    * - Hero image selection (for card thumbnails)
    */
   import { thumbnailCache } from '../stores/thumbnail-cache-store';
+  import { toasts } from '../stores/toast-store';
 
   interface Props {
     mediaList: Array<{
@@ -695,12 +696,17 @@
       if (result?.success) {
         // Keep retagging=true until tags arrive via onTagsReady event
         console.log('Re-tagging queued:', result.message);
+        toasts.info('Re-tag job submitted to dispatch');
       } else {
-        // Failed to queue, reset state
+        // Failed to queue, show error and reset state
+        const errorMsg = result?.error || 'Failed to submit re-tag job';
+        console.error('Re-tagging failed:', errorMsg);
+        toasts.error(errorMsg);
         retagging = false;
       }
     } catch (err) {
       console.error('Failed to queue re-tagging:', err);
+      toasts.error('Failed to connect to dispatch hub');
       retagging = false;
     }
   }

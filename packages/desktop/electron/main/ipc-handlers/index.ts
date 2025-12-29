@@ -169,10 +169,6 @@ export function registerIpcHandlers() {
   // Single entry point for all AI operations
   registerAIHandlers();
 
-  // Tagging Service (Visual-Buffet ML Pipeline)
-  // RAM++, Florence-2, SigLIP, PaddleOCR
-  registerTaggingHandlers(db, sqliteDb);
-
   // Browser Image Capture (network monitoring, context menu)
   initializeBrowserImageCapture({
     filter: {
@@ -182,8 +178,15 @@ export function registerIpcHandlers() {
 
   // Dispatch Hub Integration
   // Connect to distributed job orchestration hub
+  // IMPORTANT: Must be registered BEFORE tagging handlers to ensure
+  // dispatch client singleton is created with proper Electron token storage
   registerDispatchHandlers();
   initializeDispatchClient();
+
+  // Tagging Service (Visual-Buffet ML Pipeline)
+  // RAM++, Florence-2, SigLIP, PaddleOCR
+  // Uses dispatch client for job submission - must be after dispatch init
+  registerTaggingHandlers(db, sqliteDb);
 
   console.log('IPC handlers registered (modular)');
 }
