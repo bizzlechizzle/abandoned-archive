@@ -114,18 +114,30 @@ class ElectronTokenStorage implements TokenStorage {
 // Event Handler Registration (can be called multiple times for client recreation)
 // ============================================
 
+/**
+ * Safely send an event to all active browser windows.
+ * Handles destroyed windows gracefully to prevent crashes.
+ */
+function broadcastToWindows(channel: string, ...args: unknown[]): void {
+  BrowserWindow.getAllWindows().forEach((win) => {
+    try {
+      if (!win.isDestroyed()) {
+        win.webContents.send(channel, ...args);
+      }
+    } catch (error) {
+      console.error(`[Dispatch] Failed to send ${channel}:`, error);
+    }
+  });
+}
+
 function registerDispatchEventHandlers(dispatchClient: DispatchClient): void {
   // Forward events to all renderer windows
   dispatchClient.on('job:progress', (data) => {
-    BrowserWindow.getAllWindows().forEach((win) => {
-      win.webContents.send('dispatch:job:progress', data);
-    });
+    broadcastToWindows('dispatch:job:progress', data);
   });
 
   dispatchClient.on('job:updated', (data) => {
-    BrowserWindow.getAllWindows().forEach((win) => {
-      win.webContents.send('dispatch:job:updated', data);
-    });
+    broadcastToWindows('dispatch:job:updated', data);
 
     // Emit asset-ready events for completed thumbnail/metadata jobs
     // This triggers UI refresh without polling
@@ -137,67 +149,47 @@ function registerDispatchEventHandlers(dispatchClient: DispatchClient): void {
 
       if (data.type === 'thumbnail' && hash) {
         console.log(`[Dispatch] Thumbnail ready for ${hash.slice(0, 12)}...`);
-        BrowserWindow.getAllWindows().forEach((win) => {
-          win.webContents.send('media:thumbnailReady', { hash, mediaType, locid });
-        });
+        broadcastToWindows('media:thumbnailReady', { hash, mediaType, locid });
       } else if (data.type === 'metadata' && hash) {
         console.log(`[Dispatch] Metadata ready for ${hash.slice(0, 12)}...`);
-        BrowserWindow.getAllWindows().forEach((win) => {
-          win.webContents.send('media:metadataReady', { hash, mediaType, locid });
-        });
+        broadcastToWindows('media:metadataReady', { hash, mediaType, locid });
       }
 
       // Emit location-level refresh for any completed job with locid
       if (locid) {
-        BrowserWindow.getAllWindows().forEach((win) => {
-          win.webContents.send('location:assetsUpdated', { locid });
-        });
+        broadcastToWindows('location:assetsUpdated', { locid });
       }
     }
   });
 
   dispatchClient.on('connected', () => {
-    BrowserWindow.getAllWindows().forEach((win) => {
-      win.webContents.send('dispatch:connection', true);
-    });
+    broadcastToWindows('dispatch:connection', true);
   });
 
   dispatchClient.on('disconnected', () => {
-    BrowserWindow.getAllWindows().forEach((win) => {
-      win.webContents.send('dispatch:connection', false);
-    });
+    broadcastToWindows('dispatch:connection', false);
   });
 
   dispatchClient.on('auth:required', () => {
-    BrowserWindow.getAllWindows().forEach((win) => {
-      win.webContents.send('dispatch:auth:required');
-    });
+    broadcastToWindows('dispatch:auth:required');
   });
 
   dispatchClient.on('job:queued', (data) => {
-    BrowserWindow.getAllWindows().forEach((win) => {
-      win.webContents.send('dispatch:job:queued', data);
-    });
+    broadcastToWindows('dispatch:job:queued', data);
   });
 
   dispatchClient.on('job:queueSynced', (data) => {
-    BrowserWindow.getAllWindows().forEach((win) => {
-      win.webContents.send('dispatch:job:queueSynced', data);
-    });
+    broadcastToWindows('dispatch:job:queueSynced', data);
   });
 
   dispatchClient.on('job:queueFailed', (data) => {
-    BrowserWindow.getAllWindows().forEach((win) => {
-      win.webContents.send('dispatch:job:queueFailed', data);
-    });
+    broadcastToWindows('dispatch:job:queueFailed', data);
   });
 
   // Handle errors to prevent ERR_UNHANDLED_ERROR
   dispatchClient.on('error', (data) => {
     console.error('[Dispatch] Error:', data.type, data.error);
-    BrowserWindow.getAllWindows().forEach((win) => {
-      win.webContents.send('dispatch:error', data);
-    });
+    broadcastToWindows('dispatch:error', data);
   });
 }
 

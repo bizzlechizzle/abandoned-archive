@@ -274,6 +274,7 @@ export class DispatchClient extends EventEmitter {
 
   private disconnectSocket(): void {
     if (this.socket) {
+      this.socket.removeAllListeners(); // Prevent memory leak on reconnection
       this.socket.disconnect();
       this.socket = null;
     }
@@ -323,6 +324,9 @@ export class DispatchClient extends EventEmitter {
   async submitJob(job: JobSubmission): Promise<string> {
     if (!this.isOnline) {
       throw new Error('Cannot submit job: not connected to dispatch hub');
+    }
+    if (!this.authDisabled && !this.isAuthenticated()) {
+      throw new Error('Cannot submit job: not authenticated with dispatch hub');
     }
 
     const result = await this.apiRequest<{ id: string }>('/api/jobs', {
