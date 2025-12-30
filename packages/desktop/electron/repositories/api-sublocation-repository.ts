@@ -117,13 +117,18 @@ export class ApiSublocationRepository {
 
   /**
    * Update a sub-location
-   * Note: API currently only supports create/delete, not update
-   * This is a gap that needs to be addressed in dispatch hub
    */
-  async update(subid: string, input: UpdateSubLocationInput): Promise<SubLocation | null> {
-    // TODO: Dispatch hub needs PUT /api/locations/:id/sublocations/:subid endpoint
-    console.warn('ApiSublocationRepository.update: Not yet implemented in dispatch hub');
-    throw new Error('Sublocation update not yet supported via API');
+  async update(locid: string, subid: string, input: UpdateSubLocationInput): Promise<SubLocation | null> {
+    try {
+      const result = await this.client.updateSublocation(locid, subid, {
+        name: input.subnam,
+        shortName: input.ssubname ?? undefined,
+      });
+      return this.mapApiToLocal(result, locid);
+    } catch (error) {
+      console.error('ApiSublocationRepository.update failed:', error);
+      return null;
+    }
   }
 
   /**
@@ -135,21 +140,27 @@ export class ApiSublocationRepository {
 
   /**
    * Update GPS coordinates for a sub-location
-   * Note: API needs to be extended for this
    */
-  async updateGps(subid: string, gps: SubLocationGpsInput): Promise<SubLocation | null> {
-    // TODO: Dispatch hub needs GPS update endpoint for sublocations
-    console.warn('ApiSublocationRepository.updateGps: Not yet implemented in dispatch hub');
-    throw new Error('Sublocation GPS update not yet supported via API');
+  async updateGps(locid: string, subid: string, gps: SubLocationGpsInput): Promise<SubLocation | null> {
+    try {
+      const result = await this.client.updateSublocationGps(locid, subid, {
+        lat: gps.lat,
+        lng: gps.lng,
+        accuracy: gps.accuracy ?? undefined,
+        source: gps.source,
+      });
+      return this.mapApiToLocal(result, locid);
+    } catch (error) {
+      console.error('ApiSublocationRepository.updateGps failed:', error);
+      return null;
+    }
   }
 
   /**
    * Set a sub-location as primary for its parent location
    */
   async setPrimary(locid: string, subid: string): Promise<void> {
-    // TODO: Dispatch hub needs set-primary endpoint
-    console.warn('ApiSublocationRepository.setPrimary: Not yet implemented in dispatch hub');
-    throw new Error('Set primary sublocation not yet supported via API');
+    await this.client.setSublocationPrimary(locid, subid);
   }
 
   /**
@@ -161,11 +172,16 @@ export class ApiSublocationRepository {
   }
 
   /**
+   * Get sublocation stats for a location
+   */
+  async getStats(locid: string): Promise<{ count: number; withGps: number; withMedia: number }> {
+    return this.client.getSublocationStats(locid);
+  }
+
+  /**
    * Get sub-location with media counts
-   * Note: Stats would need to come from dispatch hub
    */
   async getWithMediaCounts(subid: string): Promise<SubLocation | null> {
-    // TODO: Dispatch hub needs stats endpoint for sublocations
     return this.findById(subid);
   }
 
@@ -178,24 +194,24 @@ export class ApiSublocationRepository {
       locid: locid,
       subnam: api.name,
       ssubname: api.shortName ?? null,
-      category: null, // Not in API yet
-      class: null, // Not in API yet
-      status: null, // Not in API yet
-      hero_imghash: null, // Not in API yet
+      category: null,
+      class: null,
+      status: null,
+      hero_imghash: null,
       hero_focal_x: 0.5,
       hero_focal_y: 0.5,
-      is_primary: false, // Not in API yet
+      is_primary: api.isPrimary ?? false,
       created_date: api.createdAt ?? new Date().toISOString(),
       created_by: null,
-      modified_date: api.createdAt ?? null, // Use createdAt - updatedAt not in API
+      modified_date: api.updatedAt ?? null,
       modified_by: null,
-      gps_lat: null, // Not in API yet
-      gps_lng: null,
-      gps_accuracy: null,
-      gps_source: null,
+      gps_lat: api.gpsLat ?? null,
+      gps_lng: api.gpsLon ?? null,
+      gps_accuracy: api.gpsAccuracy ?? null,
+      gps_source: api.gpsSource ?? null,
       gps_verified_on_map: false,
       gps_captured_at: null,
-      akanam: null, // Not in API yet
+      akanam: null,
     };
   }
 }

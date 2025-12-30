@@ -374,7 +374,7 @@ function extractExplicitPatterns(text: string, masks: MaskRegion[]): DateCandida
  */
 function createHistoricalBiasRefiner(): Refiner {
   return {
-    refine: (_context: { text: string }, results: ParsedResult[]): ParsedResult[] => {
+    refine: (_context, results) => {
       for (const result of results) {
         const year = result.start.get('year');
 
@@ -393,7 +393,7 @@ function createHistoricalBiasRefiner(): Refiner {
           if (twoDigitMatch) {
             const twoDigit = parseInt(twoDigitMatch[1], 10);
             if (twoDigit >= 20 && twoDigit <= 99) {
-              result.start.assign('year', 1900 + twoDigit);
+              result.start.imply('year', 1900 + twoDigit);
               (result as unknown as Record<string, unknown>)._centuryBiasApplied = true;
             }
           }
@@ -411,7 +411,7 @@ function createHistoricalBiasRefiner(): Refiner {
             if (matches && matches.length > 1) {
               const twoDigit = parseInt(matches[1].replace(/['']/g, ''), 10);
               if (twoDigit >= 20 && twoDigit <= 99) {
-                result.end.assign('year', 1900 + twoDigit);
+                result.end.imply('year', 1900 + twoDigit);
               }
             }
           }

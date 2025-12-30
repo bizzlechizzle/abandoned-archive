@@ -477,11 +477,4 @@ function buildFullAddress(addr: Record<string, unknown>): string {
   return parts.join(', ');
 }
 
-// =============================================================================
-// EXPORTS
-// =============================================================================
-
-export {
-  ADDRESS_EXTRACTION_SYSTEM_PROMPT,
-  ADDRESS_EXTRACTION_PROMPT,
-};
+// ADDRESS_EXTRACTION_SYSTEM_PROMPT and ADDRESS_EXTRACTION_PROMPT are exported at declaration

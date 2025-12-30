@@ -178,7 +178,7 @@ function safeSerialize<T>(data: T): T {
  * Solution: Strip file arrays, return only summary stats (which is all the UI needs)
  */
 function stripFileArraysFromResult<T extends Record<string, unknown>>(result: T): T {
-  const stripped = { ...result };
+  const stripped: Record<string, unknown> = { ...result };
 
   // Strip file arrays from each result stage
   const stagesToStrip = ['scanResult', 'hashResult', 'copyResult', 'validationResult', 'finalizationResult'];
@@ -189,12 +189,12 @@ function stripFileArraysFromResult<T extends Record<string, unknown>>(result: T)
       if (Array.isArray(stageData.files)) {
         // Keep everything except the files array
         const { files, ...rest } = stageData;
-        stripped[stage] = { ...rest, fileCount: files.length } as T[keyof T];
+        stripped[stage] = { ...rest, fileCount: files.length };
       }
     }
   }
 
-  return stripped;
+  return stripped as T;
 }
 
 /**
@@ -307,7 +307,7 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
 
       // OPT-110: Strip large file arrays to prevent timeout on massive imports
       // OPT-080: Force serialization to prevent structured clone errors
-      return safeSerialize(stripFileArraysFromResult(result as Record<string, unknown>));
+      return safeSerialize(stripFileArraysFromResult(result as unknown as Record<string, unknown>));
 
     } catch (error) {
       console.error('[import:v2:start] Error:', error);
@@ -453,7 +453,7 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
 
       // OPT-110: Strip large file arrays to prevent timeout on massive imports
       // OPT-080: Force serialization to prevent structured clone errors
-      return safeSerialize(stripFileArraysFromResult(result as Record<string, unknown>));
+      return safeSerialize(stripFileArraysFromResult(result as unknown as Record<string, unknown>));
     } catch (error) {
       console.error('[import:v2:resume] Error:', error);
       // OPT-080: Serialize error to prevent structured clone failure in IPC

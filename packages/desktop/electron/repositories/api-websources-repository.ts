@@ -205,156 +205,121 @@ export class ApiWebSourcesRepository {
 
   /**
    * Create a new web source
-   * TODO: Dispatch hub needs POST /api/websources
    */
   async create(input: WebSourceInput): Promise<WebSource> {
-    console.warn('ApiWebSourcesRepository.create: Submitting as dispatch job');
-
-    // Submit as a job to dispatch for processing
-    try {
-      const jobId = await this.client.submitJob({
-        type: 'capture',
-        plugin: 'puppeteer',
-        priority: 'NORMAL',
-        data: {
-          source: input.url,
-          options: {
-            title: input.title,
-            locationId: input.locid,
-            sublocationId: input.subid,
-            sourceType: input.source_type,
-            notes: input.notes,
-          },
-        },
-      });
-
-      // Return a pending web source object
-      return {
-        source_id: jobId,
-        url: input.url,
-        title: input.title || null,
-        locid: input.locid || null,
-        subid: input.subid || null,
-        source_type: input.source_type || 'article',
-        notes: input.notes || null,
-        status: 'pending',
-        component_status: null,
-        extracted_title: null,
-        extracted_author: null,
-        extracted_date: null,
-        extracted_publisher: null,
-        extracted_text: null,
-        word_count: 0,
-        image_count: 0,
-        video_count: 0,
-        archive_path: null,
-        screenshot_path: null,
-        pdf_path: null,
-        html_path: null,
-        warc_path: null,
-        screenshot_hash: null,
-        pdf_hash: null,
-        html_hash: null,
-        warc_hash: null,
-        content_hash: null,
-        provenance_hash: null,
-        archive_error: null,
-        retry_count: 0,
-        created_at: new Date().toISOString(),
-        archived_at: null,
-        auth_imp: input.auth_imp || null,
-        domain: null,
-        canonical_url: null,
-        language: null,
-      };
-    } catch (error) {
-      console.error('ApiWebSourcesRepository.create: Failed to submit job', error);
-      throw new Error('Failed to create web source: dispatch hub connection failed');
-    }
+    const apiSource = await this.client.createWebSource({
+      url: input.url,
+      title: input.title ?? undefined,
+      locationId: input.locid ?? undefined,
+      sublocationId: input.subid ?? undefined,
+      sourceType: input.source_type,
+      notes: input.notes ?? undefined,
+    });
+    return this.mapApiToLocal(apiSource);
   }
 
   /**
    * Find a web source by ID
-   * TODO: Dispatch hub needs GET /api/websources/:id
    */
   async findById(source_id: string): Promise<WebSource> {
-    console.warn('ApiWebSourcesRepository.findById: Not yet implemented in dispatch hub');
-    throw new Error(`Web source not found: ${source_id} (dispatch endpoint not implemented)`);
+    const apiSource = await this.client.getWebSource(source_id);
+    return this.mapApiToLocal(apiSource);
   }
 
   /**
    * Find a web source by URL
    */
   async findByUrl(url: string): Promise<WebSource | null> {
-    console.warn('ApiWebSourcesRepository.findByUrl: Not yet implemented in dispatch hub');
-    return null;
+    const apiSource = await this.client.getWebSourceByUrl(url);
+    return apiSource ? this.mapApiToLocal(apiSource) : null;
   }
 
   /**
    * Find all web sources for a specific location
-   * TODO: Dispatch hub needs GET /api/websources/by-location/:locid
    */
   async findByLocation(locid: string): Promise<WebSource[]> {
-    console.warn('ApiWebSourcesRepository.findByLocation: Not yet implemented in dispatch hub');
-    return [];
+    const result = await this.client.getWebSourcesByLocation(locid);
+    return result.sources.map(s => this.mapApiToLocal(s));
   }
 
   /**
    * Find all web sources for a specific sub-location
    */
   async findBySubLocation(subid: string): Promise<WebSource[]> {
-    console.warn('ApiWebSourcesRepository.findBySubLocation: Not yet implemented in dispatch hub');
-    return [];
+    // Dispatch hub doesn't have sublocation filter, fetch by location and filter client-side
+    const result = await this.client.getWebSources({ limit: 1000 });
+    return result.sources.filter(s => s.sublocationId === subid).map(s => this.mapApiToLocal(s));
   }
 
   /**
    * Find web sources by status
    */
   async findByStatus(status: WebSourceStatus): Promise<WebSource[]> {
-    console.warn('ApiWebSourcesRepository.findByStatus: Not yet implemented in dispatch hub');
-    return [];
+    const result = await this.client.getWebSources({ status, limit: 1000 });
+    return result.sources.map(s => this.mapApiToLocal(s));
   }
 
   /**
    * Find pending sources ready for archiving
    */
   async findPendingForArchive(limit: number = 10): Promise<WebSource[]> {
-    console.warn('ApiWebSourcesRepository.findPendingForArchive: Not yet implemented');
-    return [];
+    const result = await this.client.getWebSources({ status: 'pending', limit });
+    return result.sources.map(s => this.mapApiToLocal(s));
   }
 
   /**
    * Find recently added sources
    */
   async findRecent(limit: number = 10): Promise<WebSource[]> {
-    console.warn('ApiWebSourcesRepository.findRecent: Not yet implemented in dispatch hub');
-    return [];
+    const result = await this.client.getWebSources({ limit });
+    return result.sources.map(s => this.mapApiToLocal(s));
   }
 
   /**
    * Find all web sources
    */
   async findAll(): Promise<WebSource[]> {
-    console.warn('ApiWebSourcesRepository.findAll: Not yet implemented in dispatch hub');
-    return [];
+    const result = await this.client.getWebSources({ limit: 1000 });
+    return result.sources.map(s => this.mapApiToLocal(s));
   }
 
   /**
    * Update a web source
-   * TODO: Dispatch hub needs PUT /api/websources/:id
    */
   async update(source_id: string, updates: WebSourceUpdate): Promise<WebSource> {
-    console.warn('ApiWebSourcesRepository.update: Not yet implemented in dispatch hub');
-    throw new Error(`Cannot update web source: ${source_id} (dispatch endpoint not implemented)`);
+    const apiSource = await this.client.updateWebSource(source_id, {
+      title: updates.title,
+      locationId: updates.locid,
+      sublocationId: updates.subid,
+      sourceType: updates.source_type,
+      notes: updates.notes,
+      status: updates.status,
+      extractedTitle: updates.extracted_title,
+      extractedAuthor: updates.extracted_author,
+      extractedDate: updates.extracted_date,
+      extractedPublisher: updates.extracted_publisher,
+      extractedText: updates.extracted_text,
+      wordCount: updates.word_count,
+      imageCount: updates.image_count,
+      videoCount: updates.video_count,
+      archivePath: updates.archive_path,
+      screenshotPath: updates.screenshot_path,
+      pdfPath: updates.pdf_path,
+      htmlPath: updates.html_path,
+      warcPath: updates.warc_path,
+      archiveError: updates.archive_error,
+      domain: updates.domain,
+      canonicalUrl: updates.canonical_url,
+      language: updates.language,
+    });
+    return this.mapApiToLocal(apiSource);
   }
 
   /**
    * Delete a web source
-   * TODO: Dispatch hub needs DELETE /api/websources/:id
    */
   async delete(source_id: string): Promise<void> {
-    console.warn('ApiWebSourcesRepository.delete: Not yet implemented in dispatch hub');
-    throw new Error(`Cannot delete web source: ${source_id} (dispatch endpoint not implemented)`);
+    await this.client.deleteWebSource(source_id);
   }
 
   // ===========================================================================
@@ -448,7 +413,6 @@ export class ApiWebSourcesRepository {
 
   /**
    * Create a new version snapshot
-   * TODO: Dispatch hub needs POST /api/websources/:id/versions
    */
   async createVersion(
     source_id: string,
@@ -461,39 +425,49 @@ export class ApiWebSourcesRepository {
       word_count?: number;
     }
   ): Promise<WebSourceVersion> {
-    console.warn('ApiWebSourcesRepository.createVersion: Not yet implemented');
-    throw new Error('Version creation not yet supported via dispatch');
+    const apiVersion = await this.client.createWebSourceVersion(source_id, {
+      archivePath: options.archive_path,
+      screenshotPath: options.screenshot_path ?? undefined,
+      pdfPath: options.pdf_path ?? undefined,
+      htmlPath: options.html_path ?? undefined,
+      contentHash: options.content_hash ?? undefined,
+      wordCount: options.word_count,
+    });
+    return this.mapApiVersionToLocal(apiVersion);
   }
 
   /**
    * Find all versions for a web source
    */
   async findVersions(source_id: string): Promise<WebSourceVersion[]> {
-    console.warn('ApiWebSourcesRepository.findVersions: Not yet implemented');
-    return [];
+    const result = await this.client.getWebSourceVersions(source_id);
+    return result.versions.map((v) => this.mapApiVersionToLocal(v));
   }
 
   /**
    * Find a specific version by number
    */
   async findVersionByNumber(source_id: string, version_number: number): Promise<WebSourceVersion | null> {
-    console.warn('ApiWebSourcesRepository.findVersionByNumber: Not yet implemented');
-    return null;
+    const apiVersion = await this.client.getWebSourceVersion(source_id, version_number);
+    return apiVersion ? this.mapApiVersionToLocal(apiVersion) : null;
   }
 
   /**
    * Get latest version for a web source
    */
   async findLatestVersion(source_id: string): Promise<WebSourceVersion | null> {
-    console.warn('ApiWebSourcesRepository.findLatestVersion: Not yet implemented');
-    return null;
+    const result = await this.client.getWebSourceVersions(source_id);
+    if (result.versions.length === 0) return null;
+    // Versions are sorted by version number descending
+    return this.mapApiVersionToLocal(result.versions[0]);
   }
 
   /**
    * Get version count for a web source
    */
   async countVersions(source_id: string): Promise<number> {
-    return 0;
+    const result = await this.client.getWebSourceVersions(source_id);
+    return result.versions.length;
   }
 
   // ===========================================================================
@@ -502,11 +476,59 @@ export class ApiWebSourcesRepository {
 
   /**
    * Search web sources using full-text search
-   * TODO: Dispatch hub needs GET /api/websources/search?q=...
    */
   async search(query: string, options?: { locid?: string; limit?: number }): Promise<WebSourceSearchResult[]> {
-    console.warn('ApiWebSourcesRepository.search: Not yet implemented in dispatch hub');
-    return [];
+    const result = await this.client.searchWebSources(query, {
+      locationId: options?.locid,
+      limit: options?.limit,
+    });
+    return result.results.map((r) => ({
+      source_id: r.id,
+      url: r.url,
+      title: r.title,
+      locid: r.locationId,
+      snippet: r.snippet,
+      rank: 1, // API doesn't return rank
+    }));
+  }
+
+  /**
+   * Map API version to local format
+   */
+  private mapApiVersionToLocal(apiVersion: {
+    id: string;
+    sourceId: string;
+    versionNumber: number;
+    archivedAt: string;
+    archivePath?: string;
+    screenshotPath?: string;
+    pdfPath?: string;
+    htmlPath?: string;
+    warcPath?: string;
+    wordCount?: number;
+    imageCount?: number;
+    videoCount?: number;
+    contentHash?: string;
+    contentChanged?: boolean;
+    diffSummary?: string;
+  }): WebSourceVersion {
+    return {
+      version_id: apiVersion.id,
+      source_id: apiVersion.sourceId,
+      version_number: apiVersion.versionNumber,
+      archived_at: apiVersion.archivedAt,
+      archive_path: apiVersion.archivePath || null,
+      screenshot_path: apiVersion.screenshotPath || null,
+      pdf_path: apiVersion.pdfPath || null,
+      html_path: apiVersion.htmlPath || null,
+      warc_path: apiVersion.warcPath || null,
+      word_count: apiVersion.wordCount ?? null,
+      image_count: apiVersion.imageCount ?? null,
+      video_count: apiVersion.videoCount ?? null,
+      content_hash: apiVersion.contentHash || null,
+      content_changed: apiVersion.contentChanged ?? false,
+      diff_summary: apiVersion.diffSummary || null,
+    };
   }
 
   // ===========================================================================
@@ -515,20 +537,19 @@ export class ApiWebSourcesRepository {
 
   /**
    * Get overall statistics for web sources
-   * TODO: Dispatch hub needs GET /api/websources/stats
    */
   async getStats(): Promise<WebSourceStats> {
-    console.warn('ApiWebSourcesRepository.getStats: Not yet implemented in dispatch hub');
+    const stats = await this.client.getWebSourceStats();
     return {
-      total: 0,
-      pending: 0,
-      archiving: 0,
-      complete: 0,
-      partial: 0,
-      failed: 0,
-      total_images: 0,
-      total_videos: 0,
-      total_words: 0,
+      total: stats.total,
+      pending: stats.pending,
+      archiving: 0, // Not tracked by dispatch
+      complete: stats.complete,
+      partial: 0, // Not tracked by dispatch
+      failed: stats.failed,
+      total_images: stats.totalImages,
+      total_videos: 0, // Not tracked by dispatch
+      total_words: stats.totalWords,
     };
   }
 
@@ -695,5 +716,87 @@ export class ApiWebSourcesRepository {
   async migrateFromBookmarks(): Promise<{ migrated: number; failed: number }> {
     console.log('ApiWebSourcesRepository.migrateFromBookmarks: No migration needed for API');
     return { migrated: 0, failed: 0 };
+  }
+
+  // ===========================================================================
+  // Private Helpers
+  // ===========================================================================
+
+  /**
+   * Map API web source to local format
+   */
+  private mapApiToLocal(apiSource: {
+    id: string;
+    url: string;
+    title?: string;
+    locationId?: string;
+    sublocationId?: string;
+    sourceType: string;
+    notes?: string;
+    status: string;
+    extractedTitle?: string;
+    extractedAuthor?: string;
+    extractedDate?: string;
+    extractedPublisher?: string;
+    extractedText?: string;
+    wordCount?: number;
+    imageCount?: number;
+    videoCount?: number;
+    archivePath?: string;
+    screenshotPath?: string;
+    pdfPath?: string;
+    htmlPath?: string;
+    warcPath?: string;
+    screenshotHash?: string;
+    pdfHash?: string;
+    htmlHash?: string;
+    warcHash?: string;
+    contentHash?: string;
+    archiveError?: string;
+    retryCount?: number;
+    createdAt: string;
+    archivedAt?: string;
+    domain?: string;
+    canonicalUrl?: string;
+    language?: string;
+  }): WebSource {
+    return {
+      source_id: apiSource.id,
+      url: apiSource.url,
+      title: apiSource.title || null,
+      locid: apiSource.locationId || null,
+      subid: apiSource.sublocationId || null,
+      source_type: (apiSource.sourceType as WebSourceType) || 'article',
+      notes: apiSource.notes || null,
+      status: (apiSource.status as WebSourceStatus) || 'pending',
+      component_status: null,
+      extracted_title: apiSource.extractedTitle || null,
+      extracted_author: apiSource.extractedAuthor || null,
+      extracted_date: apiSource.extractedDate || null,
+      extracted_publisher: apiSource.extractedPublisher || null,
+      extracted_text: apiSource.extractedText || null,
+      word_count: apiSource.wordCount || 0,
+      image_count: apiSource.imageCount || 0,
+      video_count: apiSource.videoCount || 0,
+      archive_path: apiSource.archivePath || null,
+      screenshot_path: apiSource.screenshotPath || null,
+      pdf_path: apiSource.pdfPath || null,
+      html_path: apiSource.htmlPath || null,
+      warc_path: apiSource.warcPath || null,
+      screenshot_hash: apiSource.screenshotHash || null,
+      pdf_hash: apiSource.pdfHash || null,
+      html_hash: apiSource.htmlHash || null,
+      warc_hash: apiSource.warcHash || null,
+      content_hash: apiSource.contentHash || null,
+      provenance_hash: null,
+      archive_error: apiSource.archiveError || null,
+      retry_count: apiSource.retryCount || 0,
+      created_at: apiSource.createdAt,
+      archived_at: apiSource.archivedAt || null,
+      auth_imp: null,
+      domain: apiSource.domain || null,
+      canonical_url: apiSource.canonicalUrl || null,
+      language: apiSource.language || null,
+    };
   }
 }

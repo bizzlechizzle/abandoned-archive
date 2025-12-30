@@ -3,8 +3,6 @@
  *
  * Tracks view history for locations to show recently viewed
  * and most popular locations.
- *
- * In dispatch, view tracking uses recordLocationView()
  */
 
 import type { DispatchClient } from '@aa/services';
@@ -38,28 +36,59 @@ export class ApiLocationViewsRepository {
 
   /**
    * Get recently viewed locations
-   * TODO: Dispatch hub needs GET /api/locations/recent-views
    */
   async getRecentlyViewed(limit: number = 10): Promise<LocationView[]> {
-    console.warn('ApiLocationViewsRepository.getRecentlyViewed: Not yet implemented');
-    return [];
+    try {
+      const locations = await this.client.getRecentlyViewedLocations(limit);
+      return locations.map((loc) => ({
+        locid: loc.id,
+        view_date: loc.lastViewedAt ?? new Date().toISOString(),
+        locnam: loc.name,
+        address_state: loc.addressState ?? undefined,
+      }));
+    } catch (error) {
+      console.error('getRecentlyViewed failed:', error);
+      return [];
+    }
   }
 
   /**
    * Get most viewed locations
-   * TODO: Dispatch hub needs GET /api/locations/most-viewed
    */
   async getMostViewed(limit: number = 10): Promise<ViewStats[]> {
-    console.warn('ApiLocationViewsRepository.getMostViewed: Not yet implemented');
-    return [];
+    try {
+      const locations = await this.client.getMostViewedLocations(limit);
+      return locations.map((loc) => ({
+        locid: loc.id,
+        view_count: loc.viewCount,
+        last_viewed: loc.lastViewedAt ?? new Date().toISOString(),
+        locnam: loc.name,
+      }));
+    } catch (error) {
+      console.error('getMostViewed failed:', error);
+      return [];
+    }
   }
 
   /**
    * Get view history for a specific location
+   * Note: Full history tracking would require additional hub endpoints
    */
   async getViewHistory(locid: string): Promise<LocationView[]> {
-    console.warn('ApiLocationViewsRepository.getViewHistory: Not yet implemented');
-    return [];
+    try {
+      const location = await this.client.getLocation(locid);
+      if (location.lastViewedAt) {
+        return [{
+          locid: location.id,
+          view_date: location.lastViewedAt,
+          locnam: location.name,
+          address_state: location.addressState ?? undefined,
+        }];
+      }
+      return [];
+    } catch {
+      return [];
+    }
   }
 
   /**
@@ -76,8 +105,9 @@ export class ApiLocationViewsRepository {
 
   /**
    * Clear view history
+   * Note: Would require additional hub endpoint to clear history
    */
   async clearHistory(): Promise<void> {
-    console.warn('ApiLocationViewsRepository.clearHistory: Not yet implemented');
+    console.warn('ApiLocationViewsRepository.clearHistory: Not implemented - would require hub endpoint');
   }
 }

@@ -1,26 +1,25 @@
 /**
  * API-based Timeline Repository
  *
- * Timeline provides chronological view of media across all locations.
- * Requires dispatch hub to support timeline/aggregation queries.
- *
- * TODO: Dispatch hub needs timeline endpoints:
- * - GET /api/timeline?year=2024&month=6
- * - GET /api/timeline/years
- * - GET /api/timeline/stats
+ * Timeline provides chronological view of events across all locations.
+ * Uses dispatch hub timeline endpoints for event tracking.
  */
 
-import type { DispatchClient } from '@aa/services';
+import type { DispatchClient, TimelineEvent } from '@aa/services';
 
 export interface TimelineEntry {
+  id: string;
   date: string;
+  dateDisplay?: string;
   locationId: string;
-  locationName: string;
+  locationName?: string;
   sublocationId?: string;
   sublocationName?: string;
-  mediaType: 'image' | 'video' | 'document' | 'map';
-  mediaId: string;
-  thumbPath?: string;
+  eventType: 'visit' | 'established' | 'database_entry' | 'custom';
+  eventSubtype?: string;
+  notes?: string;
+  mediaCount?: number;
+  approved?: boolean;
 }
 
 export interface TimelineMonth {
@@ -31,81 +30,168 @@ export interface TimelineMonth {
 
 export interface TimelineFilters {
   locationId?: string;
-  sublocationId?: string;
-  mediaType?: 'image' | 'video' | 'document' | 'map';
-  startDate?: string;
-  endDate?: string;
+  eventType?: string;
+  year?: number;
+  month?: number;
+  limit?: number;
+  offset?: number;
+}
+
+export interface TimelineStats {
+  total: number;
+  visits: number;
+  established: number;
+  approved: number;
+  pending: number;
 }
 
 /**
  * API-based timeline repository
  *
- * NOTE: Dispatch hub does not yet have timeline endpoints.
- * Timeline queries require aggregation across media table.
+ * Uses dispatch hub timeline endpoints for event tracking.
  */
 export class ApiTimelineRepository {
   constructor(private readonly client: DispatchClient) {}
 
   /**
-   * Get timeline entries for a date range
+   * Get timeline events with optional filters
    */
-  async getEntries(filters?: TimelineFilters): Promise<TimelineEntry[]> {
-    // TODO: Dispatch hub needs GET /api/timeline
-    console.warn('ApiTimelineRepository.getEntries: Not yet implemented in dispatch hub');
-    return [];
+  async getEvents(filters?: TimelineFilters): Promise<{
+    events: TimelineEntry[];
+    total: number;
+  }> {
+    const result = await this.client.getTimelineEvents({
+      locationId: filters?.locationId,
+      eventType: filters?.eventType,
+      year: filters?.year,
+      month: filters?.month,
+      limit: filters?.limit ?? 50,
+      offset: filters?.offset ?? 0,
+    });
+    return {
+      events: result.events.map((e) => this.mapApiToLocal(e)),
+      total: result.total,
+    };
+  }
+
+  /**
+   * Get a specific timeline event by ID
+   */
+  async getEvent(id: string): Promise<TimelineEntry | null> {
+    try {
+      const event = await this.client.getTimelineEvent(id);
+      return this.mapApiToLocal(event);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get timeline events for a specific location
+   */
+  async getEventsByLocation(locationId: string, options?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<TimelineEntry[]> {
+    const result = await this.client.getTimelineByLocation(locationId, options);
+    return result.events.map((e) => this.mapApiToLocal(e));
   }
 
   /**
    * Get entries for a specific year/month
    */
   async getEntriesForMonth(year: number, month: number, filters?: TimelineFilters): Promise<TimelineEntry[]> {
-    // TODO: Dispatch hub needs GET /api/timeline?year=X&month=Y
-    console.warn('ApiTimelineRepository.getEntriesForMonth: Not yet implemented');
-    return [];
+    const result = await this.client.getTimelineEvents({
+      locationId: filters?.locationId,
+      eventType: filters?.eventType,
+      year,
+      month,
+      limit: 100,
+    });
+    return result.events.map((e) => this.mapApiToLocal(e));
   }
 
   /**
-   * Get list of years that have media
+   * Get list of years that have events
    */
-  async getYearsWithMedia(): Promise<number[]> {
-    // TODO: Dispatch hub needs GET /api/timeline/years
-    console.warn('ApiTimelineRepository.getYearsWithMedia: Not yet implemented');
-    return [];
+  async getYearsWithEvents(): Promise<number[]> {
+    const result = await this.client.getTimelineYears();
+    return result.years;
   }
 
   /**
-   * Get months with media for a specific year
+   * Get timeline statistics
    */
-  async getMonthsWithMedia(year: number): Promise<TimelineMonth[]> {
-    // TODO: Dispatch hub needs timeline stats endpoint
-    console.warn('ApiTimelineRepository.getMonthsWithMedia: Not yet implemented');
-    return [];
+  async getStats(): Promise<TimelineStats> {
+    return this.client.getTimelineStats();
   }
 
   /**
-   * Get count of media by date
+   * Create a new timeline event
    */
-  async getMediaCountByDate(startDate: string, endDate: string): Promise<Map<string, number>> {
-    // TODO: Dispatch hub needs timeline aggregation
-    console.warn('ApiTimelineRepository.getMediaCountByDate: Not yet implemented');
-    return new Map();
+  async createEvent(data: {
+    locationId: string;
+    sublocationId?: string;
+    eventType: 'visit' | 'established' | 'database_entry' | 'custom';
+    eventSubtype?: string;
+    dateStart?: string;
+    dateEnd?: string;
+    datePrecision?: string;
+    dateDisplay?: string;
+    dateSort?: number;
+    sourceType?: string;
+    sourceRefs?: string;
+    mediaCount?: number;
+    notes?: string;
+    autoApproved?: boolean;
+  }): Promise<TimelineEntry> {
+    const event = await this.client.createTimelineEvent(data);
+    return this.mapApiToLocal(event);
   }
 
   /**
-   * Get earliest and latest media dates
+   * Update a timeline event
    */
-  async getDateRange(): Promise<{ earliest: string | null; latest: string | null }> {
-    // TODO: Dispatch hub needs GET /api/media/date-range
-    console.warn('ApiTimelineRepository.getDateRange: Not yet implemented');
-    return { earliest: null, latest: null };
+  async updateEvent(id: string, data: {
+    eventSubtype?: string | null;
+    dateStart?: string | null;
+    dateEnd?: string | null;
+    datePrecision?: string;
+    dateDisplay?: string | null;
+    dateSort?: number | null;
+    notes?: string | null;
+    userApproved?: boolean;
+  }): Promise<TimelineEntry | null> {
+    try {
+      const event = await this.client.updateTimelineEvent(id, data);
+      return this.mapApiToLocal(event);
+    } catch {
+      return null;
+    }
   }
 
   /**
-   * Get media for a specific date
+   * Delete a timeline event
    */
-  async getMediaForDate(date: string): Promise<TimelineEntry[]> {
-    // TODO: Dispatch hub needs date-specific media query
-    console.warn('ApiTimelineRepository.getMediaForDate: Not yet implemented');
-    return [];
+  async deleteEvent(id: string): Promise<void> {
+    await this.client.deleteTimelineEvent(id);
+  }
+
+  /**
+   * Map API TimelineEvent to local format
+   */
+  private mapApiToLocal(event: TimelineEvent): TimelineEntry {
+    return {
+      id: event.id,
+      date: event.dateStart ?? event.createdAt,
+      dateDisplay: event.dateDisplay ?? undefined,
+      locationId: event.locationId,
+      sublocationId: event.sublocationId ?? undefined,
+      eventType: event.eventType,
+      eventSubtype: event.eventSubtype ?? undefined,
+      notes: event.notes ?? undefined,
+      mediaCount: event.mediaCount ?? undefined,
+      approved: event.userApproved ?? event.autoApproved ?? false,
+    };
   }
 }

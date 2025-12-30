@@ -23,7 +23,7 @@ import type { ExtractionResult, ExtractedDate, ExtractedPerson, ExtractedOrganiz
 
 export interface QueueJob {
   queue_id: string;
-  source_type: 'web_source' | 'document' | 'media';
+  source_type: 'web_source' | 'document' | 'note' | 'media_caption';
   source_id: string;
   locid: string | null;
   tasks: string[];
@@ -272,7 +272,7 @@ export class ExtractionQueueService {
 
     // 1. Update web_sources with smart title and summary
     if (job.source_type === 'web_source') {
-      const smartTitle = result.summaryData?.title || result.title || null;
+      const smartTitle = result.summaryData?.title || null;
       const smartSummary = result.summaryData?.summary || result.summary || null;
       const overallConfidence = this.calculateOverallConfidence(result);
 

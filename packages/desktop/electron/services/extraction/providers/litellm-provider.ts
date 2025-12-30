@@ -133,10 +133,12 @@ export class LiteLLMProvider extends BaseExtractionProvider {
         const preprocessingService = getPreprocessingService();
         if (preprocessingService) {
           preprocessedData = await preprocessingService.preprocess(input.text);
-          this.log(
-            'info',
-            `spaCy preprocessing: ${preprocessedData.timelineRelevant} timeline sentences`
-          );
+          if (preprocessedData) {
+            this.log(
+              'info',
+              `spaCy preprocessing: ${preprocessedData.timeline_candidates.length} timeline sentences`
+            );
+          }
         }
       } catch (error) {
         this.log('warn', 'spaCy preprocessing failed, continuing without', error);

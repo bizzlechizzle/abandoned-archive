@@ -58,6 +58,7 @@ export interface WebSourceUpdate {
   pdf_path?: string | null;
   html_path?: string | null;
   warc_path?: string | null;
+  wacz_path?: string | null;
   screenshot_hash?: string | null;
   pdf_hash?: string | null;
   html_hash?: string | null;
@@ -263,6 +264,29 @@ export class SQLiteWebSourcesRepository {
       canonical_url: null,
       language: null,
       favicon_path: null,
+      // OPT-115: Enhanced capture tracking (Migration 71)
+      capture_method: null,
+      extension_captured_at: null,
+      puppeteer_captured_at: null,
+      extension_screenshot_path: null,
+      extension_html_path: null,
+      og_title: null,
+      og_description: null,
+      og_image: null,
+      twitter_card_json: null,
+      schema_org_json: null,
+      http_status: null,
+      // Migration 73: Date extraction tracking
+      dates_extracted_at: null,
+      dates_extraction_count: 0,
+      // Migration 75: Extraction Pipeline
+      smart_title: null,
+      smart_summary: null,
+      extraction_status: null,
+      extraction_confidence: null,
+      extraction_provider: null,
+      extraction_model: null,
+      extraction_completed_at: null,
     };
 
     await this.db.insertInto('web_sources').values(source).execute();

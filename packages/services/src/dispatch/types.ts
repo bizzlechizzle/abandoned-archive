@@ -287,7 +287,14 @@ export interface Sublocation {
   locationId: string;
   name: string;
   shortName?: string;
+  isPrimary?: boolean;
+  gpsLat?: number;
+  gpsLon?: number;
+  gpsAccuracy?: number;
+  gpsSource?: string;
+  mediaCount?: number;
   createdAt: string;
+  updatedAt?: string;
   legacySubid?: string;
 }
 
@@ -353,4 +360,98 @@ export interface PaginatedResponse<T> {
     limit: number;
     offset: number;
   };
+}
+
+// ============================================
+// Web Sources
+// ============================================
+
+export interface WebSourceVersion {
+  id: string;
+  sourceId: string;
+  versionNumber: number;
+  archivedAt: string;
+  archivePath?: string;
+  screenshotPath?: string;
+  pdfPath?: string;
+  htmlPath?: string;
+  warcPath?: string;
+  wordCount?: number;
+  imageCount?: number;
+  videoCount?: number;
+  contentHash?: string;
+  contentChanged?: boolean;
+  diffSummary?: string;
+}
+
+export interface WebSource {
+  id: string;
+  url: string;
+  title?: string;
+  locationId?: string;
+  sublocationId?: string;
+  sourceType: string;
+  notes?: string;
+  status: 'pending' | 'archiving' | 'complete' | 'partial' | 'failed';
+  // Extracted metadata
+  extractedTitle?: string;
+  extractedAuthor?: string;
+  extractedDate?: string;
+  extractedPublisher?: string;
+  extractedText?: string;
+  wordCount?: number;
+  imageCount?: number;
+  videoCount?: number;
+  // Archive paths
+  archivePath?: string;
+  screenshotPath?: string;
+  pdfPath?: string;
+  htmlPath?: string;
+  warcPath?: string;
+  // Integrity hashes
+  screenshotHash?: string;
+  pdfHash?: string;
+  htmlHash?: string;
+  warcHash?: string;
+  contentHash?: string;
+  // Enhanced metadata
+  domain?: string;
+  canonicalUrl?: string;
+  language?: string;
+  archiveError?: string;
+  retryCount?: number;
+  // Timestamps
+  createdAt: string;
+  archivedAt?: string;
+  createdBy?: string;
+}
+
+// ============================================
+// Timeline Events
+// ============================================
+
+export interface TimelineEvent {
+  id: string;
+  locationId: string;
+  sublocationId?: string;
+  eventType: 'visit' | 'established' | 'database_entry' | 'custom';
+  eventSubtype?: string;
+  dateStart?: string;
+  dateEnd?: string;
+  datePrecision: 'exact' | 'month' | 'year' | 'decade' | 'century' | 'circa' | 'range' | 'before' | 'after' | 'early' | 'mid' | 'late' | 'unknown';
+  dateDisplay?: string;
+  dateSort?: number;
+  sourceType?: 'exif' | 'manual' | 'web' | 'document' | 'system';
+  sourceRefs?: string;
+  mediaCount?: number;
+  mediaHashes?: string;
+  notes?: string;
+  autoApproved?: boolean;
+  userApproved?: boolean;
+  approvedAt?: string;
+  approvedBy?: string;
+  createdAt: string;
+  createdBy?: string;
+  updatedAt?: string;
+  updatedBy?: string;
 }

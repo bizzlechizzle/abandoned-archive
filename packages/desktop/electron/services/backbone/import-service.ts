@@ -178,7 +178,10 @@ type MediaType = 'image' | 'video' | 'document' | 'map';
  * to dispatch hub instead of local job queue.
  */
 export class ImportService {
-  private dispatchClient = getDispatchClient();
+  // Use getter to get fresh client each time (client may be recreated during auth detection)
+  private get dispatchClient() {
+    return getDispatchClient();
+  }
 
   constructor(private db: Kysely<Database>) {
     // NOTE: Local job queue disabled - using dispatch hub
@@ -816,9 +819,9 @@ export class ImportService {
 
       // 4. Video-specific jobs
       if (mediaType === 'video') {
-        // Video proxy generation
+        // Video proxy generation (uses thumbnail type for derivative media)
         await this.dispatchClient.submitJob({
-          type: 'proxy',
+          type: 'thumbnail',
           plugin: 'shoemaker',
           priority: 'BULK',
           data: {

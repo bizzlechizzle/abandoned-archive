@@ -2,17 +2,7 @@
  * API-based Projects Repository
  *
  * Projects are groupings of locations for organizational purposes.
- * In dispatch architecture, this could be a tagging system or
- * a dedicated projects table.
- *
- * TODO: Dispatch hub needs projects/collections endpoints:
- * - GET /api/projects
- * - POST /api/projects
- * - GET /api/projects/:id
- * - PUT /api/projects/:id
- * - DELETE /api/projects/:id
- * - POST /api/projects/:id/locations
- * - DELETE /api/projects/:id/locations/:locid
+ * All operations flow through the dispatch hub.
  */
 
 import type { DispatchClient } from '@aa/services';
@@ -48,63 +38,122 @@ export interface ProjectWithLocations extends Project {
 
 /**
  * API-based projects repository
- *
- * NOTE: Dispatch hub does not yet have projects endpoints.
- * This is a stub that will throw errors until implemented.
  */
 export class ApiProjectsRepository {
   constructor(private readonly client: DispatchClient) {}
 
   async create(input: ProjectInput): Promise<Project> {
-    // TODO: Dispatch hub needs POST /api/projects
-    throw new Error('Projects not yet implemented in dispatch hub');
+    const result = await this.client.createProject({
+      name: input.project_name,
+      description: input.description ?? undefined,
+    });
+
+    return this.mapApiToLocal(result.project);
   }
 
   async findById(project_id: string): Promise<Project | null> {
-    // TODO: Dispatch hub needs GET /api/projects/:id
-    throw new Error('Projects not yet implemented in dispatch hub');
+    try {
+      const result = await this.client.getProject(project_id);
+      return this.mapApiToLocal(result.project);
+    } catch {
+      return null;
+    }
   }
 
   async findByIdWithLocations(project_id: string): Promise<ProjectWithLocations | null> {
-    // TODO: Dispatch hub needs GET /api/projects/:id?include=locations
-    throw new Error('Projects not yet implemented in dispatch hub');
+    try {
+      const result = await this.client.getProject(project_id);
+      return {
+        ...this.mapApiToLocal(result.project),
+        locations: result.project.locations.map((loc) => ({
+          locid: loc.locid,
+          locnam: loc.locnam,
+          address_state: loc.address_state,
+          added_date: loc.added_date ?? new Date().toISOString(),
+        })),
+      };
+    } catch {
+      return null;
+    }
   }
 
   async findAll(): Promise<Project[]> {
-    // TODO: Dispatch hub needs GET /api/projects
-    console.warn('ApiProjectsRepository: Projects not yet implemented in dispatch hub');
-    return [];
+    const result = await this.client.getProjects({ limit: 100 });
+    return result.projects.map((p) => this.mapApiToLocal(p));
   }
 
   async update(project_id: string, updates: ProjectUpdate): Promise<Project | null> {
-    // TODO: Dispatch hub needs PUT /api/projects/:id
-    throw new Error('Projects not yet implemented in dispatch hub');
+    try {
+      const result = await this.client.updateProject(project_id, {
+        name: updates.project_name,
+        description: updates.description ?? undefined,
+      });
+      return this.mapApiToLocal(result.project);
+    } catch {
+      return null;
+    }
   }
 
   async delete(project_id: string): Promise<void> {
-    // TODO: Dispatch hub needs DELETE /api/projects/:id
-    throw new Error('Projects not yet implemented in dispatch hub');
+    await this.client.deleteProject(project_id);
   }
 
   async addLocation(project_id: string, locid: string): Promise<void> {
-    // TODO: Dispatch hub needs POST /api/projects/:id/locations
-    throw new Error('Projects not yet implemented in dispatch hub');
+    await this.client.addLocationToProject(project_id, locid);
   }
 
   async removeLocation(project_id: string, locid: string): Promise<void> {
-    // TODO: Dispatch hub needs DELETE /api/projects/:id/locations/:locid
-    throw new Error('Projects not yet implemented in dispatch hub');
+    await this.client.removeLocationFromProject(project_id, locid);
   }
 
   async countLocations(project_id: string): Promise<number> {
-    return 0;
+    try {
+      const result = await this.client.getProject(project_id);
+      return result.project.locationCount;
+    } catch {
+      return 0;
+    }
   }
 
   async getLocationsForProject(project_id: string): Promise<string[]> {
-    return [];
+    try {
+      const result = await this.client.getProject(project_id);
+      return result.project.locations.map((l) => l.locid);
+    } catch {
+      return [];
+    }
   }
 
   async getProjectsForLocation(locid: string): Promise<Project[]> {
-    return [];
+    try {
+      const result = await this.client.getProjectsForLocation(locid);
+      return result.projects.map((p) => ({
+        project_id: p.id,
+        project_name: p.name,
+        description: p.description,
+        created_date: p.addedAt,
+        auth_imp: null,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  private mapApiToLocal(api: {
+    id: string;
+    name: string;
+    description: string | null;
+    createdAt: string;
+    updatedAt?: string;
+    locationCount?: number;
+  }): Project {
+    return {
+      project_id: api.id,
+      project_name: api.name,
+      description: api.description,
+      created_date: api.createdAt,
+      auth_imp: null,
+      location_count: api.locationCount ?? 0,
+    };
   }
 }

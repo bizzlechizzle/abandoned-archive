@@ -206,6 +206,11 @@ export class SqliteTimelineRepository {
       created_by: userId ?? null,
       updated_at: null,
       updated_by: null,
+      // Migration 75: Extraction Pipeline fields
+      smart_title: null,
+      tldr: null,
+      confidence: null,
+      needs_review: 0,
     };
 
     await this.db.insertInto('location_timeline').values(event).execute();

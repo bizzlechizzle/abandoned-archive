@@ -36,6 +36,9 @@ export type {
   MatchResult,
   ExportResult,
   PaginatedResponse,
+  WebSource,
+  WebSourceVersion,
+  TimelineEvent,
 } from './types.js';
 
 // Token Storage

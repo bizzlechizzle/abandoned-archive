@@ -66,22 +66,34 @@ export class ApiNotesRepository {
 
   /**
    * Find recent notes across all locations
-   * Note: API needs endpoint for global recent notes
    */
   async findRecent(limit: number = 10): Promise<Note[]> {
-    // TODO: Dispatch hub needs global recent notes endpoint
-    console.warn('ApiNotesRepository.findRecent: Not yet implemented in dispatch hub');
-    return [];
+    const results = await this.client.getRecentNotes(limit);
+    return results.map((n) => ({
+      note_id: n.id,
+      locid: n.locationId,
+      note_text: n.noteText,
+      note_date: n.createdAt,
+      auth_imp: null,
+      note_type: n.noteType || 'general',
+      locnam: n.locationName,
+    }));
   }
 
   /**
    * Update a note
-   * Note: API needs update endpoint for notes
    */
-  async update(note_id: string, updates: NoteUpdate): Promise<Note | null> {
-    // TODO: Dispatch hub needs PUT /api/locations/:id/notes/:noteId endpoint
-    console.warn('ApiNotesRepository.update: Not yet implemented in dispatch hub');
-    throw new Error('Note update not yet supported via API');
+  async update(locid: string, note_id: string, updates: NoteUpdate): Promise<Note | null> {
+    try {
+      const result = await this.client.updateLocationNote(locid, note_id, {
+        noteText: updates.note_text,
+        noteType: updates.note_type,
+      });
+      return this.mapApiToLocal(result, locid);
+    } catch (error) {
+      console.error('ApiNotesRepository.update failed:', error);
+      return null;
+    }
   }
 
   /**

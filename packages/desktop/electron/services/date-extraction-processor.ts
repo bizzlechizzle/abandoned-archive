@@ -3,7 +3,7 @@
  * Orchestrates date extraction, duplicate detection, and conflict detection
  */
 
-import type { Kysely } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 import type { Database } from '../main/database.types';
 import { SqliteDateExtractionRepository } from '../repositories/sqlite-date-extraction-repository';
 import { SqliteTimelineRepository } from '../repositories/sqlite-timeline-repository';
@@ -243,7 +243,7 @@ export class DateExtractionProcessor {
       date_edtf: extraction.date_edtf,
       date_sort: extraction.date_sort,
       source_type: 'web',
-      source_ref: extraction.source_id,
+      source_refs: JSON.stringify([extraction.source_id]),
       auto_approved: extraction.status === 'auto_approved' ? 1 : 0,
       notes: `Extracted from: "${extraction.sentence.substring(0, 100)}${extraction.sentence.length > 100 ? '...' : ''}"`,
     };
@@ -277,7 +277,8 @@ export class DateExtractionProcessor {
     await this.timelineRepo.delete(extraction.timeline_event_id);
 
     // Mark extraction as reverted
-    return this.extractionRepo.markReverted(extractionId, userId);
+    const reverted = await this.extractionRepo.markReverted(extractionId, userId);
+    return reverted ?? null;
   }
 
   /**
@@ -357,7 +358,7 @@ export class DateExtractionProcessor {
     );
 
     // Approve the extraction
-    const approved = await this.extractionRepo.approve(extractionId, userId);
+    const approved = await this.extractionRepo.approve(extractionId, userId) ?? null;
 
     // OPT-120: Auto-create timeline event for historical categories
     // These categories represent important historical facts that should be on the timeline
@@ -397,7 +398,8 @@ export class DateExtractionProcessor {
     );
 
     // Reject the extraction
-    return this.extractionRepo.reject(extractionId, userId, reason);
+    const rejected = await this.extractionRepo.reject(extractionId, userId, reason);
+    return rejected ?? null;
   }
 
   // ==========================================================================
@@ -430,13 +432,17 @@ export class DateExtractionProcessor {
     }
 
     // Get total count
-    const countResult = await this.db
+    let countQuery = this.db
       .selectFrom('web_sources')
       .select(({ fn }) => fn.count('source_id').as('count'))
       .where('extracted_text', 'is not', null)
-      .where('extracted_text', '!=', '')
-      .where(skipProcessed ? eb => eb('dates_extracted_at', 'is', null) : eb => eb.val(1).eq(1))
-      .executeTakeFirst();
+      .where('extracted_text', '!=', '');
+
+    if (skipProcessed) {
+      countQuery = countQuery.where('dates_extracted_at', 'is', null);
+    }
+
+    const countResult = await countQuery.executeTakeFirst();
 
     const total = Number(countResult?.count ?? 0);
 

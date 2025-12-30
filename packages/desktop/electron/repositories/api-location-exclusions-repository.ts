@@ -19,8 +19,7 @@ export interface LocationExclusion {
 /**
  * API-based location exclusions repository
  *
- * NOTE: Location exclusions could be a boolean flag on the location
- * in dispatch's PostgreSQL schema
+ * Uses the hidden flag on locations in dispatch's PostgreSQL schema
  */
 export class ApiLocationExclusionsRepository {
   constructor(private readonly client: DispatchClient) {}
@@ -29,18 +28,14 @@ export class ApiLocationExclusionsRepository {
    * Exclude a location
    */
   async exclude(locid: string, reason?: string): Promise<void> {
-    // TODO: Update location with hidden=true via dispatch
-    console.warn('ApiLocationExclusionsRepository.exclude: Not yet implemented');
-    throw new Error('Location exclusion not yet implemented');
+    await this.client.setLocationHidden(locid, true, reason);
   }
 
   /**
    * Include a previously excluded location
    */
   async include(locid: string): Promise<void> {
-    // TODO: Update location with hidden=false via dispatch
-    console.warn('ApiLocationExclusionsRepository.include: Not yet implemented');
-    throw new Error('Location inclusion not yet implemented');
+    await this.client.setLocationHidden(locid, false);
   }
 
   /**
@@ -49,7 +44,7 @@ export class ApiLocationExclusionsRepository {
   async isExcluded(locid: string): Promise<boolean> {
     try {
       const location = await this.client.getLocation(locid);
-      return (location as any).hidden || false;
+      return (location as any).isHidden || false;
     } catch {
       return false;
     }
@@ -59,16 +54,32 @@ export class ApiLocationExclusionsRepository {
    * Get all excluded locations
    */
   async getExcluded(): Promise<LocationExclusion[]> {
-    // TODO: Query locations where hidden=true
-    console.warn('ApiLocationExclusionsRepository.getExcluded: Not yet implemented');
-    return [];
+    const hidden = await this.client.getHiddenLocations({ limit: 1000 });
+    return hidden.map((loc) => ({
+      locid: loc.id,
+      excluded_date: new Date().toISOString(), // Not tracked by API
+      reason: loc.hiddenReason ?? undefined,
+      excluded_by: undefined,
+    }));
   }
 
   /**
    * Get exclusion info for a location
    */
   async getExclusionInfo(locid: string): Promise<LocationExclusion | null> {
-    console.warn('ApiLocationExclusionsRepository.getExclusionInfo: Not yet implemented');
-    return null;
+    try {
+      const location = await this.client.getLocation(locid);
+      if ((location as any).isHidden) {
+        return {
+          locid: location.id,
+          excluded_date: new Date().toISOString(),
+          reason: (location as any).hiddenReason ?? undefined,
+          excluded_by: undefined,
+        };
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
 }

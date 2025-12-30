@@ -102,7 +102,10 @@ export type { LocationInfo } from './types';
  * Finalizer class for database commits
  */
 export class Finalizer {
-  private dispatchClient = getDispatchClient();
+  // Use getter to get fresh client each time (client may be recreated during auth detection)
+  private get dispatchClient() {
+    return getDispatchClient();
+  }
 
   constructor(private readonly db: Kysely<Database>) {}
 

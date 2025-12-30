@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, session, protocol, net } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { getDatabase, closeDatabase } from './database';
+import { getDatabase, closeDatabase, getRawDatabase } from './database';
 import { registerIpcHandlers, shutdownDispatchClient } from './ipc-handlers';
 import { getHealthMonitor } from '../services/health-monitor';
 import { getRecoverySystem } from '../services/recovery-system';
@@ -283,7 +283,7 @@ async function startupOrchestrator(): Promise<void> {
 
     // Step 2b: Initialize CLI bridge for @aa/services integration
     logger.info('Main', 'Step 2b: Initializing CLI bridge');
-    initCliBridge(db);
+    initCliBridge(getRawDatabase());
     logger.info('Main', 'CLI bridge initialized successfully');
 
     // Step 3: Initialize health monitoring

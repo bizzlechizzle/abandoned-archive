@@ -470,7 +470,7 @@ export class WebSourceOrchestrator extends EventEmitter {
           // This handles JS-heavy sites like Zillow where main content is in metadata
           if (extractedTextContent && extractedTextContent.length < 200 && pageMetadata) {
             const ogDescription = pageMetadata.openGraph?.description;
-            const schemaDescription = pageMetadata.schemaOrg?.[0]?.description;
+            const schemaDescription = pageMetadata.schemaOrg?.description;
             const metaDescription = pageMetadata.metaDescription;
 
             // Build enriched content from metadata

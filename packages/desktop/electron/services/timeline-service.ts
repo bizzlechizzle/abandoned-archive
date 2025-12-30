@@ -266,7 +266,7 @@ export class TimelineService {
         date_start: dateOnly,
         date_precision: 'exact',
         source_type: 'exif',
-        source_ref: mediaHash,
+        source_refs: JSON.stringify([mediaHash]),
         source_device: device,
         media_count: 1,
         media_hashes: JSON.stringify([mediaHash]),
@@ -455,7 +455,7 @@ export class TimelineService {
         date_edtf: parsed.edtf,
         date_sort: parsed.dateSort,
         source_type: 'web',
-        source_ref: websourceId,
+        source_refs: JSON.stringify([websourceId]),
         notes: title || 'Web Page', // Store title in notes field
       },
       userId

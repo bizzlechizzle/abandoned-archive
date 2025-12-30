@@ -72,9 +72,13 @@ class AIService implements IAIService {
         case 'cloud':
           return await this.cloudComplete(modelName, request, startTime);
         case 'python':
-          throw new Error('Python text completion not implemented yet');
+          throw new Error(
+            'Python AI backend deprecated. Use ollama/* for local models or cloud/* for API providers.'
+          );
         case 'local':
-          throw new Error('Local text completion not implemented yet');
+          throw new Error(
+            'Local ONNX text completion not available. Use ollama/* for local models.'
+          );
         default:
           throw new Error(`Unknown provider type: ${providerType}`);
       }
@@ -224,10 +228,12 @@ class AIService implements IAIService {
           return await this.ollamaVision(modelName, request, startTime);
         case 'python':
           throw new Error(
-            'Python vision models (RAM++, Florence-2) removed. Use visual-buffet for ML tagging.'
+            'Python vision models deprecated. Use visual-buffet dispatch worker for ML tagging, or ollama/* for local vision models like llava.'
           );
         case 'local':
-          throw new Error('Local vision not implemented');
+          throw new Error(
+            'Local ONNX vision not available. Use ollama/llava for local vision or cloud/* for API providers.'
+          );
         case 'cloud':
           return await this.cloudVision(modelName, request, startTime);
         default:

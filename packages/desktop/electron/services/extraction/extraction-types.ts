@@ -38,6 +38,9 @@ export interface ExtractionInput {
 
   /** Location name for context (helps with title generation) */
   locationName?: string;
+
+  /** Preprocessed data from spaCy (cached to avoid re-processing) */
+  preprocessedData?: import('./preprocessing-types').PreprocessingResult;
 }
 
 // =============================================================================
@@ -354,6 +357,9 @@ export interface ProviderSettings {
 
   /** Max tokens to generate */
   maxTokens?: number;
+
+  /** Prompt version for extraction (e.g., "v2.0") */
+  promptVersion?: string;
 }
 
 /**

@@ -94,8 +94,8 @@ export function registerTaggingHandlers(
     sqliteDbInstance = sqliteDb;
   }
 
-  // Get dispatch client for job submission
-  const dispatchClient = getDispatchClient();
+  // Note: Do NOT cache dispatchClient here - it may be recreated during auth detection
+  // Use getDispatchClient() dynamically in each handler instead
 
   /**
    * Get image tags with full ML insights
@@ -233,7 +233,7 @@ export function registerTaggingHandlers(
       const imagePath = image.ml_path || `${image.imgloc}/${image.imgnam}`;
 
       // Submit to dispatch hub for visual-buffet processing
-      const jobId = await dispatchClient.submitJob({
+      const jobId = await getDispatchClient().submitJob({
         type: 'tag',
         plugin: 'visual-buffet',
         priority: 'HIGH',
@@ -436,8 +436,8 @@ export function registerTaggingHandlers(
   ipcMain.handle('tagging:getQueueStats', async () => {
     try {
       // Get job stats from dispatch
-      const status = dispatchClient.getStatus();
-      const jobs = await dispatchClient.listJobs({ limit: 100 });
+      const status = getDispatchClient().getStatus();
+      const jobs = await getDispatchClient().listJobs({ limit: 100 });
 
       // Count by status
       const stats = {
@@ -457,7 +457,7 @@ export function registerTaggingHandlers(
       return {
         success: true,
         stats,
-        queuedOffline: status.queuedJobsCount,
+        queuedOffline: 0, // Offline queue tracking not yet implemented
       };
     } catch (error) {
       console.error('[tagging:getQueueStats] Error:', error);
@@ -499,7 +499,7 @@ export function registerTaggingHandlers(
       for (const img of untagged) {
         const imagePath = img.ml_path || `${img.imgloc}/${img.imgnam}`;
 
-        const jobId = await dispatchClient.submitJob({
+        const jobId = await getDispatchClient().submitJob({
           type: 'tag',
           plugin: 'visual-buffet',
           priority: 'NORMAL',
@@ -577,7 +577,7 @@ export function registerTaggingHandlers(
       for (const img of untagged) {
         const imagePath = img.ml_path || `${img.imgloc}/${img.imgnam}`;
 
-        const jobId = await dispatchClient.submitJob({
+        const jobId = await getDispatchClient().submitJob({
           type: 'tag',
           plugin: 'visual-buffet',
           priority: 'BULK',
@@ -623,8 +623,8 @@ export function registerTaggingHandlers(
   ipcMain.handle('tagging:getServiceStatus', async () => {
     try {
       // Check dispatch connection and workers
-      const status = dispatchClient.getStatus();
-      const hubReachable = await dispatchClient.checkConnection();
+      const status = getDispatchClient().getStatus();
+      const hubReachable = await getDispatchClient().checkConnection();
 
       // Get available workers with visual-buffet capability
       let workers: { name: string; status: string; plugins: string[] }[] = [];
@@ -632,7 +632,7 @@ export function registerTaggingHandlers(
 
       if (status.authenticated) {
         try {
-          workers = await dispatchClient.listWorkers();
+          workers = await getDispatchClient().listWorkers();
           visualBuffetAvailable = workers.some(
             (w) => w.status === 'online' && w.plugins.includes('visual-buffet')
           );
@@ -665,8 +665,8 @@ export function registerTaggingHandlers(
    */
   ipcMain.handle('tagging:testConnection', async () => {
     try {
-      const hubReachable = await dispatchClient.checkConnection();
-      const status = dispatchClient.getStatus();
+      const hubReachable = await getDispatchClient().checkConnection();
+      const status = getDispatchClient().getStatus();
 
       return {
         success: true,
@@ -706,18 +706,21 @@ export function registerTaggingHandlers(
       let archivePath = validated.archivePath;
       let locid = validated.locid;
 
-      // If locid provided but no archivePath, get archive path from location
+      // If locid provided but no archivePath, derive archive path from first image
       if (locid && !archivePath) {
-        const location = await db
-          .selectFrom('locs')
-          .select(['archive_path'])
+        const firstImage = await db
+          .selectFrom('imgs')
+          .select(['imgloc'])
           .where('locid', '=', locid)
           .executeTakeFirst();
 
-        if (!location?.archive_path) {
-          return { success: false, error: 'Location archive path not found' };
+        if (!firstImage?.imgloc) {
+          return { success: false, error: 'No images found for location to derive archive path' };
         }
-        archivePath = location.archive_path;
+        // Extract the archive root directory from the image path
+        // imgloc contains the full path to the image file
+        const path = await import('path');
+        archivePath = path.dirname(firstImage.imgloc);
       }
 
       if (!archivePath) {

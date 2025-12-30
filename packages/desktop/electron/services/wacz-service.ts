@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { createGzip } from 'zlib';
+// @ts-expect-error - archiver types not installed
 import archiver from 'archiver';
 
 // =============================================================================

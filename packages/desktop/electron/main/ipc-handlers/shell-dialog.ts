@@ -34,7 +34,7 @@ export function registerDialogHandlers() {
       // Get the focused window to use as parent (prevents dialog appearing behind app)
       const parentWindow = BrowserWindow.getFocusedWindow();
 
-      const dialogOptions = {
+      const dialogOptions: Electron.OpenDialogOptions = {
         properties: ['openDirectory', 'createDirectory'],
         title: 'Select Archive Folder',
         buttonLabel: 'Select Folder',
