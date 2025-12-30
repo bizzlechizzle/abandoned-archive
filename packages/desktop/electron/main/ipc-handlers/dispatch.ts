@@ -3,6 +3,9 @@
  *
  * Handles communication between renderer and dispatch client service.
  * Uses @aa/services dispatch module with Electron-specific token storage.
+ *
+ * Auth Detection: On startup, checks if the dispatch hub allows unauthenticated
+ * access (DISPATCH_AUTH_DISABLED=true on hub). If so, connects without requiring login.
  */
 
 import { ipcMain, BrowserWindow, safeStorage, app } from 'electron';
@@ -11,6 +14,7 @@ import * as path from 'path';
 import {
   getDispatchClient,
   destroyDispatchClient,
+  type DispatchClient,
   type TokenStorage,
   type TokenPair,
   type JobSubmission,
@@ -18,6 +22,47 @@ import {
 } from '@aa/services';
 
 let initialized = false;
+let hubAuthDisabled = false; // Auto-detected on first init
+
+// Default hub URL - must match dispatch-client.ts default
+const DEFAULT_HUB_URL = process.env.DISPATCH_HUB_URL || 'http://192.168.1.199:3000';
+
+/**
+ * Check if the dispatch hub allows unauthenticated access.
+ * Makes an unauthenticated request to a protected endpoint.
+ * If it succeeds, auth is disabled on the hub.
+ */
+async function checkHubAuthDisabled(): Promise<boolean> {
+  // First check env var (for terminal launches or explicit config)
+  if (process.env.DISPATCH_AUTH_DISABLED === 'true') {
+    console.log('[Dispatch] Auth disabled via DISPATCH_AUTH_DISABLED env var');
+    return true;
+  }
+
+  // Auto-detect by making unauthenticated request to protected endpoint
+  try {
+    const response = await fetch(`${DEFAULT_HUB_URL}/api/jobs?limit=1`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (response.ok) {
+      console.log('[Dispatch] Hub auth is disabled - unauthenticated request succeeded');
+      return true;
+    } else if (response.status === 401) {
+      console.log('[Dispatch] Hub requires authentication');
+      return false;
+    } else {
+      // Other error - assume auth required
+      console.log(`[Dispatch] Hub returned ${response.status} - assuming auth required`);
+      return false;
+    }
+  } catch (error) {
+    // Hub unreachable - will handle later during connection
+    console.log('[Dispatch] Hub unreachable during auth check - assuming auth required');
+    return false;
+  }
+}
 
 // ============================================
 // Electron Token Storage (uses safeStorage)
@@ -66,19 +111,10 @@ class ElectronTokenStorage implements TokenStorage {
 }
 
 // ============================================
-// Register Handlers
+// Event Handler Registration (can be called multiple times for client recreation)
 // ============================================
 
-export function registerDispatchHandlers(): void {
-  if (initialized) return;
-  initialized = true;
-
-  // Create dispatch client with Electron token storage
-  const dispatchClient = getDispatchClient({
-    dataDir: app.getPath('userData'),
-    tokenStorage: new ElectronTokenStorage(),
-  });
-
+function registerDispatchEventHandlers(dispatchClient: DispatchClient): void {
   // Forward events to all renderer windows
   dispatchClient.on('job:progress', (data) => {
     BrowserWindow.getAllWindows().forEach((win) => {
@@ -163,6 +199,26 @@ export function registerDispatchHandlers(): void {
       win.webContents.send('dispatch:error', data);
     });
   });
+}
+
+// ============================================
+// Register Handlers
+// ============================================
+
+export function registerDispatchHandlers(): void {
+  if (initialized) return;
+  initialized = true;
+
+  // Create dispatch client with Electron token storage
+  // Note: authDisabled will be updated by initializeDispatchClient() after detection
+  const dispatchClient = getDispatchClient({
+    dataDir: app.getPath('userData'),
+    tokenStorage: new ElectronTokenStorage(),
+    authDisabled: hubAuthDisabled,
+  });
+
+  // Register event handlers (forwarding to renderer windows)
+  registerDispatchEventHandlers(dispatchClient);
 
   // ============================================
   // Authentication Handlers
@@ -255,11 +311,35 @@ export function registerDispatchHandlers(): void {
   console.log('[IPC] Dispatch handlers registered');
 }
 
-export function initializeDispatchClient(): void {
+export async function initializeDispatchClient(): Promise<void> {
+  // Auto-detect if hub has auth disabled BEFORE getting client
+  hubAuthDisabled = await checkHubAuthDisabled();
+
+  // If auth is disabled, we need to recreate the client with the correct setting
+  // This handles the case where registerDispatchHandlers() was called first
+  if (hubAuthDisabled) {
+    // Destroy existing client created without authDisabled flag
+    destroyDispatchClient();
+
+    // Recreate with authDisabled=true
+    const dispatchClient = getDispatchClient({
+      dataDir: app.getPath('userData'),
+      tokenStorage: new ElectronTokenStorage(),
+      authDisabled: true,
+    });
+
+    // Re-register event handlers for the new client
+    registerDispatchEventHandlers(dispatchClient);
+  }
+
+  // Now initialize (connect socket, etc.)
   const dispatchClient = getDispatchClient();
-  dispatchClient.initialize().catch((error) => {
+  try {
+    await dispatchClient.initialize();
+    console.log('[Dispatch] Client initialized successfully');
+  } catch (error) {
     console.error('[Dispatch] Failed to initialize:', error);
-  });
+  }
 }
 
 export function shutdownDispatchClient(): void {
