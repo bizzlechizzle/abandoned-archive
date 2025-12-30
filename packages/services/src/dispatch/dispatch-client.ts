@@ -37,6 +37,9 @@ import type {
   MatchResult,
   ExportResult,
   PaginatedResponse,
+  WebSource,
+  WebSourceVersion,
+  TimelineEvent,
 } from './types.js';
 
 export interface DispatchClientOptions {
@@ -203,53 +206,69 @@ export class DispatchClient extends EventEmitter {
   // Socket.IO Connection
   // ============================================
 
-  private connectSocket(): void {
-    if (this.socket?.connected) {
-      return;
-    }
+  private connectSocket(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (this.socket?.connected) {
+        resolve();
+        return;
+      }
 
-    // When auth is disabled, connect without a token
-    const auth = this.authDisabled ? {} : { token: this.accessToken };
+      // When auth is disabled, connect without a token
+      const auth = this.authDisabled ? {} : { token: this.accessToken };
 
-    this.socket = io(this.config.hubUrl, {
-      auth,
-      reconnection: this.config.autoReconnect,
-      reconnectionDelay: this.config.reconnectInterval,
-      reconnectionAttempts: 10,
-    });
+      this.socket = io(this.config.hubUrl, {
+        auth,
+        reconnection: this.config.autoReconnect,
+        reconnectionDelay: this.config.reconnectInterval,
+        reconnectionAttempts: 10,
+        timeout: 10000, // 10 second connection timeout
+      });
 
-    this.socket.on('connect', () => {
-      this.isOnline = true;
-      this.emit('connected');
-    });
+      // Connection timeout
+      const connectionTimeout = setTimeout(() => {
+        reject(new Error('Socket connection timeout'));
+      }, 15000);
 
-    this.socket.on('disconnect', (reason) => {
-      this.isOnline = false;
-      this.emit('disconnected', reason);
-    });
+      this.socket.on('connect', () => {
+        clearTimeout(connectionTimeout);
+        this.isOnline = true;
+        this.emit('connected');
+        resolve();
+      });
 
-    this.socket.on('connect_error', async (error) => {
-      if (error.message.includes('unauthorized')) {
-        const refreshed = await this.refreshAccessToken();
-        if (refreshed && this.socket) {
-          this.socket.auth = { token: this.accessToken };
-          this.socket.connect();
+      this.socket.on('disconnect', (reason) => {
+        this.isOnline = false;
+        this.emit('disconnected', reason);
+      });
+
+      this.socket.on('connect_error', async (error) => {
+        if (error.message.includes('unauthorized')) {
+          const refreshed = await this.refreshAccessToken();
+          if (refreshed && this.socket) {
+            this.socket.auth = { token: this.accessToken };
+            this.socket.connect();
+          }
+        } else {
+          // For other errors, reject the promise on first attempt
+          clearTimeout(connectionTimeout);
+          // Don't reject - let socket.io retry
+          console.warn('[DispatchClient] Connection error:', error.message);
         }
-      }
-    });
+      });
 
-    // Job events
-    this.socket.on('job:progress', (data: JobProgress) => {
-      this.emit('job:progress', data);
-    });
+      // Job events
+      this.socket.on('job:progress', (data: JobProgress) => {
+        this.emit('job:progress', data);
+      });
 
-    this.socket.on('job:updated', (data: JobUpdate) => {
-      this.emit('job:updated', data);
+      this.socket.on('job:updated', (data: JobUpdate) => {
+        this.emit('job:updated', data);
 
-      // Remove from pending if completed/failed
-      if (['completed', 'failed', 'cancelled'].includes(data.status)) {
-        this.pendingJobs.delete(data.jobId);
-      }
+        // Remove from pending if completed/failed
+        if (['completed', 'failed', 'cancelled'].includes(data.status)) {
+          this.pendingJobs.delete(data.jobId);
+        }
+      });
     });
   }
 
@@ -409,6 +428,48 @@ export class DispatchClient extends EventEmitter {
     await this.apiRequest(`/api/locations/${id}/view`, { method: 'POST' });
   }
 
+  async getRecentlyViewedLocations(limit: number = 20): Promise<Array<{
+    id: string;
+    name: string;
+    category: string | null;
+    addressState: string | null;
+    addressCity: string | null;
+    lastViewedAt: string | null;
+    viewCount: number;
+  }>> {
+    const result = await this.apiRequest<{ locations: Array<{
+      id: string;
+      name: string;
+      category: string | null;
+      addressState: string | null;
+      addressCity: string | null;
+      lastViewedAt: string | null;
+      viewCount: number;
+    }> }>(`/api/locations/recent-views?limit=${limit}`);
+    return result.locations;
+  }
+
+  async getMostViewedLocations(limit: number = 20): Promise<Array<{
+    id: string;
+    name: string;
+    category: string | null;
+    addressState: string | null;
+    addressCity: string | null;
+    lastViewedAt: string | null;
+    viewCount: number;
+  }>> {
+    const result = await this.apiRequest<{ locations: Array<{
+      id: string;
+      name: string;
+      category: string | null;
+      addressState: string | null;
+      addressCity: string | null;
+      lastViewedAt: string | null;
+      viewCount: number;
+    }> }>(`/api/locations/most-viewed?limit=${limit}`);
+    return result.locations;
+  }
+
   async getLocationBounds(filters?: ApiLocationFilters): Promise<{
     minLat: number;
     maxLat: number;
@@ -483,6 +544,52 @@ export class DispatchClient extends EventEmitter {
     });
   }
 
+  async updateSublocation(
+    locationId: string,
+    sublocationId: string,
+    data: { name?: string; shortName?: string }
+  ): Promise<Sublocation> {
+    const result = await this.apiRequest<{ sublocation: Sublocation }>(
+      `/api/locations/${locationId}/sublocations/${sublocationId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }
+    );
+    return result.sublocation;
+  }
+
+  async updateSublocationGps(
+    locationId: string,
+    sublocationId: string,
+    data: { lat: number; lng: number; accuracy?: number; source?: string }
+  ): Promise<Sublocation> {
+    const result = await this.apiRequest<{ sublocation: Sublocation }>(
+      `/api/locations/${locationId}/sublocations/${sublocationId}/gps`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }
+    );
+    return result.sublocation;
+  }
+
+  async setSublocationPrimary(locationId: string, sublocationId: string): Promise<Sublocation> {
+    const result = await this.apiRequest<{ sublocation: Sublocation }>(
+      `/api/locations/${locationId}/sublocations/${sublocationId}/primary`,
+      { method: 'PUT' }
+    );
+    return result.sublocation;
+  }
+
+  async getSublocationStats(locationId: string): Promise<{
+    count: number;
+    withGps: number;
+    withMedia: number;
+  }> {
+    return this.apiRequest(`/api/locations/${locationId}/sublocations/stats`);
+  }
+
   // ============================================
   // Location Note Operations
   // ============================================
@@ -512,6 +619,343 @@ export class DispatchClient extends EventEmitter {
     await this.apiRequest(`/api/locations/${locationId}/notes/${noteId}`, {
       method: 'DELETE',
     });
+  }
+
+  async updateLocationNote(
+    locationId: string,
+    noteId: string,
+    data: { noteText?: string; noteType?: string }
+  ): Promise<LocationNote> {
+    const result = await this.apiRequest<{ note: LocationNote }>(
+      `/api/locations/${locationId}/notes/${noteId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }
+    );
+    return result.note;
+  }
+
+  async getRecentNotes(limit: number = 20): Promise<Array<LocationNote & { locationName: string }>> {
+    const result = await this.apiRequest<{ notes: Array<LocationNote & { locationName: string }> }>(
+      `/api/notes/recent?limit=${limit}`
+    );
+    return result.notes;
+  }
+
+  // ============================================
+  // Location Exclusion/Hidden Operations
+  // ============================================
+
+  async setLocationHidden(
+    locationId: string,
+    hidden: boolean,
+    reason?: string
+  ): Promise<ApiLocation> {
+    const result = await this.apiRequest<{ location: ApiLocation }>(
+      `/api/locations/${locationId}/hidden`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ hidden, reason }),
+      }
+    );
+    return result.location;
+  }
+
+  async getHiddenLocations(options?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<Array<{
+    id: string;
+    name: string;
+    category: string | null;
+    addressState: string | null;
+    hiddenReason: string | null;
+  }>> {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.offset) params.set('offset', String(options.offset));
+    const query = params.toString();
+    const result = await this.apiRequest<{
+      locations: Array<{
+        id: string;
+        name: string;
+        category: string | null;
+        addressState: string | null;
+        hiddenReason: string | null;
+      }>;
+    }>(`/api/locations/hidden${query ? `?${query}` : ''}`);
+    return result.locations;
+  }
+
+  // ============================================
+  // Web Sources Operations
+  // ============================================
+
+  async getWebSources(filters?: {
+    locationId?: string;
+    status?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    sources: Array<WebSource>;
+    total: number;
+    limit: number;
+    offset: number;
+  }> {
+    const params = new URLSearchParams();
+    if (filters?.locationId) params.set('locationId', filters.locationId);
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.search) params.set('search', filters.search);
+    if (filters?.limit) params.set('limit', String(filters.limit));
+    if (filters?.offset) params.set('offset', String(filters.offset));
+    const query = params.toString();
+    return this.apiRequest(`/api/websources${query ? `?${query}` : ''}`);
+  }
+
+  async getWebSource(id: string): Promise<WebSource> {
+    return this.apiRequest(`/api/websources/${id}`);
+  }
+
+  async getWebSourceByUrl(url: string): Promise<WebSource | null> {
+    try {
+      return await this.apiRequest(`/api/websources/by-url?url=${encodeURIComponent(url)}`);
+    } catch {
+      return null;
+    }
+  }
+
+  async getWebSourcesByLocation(
+    locationId: string,
+    options?: { limit?: number; offset?: number }
+  ): Promise<{ sources: WebSource[] }> {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.offset) params.set('offset', String(options.offset));
+    const query = params.toString();
+    return this.apiRequest(`/api/websources/by-location/${locationId}${query ? `?${query}` : ''}`);
+  }
+
+  async createWebSource(data: {
+    url: string;
+    title?: string;
+    locationId?: string;
+    sublocationId?: string;
+    sourceType?: string;
+    notes?: string;
+  }): Promise<WebSource> {
+    return this.apiRequest('/api/websources', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateWebSource(
+    id: string,
+    data: Partial<{
+      title: string;
+      locationId: string | null;
+      sublocationId: string | null;
+      sourceType: string;
+      notes: string | null;
+      status: string;
+      extractedTitle: string | null;
+      extractedAuthor: string | null;
+      extractedDate: string | null;
+      extractedPublisher: string | null;
+      extractedText: string | null;
+      wordCount: number;
+      imageCount: number;
+      videoCount: number;
+      archivePath: string | null;
+      screenshotPath: string | null;
+      pdfPath: string | null;
+      htmlPath: string | null;
+      warcPath: string | null;
+      archiveError: string | null;
+      domain: string | null;
+      canonicalUrl: string | null;
+      language: string | null;
+    }>
+  ): Promise<WebSource> {
+    return this.apiRequest(`/api/websources/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteWebSource(id: string): Promise<void> {
+    await this.apiRequest(`/api/websources/${id}`, { method: 'DELETE' });
+  }
+
+  async getWebSourceStats(): Promise<{
+    total: number;
+    pending: number;
+    complete: number;
+    failed: number;
+    totalWords: number;
+    totalImages: number;
+  }> {
+    return this.apiRequest('/api/websources/stats');
+  }
+
+  async searchWebSources(
+    query: string,
+    options?: { locationId?: string; limit?: number }
+  ): Promise<{
+    results: Array<{
+      id: string;
+      url: string;
+      title: string | null;
+      locationId: string | null;
+      snippet: string;
+    }>;
+  }> {
+    const params = new URLSearchParams({ q: query });
+    if (options?.locationId) params.set('locationId', options.locationId);
+    if (options?.limit) params.set('limit', String(options.limit));
+    return this.apiRequest(`/api/websources/search?${params.toString()}`);
+  }
+
+  async getWebSourceVersions(sourceId: string): Promise<{
+    versions: Array<WebSourceVersion>;
+  }> {
+    return this.apiRequest(`/api/websources/${sourceId}/versions`);
+  }
+
+  async getWebSourceVersion(
+    sourceId: string,
+    versionNumber: number
+  ): Promise<WebSourceVersion | null> {
+    try {
+      return await this.apiRequest(`/api/websources/${sourceId}/versions/${versionNumber}`);
+    } catch {
+      return null;
+    }
+  }
+
+  async createWebSourceVersion(
+    sourceId: string,
+    data: {
+      archivePath: string;
+      screenshotPath?: string;
+      pdfPath?: string;
+      htmlPath?: string;
+      warcPath?: string;
+      wordCount?: number;
+      imageCount?: number;
+      videoCount?: number;
+      contentHash?: string;
+    }
+  ): Promise<WebSourceVersion> {
+    return this.apiRequest(`/api/websources/${sourceId}/versions`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // ============================================
+  // Timeline Operations
+  // ============================================
+
+  async getTimelineEvents(filters?: {
+    locationId?: string;
+    eventType?: string;
+    year?: number;
+    month?: number;
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    events: TimelineEvent[];
+    total: number;
+    limit: number;
+    offset: number;
+  }> {
+    const params = new URLSearchParams();
+    if (filters?.locationId) params.set('locationId', filters.locationId);
+    if (filters?.eventType) params.set('eventType', filters.eventType);
+    if (filters?.year) params.set('year', String(filters.year));
+    if (filters?.month) params.set('month', String(filters.month));
+    if (filters?.limit) params.set('limit', String(filters.limit));
+    if (filters?.offset) params.set('offset', String(filters.offset));
+    const query = params.toString();
+    return this.apiRequest(`/api/timeline${query ? `?${query}` : ''}`);
+  }
+
+  async getTimelineEvent(id: string): Promise<TimelineEvent> {
+    return this.apiRequest(`/api/timeline/${id}`);
+  }
+
+  async getTimelineByLocation(
+    locationId: string,
+    options?: { limit?: number; offset?: number }
+  ): Promise<{ events: TimelineEvent[] }> {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.offset) params.set('offset', String(options.offset));
+    const query = params.toString();
+    return this.apiRequest(`/api/timeline/by-location/${locationId}${query ? `?${query}` : ''}`);
+  }
+
+  async getTimelineYears(): Promise<{ years: number[] }> {
+    return this.apiRequest('/api/timeline/years');
+  }
+
+  async getTimelineStats(): Promise<{
+    total: number;
+    visits: number;
+    established: number;
+    approved: number;
+    pending: number;
+  }> {
+    return this.apiRequest('/api/timeline/stats');
+  }
+
+  async createTimelineEvent(data: {
+    locationId: string;
+    sublocationId?: string;
+    eventType: string;
+    eventSubtype?: string;
+    dateStart?: string;
+    dateEnd?: string;
+    datePrecision?: string;
+    dateDisplay?: string;
+    dateSort?: number;
+    sourceType?: string;
+    sourceRefs?: string;
+    mediaCount?: number;
+    mediaHashes?: string;
+    notes?: string;
+    autoApproved?: boolean;
+  }): Promise<TimelineEvent> {
+    return this.apiRequest('/api/timeline', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateTimelineEvent(
+    id: string,
+    data: Partial<{
+      eventSubtype: string | null;
+      dateStart: string | null;
+      dateEnd: string | null;
+      datePrecision: string;
+      dateDisplay: string | null;
+      dateSort: number | null;
+      notes: string | null;
+      userApproved: boolean;
+    }>
+  ): Promise<TimelineEvent> {
+    return this.apiRequest(`/api/timeline/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteTimelineEvent(id: string): Promise<void> {
+    await this.apiRequest(`/api/timeline/${id}`, { method: 'DELETE' });
   }
 
   // ============================================
@@ -716,6 +1160,108 @@ export class DispatchClient extends EventEmitter {
   }
 
   // ============================================
+  // Project Operations
+  // ============================================
+
+  async getProjects(options?: { limit?: number; offset?: number }): Promise<{
+    projects: Array<{
+      id: string;
+      name: string;
+      description: string | null;
+      createdAt: string;
+      updatedAt: string;
+      locationCount: number;
+    }>;
+    pagination: { total: number; limit: number; offset: number };
+  }> {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.offset) params.set('offset', String(options.offset));
+    const query = params.toString();
+    return this.apiRequest(`/api/projects${query ? `?${query}` : ''}`);
+  }
+
+  async getProject(projectId: string): Promise<{
+    project: {
+      id: string;
+      name: string;
+      description: string | null;
+      createdAt: string;
+      updatedAt: string;
+      locations: Array<{
+        locid: string;
+        locnam: string;
+        address_state: string | null;
+        added_date: string | null;
+      }>;
+      locationCount: number;
+    };
+  }> {
+    return this.apiRequest(`/api/projects/${projectId}`);
+  }
+
+  async createProject(data: { name: string; description?: string }): Promise<{
+    project: {
+      id: string;
+      name: string;
+      description: string | null;
+      createdAt: string;
+      updatedAt: string;
+    };
+  }> {
+    return this.apiRequest('/api/projects', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateProject(
+    projectId: string,
+    data: { name?: string; description?: string }
+  ): Promise<{
+    project: {
+      id: string;
+      name: string;
+      description: string | null;
+      createdAt: string;
+      updatedAt: string;
+    };
+  }> {
+    return this.apiRequest(`/api/projects/${projectId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteProject(projectId: string): Promise<void> {
+    await this.apiRequest(`/api/projects/${projectId}`, { method: 'DELETE' });
+  }
+
+  async addLocationToProject(projectId: string, locationId: string): Promise<void> {
+    await this.apiRequest(`/api/projects/${projectId}/locations`, {
+      method: 'POST',
+      body: JSON.stringify({ locationId }),
+    });
+  }
+
+  async removeLocationFromProject(projectId: string, locationId: string): Promise<void> {
+    await this.apiRequest(`/api/projects/${projectId}/locations/${locationId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getProjectsForLocation(locationId: string): Promise<{
+    projects: Array<{
+      id: string;
+      name: string;
+      description: string | null;
+      addedAt: string;
+    }>;
+  }> {
+    return this.apiRequest(`/api/projects/for-location/${locationId}`);
+  }
+
+  // ============================================
   // File Upload Operations
   // ============================================
 
@@ -850,7 +1396,8 @@ export class DispatchClient extends EventEmitter {
     // If auth is disabled, just connect directly
     if (this.authDisabled) {
       console.log('[DispatchClient] Auth disabled - connecting without authentication');
-      this.connectSocket();
+      await this.connectSocket();
+      console.log('[DispatchClient] Socket connected, isOnline:', this.isOnline);
       return;
     }
 
@@ -858,7 +1405,8 @@ export class DispatchClient extends EventEmitter {
       // Validate existing token
       const valid = await this.refreshAccessToken();
       if (valid) {
-        this.connectSocket();
+        await this.connectSocket();
+        console.log('[DispatchClient] Socket connected, isOnline:', this.isOnline);
       } else {
         this.emit('auth:required');
       }

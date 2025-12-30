@@ -211,29 +211,30 @@ export function registerDispatchHandlers(): void {
 
   // Create dispatch client with Electron token storage
   // Note: authDisabled will be updated by initializeDispatchClient() after detection
-  const dispatchClient = getDispatchClient({
+  // Note: We use getDispatchClient() dynamically in handlers so they use the latest singleton
+  const initialClient = getDispatchClient({
     dataDir: app.getPath('userData'),
     tokenStorage: new ElectronTokenStorage(),
     authDisabled: hubAuthDisabled,
   });
 
   // Register event handlers (forwarding to renderer windows)
-  registerDispatchEventHandlers(dispatchClient);
+  registerDispatchEventHandlers(initialClient);
 
   // ============================================
   // Authentication Handlers
   // ============================================
 
   ipcMain.handle('dispatch:login', async (_event, username: string, password: string) => {
-    return dispatchClient.login(username, password);
+    return getDispatchClient().login(username, password);
   });
 
   ipcMain.handle('dispatch:logout', async () => {
-    return dispatchClient.logout();
+    return getDispatchClient().logout();
   });
 
   ipcMain.handle('dispatch:isAuthenticated', () => {
-    return dispatchClient.isAuthenticated();
+    return getDispatchClient().isAuthenticated();
   });
 
   // ============================================
@@ -241,21 +242,21 @@ export function registerDispatchHandlers(): void {
   // ============================================
 
   ipcMain.handle('dispatch:submitJob', async (_event, job: JobSubmission) => {
-    return dispatchClient.submitJob(job);
+    return getDispatchClient().submitJob(job);
   });
 
   ipcMain.handle('dispatch:getJob', async (_event, jobId: string) => {
-    return dispatchClient.getJob(jobId);
+    return getDispatchClient().getJob(jobId);
   });
 
   ipcMain.handle('dispatch:cancelJob', async (_event, jobId: string) => {
-    return dispatchClient.cancelJob(jobId);
+    return getDispatchClient().cancelJob(jobId);
   });
 
   ipcMain.handle(
     'dispatch:listJobs',
     async (_event, filter?: { status?: string; limit?: number }) => {
-      return dispatchClient.listJobs(filter);
+      return getDispatchClient().listJobs(filter);
     }
   );
 
@@ -264,7 +265,7 @@ export function registerDispatchHandlers(): void {
   // ============================================
 
   ipcMain.handle('dispatch:listWorkers', async () => {
-    return dispatchClient.listWorkers();
+    return getDispatchClient().listWorkers();
   });
 
   // ============================================
@@ -272,20 +273,20 @@ export function registerDispatchHandlers(): void {
   // ============================================
 
   ipcMain.handle('dispatch:isConnected', () => {
-    return dispatchClient.isConnected();
+    return getDispatchClient().isConnected();
   });
 
   ipcMain.handle('dispatch:checkConnection', async () => {
-    return dispatchClient.checkConnection();
+    return getDispatchClient().checkConnection();
   });
 
   ipcMain.handle('dispatch:getStatus', (): DispatchStatus => {
-    return dispatchClient.getStatus();
+    return getDispatchClient().getStatus();
   });
 
   ipcMain.handle('dispatch:getQueuedJobs', async () => {
     // Return jobs that are pending/queued
-    return dispatchClient.listJobs({ status: 'pending' });
+    return getDispatchClient().listJobs({ status: 'pending' });
   });
 
   // ============================================
@@ -293,11 +294,11 @@ export function registerDispatchHandlers(): void {
   // ============================================
 
   ipcMain.handle('dispatch:setHubUrl', (_event, url: string) => {
-    dispatchClient.setHubUrl(url);
+    getDispatchClient().setHubUrl(url);
   });
 
   ipcMain.handle('dispatch:getHubUrl', () => {
-    return dispatchClient.getHubUrl();
+    return getDispatchClient().getHubUrl();
   });
 
   // ============================================
@@ -305,7 +306,7 @@ export function registerDispatchHandlers(): void {
   // ============================================
 
   ipcMain.handle('dispatch:initialize', async () => {
-    return dispatchClient.initialize();
+    return getDispatchClient().initialize();
   });
 
   console.log('[IPC] Dispatch handlers registered');
