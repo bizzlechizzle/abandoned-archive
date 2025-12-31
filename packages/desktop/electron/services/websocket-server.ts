@@ -8,9 +8,29 @@
  * - Real-time location list updates
  * - Bookmark save confirmations
  * - Connection heartbeat
+ * - Browser command routing (for zero-detection Research Browser)
+ *
+ * Browser Command Protocol:
+ * - Main App sends 'browser:command' messages via browser-command-service
+ * - Extension receives commands, executes them, sends 'browser:response'
+ * - Extension sends 'browser:event' for tab changes, navigation, etc.
  */
 import { WebSocketServer, WebSocket } from 'ws';
+import { BrowserWindow } from 'electron';
 import { getLogger } from './logger-service';
+import {
+  setWebSocketSender,
+  clearWebSocketSender,
+  handleBrowserResponse,
+  handleBrowserEvent,
+  type BrowserResponse,
+  type BrowserEvent,
+} from './browser-command-service';
+import {
+  updateExtensionHeartbeat,
+  updateActiveTab,
+  markExtensionDisconnected,
+} from './detached-browser-service';
 
 const WS_PORT = 47124;
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
@@ -21,9 +41,15 @@ let wss: WebSocketServer | null = null;
 let heartbeatInterval: NodeJS.Timeout | null = null;
 
 /**
- * Set of connected WebSocket clients
+ * Set of connected WebSocket clients (general clients)
  */
 const clients = new Set<WebSocket>();
+
+/**
+ * The extension WebSocket connection (for browser commands)
+ * Only one extension connection is supported at a time
+ */
+let extensionClient: WebSocket | null = null;
 
 /**
  * Start the WebSocket server
@@ -107,6 +133,18 @@ export function stopWebSocketServer(): Promise<void> {
       heartbeatInterval = null;
     }
 
+    // Clear extension client and command service
+    if (extensionClient) {
+      try {
+        extensionClient.close(1000, 'Server shutting down');
+      } catch {
+        // Ignore errors during cleanup
+      }
+      extensionClient = null;
+      clearWebSocketSender();
+      markExtensionDisconnected();
+    }
+
     if (wss) {
       // Close all client connections gracefully
       clients.forEach((client) => {
@@ -146,6 +184,68 @@ function handleClientMessage(
     case 'pong':
       // Client responded to heartbeat - connection is alive
       break;
+
+    // ========================================================================
+    // Extension Registration - Identifies this connection as the browser extension
+    // ========================================================================
+    case 'extension:register':
+      logger.info('WebSocketServer', 'Extension registered for browser commands');
+      extensionClient = ws;
+
+      // Set up sender function for browser-command-service
+      setWebSocketSender((data: string) => {
+        if (extensionClient && extensionClient.readyState === WebSocket.OPEN) {
+          extensionClient.send(data);
+        }
+      });
+
+      // Handle extension disconnect
+      ws.on('close', () => {
+        if (extensionClient === ws) {
+          logger.info('WebSocketServer', 'Extension disconnected');
+          extensionClient = null;
+          clearWebSocketSender();
+          markExtensionDisconnected();
+        }
+      });
+      break;
+
+    // ========================================================================
+    // Extension Heartbeat - Tracks extension liveness
+    // ========================================================================
+    case 'extension:heartbeat':
+      updateExtensionHeartbeat();
+      // Send acknowledgment
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'heartbeat:ack' }));
+      }
+      break;
+
+    // ========================================================================
+    // Browser Command Response - Extension responding to a command
+    // ========================================================================
+    case 'browser:response':
+      handleBrowserResponse(message as unknown as BrowserResponse);
+      break;
+
+    // ========================================================================
+    // Browser Event - Extension reporting browser state changes
+    // ========================================================================
+    case 'browser:event': {
+      const event = message as unknown as BrowserEvent;
+      handleBrowserEvent(event);
+
+      // Also update detached-browser-service with tab info
+      if (event.event.name === 'tabActivated' || event.event.name === 'tabUpdated') {
+        const tabEvent = event.event as { name: string; tabId: number; url: string; title: string };
+        updateActiveTab({
+          tabId: tabEvent.tabId,
+          url: tabEvent.url,
+          title: tabEvent.title,
+        });
+      }
+      break;
+    }
 
     default:
       logger.warn('WebSocketServer', `Unknown message type: ${message.type}`);
@@ -194,7 +294,7 @@ export function notifyLocationsUpdated(): void {
 
 /**
  * Notify all clients that a bookmark was saved
- * Call this after successfully creating a bookmark
+ * @deprecated Use notifyWebSourceSaved instead (OPT-109)
  */
 export function notifyBookmarkSaved(
   bookmarkId: string,
@@ -210,6 +310,40 @@ export function notifyBookmarkSaved(
 }
 
 /**
+ * Notify all clients that a web source was saved
+ * OPT-109: Replaces notifyBookmarkSaved with richer payload
+ */
+export function notifyWebSourceSaved(
+  sourceId: string,
+  locid: string | null,
+  subid: string | null,
+  sourceType: string
+): void {
+  broadcast({
+    type: 'websource_saved',
+    source_id: sourceId,
+    locid,
+    subid,
+    source_type: sourceType,
+  });
+  // Also broadcast legacy event for backward compatibility
+  broadcast({
+    type: 'bookmark_saved',
+    bookmark_id: sourceId,
+    locid,
+    subid,
+  });
+
+  // FIX: Also notify Electron renderer windows via IPC so UI updates
+  const payload = { sourceId, locid, subid, sourceType };
+  BrowserWindow.getAllWindows().forEach((win) => {
+    if (!win.isDestroyed()) {
+      win.webContents.send('websource:saved', payload);
+    }
+  });
+}
+
+/**
  * Check if the WebSocket server is running
  */
 export function isWebSocketServerRunning(): boolean {
@@ -221,4 +355,11 @@ export function isWebSocketServerRunning(): boolean {
  */
 export function getClientCount(): number {
   return clients.size;
+}
+
+/**
+ * Check if the browser extension is connected
+ */
+export function isExtensionClientConnected(): boolean {
+  return extensionClient !== null && extensionClient.readyState === WebSocket.OPEN;
 }

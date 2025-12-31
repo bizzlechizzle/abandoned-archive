@@ -2,14 +2,25 @@
  * Reference Map Matcher Service
  *
  * Matches user-entered location names against imported reference map points
- * using Jaro-Winkler similarity algorithm with smart matching.
+ * using Token Set Ratio + Jaro-Winkler for word-order independent matching.
+ *
+ * Key improvement: Uses Token Set Ratio to match names like:
+ * - "Union Station - Lockport" ↔ "Lockport Union Train Station" (100% match)
+ * - Word order doesn't matter, shared tokens are weighted highly
  *
  * Used during location creation to suggest GPS coordinates from reference data.
  */
 
 import { Kysely } from 'kysely';
 import type { Database } from '../main/database.types';
-import { normalizedSimilarity, isSmartMatch } from './jaro-winkler-service';
+import { normalizeName } from './jaro-winkler-service';
+import {
+  calculateNameMatch,
+  hasBlockingConflict,
+  isGenericName,
+  shouldExcludeFromSuggestions,
+  type NameMatchResult,
+} from './token-set-service';
 import { DUPLICATE_CONFIG } from '../../src/lib/constants';
 
 /**
@@ -25,7 +36,18 @@ export interface RefMapMatch {
   state: string | null;
   category: string | null;
   mapName: string;
+  /** Combined score (max of Jaro-Winkler and Token Set Ratio) */
   score: number;
+  /** Alternate known names for this location (pipe-separated) */
+  akaNames: string | null;
+  /** Tokens shared between query and match name */
+  sharedTokens?: string[];
+  /** Jaro-Winkler score component */
+  jaroWinklerScore?: number;
+  /** Token Set Ratio score component */
+  tokenSetScore?: number;
+  /** Whether this is a generic name (House, Church, etc.) */
+  isGenericName?: boolean;
 }
 
 /**
@@ -81,7 +103,7 @@ export class RefMapMatcherService {
     }
 
     try {
-      // Build query - join with ref_maps to get map name
+      // Build query - join with ref_maps to get map name, include aka_names
       let pointsQuery = this.db
         .selectFrom('ref_map_points')
         .innerJoin('ref_maps', 'ref_maps.map_id', 'ref_map_points.map_id')
@@ -94,13 +116,22 @@ export class RefMapMatcherService {
           'ref_map_points.lng',
           'ref_map_points.state',
           'ref_map_points.category',
+          'ref_map_points.aka_names',
           'ref_maps.map_name',
         ])
         .where('ref_map_points.name', 'is not', null);
 
       // Filter by state if provided (optimization for large datasets)
+      // Match points that either have the same state OR have no state set
+      // Case-insensitive comparison for flexibility
       if (opts.state) {
-        pointsQuery = pointsQuery.where('ref_map_points.state', '=', opts.state);
+        const normalizedState = opts.state.toUpperCase();
+        pointsQuery = pointsQuery.where(eb =>
+          eb.or([
+            eb('ref_map_points.state', '=', normalizedState),
+            eb('ref_map_points.state', 'is', null),
+          ])
+        );
       }
 
       const points = await pointsQuery.execute();
@@ -109,17 +140,41 @@ export class RefMapMatcherService {
         return [];
       }
 
-      // Calculate similarity scores using smart matching with word-overlap boost
+      // Calculate similarity scores using Token Set Ratio + Jaro-Winkler
+      // This enables word-order independent matching:
+      // "Union Station - Lockport" matches "Lockport Union Train Station"
       const matches: RefMapMatch[] = [];
 
       for (const point of points) {
         if (!point.name) continue;
 
-        // Use normalizedSimilarity for scoring (applies alias expansion)
-        const score = normalizedSimilarity(normalizedQuery, point.name);
+        // Skip non-descriptive placeholder names from suggestions
+        // Filters: "House", "Buffalo Church", "House - CNY", "Point 155", etc.
+        if (shouldExcludeFromSuggestions(point.name)) continue;
 
-        // Use isSmartMatch for threshold check (applies word-overlap boost)
-        if (isSmartMatch(normalizedQuery, point.name, opts.threshold)) {
+        // Use Token Set Ratio (includes Jaro-Winkler) for comprehensive matching
+        // This is the key fix: TSR handles word reordering that JW misses
+        const nameMatch = calculateNameMatch(normalizedQuery, point.name);
+
+        // Skip blocked matches (e.g., "North Factory" vs "South Factory")
+        if (nameMatch.blocked) {
+          continue;
+        }
+
+        // Also check against aka_names for additional matches
+        let bestMatch = nameMatch;
+        if (point.aka_names) {
+          const akaList = point.aka_names.split(' | ');
+          for (const aka of akaList) {
+            const akaMatch = calculateNameMatch(normalizedQuery, aka.trim());
+            if (!akaMatch.blocked && akaMatch.score > bestMatch.score) {
+              bestMatch = akaMatch;
+            }
+          }
+        }
+
+        // Check threshold with the best match found
+        if (bestMatch.score >= opts.threshold) {
           matches.push({
             pointId: point.point_id,
             mapId: point.map_id,
@@ -130,7 +185,12 @@ export class RefMapMatcherService {
             state: point.state,
             category: point.category,
             mapName: point.map_name,
-            score,
+            score: bestMatch.score,
+            akaNames: point.aka_names,
+            sharedTokens: bestMatch.sharedTokens,
+            jaroWinklerScore: bestMatch.jaroWinkler,
+            tokenSetScore: bestMatch.tokenSetRatio,
+            isGenericName: isGenericName(point.name),
           });
         }
       }

@@ -21,6 +21,8 @@ interface ImportModalState {
     type?: string;
     // Migration 38: Track ref point ID for deletion after location creation
     refPointId?: string;
+    // Folder paths to auto-import after location creation (from drag-drop on New Location button)
+    pendingImportPaths?: string[];
   };
 }
 
@@ -50,4 +52,30 @@ export function closeImportModal() {
     isOpen: false,
     prefilledData: undefined
   });
+}
+
+/**
+ * Pending location import store
+ * Holds paths that should auto-import when navigating to a newly created location
+ * LocationDetail checks this on mount and triggers import if locid matches
+ */
+interface PendingLocationImport {
+  locid: string;
+  paths: string[];
+}
+
+export const pendingLocationImport = writable<PendingLocationImport | null>(null);
+
+/**
+ * Set pending import to trigger after navigation
+ */
+export function setPendingLocationImport(locid: string, paths: string[]) {
+  pendingLocationImport.set({ locid, paths });
+}
+
+/**
+ * Clear pending import (called by LocationDetail after triggering)
+ */
+export function clearPendingLocationImport() {
+  pendingLocationImport.set(null);
 }

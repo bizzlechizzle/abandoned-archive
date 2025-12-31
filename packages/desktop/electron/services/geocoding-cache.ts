@@ -9,8 +9,9 @@
  * - Reduces API calls to Nominatim
  * - Provides offline geocoding for known locations
  */
-import { Kysely } from 'kysely';
+import { Kysely, sql } from 'kysely';
 import type { Database } from '../main/database.types';
+import { generateId } from '../main/ipc-validation';
 
 export interface GeocodeCacheEntry {
   id: string;
@@ -93,7 +94,7 @@ export class GeocodingCache {
    * Store a geocoding result in the cache
    */
   async store(entry: Omit<GeocodeCacheEntry, 'id' | 'hit_count' | 'created_at' | 'last_used_at'>): Promise<void> {
-    const id = crypto.randomUUID();
+    const id = generateId();
     const now = new Date().toISOString();
 
     try {
@@ -109,7 +110,7 @@ export class GeocodingCache {
         .onConflict((oc) => oc
           .columns(['query_type', 'query_key'] as any)
           .doUpdateSet({
-            hit_count: this.db.raw('hit_count + 1') as any,
+            hit_count: sql`hit_count + 1` as any,
             last_used_at: now,
           } as any)
         )
@@ -201,18 +202,18 @@ export class GeocodingCache {
 
     const hitsResult = await this.db
       .selectFrom('geocode_cache' as any)
-      .select(this.db.fn.sum<number>('hit_count').as('total'))
+      .select(this.db.fn.sum<number>('hit_count' as any).as('total'))
       .executeTakeFirst();
 
     const statesResult = await this.db
       .selectFrom('geocode_cache' as any)
-      .select(this.db.fn.count<number>('state').distinct().as('count'))
+      .select(this.db.fn.count<number>('state' as any).distinct().as('count'))
       .where('state', 'is not', null)
       .executeTakeFirst();
 
     const citiesResult = await this.db
       .selectFrom('geocode_cache' as any)
-      .select(this.db.fn.count<number>('city').distinct().as('count'))
+      .select(this.db.fn.count<number>('city' as any).distinct().as('count'))
       .where('city', 'is not', null)
       .executeTakeFirst();
 

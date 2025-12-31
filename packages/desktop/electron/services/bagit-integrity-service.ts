@@ -11,7 +11,7 @@
  */
 
 import { Kysely } from 'kysely';
-import { BagItService, BagStatus, BagValidationResult, MediaFile, BagLocation } from './bagit-service';
+import { BagItService, BagStatus, BagValidationResult, MediaFile, BagLocation, BagSubLocation } from './bagit-service';
 import type { Database } from '../main/database.types';
 
 const VALIDATION_INTERVAL_DAYS = 7;
@@ -118,10 +118,8 @@ export class BagItIntegrityService {
         .selectFrom('locs')
         .select([
           'locid',
-          'loc12',
           'locnam',
-          'slocnam',
-          'type',
+          'category',
           'access',
           'address_state',
           'address_city',
@@ -159,13 +157,11 @@ export class BagItIntegrityService {
           // Get media files for this location
           const mediaFiles = await this.getMediaFilesForLocation(loc.locid);
 
-          // Convert DB row to BagLocation
+          // ADR-046: Convert DB row to BagLocation (removed loc12/slocnam)
           const bagLocation: BagLocation = {
             locid: loc.locid,
-            loc12: loc.loc12,
             locnam: loc.locnam,
-            slocnam: loc.slocnam,
-            type: loc.type,
+            category: loc.category,
             access: loc.access,
             address_state: loc.address_state,
             address_city: loc.address_city,
@@ -263,10 +259,8 @@ export class BagItIntegrityService {
       .selectFrom('locs')
       .select([
         'locid',
-        'loc12',
         'locnam',
-        'slocnam',
-        'type',
+        'category',
         'access',
         'address_state',
         'address_city',
@@ -293,13 +287,11 @@ export class BagItIntegrityService {
     // Get media files
     const mediaFiles = await this.getMediaFilesForLocation(locid);
 
-    // Convert to BagLocation
+    // ADR-046: Convert to BagLocation (removed loc12/slocnam)
     const bagLocation: BagLocation = {
       locid: loc.locid,
-      loc12: loc.loc12,
       locnam: loc.locnam,
-      slocnam: loc.slocnam,
-      type: loc.type,
+      category: loc.category,
       access: loc.access,
       address_state: loc.address_state,
       address_city: loc.address_city,
@@ -324,6 +316,150 @@ export class BagItIntegrityService {
     await this.updateBagStatus(locid, result);
 
     return result;
+  }
+
+  /**
+   * OPT-093: Validate a single sub-location's BagIt package (full validation)
+   * ADR-046: Removed sub12/loc12/slocnam references
+   */
+  async validateSubLocationBag(subid: string): Promise<BagValidationResult> {
+    // Get sub-location with parent info (ADR-046: removed sub12)
+    const subloc = await this.db
+      .selectFrom('slocs')
+      .select([
+        'subid',
+        'subnam',
+        'ssubname',
+        'category',
+        'status',
+        'gps_lat',
+        'gps_lng',
+        'gps_source',
+        'gps_verified_on_map',
+        'gps_accuracy',
+        'locid',
+        'created_date',
+        'modified_date',
+      ])
+      .where('subid', '=', subid)
+      .executeTakeFirst();
+
+    if (!subloc) {
+      throw new Error(`Sub-location not found: ${subid}`);
+    }
+
+    // Get parent location info for path construction (ADR-046: removed loc12/slocnam)
+    const parentLoc = await this.db
+      .selectFrom('locs')
+      .select(['locid', 'locnam', 'category', 'address_state'])
+      .where('locid', '=', subloc.locid)
+      .executeTakeFirst();
+
+    if (!parentLoc) {
+      throw new Error(`Parent location not found for sub-location: ${subid}`);
+    }
+
+    // Get media files for this sub-location
+    const mediaFiles = await this.getMediaFilesForSubLocation(subid);
+
+    // ADR-046: Convert to BagSubLocation (removed sub12/parentLoc12/parentSlocnam)
+    const bagSubLocation: BagSubLocation = {
+      subid: subloc.subid,
+      subnam: subloc.subnam,
+      ssubname: subloc.ssubname,
+      category: subloc.category,
+      status: subloc.status,
+      gps_lat: subloc.gps_lat,
+      gps_lng: subloc.gps_lng,
+      gps_source: subloc.gps_source,
+      gps_verified_on_map: subloc.gps_verified_on_map,
+      gps_accuracy: subloc.gps_accuracy,
+      created_date: subloc.created_date,
+      modified_date: subloc.modified_date,
+      parentLocid: parentLoc.locid,
+      parentLocnam: parentLoc.locnam,
+      parentCategory: parentLoc.category,
+      parentState: parentLoc.address_state,
+    };
+
+    // Full validation using sub-location specific method
+    const result = await this.bagItService.validateSubLocationBag(bagSubLocation, mediaFiles);
+
+    // Update sub-location bag status
+    await this.updateSubLocationBagStatus(subid, result);
+
+    return result;
+  }
+
+  /**
+   * OPT-093: Update a sub-location's BagIt manifest after import
+   * ADR-046: Removed sub12/loc12/slocnam references
+   */
+  async updateSubLocationManifest(subid: string): Promise<void> {
+    // Get sub-location with parent info (ADR-046: removed sub12)
+    const subloc = await this.db
+      .selectFrom('slocs')
+      .select([
+        'subid',
+        'subnam',
+        'ssubname',
+        'category',
+        'status',
+        'gps_lat',
+        'gps_lng',
+        'gps_source',
+        'gps_verified_on_map',
+        'gps_accuracy',
+        'locid',
+        'created_date',
+        'modified_date',
+      ])
+      .where('subid', '=', subid)
+      .executeTakeFirst();
+
+    if (!subloc) {
+      throw new Error(`Sub-location not found: ${subid}`);
+    }
+
+    // Get parent location info for path construction (ADR-046: removed loc12/slocnam)
+    const parentLoc = await this.db
+      .selectFrom('locs')
+      .select(['locid', 'locnam', 'category', 'address_state'])
+      .where('locid', '=', subloc.locid)
+      .executeTakeFirst();
+
+    if (!parentLoc) {
+      throw new Error(`Parent location not found for sub-location: ${subid}`);
+    }
+
+    // Get media files for this sub-location
+    const mediaFiles = await this.getMediaFilesForSubLocation(subid);
+
+    // ADR-046: Convert to BagSubLocation (removed sub12/parentLoc12/parentSlocnam)
+    const bagSubLocation: BagSubLocation = {
+      subid: subloc.subid,
+      subnam: subloc.subnam,
+      ssubname: subloc.ssubname,
+      category: subloc.category,
+      status: subloc.status,
+      gps_lat: subloc.gps_lat,
+      gps_lng: subloc.gps_lng,
+      gps_source: subloc.gps_source,
+      gps_verified_on_map: subloc.gps_verified_on_map,
+      gps_accuracy: subloc.gps_accuracy,
+      created_date: subloc.created_date,
+      modified_date: subloc.modified_date,
+      parentLocid: parentLoc.locid,
+      parentLocnam: parentLoc.locnam,
+      parentCategory: parentLoc.category,
+      parentState: parentLoc.address_state,
+    };
+
+    // Update manifest
+    await this.bagItService.updateSubLocationManifest(bagSubLocation, mediaFiles);
+
+    // Set bag status to valid after update
+    await this.updateSubLocationBagStatus(subid, { status: 'valid' });
   }
 
   /**
@@ -377,7 +513,7 @@ export class BagItIntegrityService {
     // Get images
     const images = await this.db
       .selectFrom('imgs')
-      .select(['imgsha', 'imgloc'])
+      .select(['imghash', 'imgloc'])
       .where('locid', '=', locid)
       .where('hidden', '=', 0)
       .execute();
@@ -386,7 +522,7 @@ export class BagItIntegrityService {
       try {
         const stats = await import('fs/promises').then((fs) => fs.stat(img.imgloc));
         files.push({
-          hash: img.imgsha,
+          hash: img.imghash,
           path: img.imgloc,
           type: 'image',
           size: stats.size,
@@ -399,7 +535,7 @@ export class BagItIntegrityService {
     // Get videos
     const videos = await this.db
       .selectFrom('vids')
-      .select(['vidsha', 'vidloc'])
+      .select(['vidhash', 'vidloc'])
       .where('locid', '=', locid)
       .where('hidden', '=', 0)
       .execute();
@@ -408,7 +544,7 @@ export class BagItIntegrityService {
       try {
         const stats = await import('fs/promises').then((fs) => fs.stat(vid.vidloc));
         files.push({
-          hash: vid.vidsha,
+          hash: vid.vidhash,
           path: vid.vidloc,
           type: 'video',
           size: stats.size,
@@ -421,7 +557,7 @@ export class BagItIntegrityService {
     // Get documents
     const docs = await this.db
       .selectFrom('docs')
-      .select(['docsha', 'docloc'])
+      .select(['dochash', 'docloc'])
       .where('locid', '=', locid)
       .where('hidden', '=', 0)
       .execute();
@@ -430,7 +566,7 @@ export class BagItIntegrityService {
       try {
         const stats = await import('fs/promises').then((fs) => fs.stat(doc.docloc));
         files.push({
-          hash: doc.docsha,
+          hash: doc.dochash,
           path: doc.docloc,
           type: 'document',
           size: stats.size,
@@ -443,7 +579,7 @@ export class BagItIntegrityService {
     // Get maps
     const maps = await this.db
       .selectFrom('maps')
-      .select(['mapsha', 'maploc'])
+      .select(['maphash', 'maploc'])
       .where('locid', '=', locid)
       .execute();
 
@@ -451,7 +587,7 @@ export class BagItIntegrityService {
       try {
         const stats = await import('fs/promises').then((fs) => fs.stat(map.maploc));
         files.push({
-          hash: map.mapsha,
+          hash: map.maphash,
           path: map.maploc,
           type: 'map',
           size: stats.size,
@@ -477,5 +613,125 @@ export class BagItIntegrityService {
       })
       .where('locid', '=', locid)
       .execute();
+  }
+
+  /**
+   * OPT-093: Get all media files for a sub-location
+   */
+  private async getMediaFilesForSubLocation(subid: string): Promise<MediaFile[]> {
+    const files: MediaFile[] = [];
+
+    // Get images
+    const images = await this.db
+      .selectFrom('imgs')
+      .select(['imghash', 'imgloc'])
+      .where('subid', '=', subid)
+      .where('hidden', '=', 0)
+      .execute();
+
+    for (const img of images) {
+      try {
+        const stats = await import('fs/promises').then((fs) => fs.stat(img.imgloc));
+        files.push({
+          hash: img.imghash,
+          path: img.imgloc,
+          type: 'image',
+          size: stats.size,
+        });
+      } catch {
+        // File doesn't exist, will be caught in validation
+      }
+    }
+
+    // Get videos
+    const videos = await this.db
+      .selectFrom('vids')
+      .select(['vidhash', 'vidloc'])
+      .where('subid', '=', subid)
+      .where('hidden', '=', 0)
+      .execute();
+
+    for (const vid of videos) {
+      try {
+        const stats = await import('fs/promises').then((fs) => fs.stat(vid.vidloc));
+        files.push({
+          hash: vid.vidhash,
+          path: vid.vidloc,
+          type: 'video',
+          size: stats.size,
+        });
+      } catch {
+        // File doesn't exist
+      }
+    }
+
+    // Get documents
+    const docs = await this.db
+      .selectFrom('docs')
+      .select(['dochash', 'docloc'])
+      .where('subid', '=', subid)
+      .where('hidden', '=', 0)
+      .execute();
+
+    for (const doc of docs) {
+      try {
+        const stats = await import('fs/promises').then((fs) => fs.stat(doc.docloc));
+        files.push({
+          hash: doc.dochash,
+          path: doc.docloc,
+          type: 'document',
+          size: stats.size,
+        });
+      } catch {
+        // File doesn't exist
+      }
+    }
+
+    // Get maps
+    const maps = await this.db
+      .selectFrom('maps')
+      .select(['maphash', 'maploc'])
+      .where('subid', '=', subid)
+      .execute();
+
+    for (const map of maps) {
+      try {
+        const stats = await import('fs/promises').then((fs) => fs.stat(map.maploc));
+        files.push({
+          hash: map.maphash,
+          path: map.maploc,
+          type: 'map',
+          size: stats.size,
+        });
+      } catch {
+        // File doesn't exist
+      }
+    }
+
+    return files;
+  }
+
+  /**
+   * OPT-093: Update sub-location bag status in database
+   * Note: slocs table will need bag_status, bag_last_verified, bag_last_error columns
+   * These are added in Migration 56 along with stats columns
+   */
+  private async updateSubLocationBagStatus(subid: string, result: BagValidationResult): Promise<void> {
+    // Note: This requires the slocs table to have bag_* columns
+    // If migration hasn't added them, this will silently fail
+    try {
+      await this.db
+        .updateTable('slocs')
+        .set({
+          bag_status: result.status,
+          bag_last_verified: new Date().toISOString(),
+          bag_last_error: result.error || null,
+        })
+        .where('subid', '=', subid)
+        .execute();
+    } catch (err) {
+      // Columns may not exist yet - log and continue
+      console.log(`[BagIt] Could not update sub-location bag status (columns may not exist): ${err}`);
+    }
   }
 }

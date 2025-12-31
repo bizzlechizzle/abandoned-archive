@@ -1,13 +1,14 @@
 /**
  * Imports IPC Handlers
  * Handles imports:* IPC channels
+ * ADR-046: Updated locid validation from UUID to BLAKE3 16-char hex
  */
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
-import type { Database } from '../database';
+import type { Database } from '../database.types';
 import { SQLiteImportRepository } from '../../repositories/sqlite-import-repository';
-import { validate, LimitSchema } from '../ipc-validation';
+import { validate, LimitSchema, Blake3IdSchema } from '../ipc-validation';
 
 export function registerImportsHandlers(db: Kysely<Database>) {
   const importRepo = new SQLiteImportRepository(db);
@@ -15,7 +16,7 @@ export function registerImportsHandlers(db: Kysely<Database>) {
   ipcMain.handle('imports:create', async (_event, input: unknown) => {
     try {
       const ImportInputSchema = z.object({
-        locid: z.string().uuid().nullable(),
+        locid: Blake3IdSchema.nullable(),
         auth_imp: z.string().nullable(),
         img_count: z.number().int().min(0).optional(),
         vid_count: z.number().int().min(0).optional(),
@@ -31,7 +32,8 @@ export function registerImportsHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -41,20 +43,22 @@ export function registerImportsHandlers(db: Kysely<Database>) {
       return await importRepo.findRecent(validatedLimit);
     } catch (error) {
       console.error('Error finding recent imports:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
   ipcMain.handle('imports:findByLocation', async (_event, locid: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(locid);
+      const validatedId = Blake3IdSchema.parse(locid);
       return await importRepo.findByLocation(validatedId);
     } catch (error) {
       console.error('Error finding imports by location:', error);
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -63,7 +67,8 @@ export function registerImportsHandlers(db: Kysely<Database>) {
       return await importRepo.findAll();
     } catch (error) {
       console.error('Error finding all imports:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -72,7 +77,8 @@ export function registerImportsHandlers(db: Kysely<Database>) {
       return await importRepo.getTotalMediaCount();
     } catch (error) {
       console.error('Error getting total media count:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 

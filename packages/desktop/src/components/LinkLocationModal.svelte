@@ -3,7 +3,7 @@
    * LinkLocationModal - Modal for linking a reference point to an existing location.
    * Used from the Atlas page when clicking the Link button on a reference pin popup.
    */
-  import type { Location } from '@au-archive/core';
+  import type { Location } from '@aa/core';
 
   interface Props {
     pointName: string;
@@ -70,25 +70,25 @@
 >
   <!-- Modal content -->
   <div
-    class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4"
+    class="bg-white rounded border border-braun-300 w-full max-w-md mx-4"
     onclick={(e) => e.stopPropagation()}
   >
     <!-- Header -->
-    <div class="p-4 border-b border-gray-200">
+    <div class="p-4 border-b border-braun-200">
       <h3 id="link-modal-title" class="text-lg font-semibold text-foreground">Link to Location</h3>
-      <p class="text-sm text-gray-500 mt-1">
+      <p class="text-sm text-braun-500 mt-1">
         Link "<span class="font-medium">{pointName}</span>" to an existing location
       </p>
     </div>
 
     <!-- Search input -->
-    <div class="p-4 border-b border-gray-100">
+    <div class="p-4 border-b border-braun-100">
       <input
         type="text"
         bind:value={searchQuery}
         oninput={handleInput}
         placeholder="Search locations by name, type, city, or state..."
-        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-accent focus:border-accent focus:outline-none text-sm"
+        class="w-full px-3 py-2 border border-braun-300 rounded focus:border-braun-600 focus:outline-none text-sm"
         autofocus
       />
     </div>
@@ -96,25 +96,25 @@
     <!-- Results list -->
     <div class="max-h-64 overflow-y-auto">
       {#if loading}
-        <div class="p-4 text-gray-500 text-center text-sm">
+        <div class="p-4 text-braun-500 text-center text-sm">
           Searching...
         </div>
       {:else if locations.length === 0 && searchQuery.trim()}
-        <div class="p-4 text-gray-500 text-center text-sm">
+        <div class="p-4 text-braun-500 text-center text-sm">
           No locations found
         </div>
       {:else if locations.length === 0}
-        <div class="p-4 text-gray-400 text-center text-sm">
+        <div class="p-4 text-braun-400 text-center text-sm">
           Type to search for locations
         </div>
       {:else}
         {#each locations as loc}
           <button
             onclick={() => selectLocation(loc.locid)}
-            class="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-b-0 transition-colors"
+            class="w-full text-left px-4 py-3 hover:bg-braun-50 border-b border-braun-100 last:border-b-0 transition-colors"
           >
             <div class="font-medium text-foreground">{loc.locnam}</div>
-            <div class="text-sm text-gray-500 mt-0.5">
+            <div class="text-sm text-braun-500 mt-0.5">
               {loc.type || 'Unknown type'}
               {#if loc.address?.city || loc.address?.state}
                 <span class="mx-1">-</span>
@@ -127,10 +127,10 @@
     </div>
 
     <!-- Footer -->
-    <div class="p-4 border-t border-gray-200 flex justify-end">
+    <div class="p-4 border-t border-braun-200 flex justify-end">
       <button
         onclick={onClose}
-        class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-sm"
+        class="px-4 py-2 text-braun-600 hover:bg-braun-100 rounded transition-colors text-sm"
       >
         Cancel
       </button>

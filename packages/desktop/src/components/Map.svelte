@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import type { Map as LeafletMap, TileLayer, LayerGroup, DivIcon } from 'leaflet';
-  import type { Location } from '@au-archive/core';
+  import type { Location } from '@aa/core';
   import Supercluster from 'supercluster';
   import { MAP_CONFIG, TILE_LAYERS, THEME, GPS_CONFIG } from '@/lib/constants';
 
@@ -171,19 +171,20 @@
   }
 
   // OPT-043: Single icon instance for all location pins (major perf improvement)
-  // All pins use accent color #b9975c, so we create ONE icon and reuse it
+  // Braun design: All pins use neutral black #1C1C1A (braun-900)
   // This eliminates ~11 icon object creations per render for 11 locations
   let singlePinIcon: any = null;
 
   /**
    * OPT-043: Get or create the single pin icon instance
-   * Reuses the same icon for all location markers (since they all use accent color)
+   * Reuses the same icon for all location markers
+   * Braun design: Uses neutral braun-900 instead of decorative accent color
    */
   function getPinIcon(L: any): any {
     if (singlePinIcon) return singlePinIcon;
-    const accentColor = '#b9975c';
+    const pinColor = '#1C1C1A'; // braun-900 - neutral black
     singlePinIcon = L.divIcon({
-      html: `<div class="confidence-marker" style="background-color: ${accentColor};"></div>`,
+      html: `<div class="confidence-marker" style="background-color: ${pinColor};"></div>`,
       className: 'confidence-icon',
       iconSize: [16, 16],
       iconAnchor: [8, 8],
@@ -192,8 +193,8 @@
   }
 
   /**
-   * Create a colored circle marker icon using accent color
-   * Per v010steps.md P3a: All pins use brand accent color #b9975c
+   * Create a colored circle marker icon using neutral color
+   * Braun design: All pins use neutral braun-900 #1C1C1A
    * @deprecated Use getPinIcon() for better performance
    */
   function createConfidenceIcon(L: any, confidence: keyof typeof THEME.GPS_CONFIDENCE_COLORS): any {
@@ -232,7 +233,7 @@
   interface MapLocation {
     locid: string;
     locnam: string;
-    type?: string;
+    category?: string;
     gps_lat: number;
     gps_lng: number;
     gps_accuracy?: number;
@@ -901,13 +902,13 @@
           const state = getState(location);
 
           const verifyButtonHtml = popupMode === 'full' && onLocationVerify && !isVerified
-            ? `<button data-verify-location-id="${location.locid}" class="verify-location-btn" style="margin-top: 4px; padding: 6px 12px; background: #286736; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">Verify Location</button>`
+            ? `<button data-verify-location-id="${location.locid}" class="verify-location-btn" style="margin-top: 4px; padding: 6px 12px; background: #4A8C5E; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">Verify Location</button>`
             : popupMode === 'full' && isVerified
-              ? `<div style="margin-top: 4px; padding: 6px 12px; background: #39934D; color: #FFFBF7; border-radius: 4px; font-size: 11px; text-align: center;">Location Verified</div>`
+              ? `<div style="margin-top: 4px; padding: 6px 12px; background: #4A8C5E; color: white; border-radius: 4px; font-size: 11px; text-align: center;">Location Verified</div>`
               : '';
 
-          const typeHtml = popupMode === 'full'
-            ? `<span style="color: #666; font-size: 12px;">${escapeHtml(location.type) || 'Unknown Type'}</span><br/>`
+          const categoryHtml = popupMode === 'full'
+            ? `<span style="color: #666; font-size: 12px;">${escapeHtml(location.category) || 'Unknown Category'}</span><br/>`
             : '';
           const addressHtml = popupMode === 'full'
             ? `<span style="color: #888; font-size: 11px;">${city ? `${escapeHtml(city)}, ` : ''}${escapeHtml(state) || ''}</span><br/>`
@@ -916,7 +917,7 @@
           const popupContent = `
             <div class="location-popup" style="min-width: 180px;">
               <strong style="font-size: 14px;">${escapeHtml(location.locnam)}</strong><br/>
-              ${typeHtml}${addressHtml}<button data-location-id="${location.locid}" class="view-details-btn" style="margin-top: 8px; padding: 6px 12px; background: #b9975c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">View Details</button>
+              ${categoryHtml}${addressHtml}<button data-location-id="${location.locid}" class="view-details-btn" style="margin-top: 8px; padding: 6px 12px; background: #1C1C1A; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">View Details</button>
               ${verifyButtonHtml}
             </div>
           `;
@@ -968,11 +969,11 @@
     // Campus markers (synchronous - usually few)
     if (campusMarkersLayer && campusSubLocations.length > 0) {
       campusMarkersLayer.clearLayers();
-      const accentColor = '#b9975c';
+      const pinColor = '#1C1C1A'; // braun-900 - neutral black
 
       campusSubLocations.forEach((subloc) => {
         const icon = L.divIcon({
-          html: `<div class="confidence-marker" style="background-color: ${accentColor};"></div>`,
+          html: `<div class="confidence-marker" style="background-color: ${pinColor};"></div>`,
           className: 'confidence-icon',
           iconSize: [16, 16],
           iconAnchor: [8, 8],
@@ -1022,13 +1023,13 @@
       const state = getState(loc);
 
       const verifyButtonHtml = popupMode === 'full' && onLocationVerify && !isVerified
-        ? `<button data-verify-location-id="${loc.locid}" class="verify-location-btn" style="margin-top: 4px; padding: 6px 12px; background: #286736; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">Verify Location</button>`
+        ? `<button data-verify-location-id="${loc.locid}" class="verify-location-btn" style="margin-top: 4px; padding: 6px 12px; background: #4A8C5E; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">Verify Location</button>`
         : popupMode === 'full' && isVerified
-          ? `<div style="margin-top: 4px; padding: 6px 12px; background: #39934D; color: #FFFBF7; border-radius: 4px; font-size: 11px; text-align: center;">Location Verified</div>`
+          ? `<div style="margin-top: 4px; padding: 6px 12px; background: #4A8C5E; color: white; border-radius: 4px; font-size: 11px; text-align: center;">Location Verified</div>`
           : '';
 
-      const typeHtml = popupMode === 'full'
-        ? `<span style="color: #666; font-size: 12px;">${escapeHtml(loc.type) || 'Unknown Type'}</span><br/>`
+      const categoryHtml = popupMode === 'full'
+        ? `<span style="color: #666; font-size: 12px;">${escapeHtml(loc.category) || 'Unknown Category'}</span><br/>`
         : '';
       const addressHtml = popupMode === 'full'
         ? `<span style="color: #888; font-size: 11px;">${city ? `${escapeHtml(city)}, ` : ''}${escapeHtml(state) || ''}</span><br/>`
@@ -1037,7 +1038,7 @@
       const popupContent = `
         <div class="location-popup" style="min-width: 180px;">
           <strong style="font-size: 14px;">${escapeHtml(loc.locnam)}</strong><br/>
-          ${typeHtml}${addressHtml}<button data-location-id="${loc.locid}" class="view-details-btn" style="margin-top: 8px; padding: 6px 12px; background: #b9975c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">View Details</button>
+          ${categoryHtml}${addressHtml}<button data-location-id="${loc.locid}" class="view-details-btn" style="margin-top: 8px; padding: 6px 12px; background: #1C1C1A; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">View Details</button>
           ${verifyButtonHtml}
         </div>
       `;
@@ -1187,19 +1188,19 @@
           ? `<button
               data-verify-location-id="${location.locid}"
               class="verify-location-btn"
-              style="margin-top: 4px; padding: 6px 12px; background: #286736; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;"
+              style="margin-top: 4px; padding: 6px 12px; background: #4A8C5E; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;"
             >
               Verify Location
             </button>`
           : popupMode === 'full' && isVerified
-            ? `<div style="margin-top: 4px; padding: 6px 12px; background: #39934D; color: #FFFBF7; border-radius: 4px; font-size: 11px; text-align: center;">
+            ? `<div style="margin-top: 4px; padding: 6px 12px; background: #4A8C5E; color: white; border-radius: 4px; font-size: 11px; text-align: center;">
                 Location Verified
               </div>`
             : '';
 
         // Build popup content based on popupMode
-        const typeHtml = popupMode === 'full'
-          ? `<span style="color: #666; font-size: 12px;">${escapeHtml(location.type) || 'Unknown Type'}</span><br/>`
+        const categoryHtml = popupMode === 'full'
+          ? `<span style="color: #666; font-size: 12px;">${escapeHtml(location.category) || 'Unknown Category'}</span><br/>`
           : '';
         const addressHtml = popupMode === 'full'
           ? `<span style="color: #888; font-size: 11px;">${city ? `${escapeHtml(city)}, ` : ''}${escapeHtml(state) || ''}</span><br/>`
@@ -1208,10 +1209,10 @@
         const popupContent = `
           <div class="location-popup" style="min-width: 180px;">
             <strong style="font-size: 14px;">${escapeHtml(location.locnam)}</strong><br/>
-            ${typeHtml}${addressHtml}<button
+            ${categoryHtml}${addressHtml}<button
               data-location-id="${location.locid}"
               class="view-details-btn"
-              style="margin-top: 8px; padding: 6px 12px; background: #b9975c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;"
+              style="margin-top: 8px; padding: 6px 12px; background: #1C1C1A; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;"
             >
               View Details
             </button>
@@ -1270,11 +1271,11 @@
     // Campus map: Add sub-location markers
     if (campusMarkersLayer && campusSubLocations.length > 0) {
       campusMarkersLayer.clearLayers();
-      const accentColor = '#b9975c';
+      const pinColor = '#1C1C1A'; // braun-900 - neutral black
 
       campusSubLocations.forEach((subloc) => {
         const icon = L.divIcon({
-          html: `<div class="confidence-marker" style="background-color: ${accentColor};"></div>`,
+          html: `<div class="confidence-marker" style="background-color: ${pinColor};"></div>`,
           className: 'confidence-icon',
           iconSize: [16, 16],
           iconAnchor: [8, 8],
@@ -1412,11 +1413,12 @@
       }
 
       // OPT-041: Cache the reference map icon - all ref points share the same icon
+      // OPT-102: Smaller size (10px vs 16px) differentiates from location pins per Braun principles
       const refIcon = getCachedIcon(L.default, 'ref-map-icon', () => L.default.divIcon({
         html: `<div class="ref-map-marker"></div>`,
         className: 'ref-map-icon',
-        iconSize: [12, 12],
-        iconAnchor: [6, 6],
+        iconSize: [10, 10],
+        iconAnchor: [5, 5],
       }));
 
       // Create markers for each reference point
@@ -1509,7 +1511,7 @@
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    background-color: var(--color-accent, #b9975c);
+    background-color: var(--color-braun-900, #1C1C1A);
     color: white;
     display: flex;
     align-items: center;
@@ -1517,7 +1519,6 @@
     font-weight: bold;
     font-size: 14px;
     border: 3px solid rgba(255, 255, 255, 0.8);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   }
 
   :global(.confidence-icon) {
@@ -1530,7 +1531,6 @@
     height: 16px;
     border-radius: 50%;
     border: 2px solid white;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   }
 
   :global(.ref-map-icon) {
@@ -1539,17 +1539,16 @@
   }
 
   :global(.ref-map-marker) {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
-    background-color: #49696E; /* Blue Slate - reference points ONLY blue in app */
+    background-color: #1C1C1A; /* braun-900 - neutral black, smaller than location pins */
     border: 2px solid white;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   }
 
   :global(.create-from-ref-btn) {
     padding: 4px 8px;
-    background: #b9975c;
+    background: #1C1C1A;
     color: white;
     border: none;
     border-radius: 4px;
@@ -1559,13 +1558,13 @@
   }
 
   :global(.create-from-ref-btn:hover) {
-    background: #725A31; /* Olive Bark - gold dark variant */
+    background: #5C5C58; /* braun-600 */
   }
 
   :global(.link-ref-btn) {
     padding: 4px 6px;
-    background: #e5e5e5;
-    color: #666;
+    background: #EEEEED;
+    color: #5C5C58;
     border: none;
     border-radius: 4px;
     cursor: pointer;
@@ -1575,14 +1574,14 @@
   }
 
   :global(.link-ref-btn:hover) {
-    background: #3b82f6; /* Blue for link action */
+    background: #1C1C1A;
     color: white;
   }
 
   :global(.delete-ref-btn) {
     padding: 4px 6px;
-    background: #e5e5e5;
-    color: #666;
+    background: #EEEEED;
+    color: #5C5C58;
     border: none;
     border-radius: 4px;
     cursor: pointer;

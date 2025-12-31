@@ -1,0 +1,42 @@
+{
+  "name": "@aa/cli",
+  "version": "0.1.0",
+  "description": "CLI for Abandoned Archive",
+  "type": "module",
+  "main": "./dist/cli.js",
+  "types": "./dist/cli.d.ts",
+  "bin": {
+    "aa": "./bin/aa.js"
+  },
+  "scripts": {
+    "build": "tsc && node build.mjs",
+    "dev": "tsc --watch",
+    "start": "node dist/cli.bundle.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@aa/core": "workspace:*",
+    "@aa/services": "workspace:*",
+    "better-sqlite3": "^11.0.0",
+    "chalk": "^5.3.0",
+    "cli-table3": "^0.6.5",
+    "commander": "^12.0.0",
+    "cosmiconfig": "^9.0.0",
+    "ora": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.8",
+    "@types/node": "^20.10.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.0.0"
+  },
+  "files": [
+    "dist",
+    "bin"
+  ]
+}

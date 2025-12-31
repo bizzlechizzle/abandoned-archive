@@ -1,9 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { SQLiteMediaRepository } from '../../repositories/sqlite-media-repository';
 import { SQLiteLocationRepository } from '../../repositories/sqlite-location-repository';
-import { createTestDatabase, createTestImage } from './helpers/test-database';
+import { createTestDatabase, createTestImage, createLocationInput } from './helpers/test-database';
 import type { Kysely } from 'kysely';
-import type { Database } from '../../main/database.types';
+import type { Database, ImgsTable } from '../../main/database.types';
+
+// Helper to cast test image to the expected type
+type CreateImageInput = Omit<ImgsTable, 'imgadd'>;
+const asCreateImageInput = (data: ReturnType<typeof createTestImage>) => data as unknown as CreateImageInput;
 
 describe('SQLiteMediaRepository Integration', () => {
   let db: Kysely<Database>;
@@ -20,7 +24,7 @@ describe('SQLiteMediaRepository Integration', () => {
     locationRepo = new SQLiteLocationRepository(db);
 
     // Create a test location for media to reference
-    const location = await locationRepo.create({ locnam: 'Test Location' });
+    const location = await locationRepo.create(createLocationInput({ locnam: 'Test Location' }));
     testLocationId = location.locid;
   });
 
@@ -28,18 +32,11 @@ describe('SQLiteMediaRepository Integration', () => {
     cleanup();
   });
 
-  describe('insertImage', () => {
-    it('should insert an image', async () => {
-      const imageData = {
-        imgsha: 'a'.repeat(64),
-        imgnam: 'test.jpg',
-        imgnamo: 'original.jpg',
-        imgloc: '/archive/images/test.jpg',
-        imgloco: '/original/test.jpg',
-        locid: testLocationId,
-      };
+  describe('createImage', () => {
+    it('should create an image', async () => {
+      const imageData = asCreateImageInput(createTestImage(testLocationId, { imgnam: 'test.jpg' }));
 
-      await mediaRepo.insertImage(imageData);
+      await mediaRepo.createImage(imageData);
 
       const images = await mediaRepo.findImagesByLocation(testLocationId);
       expect(images).toHaveLength(1);
@@ -47,30 +44,22 @@ describe('SQLiteMediaRepository Integration', () => {
     });
 
     it('should handle duplicate hash (same file)', async () => {
-      const hash = 'b'.repeat(64);
-      const imageData = {
-        imgsha: hash,
-        imgnam: 'test.jpg',
-        imgnamo: 'original.jpg',
-        imgloc: '/archive/images/test.jpg',
-        imgloco: '/original/test.jpg',
-        locid: testLocationId,
-      };
+      const imageData = asCreateImageInput(createTestImage(testLocationId));
 
-      await mediaRepo.insertImage(imageData);
+      await mediaRepo.createImage(imageData);
 
       // Try to insert same hash again - should fail due to PRIMARY KEY
-      await expect(mediaRepo.insertImage(imageData)).rejects.toThrow();
+      await expect(mediaRepo.createImage(imageData)).rejects.toThrow();
     });
   });
 
   describe('findImagesByLocation', () => {
     it('should find all images for a location', async () => {
-      const image1 = createTestImage(testLocationId, { imgnam: 'image1.jpg' });
-      const image2 = createTestImage(testLocationId, { imgnam: 'image2.jpg' });
+      const image1 = asCreateImageInput(createTestImage(testLocationId, { imgnam: 'image1.jpg' }));
+      const image2 = asCreateImageInput(createTestImage(testLocationId, { imgnam: 'image2.jpg' }));
 
-      await mediaRepo.insertImage(image1);
-      await mediaRepo.insertImage(image2);
+      await mediaRepo.createImage(image1);
+      await mediaRepo.createImage(image2);
 
       const images = await mediaRepo.findImagesByLocation(testLocationId);
       expect(images).toHaveLength(2);
@@ -84,8 +73,8 @@ describe('SQLiteMediaRepository Integration', () => {
 
   describe('findAllMediaByLocation', () => {
     it('should find all media types for a location', async () => {
-      const image = createTestImage(testLocationId);
-      await mediaRepo.insertImage(image);
+      const image = asCreateImageInput(createTestImage(testLocationId));
+      await mediaRepo.createImage(image);
 
       const media = await mediaRepo.findAllMediaByLocation(testLocationId);
       expect(media.images).toHaveLength(1);
@@ -94,34 +83,36 @@ describe('SQLiteMediaRepository Integration', () => {
     });
   });
 
-  describe('checkDuplicate', () => {
-    it('should detect duplicate image', async () => {
-      const hash = 'c'.repeat(64);
-      const image = createTestImage(testLocationId, { imgsha: hash });
-      await mediaRepo.insertImage(image);
+  describe('findImageByHash', () => {
+    it('should find existing image by hash', async () => {
+      const image = asCreateImageInput(createTestImage(testLocationId));
+      await mediaRepo.createImage(image);
 
-      const isDuplicate = await mediaRepo.checkDuplicate(hash, 'image');
-      expect(isDuplicate).toBe(true);
+      const found = await mediaRepo.findImageByHash(image.imghash);
+      expect(found).toBeDefined();
+      expect(found.imghash).toBe(image.imghash);
     });
 
-    it('should return false for non-existent image', async () => {
-      const hash = 'd'.repeat(64);
-      const isDuplicate = await mediaRepo.checkDuplicate(hash, 'image');
-      expect(isDuplicate).toBe(false);
+    it('should throw for non-existent hash', async () => {
+      // ADR-046: Use 16-char BLAKE3 hex format
+      const fakeHash = 'aaaaaaaaaaaaaaaa';
+      // findImageByHash throws via executeTakeFirstOrThrow
+      await expect(mediaRepo.findImageByHash(fakeHash)).rejects.toThrow();
     });
   });
 
   describe('foreign key constraints', () => {
     it('should prevent inserting image with non-existent location', async () => {
-      const fakeLocationId = crypto.randomUUID();
-      const image = createTestImage(fakeLocationId);
+      // ADR-049: Use 16-char hex ID format
+      const fakeLocationId = Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+      const image = asCreateImageInput(createTestImage(fakeLocationId));
 
-      await expect(mediaRepo.insertImage(image)).rejects.toThrow();
+      await expect(mediaRepo.createImage(image)).rejects.toThrow();
     });
 
     it('should cascade delete images when location is deleted', async () => {
-      const image = createTestImage(testLocationId);
-      await mediaRepo.insertImage(image);
+      const image = asCreateImageInput(createTestImage(testLocationId));
+      await mediaRepo.createImage(image);
 
       // Delete the location
       await locationRepo.delete(testLocationId);

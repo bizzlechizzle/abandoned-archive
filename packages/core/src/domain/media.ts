@@ -1,15 +1,28 @@
 import { z } from 'zod';
 
+/**
+ * BLAKE3 hash validation: exactly 16 lowercase hex characters
+ * ADR-046: Used for media hashes (imghash, vidhash, etc.)
+ */
+const HashSchema = z.string().length(16).regex(/^[a-f0-9]+$/, 'Must be 16 lowercase hex characters');
+
+/**
+ * BLAKE3 ID validation: exactly 16 lowercase hex characters
+ * ADR-046: Used for location and sublocation IDs
+ */
+const Blake3IdSchema = z.string().length(16).regex(/^[a-f0-9]+$/, 'Must be 16 lowercase hex characters');
+
 // Base Media Schema
+// ADR-046: locid/subid use BLAKE3 16-char hex IDs
 const BaseMediaSchema = z.object({
-  locid: z.string().uuid().optional(),
-  subid: z.string().uuid().optional(),
+  locid: Blake3IdSchema.optional(),
+  subid: Blake3IdSchema.optional(),
   auth_imp: z.string().optional()
 });
 
 // Image Schema
 export const ImageSchema = BaseMediaSchema.extend({
-  imgsha: z.string(),
+  imghash: HashSchema,
   imgnam: z.string(),
   imgnamo: z.string(),
   imgloc: z.string(),
@@ -29,7 +42,7 @@ export type Image = z.infer<typeof ImageSchema>;
 
 // Video Schema
 export const VideoSchema = BaseMediaSchema.extend({
-  vidsha: z.string(),
+  vidhash: HashSchema,
   vidnam: z.string(),
   vidnamo: z.string(),
   vidloc: z.string(),
@@ -49,7 +62,7 @@ export type Video = z.infer<typeof VideoSchema>;
 
 // Document Schema
 export const DocumentSchema = BaseMediaSchema.extend({
-  docsha: z.string(),
+  dochash: HashSchema,
   docnam: z.string(),
   docnamo: z.string(),
   docloc: z.string(),
@@ -65,7 +78,7 @@ export type Document = z.infer<typeof DocumentSchema>;
 
 // Map Schema
 export const MapSchema = BaseMediaSchema.extend({
-  mapsha: z.string(),
+  maphash: HashSchema,
   mapnam: z.string(),
   mapnamo: z.string(),
   maploc: z.string(),

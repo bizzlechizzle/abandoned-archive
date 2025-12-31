@@ -5,23 +5,27 @@
  * Migration 25 - Phase 3: Author attribution via location_authors table
  * Migration 38: Duplicate detection for pin-to-location conversion
  * OPT-031: Uses shared user service for getCurrentUser
+ * ADR-046: Updated validation from UUID to BLAKE3 16-char hex for locid
  */
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
-import type { Database } from '../database';
+import { Blake3IdSchema } from '../ipc-validation';
+import type { Database } from '../database.types';
 import { SQLiteLocationRepository } from '../../repositories/sqlite-location-repository';
 import { SQLiteLocationAuthorsRepository } from '../../repositories/sqlite-location-authors-repository';
 import { SQLiteLocationViewsRepository } from '../../repositories/sqlite-location-views-repository';
 import { SQLiteLocationExclusionsRepository } from '../../repositories/sqlite-location-exclusions-repository';
-import { LocationInputSchema } from '@au-archive/core';
-import type { LocationFilters } from '@au-archive/core';
+import { LocationInputSchema } from '@aa/core';
+import type { LocationFilters } from '@aa/core';
 import { AddressService, type NormalizedAddress } from '../../services/address-service';
 import { LocationDuplicateService } from '../../services/location-duplicate-service';
 // OPT-031: Use shared user service
 import { getCurrentUser } from '../../services/user-service';
 // BagIt: Initialize bag on location creation, update bag-info on metadata changes
 import { getBagItService } from './bagit';
+// Timeline: Initialize timeline events on location creation
+import { getTimelineService } from './timeline';
 
 export function registerLocationHandlers(db: Kysely<Database>) {
   const locationRepo = new SQLiteLocationRepository(db);
@@ -38,20 +42,23 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.findAll(filters);
     } catch (error) {
       console.error('Error finding locations:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
   ipcMain.handle('location:findById', async (_event, id: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(id);
-      return await locationRepo.findById(validatedId);
+      const validatedId = Blake3IdSchema.parse(id);
+      const location = await locationRepo.findById(validatedId);
+      return location;
     } catch (error) {
       console.error('Error finding location:', error);
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -79,16 +86,15 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       }
 
       // BagIt: Initialize bag for new location (non-blocking)
+      // ADR-046: Initialize BagIt bag (removed loc12/slocnam)
       if (location) {
         try {
           const bagItService = getBagItService();
           if (bagItService) {
             await bagItService.initializeBag({
               locid: location.locid,
-              loc12: location.loc12,
               locnam: location.locnam,
-              slocnam: location.slocnam || '',
-              type: location.type || null,
+              category: location.category || null,
               access: null,
               address_state: location.address?.state || null,
               address_city: location.address?.city || null,
@@ -113,19 +119,35 @@ export function registerLocationHandlers(db: Kysely<Database>) {
         } catch (e) { console.warn('[Location IPC] Failed to initialize BagIt bag (non-fatal):', e); }
       }
 
+      // Timeline: Initialize timeline events for new location (non-blocking)
+      if (location) {
+        try {
+          const timelineService = getTimelineService();
+          if (timelineService) {
+            await timelineService.initializeLocationTimeline(
+              location.locid,
+              location.locadd || null,
+              currentUser?.userId
+            );
+            console.log(`[Timeline] Initialized timeline for new location: ${location.locnam}`);
+          }
+        } catch (e) { console.warn('[Location IPC] Failed to initialize timeline (non-fatal):', e); }
+      }
+
       return location;
     } catch (error) {
       console.error('Error creating location:', error);
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
   ipcMain.handle('location:update', async (_event, id: unknown, input: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(id);
+      const validatedId = Blake3IdSchema.parse(id);
       const validatedInput = LocationInputSchema.partial().parse(input);
 
       // Migration 25: Inject current user context for modification tracking
@@ -149,13 +171,12 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (location) {
         try {
           const bagItService = getBagItService();
+          // ADR-046: Update BagIt info (removed loc12/slocnam)
           if (bagItService) {
             await bagItService.updateBagInfo({
               locid: location.locid,
-              loc12: location.loc12,
               locnam: location.locnam,
-              slocnam: location.slocnam || '',
-              type: location.type || null,
+              category: location.category || null,
               access: null,
               address_state: location.address?.state || null,
               address_city: location.address?.city || null,
@@ -186,20 +207,22 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
   ipcMain.handle('location:delete', async (_event, id: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(id);
+      const validatedId = Blake3IdSchema.parse(id);
       await locationRepo.delete(validatedId);
     } catch (error) {
       console.error('Error deleting location:', error);
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -208,7 +231,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.count(filters);
     } catch (error) {
       console.error('Error counting locations:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -231,7 +255,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -277,7 +302,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -296,7 +322,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.countInBounds(validatedBounds);
     } catch (error) {
       console.error('Error counting locations in bounds:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -314,7 +341,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.findNearby(lat, lng, radiusKm);
     } catch (error) {
       console.error('Error finding nearby locations:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -336,7 +364,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.findById(result.locid);
     } catch (error) {
       console.error('Error getting random location:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -345,7 +374,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.findAll({ documented: false });
     } catch (error) {
       console.error('Error getting undocumented locations:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -354,7 +384,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.findAll({ historic: true });
     } catch (error) {
       console.error('Error getting historical locations:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -363,13 +394,14 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.findAll({ favorite: true });
     } catch (error) {
       console.error('Error getting favorite locations:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
   ipcMain.handle('location:toggleFavorite', async (_event, id: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(id);
+      const validatedId = Blake3IdSchema.parse(id);
       const location = await locationRepo.findById(validatedId);
       if (!location) {
         throw new Error('Location not found');
@@ -393,7 +425,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -447,7 +480,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -464,7 +498,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return result;
     } catch (error) {
       console.error('Error backfilling regions:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -474,7 +509,7 @@ export function registerLocationHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('location:updateRegionData', async (_event, id: unknown, regionData: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(id);
+      const validatedId = Blake3IdSchema.parse(id);
 
       // Validate region data
       const RegionDataSchema = z.object({
@@ -512,26 +547,28 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
-  // Get distinct types for autocomplete
-  ipcMain.handle('location:getDistinctTypes', async () => {
+  // Get distinct categories for autocomplete
+  ipcMain.handle('location:getDistinctCategories', async () => {
     try {
-      const types = await db
+      const categories = await db
         .selectFrom('locs')
-        .select('type')
+        .select('category')
         .distinct()
-        .where('type', 'is not', null)
-        .where('type', '!=', '')
-        .orderBy('type')
+        .where('category', 'is not', null)
+        .where('category', '!=', '')
+        .orderBy('category')
         .execute();
 
-      return types.map(r => r.type).filter(Boolean) as string[];
+      return categories.map(r => r.category).filter(Boolean) as string[];
     } catch (error) {
-      console.error('Error getting distinct types:', error);
-      throw error;
+      console.error('Error getting distinct categories:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -545,26 +582,28 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.getFilterOptions();
     } catch (error) {
       console.error('Error getting filter options:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
-  // Get distinct sub-types for autocomplete
-  ipcMain.handle('location:getDistinctSubTypes', async () => {
+  // Get distinct classes for autocomplete
+  ipcMain.handle('location:getDistinctClasses', async () => {
     try {
-      const stypes = await db
+      const classes = await db
         .selectFrom('locs')
-        .select('stype')
+        .select('class')
         .distinct()
-        .where('stype', 'is not', null)
-        .where('stype', '!=', '')
-        .orderBy('stype')
+        .where('class', 'is not', null)
+        .where('class', '!=', '')
+        .orderBy('class')
         .execute();
 
-      return stypes.map(r => r.stype).filter(Boolean) as string[];
+      return classes.map(r => r.class).filter(Boolean) as string[];
     } catch (error) {
-      console.error('Error getting distinct sub-types:', error);
-      throw error;
+      console.error('Error getting distinct classes:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -574,7 +613,7 @@ export function registerLocationHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('location:trackView', async (_event, id: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(id);
+      const validatedId = Blake3IdSchema.parse(id);
 
       // Get current user - required for per-user tracking
       const currentUser = await getCurrentUser(db);
@@ -590,7 +629,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -599,14 +639,15 @@ export function registerLocationHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('location:getViewStats', async (_event, id: unknown) => {
     try {
-      const validatedId = z.string().uuid().parse(id);
+      const validatedId = Blake3IdSchema.parse(id);
       return await viewsRepo.getViewStats(validatedId);
     } catch (error) {
       console.error('Error getting view stats:', error);
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -615,14 +656,15 @@ export function registerLocationHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('location:getViewHistory', async (_event, id: unknown, limit?: number) => {
     try {
-      const validatedId = z.string().uuid().parse(id);
+      const validatedId = Blake3IdSchema.parse(id);
       return await viewsRepo.getViewHistory(validatedId, limit ?? 50);
     } catch (error) {
       console.error('Error getting view history:', error);
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -634,7 +676,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.findRecentlyViewed(limit ?? 5);
     } catch (error) {
       console.error('Error finding recently viewed locations:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -646,7 +689,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await locationRepo.findProjects(limit ?? 5);
     } catch (error) {
       console.error('Error finding project locations:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -676,7 +720,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => e.message).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -700,7 +745,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => e.message).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -712,7 +758,8 @@ export function registerLocationHandlers(db: Kysely<Database>) {
       return await exclusionsRepo.count();
     } catch (error) {
       console.error('Error getting exclusion count:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 

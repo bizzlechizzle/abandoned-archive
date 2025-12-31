@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { Location } from '@au-archive/core';
-  import { LocationEntity } from '@au-archive/core';
+  import type { Location } from '@aa/core';
+  import { LocationEntity } from '@aa/core';
   import AutocompleteInput from './AutocompleteInput.svelte';
   import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
   import { DOCUMENTATION_OPTIONS, ACCESS_OPTIONS, GPS_SOURCE_OPTIONS } from '../constants/location-enums';
@@ -8,7 +8,7 @@
   // Field names that can be shown
   export type FieldName =
     | 'name' | 'akaName' | 'shortName'
-    | 'state' | 'type' | 'subType'
+    | 'state' | 'category' | 'class'
     | 'documentation' | 'access' | 'historic'
     | 'street' | 'city' | 'county' | 'zipcode'
     | 'gps' | 'gpsSource' | 'gpsVerified'
@@ -21,8 +21,8 @@
     values: Record<string, any>;
     onValueChange: (field: string, value: any) => void;
     suggestions?: {
-      types?: string[];
-      subTypes?: string[];
+      categories?: string[];
+      classes?: string[];
       authors?: string[];
       cities?: string[];
       counties?: string[];
@@ -199,14 +199,14 @@
   }
 
   // Common input classes
-  const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50';
+  const inputClass = 'w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 disabled:opacity-50';
 </script>
 
 <div class="space-y-4">
   <!-- Name Field -->
   {#if showField('name')}
     <div>
-      <label for="{idPrefix}-name" class="block text-sm font-medium text-gray-700 mb-1">
+      <label for="{idPrefix}-name" class="block text-sm font-medium text-braun-700 mb-1">
         Name {#if isRequired('name')}<span class="text-red-500">*</span>{/if}
       </label>
       <input
@@ -224,7 +224,7 @@
   <!-- AKA Name Field -->
   {#if showField('akaName')}
     <div>
-      <label for="{idPrefix}-aka" class="block text-sm font-medium text-gray-700 mb-1">
+      <label for="{idPrefix}-aka" class="block text-sm font-medium text-braun-700 mb-1">
         AKA / Alternate Name
       </label>
       <input
@@ -242,7 +242,7 @@
   <!-- Short Name Field -->
   {#if showField('shortName')}
     <div>
-      <label for="{idPrefix}-short" class="block text-sm font-medium text-gray-700 mb-1">
+      <label for="{idPrefix}-short" class="block text-sm font-medium text-braun-700 mb-1">
         Short Name (12 chars max)
       </label>
       <input
@@ -255,14 +255,14 @@
         {disabled}
         class={inputClass}
       />
-      <p class="text-xs text-gray-500 mt-1">Used in folder names</p>
+      <p class="text-xs text-braun-500 mt-1">Used in folder names</p>
     </div>
   {/if}
 
   <!-- State Field -->
   {#if showField('state')}
     <div>
-      <label for="{idPrefix}-state" class="block text-sm font-medium text-gray-700 mb-1">
+      <label for="{idPrefix}-state" class="block text-sm font-medium text-braun-700 mb-1">
         State {#if isRequired('state')}<span class="text-red-500">*</span>{/if}
       </label>
       <AutocompleteInput
@@ -273,38 +273,38 @@
         placeholder="NY or New York"
         class="{inputClass} uppercase"
       />
-      <p class="text-xs text-gray-500 mt-1">Type 2-letter code or full state name</p>
+      <p class="text-xs text-braun-500 mt-1">Type 2-letter code or full state name</p>
     </div>
   {/if}
 
-  <!-- Type Field -->
-  {#if showField('type')}
+  <!-- Category Field -->
+  {#if showField('category')}
     <div>
-      <label for="{idPrefix}-type" class="block text-sm font-medium text-gray-700 mb-1">
-        Type {#if isRequired('type')}<span class="text-red-500">*</span>{/if}
+      <label for="{idPrefix}-category" class="block text-sm font-medium text-braun-700 mb-1">
+        Category {#if isRequired('category')}<span class="text-red-500">*</span>{/if}
       </label>
       <AutocompleteInput
-        value={values.type || ''}
-        onchange={(val) => onValueChange('type', val)}
-        suggestions={suggestions.types || []}
-        id="{idPrefix}-type"
+        value={values.category || ''}
+        onchange={(val) => onValueChange('category', val)}
+        suggestions={suggestions.categories || []}
+        id="{idPrefix}-category"
         placeholder="e.g., Factory, Hospital, School"
         class={inputClass}
       />
     </div>
   {/if}
 
-  <!-- Sub-Type Field -->
-  {#if showField('subType')}
+  <!-- Class Field -->
+  {#if showField('class')}
     <div>
-      <label for="{idPrefix}-subtype" class="block text-sm font-medium text-gray-700 mb-1">
-        Sub-Type
+      <label for="{idPrefix}-class" class="block text-sm font-medium text-braun-700 mb-1">
+        Class
       </label>
       <AutocompleteInput
-        value={values.subType || ''}
-        onchange={(val) => onValueChange('subType', val)}
-        suggestions={suggestions.subTypes || []}
-        id="{idPrefix}-subtype"
+        value={values.class || ''}
+        onchange={(val) => onValueChange('class', val)}
+        suggestions={suggestions.classes || []}
+        id="{idPrefix}-class"
         placeholder="e.g., Textile Mill, Asylum"
         class={inputClass}
       />
@@ -314,7 +314,7 @@
   <!-- Documentation Field -->
   {#if showField('documentation')}
     <div>
-      <label for="{idPrefix}-documentation" class="block text-sm font-medium text-gray-700 mb-1">
+      <label for="{idPrefix}-documentation" class="block text-sm font-medium text-braun-700 mb-1">
         Documentation Level
       </label>
       <select
@@ -335,7 +335,7 @@
   <!-- Access Field -->
   {#if showField('access')}
     <div>
-      <label for="{idPrefix}-access" class="block text-sm font-medium text-gray-700 mb-1">
+      <label for="{idPrefix}-access" class="block text-sm font-medium text-braun-700 mb-1">
         Access Status
       </label>
       <select
@@ -362,9 +362,9 @@
         checked={values.historic || false}
         onchange={(e) => onValueChange('historic', e.currentTarget.checked)}
         {disabled}
-        class="h-4 w-4 text-accent border-gray-300 rounded focus:ring-accent"
+        class="h-4 w-4 text-braun-900 border-braun-300 rounded focus:border-braun-600"
       />
-      <label for="{idPrefix}-historic" class="text-sm font-medium text-gray-700">
+      <label for="{idPrefix}-historic" class="text-sm font-medium text-braun-700">
         Historic / Landmark
       </label>
     </div>
@@ -373,7 +373,7 @@
   <!-- Author Field -->
   {#if showField('author')}
     <div>
-      <label for="{idPrefix}-author" class="block text-sm font-medium text-gray-700 mb-1">
+      <label for="{idPrefix}-author" class="block text-sm font-medium text-braun-700 mb-1">
         Author
       </label>
       <AutocompleteInput
@@ -394,7 +394,7 @@
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         {#if showField('street')}
           <div class="md:col-span-2">
-            <label for="{idPrefix}-street" class="block text-sm font-medium text-gray-700 mb-1">
+            <label for="{idPrefix}-street" class="block text-sm font-medium text-braun-700 mb-1">
               Street Address
             </label>
             <input
@@ -411,7 +411,7 @@
 
         {#if showField('city')}
           <div>
-            <label for="{idPrefix}-city" class="block text-sm font-medium text-gray-700 mb-1">
+            <label for="{idPrefix}-city" class="block text-sm font-medium text-braun-700 mb-1">
               City
             </label>
             <AutocompleteInput
@@ -427,7 +427,7 @@
 
         {#if showField('county')}
           <div>
-            <label for="{idPrefix}-county" class="block text-sm font-medium text-gray-700 mb-1">
+            <label for="{idPrefix}-county" class="block text-sm font-medium text-braun-700 mb-1">
               County
             </label>
             <AutocompleteInput
@@ -443,7 +443,7 @@
 
         {#if showField('zipcode')}
           <div>
-            <label for="{idPrefix}-zipcode" class="block text-sm font-medium text-gray-700 mb-1">
+            <label for="{idPrefix}-zipcode" class="block text-sm font-medium text-braun-700 mb-1">
               Zipcode
             </label>
             <input
@@ -466,7 +466,7 @@
     <div class="border-t pt-4 mt-4">
       <h3 class="text-md font-semibold text-foreground mb-3">GPS Coordinates</h3>
       <div>
-        <label for="{idPrefix}-gps" class="block text-sm font-medium text-gray-700 mb-1">
+        <label for="{idPrefix}-gps" class="block text-sm font-medium text-braun-700 mb-1">
           Coordinates
         </label>
         <input
@@ -485,7 +485,7 @@
             Parsed: {parsedLat.toFixed(6)}, {parsedLng.toFixed(6)}
           </p>
         {:else}
-          <p class="text-xs text-gray-500 mt-1">Accepts decimal degrees or DMS format</p>
+          <p class="text-xs text-braun-500 mt-1">Accepts decimal degrees or DMS format</p>
         {/if}
       </div>
     </div>
@@ -494,7 +494,7 @@
   <!-- GPS Source -->
   {#if showField('gpsSource')}
     <div>
-      <label for="{idPrefix}-gps-source" class="block text-sm font-medium text-gray-700 mb-1">
+      <label for="{idPrefix}-gps-source" class="block text-sm font-medium text-braun-700 mb-1">
         GPS Source
       </label>
       <select
@@ -520,9 +520,9 @@
         checked={values.gpsVerified || false}
         onchange={(e) => onValueChange('gpsVerified', e.currentTarget.checked)}
         {disabled}
-        class="h-4 w-4 text-accent border-gray-300 rounded focus:ring-accent"
+        class="h-4 w-4 text-braun-900 border-braun-300 rounded focus:border-braun-600"
       />
-      <label for="{idPrefix}-gps-verified" class="text-sm font-medium text-gray-700">
+      <label for="{idPrefix}-gps-verified" class="text-sm font-medium text-braun-700">
         GPS Verified on Map
       </label>
     </div>
@@ -539,16 +539,16 @@
           checked={values.isSubLocation || false}
           onchange={(e) => onValueChange('isSubLocation', e.currentTarget.checked)}
           {disabled}
-          class="h-4 w-4 text-accent border-gray-300 rounded focus:ring-accent"
+          class="h-4 w-4 text-braun-900 border-braun-300 rounded focus:border-braun-600"
         />
-        <label for="{idPrefix}-is-sub" class="text-sm font-medium text-gray-700">
+        <label for="{idPrefix}-is-sub" class="text-sm font-medium text-braun-700">
           This is a sub-location (part of another location)
         </label>
       </div>
 
       {#if values.isSubLocation && showField('parentLocation')}
         <div class="mt-4">
-          <label for="{idPrefix}-parent" class="block text-sm font-medium text-gray-700 mb-1">
+          <label for="{idPrefix}-parent" class="block text-sm font-medium text-braun-700 mb-1">
             Parent Location <span class="text-red-500">*</span>
           </label>
           <select
@@ -573,9 +573,9 @@
               checked={values.isPrimarySubLocation || false}
               onchange={(e) => onValueChange('isPrimarySubLocation', e.currentTarget.checked)}
               {disabled}
-              class="h-4 w-4 text-accent border-gray-300 rounded focus:ring-accent"
+              class="h-4 w-4 text-braun-900 border-braun-300 rounded focus:border-braun-600"
             />
-            <label for="{idPrefix}-primary-sub" class="text-sm font-medium text-gray-700">
+            <label for="{idPrefix}-primary-sub" class="text-sm font-medium text-braun-700">
               Primary sub-location (main building/feature)
             </label>
           </div>

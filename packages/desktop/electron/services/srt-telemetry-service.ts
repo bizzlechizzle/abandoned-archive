@@ -325,14 +325,14 @@ export function getBaseName(filename: string): string {
  */
 export function findMatchingVideoHash(
   srtFilename: string,
-  videos: Array<{ vidsha: string; vidnamo: string }>
+  videos: Array<{ vidhash: string; vidnamo: string }>
 ): string | null {
   const srtBase = getBaseName(srtFilename).toLowerCase();
 
   for (const video of videos) {
     const videoBase = getBaseName(video.vidnamo).toLowerCase();
     if (videoBase === srtBase) {
-      return video.vidsha;
+      return video.vidhash;
     }
   }
 

@@ -164,7 +164,7 @@ export class ImportIntelligenceService {
         {
           id: locid,
           name: candidate.locnam,
-          type: candidate.type,
+          type: candidate.category,
           state: candidate.address_state,
           lat: candidate.gps_lat,
           lng: candidate.gps_lng,
@@ -222,7 +222,7 @@ export class ImportIntelligenceService {
         {
           id: subid,
           name: candidate.subnam,
-          type: candidate.type,
+          type: candidate.category,
           state: null, // Sub-locations don't have state directly
           lat: candidate.gps_lat,
           lng: candidate.gps_lng,
@@ -455,12 +455,12 @@ export class ImportIntelligenceService {
     const [imgCount, vidCount] = await Promise.all([
       this.db
         .selectFrom('imgs')
-        .select((eb) => eb.fn.count('imgsha').as('count'))
+        .select((eb) => eb.fn.count('imghash').as('count'))
         .where('locid', '=', locid)
         .executeTakeFirst(),
       this.db
         .selectFrom('vids')
-        .select((eb) => eb.fn.count('vidsha').as('count'))
+        .select((eb) => eb.fn.count('vidhash').as('count'))
         .where('locid', '=', locid)
         .executeTakeFirst(),
     ]);
@@ -475,12 +475,12 @@ export class ImportIntelligenceService {
     const [imgCount, vidCount] = await Promise.all([
       this.db
         .selectFrom('imgs')
-        .select((eb) => eb.fn.count('imgsha').as('count'))
+        .select((eb) => eb.fn.count('imghash').as('count'))
         .where('subid', '=', subid)
         .executeTakeFirst(),
       this.db
         .selectFrom('vids')
-        .select((eb) => eb.fn.count('vidsha').as('count'))
+        .select((eb) => eb.fn.count('vidhash').as('count'))
         .where('subid', '=', subid)
         .executeTakeFirst(),
     ]);

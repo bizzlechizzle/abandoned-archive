@@ -1,11 +1,13 @@
 /**
  * Import Intelligence IPC Handlers
+ * ADR-046: Updated locid validation from UUID to BLAKE3 16-char hex
  *
  * Handles import-intelligence:* IPC channels for smart location matching.
  */
 
 import { ipcMain } from 'electron';
 import { z } from 'zod';
+import { Blake3IdSchema } from '../ipc-validation';
 import type { Kysely } from 'kysely';
 import type { Database } from '../database.types';
 import { ImportIntelligenceService } from '../../services/import-intelligence-service';
@@ -47,7 +49,8 @@ export function registerImportIntelligenceHandlers(db: Kysely<Database>) {
         return result;
       } catch (error) {
         console.error('[Import Intelligence] Scan error:', error);
-        throw error;
+        const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
       }
     }
   );
@@ -58,7 +61,7 @@ export function registerImportIntelligenceHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('import-intelligence:addAkaName', async (_event, locid: unknown, newName: unknown) => {
     try {
-      const validatedLocid = z.string().uuid().parse(locid);
+      const validatedLocid = Blake3IdSchema.parse(locid);
       const validatedName = z.string().min(1).max(500).parse(newName);
 
       await intelligenceService.addAkaName(validatedLocid, validatedName);
@@ -71,7 +74,8 @@ export function registerImportIntelligenceHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map((e) => e.message).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -97,7 +101,8 @@ export function registerImportIntelligenceHandlers(db: Kysely<Database>) {
       };
     } catch (error) {
       console.error('[Import Intelligence] hasNearby error:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 

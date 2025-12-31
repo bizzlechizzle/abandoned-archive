@@ -4,7 +4,7 @@
  */
 
 import { Kysely } from 'kysely';
-import { randomUUID } from 'crypto';
+import { generateId } from '../main/ipc-validation';
 import type { Database, RefMapsTable, RefMapPointsTable } from '../main/database.types';
 
 export interface RefMap {
@@ -96,7 +96,7 @@ export class SqliteRefMapsRepository {
       rawMetadata: Record<string, unknown> | null;
     }>;
   }): Promise<RefMapWithPoints> {
-    const mapId = randomUUID();
+    const mapId = generateId();
     const now = new Date().toISOString();
 
     // OPT-005: Use transaction to ensure map and all points are created atomically
@@ -119,7 +119,7 @@ export class SqliteRefMapsRepository {
 
       // Insert all points within the same transaction
       for (const point of input.points) {
-        const pointId = randomUUID();
+        const pointId = generateId();
         await trx
           .insertInto('ref_map_points')
           .values({
@@ -145,7 +145,9 @@ export class SqliteRefMapsRepository {
           state: point.state,
           category: point.category,
           rawMetadata: point.rawMetadata,
-          akaNames: null
+          akaNames: null,
+          linkedLocid: null,
+          linkedAt: null
         });
       }
     });

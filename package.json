@@ -1,11 +1,11 @@
 {
-  "name": "au-archive",
+  "name": "abandoned-archive",
   "version": "0.1.0",
   "private": true,
   "description": "Desktop application for archiving abandoned locations",
   "repository": {
     "type": "git",
-    "url": "https://github.com/bizzlechizzle/au-archive.git"
+    "url": "https://github.com/bizzlechizzle/abandoned-archive.git"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -14,19 +14,27 @@
       "esbuild",
       "sharp",
       "7zip-bin",
-      "@electron/rebuild"
+      "@electron/rebuild",
+      "blake3",
+      "bufferutil",
+      "utf-8-validate",
+      "onnxruntime-node"
     ]
   },
   "scripts": {
-    "postinstall": "pnpm --filter core build && pnpm --filter desktop rebuild",
+    "postinstall": "pnpm --filter @aa/core build && pnpm --filter @aa/services build",
     "init": "bash scripts/setup.sh",
     "init:quick": "bash scripts/setup.sh --skip-optional",
     "deps": "bash scripts/check-deps.sh",
     "dev": "pnpm --filter desktop dev",
-    "build": "pnpm --filter core build && pnpm --filter desktop build",
-    "build:core": "pnpm --filter core build",
+    "build": "pnpm run build:core && pnpm run build:services && pnpm run build:cli && pnpm --filter desktop build",
+    "build:core": "pnpm --filter @aa/core build",
+    "build:services": "pnpm --filter @aa/services build",
+    "build:cli": "pnpm --filter @aa/cli build",
     "rebuild": "pnpm --filter desktop rebuild",
     "test": "pnpm -r test",
+    "test:cli": "pnpm --filter @aa/cli test",
+    "test:services": "pnpm --filter @aa/services test",
     "lint": "pnpm -r lint",
     "format": "prettier --write \"**/*.{ts,tsx,svelte,json,md}\"",
     "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist",
@@ -36,5 +44,6 @@
     "prettier": "^3.1.1",
     "prettier-plugin-svelte": "^3.1.2",
     "typescript": "^5.3.3"
-  }
+  },
+  "packageManager": "pnpm@10.24.0+sha512.01ff8ae71b4419903b65c60fb2dc9d34cf8bb6e06d03bde112ef38f7a34d6904c424ba66bea5cdcf12890230bf39f9580473140ed9c946fef328b6e5238a345a"
 }

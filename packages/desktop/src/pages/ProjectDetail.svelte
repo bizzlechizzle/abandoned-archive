@@ -130,14 +130,14 @@
 <div class="h-full overflow-auto">
   {#if loading}
     <div class="p-8">
-      <p class="text-gray-500">Loading project...</p>
+      <p class="text-braun-500">Loading project...</p>
     </div>
   {:else if error || !project}
     <div class="p-8">
       <p class="text-red-600">{error || 'Project not found'}</p>
       <button
         onclick={() => router.navigate({ page: 'projects' })}
-        class="mt-4 px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+        class="mt-4 px-4 py-2 bg-braun-200 rounded hover:bg-braun-300"
       >
         Back to Projects
       </button>
@@ -145,37 +145,37 @@
   {:else}
     <div class="p-8">
       {#if isEditing}
-        <div class="mb-8 bg-white rounded-lg shadow p-6">
+        <div class="mb-8 bg-white rounded border border-braun-300 p-6">
           <h2 class="text-lg font-semibold mb-4">Edit Project</h2>
           <div class="space-y-4">
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Project Name</label>
+              <label class="block text-sm font-medium text-braun-700 mb-1">Project Name</label>
               <input
                 type="text"
                 bind:value={editName}
-                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
               />
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <label class="block text-sm font-medium text-braun-700 mb-1">Description</label>
               <textarea
                 bind:value={editDescription}
                 rows="3"
-                class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+                class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
               ></textarea>
             </div>
             <div class="flex justify-end gap-2">
               <button
                 onclick={() => (isEditing = false)}
                 disabled={saving}
-                class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 disabled:opacity-50"
+                class="px-4 py-2 bg-braun-200 rounded hover:bg-braun-300 disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onclick={handleSaveEdit}
                 disabled={saving || !editName.trim()}
-                class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 disabled:opacity-50"
+                class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 disabled:opacity-50"
               >
                 {saving ? 'Saving...' : 'Save'}
               </button>
@@ -187,22 +187,22 @@
           <div>
             <h1 class="text-3xl font-bold text-foreground mb-2">{project.project_name}</h1>
             {#if project.description}
-              <p class="text-gray-600 mb-2">{project.description}</p>
+              <p class="text-braun-600 mb-2">{project.description}</p>
             {/if}
-            <p class="text-sm text-gray-500">
+            <p class="text-sm text-braun-500">
               {project.locations.length} locations
             </p>
           </div>
           <div class="flex gap-2">
             <button
               onclick={startEdit}
-              class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+              class="px-4 py-2 bg-braun-200 rounded hover:bg-braun-300"
             >
               Edit
             </button>
             <button
               onclick={() => router.navigate({ page: 'projects' })}
-              class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+              class="px-4 py-2 bg-braun-200 rounded hover:bg-braun-300"
             >
               Back
             </button>
@@ -217,11 +217,11 @@
       {/if}
 
       {#if showAddLocation}
-        <div class="mb-6 p-6 bg-white rounded-lg shadow">
+        <div class="mb-6 p-6 bg-white rounded border border-braun-300">
           <h3 class="text-lg font-semibold mb-4">Add Location to Project</h3>
           <select
             bind:value={selectedLocationId}
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent mb-4"
+            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 mb-4"
           >
             <option value="">Select a location...</option>
             {#each allLocations as loc}
@@ -237,14 +237,14 @@
                 selectedLocationId = '';
               }}
               disabled={adding}
-              class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 disabled:opacity-50"
+              class="px-4 py-2 bg-braun-200 rounded hover:bg-braun-300 disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               onclick={handleAddLocation}
               disabled={adding || !selectedLocationId}
-              class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 disabled:opacity-50"
+              class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 disabled:opacity-50"
             >
               {adding ? 'Adding...' : 'Add Location'}
             </button>
@@ -252,30 +252,30 @@
         </div>
       {/if}
 
-      <div class="bg-white rounded-lg shadow p-6 mb-6">
+      <div class="bg-white rounded border border-braun-300 p-6 mb-6">
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-xl font-semibold">Locations</h2>
           <button
             onclick={() => (showAddLocation = true)}
-            class="px-4 py-2 text-sm bg-accent text-white rounded hover:opacity-90"
+            class="px-4 py-2 text-sm bg-braun-900 text-white rounded hover:bg-braun-600"
           >
             Add Location
           </button>
         </div>
 
         {#if project.locations.length === 0}
-          <p class="text-gray-400 text-center py-8">No locations in this project yet</p>
+          <p class="text-braun-400 text-center py-8">No locations in this project yet</p>
         {:else}
           <div class="space-y-2">
             {#each project.locations as loc}
-              <div class="flex items-center justify-between p-3 bg-gray-50 rounded hover:bg-gray-100 transition">
+              <div class="flex items-center justify-between p-3 bg-braun-50 rounded hover:bg-braun-100 transition">
                 <button
                   onclick={() => viewLocation(loc.locid)}
                   class="flex-1 text-left"
                 >
-                  <p class="font-medium text-gray-900">{loc.locnam}</p>
+                  <p class="font-medium text-braun-900">{loc.locnam}</p>
                   {#if loc.address_state}
-                    <p class="text-sm text-gray-500">{loc.address_state}</p>
+                    <p class="text-sm text-braun-500">{loc.address_state}</p>
                   {/if}
                 </button>
                 <button

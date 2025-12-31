@@ -17,7 +17,8 @@ export function registerHealthHandlers() {
       return await healthMonitor.getDashboardData();
     } catch (error) {
       console.error('Error getting health dashboard:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -27,7 +28,8 @@ export function registerHealthHandlers() {
       return await healthMonitor.getHealthStatus();
     } catch (error) {
       console.error('Error getting health status:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -37,7 +39,8 @@ export function registerHealthHandlers() {
       return await healthMonitor.runHealthCheck();
     } catch (error) {
       console.error('Error running health check:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -48,7 +51,8 @@ export function registerHealthHandlers() {
       return result;
     } catch (error) {
       console.error('Error creating backup:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -58,7 +62,8 @@ export function registerHealthHandlers() {
       return await backupScheduler.getBackupStats();
     } catch (error) {
       console.error('Error getting backup stats:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -68,7 +73,8 @@ export function registerHealthHandlers() {
       return await diskSpaceMonitor.checkDiskSpace();
     } catch (error) {
       console.error('Error checking disk space:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -78,7 +84,8 @@ export function registerHealthHandlers() {
       return await integrityChecker.runFullCheck();
     } catch (error) {
       console.error('Error checking database integrity:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -94,47 +101,54 @@ export function registerHealthHandlers() {
       return await integrityChecker.checkLocationDataIntegrity();
     } catch (error) {
       console.error('Error checking location data integrity:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
   ipcMain.handle('health:runMaintenance', async () => {
     try {
       const maintenanceScheduler = getMaintenanceScheduler();
-      return await maintenanceScheduler.runFullMaintenance('manual');
+      return await maintenanceScheduler.runFullMaintenance();
     } catch (error) {
       console.error('Error running maintenance:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
   ipcMain.handle('health:getMaintenanceSchedule', async () => {
     try {
       const maintenanceScheduler = getMaintenanceScheduler();
-      return maintenanceScheduler.getSchedule();
+      // MaintenanceScheduler is manual-only, return basic status
+      return { mode: 'manual', enabled: true };
     } catch (error) {
       console.error('Error getting maintenance schedule:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
   ipcMain.handle('health:getRecoveryState', async () => {
     try {
       const recoverySystem = getRecoverySystem();
-      return recoverySystem.getState();
+      const needsRecovery = await recoverySystem.checkNeedsRecovery();
+      return { needsRecovery, status: needsRecovery ? 'needs_recovery' : 'healthy' };
     } catch (error) {
       console.error('Error getting recovery state:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
   ipcMain.handle('health:attemptRecovery', async () => {
     try {
       const recoverySystem = getRecoverySystem();
-      return await recoverySystem.attemptRecovery();
+      return await recoverySystem.offerRecovery();
     } catch (error) {
       console.error('Error attempting recovery:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 }

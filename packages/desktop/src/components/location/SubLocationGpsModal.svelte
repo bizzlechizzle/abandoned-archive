@@ -108,19 +108,19 @@
 >
   <!-- Modal content -->
   <div
-    class="bg-white rounded-lg shadow-xl w-full max-w-xl max-h-[90vh] overflow-hidden relative z-[100000]"
+    class="bg-white rounded border border-braun-300 w-full max-w-xl max-h-[90vh] overflow-hidden relative z-[100000]"
     onclick={(e) => e.stopPropagation()}
     role="dialog"
   >
     <!-- Header -->
-    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-braun-200">
       <div>
-        <h2 class="text-lg font-semibold text-foreground">Building GPS</h2>
-        <p class="text-sm text-gray-500 mt-0.5">{subLocationName}</p>
+        <h2 class="text-lg font-semibold text-braun-900">Building GPS</h2>
+        <p class="text-sm text-braun-500 mt-0.5">{subLocationName}</p>
       </div>
       <button
         onclick={onClose}
-        class="p-1 text-gray-400 hover:text-gray-600 transition"
+        class="p-1 text-braun-400 hover:text-braun-600 transition"
         aria-label="Close"
       >
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -137,40 +137,40 @@
         </div>
       {/if}
 
-      <p class="text-sm text-gray-600">
+      <p class="text-sm text-braun-600">
         Set GPS coordinates for this building. This is separate from the host location's GPS.
       </p>
 
       <!-- GPS inputs -->
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <label for="gps_lat" class="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
+          <label for="gps_lat" class="block text-sm font-medium text-braun-700 mb-1">Latitude</label>
           <input
             id="gps_lat"
             type="text"
             bind:value={gpsLat}
             placeholder="42.123456"
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent font-mono text-sm"
+            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 font-mono text-sm"
           />
         </div>
         <div>
-          <label for="gps_lng" class="block text-sm font-medium text-gray-700 mb-1">Longitude</label>
+          <label for="gps_lng" class="block text-sm font-medium text-braun-700 mb-1">Longitude</label>
           <input
             id="gps_lng"
             type="text"
             bind:value={gpsLng}
             placeholder="-73.123456"
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent font-mono text-sm"
+            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 font-mono text-sm"
           />
         </div>
       </div>
 
       <!-- Map for GPS verification -->
       <div>
-        <p class="text-sm text-gray-600 mb-2">
+        <p class="text-sm text-braun-600 mb-2">
           Click on the map or drag the marker to set the building's exact location
         </p>
-        <div class="h-64 rounded border border-gray-200 overflow-hidden">
+        <div class="h-64 rounded border border-braun-200 overflow-hidden">
           <Map
             locations={mapLocation.gps ? [mapLocation] : []}
             onLocationVerify={handleGpsUpdate}
@@ -185,11 +185,11 @@
     </div>
 
     <!-- Footer -->
-    <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+    <div class="flex items-center justify-end gap-3 px-6 py-4 border-t border-braun-200 bg-braun-50">
       <button
         type="button"
         onclick={onClose}
-        class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition"
+        class="px-4 py-2 text-sm font-medium text-braun-700 bg-white border border-braun-300 rounded hover:bg-braun-50 transition"
       >
         Cancel
       </button>
@@ -197,7 +197,7 @@
         type="button"
         onclick={handleSubmit}
         disabled={saving || !gpsLat || !gpsLng}
-        class="px-4 py-2 text-sm font-medium text-white bg-accent rounded hover:opacity-90 transition disabled:opacity-50"
+        class="px-4 py-2 text-sm font-medium text-white bg-braun-900 rounded hover:bg-braun-600 transition disabled:opacity-50"
       >
         {saving ? 'Saving...' : 'Save GPS'}
       </button>

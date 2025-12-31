@@ -31,7 +31,7 @@ export async function getCacheStats(db: Kysely<Database>): Promise<CacheStats> {
   const result = await db
     .selectFrom('video_proxies')
     .select(({ fn }) => [
-      fn.count<number>('vidsha').as('count'),
+      fn.count<number>('vidhash').as('count'),
       fn.sum<number>('file_size_bytes').as('size'),
       fn.min<string>('generated_at').as('oldest'),
       fn.max<string>('generated_at').as('newest')
@@ -59,7 +59,7 @@ export async function getVideosNeedingProxies(
   db: Kysely<Database>,
   locid: string
 ): Promise<Array<{
-  vidsha: string;
+  vidhash: string;
   vidloc: string;
   meta_width: number | null;
   meta_height: number | null;
@@ -67,10 +67,10 @@ export async function getVideosNeedingProxies(
   // Use subquery to find videos without proxy records
   const videos = await db
     .selectFrom('vids')
-    .leftJoin('video_proxies', 'vids.vidsha', 'video_proxies.vidsha')
-    .select(['vids.vidsha', 'vids.vidloc', 'vids.meta_width', 'vids.meta_height'])
+    .leftJoin('video_proxies', 'vids.vidhash', 'video_proxies.vidhash')
+    .select(['vids.vidhash', 'vids.vidloc', 'vids.meta_width', 'vids.meta_height'])
     .where('vids.locid', '=', locid)
-    .where('video_proxies.vidsha', 'is', null)
+    .where('video_proxies.vidhash', 'is', null)
     .execute();
 
   return videos;

@@ -28,11 +28,11 @@ def get_config_dir() -> Path:
 
     if system == "Windows":
         appdata = os.environ.get("APPDATA", "")
-        return Path(appdata) / "@au-archive" / "desktop"
+        return Path(appdata) / "@abandoned-archive" / "desktop"
     elif system == "Darwin":  # macOS
-        return home / "Library" / "Application Support" / "@au-archive" / "desktop"
+        return home / "Library" / "Application Support" / "@abandoned-archive" / "desktop"
     else:  # Linux
-        return home / ".config" / "@au-archive" / "desktop"
+        return home / ".config" / "@abandoned-archive" / "desktop"
 
 
 def get_dev_data_dir() -> Path | None:

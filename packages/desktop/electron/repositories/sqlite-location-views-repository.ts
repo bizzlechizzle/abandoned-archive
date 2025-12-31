@@ -7,7 +7,7 @@
  */
 
 import { Kysely } from 'kysely';
-import { randomUUID } from 'crypto';
+import { generateId } from '../main/ipc-validation';
 import type { Database } from '../main/database.types';
 
 export interface LocationView {
@@ -44,7 +44,7 @@ export class SQLiteLocationViewsRepository {
    */
   async trackView(locid: string, user_id: string): Promise<number> {
     const now = new Date().toISOString();
-    const view_id = randomUUID();
+    const view_id = generateId();
 
     // Insert the view record
     await this.db

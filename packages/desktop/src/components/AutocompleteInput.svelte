@@ -104,12 +104,12 @@
   />
 
   {#if showSuggestions && filteredSuggestions.length > 0}
-    <div class="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-48 overflow-y-auto">
+    <div class="absolute z-10 w-full mt-1 bg-white border border-braun-300 rounded max-h-48 overflow-y-auto">
       {#each filteredSuggestions as suggestion, index}
         <button
           type="button"
           onclick={() => selectSuggestion(suggestion)}
-          class="w-full px-3 py-2 text-left text-sm hover:bg-accent hover:text-white transition cursor-pointer {index === highlightedIndex ? 'bg-accent text-white' : 'text-gray-900'}"
+          class="w-full px-3 py-2 text-left text-sm hover:bg-braun-900 hover:text-white transition cursor-pointer {index === highlightedIndex ? 'bg-braun-900 text-white' : 'text-braun-900'}"
         >
           {suggestion}
         </button>

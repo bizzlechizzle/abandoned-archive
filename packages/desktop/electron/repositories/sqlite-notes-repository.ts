@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { randomUUID } from 'crypto';
+import { generateId } from '../main/ipc-validation';
 import type { Database, NotesTable } from '../main/database.types';
 
 export interface NoteInput {
@@ -35,7 +35,7 @@ export class SQLiteNotesRepository {
    * Create a new note
    */
   async create(input: NoteInput): Promise<Note> {
-    const note_id = randomUUID();
+    const note_id = generateId();
     const note_date = new Date().toISOString();
 
     const note: NotesTable = {

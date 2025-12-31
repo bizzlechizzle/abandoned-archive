@@ -23,14 +23,14 @@ interface LocationGps {
 interface Location {
   locid: string;
   locnam: string;
-  type?: string;
+  category?: string;
   gps?: LocationGps;
 }
 
 interface MapLocation {
   locid: string;
   locnam: string;
-  type?: string;
+  category?: string;
   gps_lat: number;
   gps_lng: number;
   gps_accuracy?: number;

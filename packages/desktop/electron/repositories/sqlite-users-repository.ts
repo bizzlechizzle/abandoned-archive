@@ -1,5 +1,6 @@
 import { Kysely } from 'kysely';
-import { randomUUID, createHash } from 'crypto';
+import { createHash } from 'crypto';
+import { generateId } from '../main/ipc-validation';
 import type { Database, UsersTable } from '../main/database.types';
 
 export interface UserInput {
@@ -48,7 +49,7 @@ export class SQLiteUsersRepository {
   constructor(private readonly db: Kysely<Database>) {}
 
   async create(input: UserInput): Promise<User> {
-    const user_id = randomUUID();
+    const user_id = generateId();
     const created_date = new Date().toISOString();
 
     const user: UsersTable = {

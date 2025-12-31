@@ -80,7 +80,7 @@ CREATE INDEX IF NOT EXISTS idx_slocs_locid ON slocs(locid);
 
 -- Images table
 CREATE TABLE IF NOT EXISTS imgs (
-  imgsha TEXT PRIMARY KEY,
+  imghash TEXT PRIMARY KEY,
   imgnam TEXT NOT NULL,
   imgnamo TEXT NOT NULL,
   imgloc TEXT NOT NULL,
@@ -106,11 +106,11 @@ CREATE TABLE IF NOT EXISTS imgs (
 
 CREATE INDEX IF NOT EXISTS idx_imgs_locid ON imgs(locid);
 CREATE INDEX IF NOT EXISTS idx_imgs_subid ON imgs(subid);
-CREATE INDEX IF NOT EXISTS idx_imgs_sha ON imgs(imgsha);
+CREATE INDEX IF NOT EXISTS idx_imgs_sha ON imgs(imghash);
 
 -- Videos table
 CREATE TABLE IF NOT EXISTS vids (
-  vidsha TEXT PRIMARY KEY,
+  vidhash TEXT PRIMARY KEY,
   vidnam TEXT NOT NULL,
   vidnamo TEXT NOT NULL,
   vidloc TEXT NOT NULL,
@@ -142,7 +142,7 @@ CREATE INDEX IF NOT EXISTS idx_vids_subid ON vids(subid);
 
 -- Documents table
 CREATE TABLE IF NOT EXISTS docs (
-  docsha TEXT PRIMARY KEY,
+  dochash TEXT PRIMARY KEY,
   docnam TEXT NOT NULL,
   docnamo TEXT NOT NULL,
   docloc TEXT NOT NULL,
@@ -166,7 +166,7 @@ CREATE INDEX IF NOT EXISTS idx_docs_locid ON docs(locid);
 
 -- Maps table (Historical Maps)
 CREATE TABLE IF NOT EXISTS maps (
-  mapsha TEXT PRIMARY KEY,
+  maphash TEXT PRIMARY KEY,
   mapnam TEXT NOT NULL,
   mapnamo TEXT NOT NULL,
   maploc TEXT NOT NULL,

@@ -4,7 +4,7 @@
  */
 
 export interface MediaImage {
-  imgsha: string;
+  imghash: string;
   imgnam: string;
   imgloc: string;
   locid: string | null;
@@ -32,7 +32,7 @@ export interface MediaImage {
 }
 
 export interface MediaVideo {
-  vidsha: string;
+  vidhash: string;
   vidnam: string;
   vidloc: string;
   locid: string | null;
@@ -59,14 +59,34 @@ export interface MediaVideo {
 }
 
 export interface MediaDocument {
-  docsha: string;
-  docnam: string;
+  dochash: string;
+  docnam: string;      // Archive name (hash.ext)
+  docnamo: string;     // Original name (user's filename)
   docloc: string;
   locid: string | null;
   subid: string | null;  // Migration 28: Sub-location link
   // Hidden status (Migration 23)
   hidden?: number;
   hidden_reason?: string | null;
+}
+
+/**
+ * MAP-MEDIA-FIX-001: Map media type for GeoTIFF, GPX, KML, GeoJSON, etc.
+ */
+export interface MediaMap {
+  maphash: string;
+  mapnam: string;      // Archive name (hash.ext)
+  mapnamo: string;     // Original name (user's filename)
+  maploc: string;      // Archive path
+  locid: string | null;
+  subid: string | null;
+  meta_gps_lat: number | null;
+  meta_gps_lng: number | null;
+  thumb_path_sm: string | null;
+  thumb_path_lg: string | null;
+  preview_path: string | null;
+  // Author tracking
+  imported_by?: string | null;
 }
 
 export interface Bookmark {

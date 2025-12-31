@@ -1,6 +1,8 @@
 /**
  * Location Authors IPC Handlers
  * Migration 25 - Phase 3: Author Attribution
+ * ADR-046: Updated locid validation from UUID to BLAKE3 16-char hex
+ * ADR-049: Updated user_id validation to unified 16-char hex
  *
  * Handles location-authors:* IPC channels for tracking
  * who has contributed to documenting each location.
@@ -8,8 +10,9 @@
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
-import type { Database } from '../database';
+import type { Database } from '../database.types';
 import { SQLiteLocationAuthorsRepository } from '../../repositories/sqlite-location-authors-repository';
+import { Blake3IdSchema, UserIdSchema } from '../ipc-validation';
 
 export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
   const authorsRepo = new SQLiteLocationAuthorsRepository(db);
@@ -20,8 +23,8 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
   ipcMain.handle('location-authors:add', async (_event, input: unknown) => {
     try {
       const AddAuthorSchema = z.object({
-        locid: z.string().uuid(),
-        user_id: z.string().uuid(),
+        locid: Blake3IdSchema,
+        user_id: UserIdSchema,
         role: z.enum(['creator', 'documenter', 'contributor']),
       });
       const validatedInput = AddAuthorSchema.parse(input);
@@ -32,7 +35,8 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -41,13 +45,14 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('location-authors:remove', async (_event, locid: unknown, user_id: unknown) => {
     try {
-      const validatedLocid = z.string().uuid().parse(locid);
-      const validatedUserId = z.string().uuid().parse(user_id);
+      const validatedLocid = Blake3IdSchema.parse(locid);
+      const validatedUserId = UserIdSchema.parse(user_id);
       await authorsRepo.removeAuthor(validatedLocid, validatedUserId);
       return { success: true };
     } catch (error) {
       console.error('Error removing author:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -56,11 +61,12 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('location-authors:findByLocation', async (_event, locid: unknown) => {
     try {
-      const validatedLocid = z.string().uuid().parse(locid);
+      const validatedLocid = Blake3IdSchema.parse(locid);
       return await authorsRepo.findByLocation(validatedLocid);
     } catch (error) {
       console.error('Error finding authors by location:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -69,11 +75,12 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('location-authors:findByUser', async (_event, user_id: unknown) => {
     try {
-      const validatedUserId = z.string().uuid().parse(user_id);
+      const validatedUserId = UserIdSchema.parse(user_id);
       return await authorsRepo.findByUser(validatedUserId);
     } catch (error) {
       console.error('Error finding locations by user:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -82,11 +89,12 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('location-authors:findCreator', async (_event, locid: unknown) => {
     try {
-      const validatedLocid = z.string().uuid().parse(locid);
+      const validatedLocid = Blake3IdSchema.parse(locid);
       return await authorsRepo.findCreator(validatedLocid);
     } catch (error) {
       console.error('Error finding creator:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -95,11 +103,12 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('location-authors:countByUserAndRole', async (_event, user_id: unknown) => {
     try {
-      const validatedUserId = z.string().uuid().parse(user_id);
+      const validatedUserId = UserIdSchema.parse(user_id);
       return await authorsRepo.countByUserAndRole(validatedUserId);
     } catch (error) {
       console.error('Error counting by user and role:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -108,11 +117,12 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('location-authors:countByLocation', async (_event, locid: unknown) => {
     try {
-      const validatedLocid = z.string().uuid().parse(locid);
+      const validatedLocid = Blake3IdSchema.parse(locid);
       return await authorsRepo.countByLocation(validatedLocid);
     } catch (error) {
       console.error('Error counting by location:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -126,14 +136,15 @@ export function registerLocationAuthorsHandlers(db: Kysely<Database>) {
     action: unknown
   ) => {
     try {
-      const validatedLocid = z.string().uuid().parse(locid);
-      const validatedUserId = z.string().uuid().parse(user_id);
+      const validatedLocid = Blake3IdSchema.parse(locid);
+      const validatedUserId = UserIdSchema.parse(user_id);
       const validatedAction = z.enum(['create', 'import', 'edit']).parse(action);
       await authorsRepo.trackUserContribution(validatedLocid, validatedUserId, validatedAction);
       return { success: true };
     } catch (error) {
       console.error('Error tracking contribution:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 

@@ -2,12 +2,13 @@
  * Stats and Settings IPC Handlers
  * Handles stats:* and settings:* IPC channels
  * Migration 25 - Phase 4: Per-user stats for Nerd Stats integration
+ * ADR-049: Updated userId validation to unified 16-char hex
  */
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { Kysely } from 'kysely';
-import type { Database } from '../database';
-import { validate, LimitSchema, SettingKeySchema } from '../ipc-validation';
+import type { Database } from '../database.types';
+import { validate, LimitSchema, SettingKeySchema, UserIdSchema } from '../ipc-validation';
 import { SQLiteLocationAuthorsRepository } from '../../repositories/sqlite-location-authors-repository';
 
 export function registerStatsHandlers(db: Kysely<Database>) {
@@ -23,74 +24,76 @@ export function registerStatsHandlers(db: Kysely<Database>) {
         .where('address_state', 'is not', null)
         .groupBy('address_state')
         .orderBy('count', 'desc')
-        .limit(validatedLimit)
+        .limit(validatedLimit ?? 5)
         .execute();
       return result;
     } catch (error) {
       console.error('Error getting top states:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
-  ipcMain.handle('stats:topTypes', async (_event, limit: unknown = 5) => {
+  ipcMain.handle('stats:topCategories', async (_event, limit: unknown = 5) => {
     try {
       const validatedLimit = validate(LimitSchema, limit);
       const result = await db
         .selectFrom('locs')
-        .select(['type', (eb) => eb.fn.count('locid').as('count')])
-        .where('type', 'is not', null)
-        .groupBy('type')
+        .select(['category', (eb) => eb.fn.count('locid').as('count')])
+        .where('category', 'is not', null)
+        .groupBy('category')
         .orderBy('count', 'desc')
-        .limit(validatedLimit)
+        .limit(validatedLimit ?? 5)
         .execute();
       return result;
     } catch (error) {
-      console.error('Error getting top types:', error);
-      throw error;
+      console.error('Error getting top categories:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
   /**
-   * Dashboard: Top types with hero thumbnail from a representative location
+   * Dashboard: Top categories with hero thumbnail from a representative location
    */
-  ipcMain.handle('stats:topTypesWithHero', async (_event, limit: unknown = 5) => {
+  ipcMain.handle('stats:topCategoriesWithHero', async (_event, limit: unknown = 5) => {
     try {
       const validatedLimit = validate(LimitSchema, limit);
-      // Get top types with count
-      const types = await db
+      // Get top categories with count
+      const categories = await db
         .selectFrom('locs')
-        .select(['type', (eb) => eb.fn.count('locid').as('count')])
-        .where('type', 'is not', null)
-        .groupBy('type')
+        .select(['category', (eb) => eb.fn.count('locid').as('count')])
+        .where('category', 'is not', null)
+        .groupBy('category')
         .orderBy('count', 'desc')
-        .limit(validatedLimit)
+        .limit(validatedLimit ?? 5)
         .execute();
 
-      // For each type, get a representative location's hero image
+      // For each category, get a representative location's hero image
       const results = await Promise.all(
-        types.map(async (t) => {
-          // Find a location with hero image for this type
+        categories.map(async (c) => {
+          // Find a location with hero image for this category
           const loc = await db
             .selectFrom('locs')
-            .select(['locid', 'hero_imgsha'])
-            .where('type', '=', t.type)
-            .where('hero_imgsha', 'is not', null)
+            .select(['locid', 'hero_imghash'])
+            .where('category', '=', c.category)
+            .where('hero_imghash', 'is not', null)
             .limit(1)
             .executeTakeFirst();
 
           let heroThumbPath: string | undefined;
-          if (loc?.hero_imgsha) {
+          if (loc?.hero_imghash) {
             const img = await db
               .selectFrom('imgs')
               .select(['thumb_path_sm', 'thumb_path_lg', 'thumb_path'])
-              .where('imgsha', '=', loc.hero_imgsha)
+              .where('imghash', '=', loc.hero_imghash)
               .executeTakeFirst();
             heroThumbPath = img?.thumb_path_sm || img?.thumb_path_lg || img?.thumb_path || undefined;
           }
 
           return {
-            type: t.type,
-            count: Number(t.count),
+            category: c.category,
+            count: Number(c.count),
             heroThumbPath,
           };
         })
@@ -98,8 +101,9 @@ export function registerStatsHandlers(db: Kysely<Database>) {
 
       return results;
     } catch (error) {
-      console.error('Error getting top types with hero:', error);
-      throw error;
+      console.error('Error getting top categories with hero:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -116,7 +120,7 @@ export function registerStatsHandlers(db: Kysely<Database>) {
         .where('address_state', 'is not', null)
         .groupBy('address_state')
         .orderBy('count', 'desc')
-        .limit(validatedLimit)
+        .limit(validatedLimit ?? 5)
         .execute();
 
       // For each state, get a representative location's hero image
@@ -125,18 +129,18 @@ export function registerStatsHandlers(db: Kysely<Database>) {
           // Find a location with hero image for this state
           const loc = await db
             .selectFrom('locs')
-            .select(['locid', 'hero_imgsha'])
+            .select(['locid', 'hero_imghash'])
             .where('address_state', '=', s.state)
-            .where('hero_imgsha', 'is not', null)
+            .where('hero_imghash', 'is not', null)
             .limit(1)
             .executeTakeFirst();
 
           let heroThumbPath: string | undefined;
-          if (loc?.hero_imgsha) {
+          if (loc?.hero_imghash) {
             const img = await db
               .selectFrom('imgs')
               .select(['thumb_path_sm', 'thumb_path_lg', 'thumb_path'])
-              .where('imgsha', '=', loc.hero_imgsha)
+              .where('imghash', '=', loc.hero_imghash)
               .executeTakeFirst();
             heroThumbPath = img?.thumb_path_sm || img?.thumb_path_lg || img?.thumb_path || undefined;
           }
@@ -152,7 +156,8 @@ export function registerStatsHandlers(db: Kysely<Database>) {
       return results;
     } catch (error) {
       console.error('Error getting top states with hero:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -164,7 +169,7 @@ export function registerStatsHandlers(db: Kysely<Database>) {
    */
   ipcMain.handle('stats:userContributions', async (_event, userId: unknown) => {
     try {
-      const validatedUserId = z.string().uuid().parse(userId);
+      const validatedUserId = UserIdSchema.parse(userId);
 
       // Get role counts from location_authors
       const roleCounts = await authorsRepo.countByUserAndRole(validatedUserId);
@@ -172,15 +177,15 @@ export function registerStatsHandlers(db: Kysely<Database>) {
       // Get media counts imported by this user
       const [imageCount, videoCount, docCount] = await Promise.all([
         db.selectFrom('imgs')
-          .select((eb) => eb.fn.count('imgsha').as('count'))
+          .select((eb) => eb.fn.count('imghash').as('count'))
           .where('imported_by_id', '=', validatedUserId)
           .executeTakeFirst(),
         db.selectFrom('vids')
-          .select((eb) => eb.fn.count('vidsha').as('count'))
+          .select((eb) => eb.fn.count('vidhash').as('count'))
           .where('imported_by_id', '=', validatedUserId)
           .executeTakeFirst(),
         db.selectFrom('docs')
-          .select((eb) => eb.fn.count('docsha').as('count'))
+          .select((eb) => eb.fn.count('dochash').as('count'))
           .where('imported_by_id', '=', validatedUserId)
           .executeTakeFirst(),
       ]);
@@ -197,7 +202,8 @@ export function registerStatsHandlers(db: Kysely<Database>) {
       };
     } catch (error) {
       console.error('Error getting user contributions:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -223,7 +229,7 @@ export function registerStatsHandlers(db: Kysely<Database>) {
         .where('users.is_active', '=', 1)
         .groupBy(['users.user_id', 'users.username', 'users.display_name'])
         .orderBy('count', 'desc')
-        .limit(validatedLimit)
+        .limit(validatedLimit ?? 10)
         .execute();
 
       // Get top documenters
@@ -240,7 +246,7 @@ export function registerStatsHandlers(db: Kysely<Database>) {
         .where('users.is_active', '=', 1)
         .groupBy(['users.user_id', 'users.username', 'users.display_name'])
         .orderBy('count', 'desc')
-        .limit(validatedLimit)
+        .limit(validatedLimit ?? 10)
         .execute();
 
       // Get top media importers (by total media count)
@@ -251,13 +257,13 @@ export function registerStatsHandlers(db: Kysely<Database>) {
           'users.user_id',
           'users.username',
           'users.display_name',
-          (eb) => eb.fn.count('imgs.imgsha').as('count'),
+          (eb) => eb.fn.count('imgs.imghash').as('count'),
         ])
         .where('users.is_active', '=', 1)
         .groupBy(['users.user_id', 'users.username', 'users.display_name'])
-        .having((eb) => eb.fn.count('imgs.imgsha'), '>', 0)
+        .having((eb) => eb.fn.count('imgs.imghash'), '>', 0)
         .orderBy('count', 'desc')
-        .limit(validatedLimit)
+        .limit(validatedLimit ?? 10)
         .execute();
 
       return {
@@ -282,7 +288,8 @@ export function registerStatsHandlers(db: Kysely<Database>) {
       };
     } catch (error) {
       console.error('Error getting top contributors:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -307,15 +314,15 @@ export function registerStatsHandlers(db: Kysely<Database>) {
 
           const [imageCount, videoCount, docCount] = await Promise.all([
             db.selectFrom('imgs')
-              .select((eb) => eb.fn.count('imgsha').as('count'))
+              .select((eb) => eb.fn.count('imghash').as('count'))
               .where('imported_by_id', '=', user.user_id)
               .executeTakeFirst(),
             db.selectFrom('vids')
-              .select((eb) => eb.fn.count('vidsha').as('count'))
+              .select((eb) => eb.fn.count('vidhash').as('count'))
               .where('imported_by_id', '=', user.user_id)
               .executeTakeFirst(),
             db.selectFrom('docs')
-              .select((eb) => eb.fn.count('docsha').as('count'))
+              .select((eb) => eb.fn.count('dochash').as('count'))
               .where('imported_by_id', '=', user.user_id)
               .executeTakeFirst(),
           ]);
@@ -336,7 +343,8 @@ export function registerStatsHandlers(db: Kysely<Database>) {
       return userStats;
     } catch (error) {
       console.error('Error getting all user stats:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 }
@@ -356,7 +364,8 @@ export function registerSettingsHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -372,7 +381,8 @@ export function registerSettingsHandlers(db: Kysely<Database>) {
       }, {} as Record<string, string>);
     } catch (error) {
       console.error('Error getting all settings:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -390,7 +400,8 @@ export function registerSettingsHandlers(db: Kysely<Database>) {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 }
@@ -414,7 +425,8 @@ export function registerLibpostalHandlers() {
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => e.message).join(', ')}`);
       }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 }

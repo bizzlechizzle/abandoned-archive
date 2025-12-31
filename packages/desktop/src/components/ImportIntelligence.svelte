@@ -120,12 +120,12 @@
     }
   }
 
-  // Get confidence color class
+  // Get confidence color class - using braun neutral palette
   function getConfidenceColor(confidence: number): string {
-    if (confidence >= 80) return 'bg-green-100 text-green-800 border-green-200';
-    if (confidence >= 60) return 'bg-blue-100 text-blue-800 border-blue-200';
-    if (confidence >= 40) return 'bg-amber-100 text-amber-800 border-amber-200';
-    return 'bg-gray-100 text-gray-700 border-gray-200';
+    if (confidence >= 80) return 'bg-braun-200 text-braun-900 border-braun-300';
+    if (confidence >= 60) return 'bg-braun-100 text-braun-800 border-braun-200';
+    if (confidence >= 40) return 'bg-braun-100 text-braun-700 border-braun-200';
+    return 'bg-braun-50 text-braun-600 border-braun-200';
   }
 
   // Get source icon (SVG paths for inline icons)
@@ -149,19 +149,21 @@
 
 <div class="import-intelligence">
   {#if scanning}
-    <div class="flex items-center gap-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
-      <div class="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin"></div>
+    <div class="flex items-center gap-3 p-4 bg-braun-50 rounded border border-braun-200">
+      <div class="w-5 h-5 border-2 border-braun-400 rounded flex items-center justify-center">
+        <div class="w-2 h-2 bg-braun-300 rounded"></div>
+      </div>
       <div>
-        <p class="text-sm font-medium text-gray-700">Scanning archive...</p>
-        <p class="text-xs text-gray-500">Checking for existing locations near this GPS</p>
+        <p class="text-sm font-medium text-braun-700">Scanning archive...</p>
+        <p class="text-xs text-braun-500">Checking for existing locations near this GPS</p>
       </div>
     </div>
   {:else if error}
-    <div class="p-4 bg-red-50 rounded-lg border border-red-200">
-      <p class="text-sm text-red-700">{error}</p>
+    <div class="p-4 bg-braun-50 rounded border border-braun-300">
+      <p class="text-sm text-error">{error}</p>
       <button
         onclick={runScan}
-        class="mt-2 text-xs text-red-600 hover:underline"
+        class="mt-2 text-xs text-braun-600 hover:underline"
       >
         Retry scan
       </button>
@@ -171,34 +173,34 @@
       <!-- Matches found -->
       <div class="space-y-3">
         <div class="flex items-center justify-between">
-          <h3 class="text-sm font-semibold text-gray-800">
+          <h3 class="text-sm font-semibold text-braun-800">
             {scanResult.matches.length === 1 ? 'Match Found' : `${scanResult.matches.length} Potential Matches`}
           </h3>
-          <span class="text-xs text-gray-400">
+          <span class="text-xs text-braun-400">
             Scanned {scanResult.scanned.locations + scanResult.scanned.sublocations + scanResult.scanned.refmaps} points in {scanResult.scanTimeMs}ms
           </span>
         </div>
 
         {#each scanResult.matches.slice(0, 3) as match}
-          <div class="p-4 bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+          <div class="p-4 bg-white rounded border border-braun-200 hover:border-braun-400 transition-colors">
             <!-- Header: Name + Confidence -->
             <div class="flex items-start justify-between gap-3 mb-2">
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
                   {#if getSourceIcon(match.source) === 'pin'}
-                    <svg class="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" /></svg>
+                    <svg class="w-4 h-4 text-braun-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" /></svg>
                   {:else if getSourceIcon(match.source) === 'building'}
-                    <svg class="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a1 1 0 110 2h-3a1 1 0 01-1-1v-2a1 1 0 00-1-1H9a1 1 0 00-1 1v2a1 1 0 01-1 1H4a1 1 0 110-2V4zm3 1h2v2H7V5zm2 4H7v2h2V9zm2-4h2v2h-2V5zm2 4h-2v2h2V9z" clip-rule="evenodd" /></svg>
+                    <svg class="w-4 h-4 text-braun-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a1 1 0 110 2h-3a1 1 0 01-1-1v-2a1 1 0 00-1-1H9a1 1 0 00-1 1v2a1 1 0 01-1 1H4a1 1 0 110-2V4zm3 1h2v2H7V5zm2 4H7v2h2V9zm2-4h2v2h-2V5zm2 4h-2v2h2V9z" clip-rule="evenodd" /></svg>
                   {:else}
-                    <svg class="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 6a3 3 0 013-3h10a1 1 0 01.8 1.6L14.25 8l2.55 3.4A1 1 0 0116 13H6a1 1 0 00-1 1v3a1 1 0 11-2 0V6z" clip-rule="evenodd" /></svg>
+                    <svg class="w-4 h-4 text-braun-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 6a3 3 0 013-3h10a1 1 0 01.8 1.6L14.25 8l2.55 3.4A1 1 0 0116 13H6a1 1 0 00-1 1v3a1 1 0 11-2 0V6z" clip-rule="evenodd" /></svg>
                   {/if}
-                  <h4 class="font-semibold text-gray-900 truncate">{match.name}</h4>
+                  <h4 class="font-semibold text-braun-900 truncate">{match.name}</h4>
                 </div>
                 {#if match.parentName}
-                  <p class="text-xs text-gray-500 mt-0.5">at {match.parentName}</p>
+                  <p class="text-xs text-braun-500 mt-0.5">at {match.parentName}</p>
                 {/if}
                 {#if match.mapName}
-                  <p class="text-xs text-gray-500 mt-0.5">from {match.mapName}</p>
+                  <p class="text-xs text-braun-500 mt-0.5">from {match.mapName}</p>
                 {/if}
               </div>
               <div class="shrink-0">
@@ -209,7 +211,7 @@
             </div>
 
             <!-- Meta: Distance, Type, Media Count -->
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 mb-3">
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-braun-600 mb-3">
               <span class="font-medium">{match.distanceFeet} ft away</span>
               {#if match.type}
                 <span>•</span>
@@ -220,14 +222,14 @@
                 <span>{match.mediaCount} {match.mediaCount === 1 ? 'photo' : 'photos'}</span>
               {/if}
               <span>•</span>
-              <span class="text-gray-400">{getSourceLabel(match.source)}</span>
+              <span class="text-braun-400">{getSourceLabel(match.source)}</span>
             </div>
 
             <!-- Reasons -->
             <div class="flex flex-wrap gap-1.5 mb-3">
               {#each match.reasons as reason}
-                <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
-                  <svg class="w-3 h-3 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-braun-100 text-braun-600 rounded text-xs">
+                  <svg class="w-3 h-3 text-success" fill="currentColor" viewBox="0 0 20 20">
                     <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
                   </svg>
                   {reason}
@@ -240,13 +242,13 @@
               {#if match.source === 'location'}
                 <button
                   onclick={() => handleSelectMatch(match)}
-                  class="px-3 py-1.5 bg-accent text-white text-sm font-medium rounded hover:opacity-90 transition"
+                  class="px-3 py-1.5 bg-braun-900 text-white text-sm font-medium rounded hover:bg-braun-600 transition"
                 >
                   Import Here
                 </button>
                 <button
                   onclick={() => handleViewLocation(match)}
-                  class="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm font-medium rounded hover:bg-gray-200 transition"
+                  class="px-3 py-1.5 bg-braun-100 text-braun-700 text-sm font-medium rounded hover:bg-braun-200 transition"
                 >
                   View
                 </button>
@@ -254,7 +256,7 @@
                   <button
                     onclick={() => handleAddAsAka(match)}
                     disabled={addingAka === match.id}
-                    class="px-3 py-1.5 bg-blue-100 text-blue-700 text-sm font-medium rounded hover:bg-blue-200 transition disabled:opacity-50"
+                    class="px-3 py-1.5 bg-braun-100 text-braun-700 text-sm font-medium rounded hover:bg-braun-200 transition disabled:opacity-50"
                   >
                     {addingAka === match.id ? 'Adding...' : `Add "${proposedName}" as AKA`}
                   </button>
@@ -262,20 +264,20 @@
               {:else if match.source === 'sublocation'}
                 <button
                   onclick={() => handleSelectMatch(match)}
-                  class="px-3 py-1.5 bg-accent text-white text-sm font-medium rounded hover:opacity-90 transition"
+                  class="px-3 py-1.5 bg-braun-900 text-white text-sm font-medium rounded hover:bg-braun-600 transition"
                 >
                   Import to Building
                 </button>
                 <button
                   onclick={() => handleViewLocation(match)}
-                  class="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm font-medium rounded hover:bg-gray-200 transition"
+                  class="px-3 py-1.5 bg-braun-100 text-braun-700 text-sm font-medium rounded hover:bg-braun-200 transition"
                 >
                   View
                 </button>
               {:else if match.source === 'refmap'}
                 <button
                   onclick={() => handleSelectMatch(match)}
-                  class="px-3 py-1.5 bg-accent text-white text-sm font-medium rounded hover:opacity-90 transition"
+                  class="px-3 py-1.5 bg-braun-900 text-white text-sm font-medium rounded hover:bg-braun-600 transition"
                 >
                   Create from Reference
                 </button>
@@ -287,19 +289,19 @@
         <!-- Create New Option -->
         <button
           onclick={() => onCreateNew?.()}
-          class="w-full p-3 text-sm text-gray-600 hover:text-accent hover:bg-gray-50 rounded-lg border border-dashed border-gray-300 hover:border-accent transition text-center"
+          class="w-full p-3 text-sm text-braun-600 hover:text-braun-900 hover:bg-braun-50 rounded border border-dashed border-braun-300 hover:border-braun-900 transition text-center"
         >
           None of these — Create New Location
         </button>
       </div>
     {:else}
       <!-- No matches -->
-      <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+      <div class="p-4 bg-braun-50 rounded border border-braun-200">
         <div class="flex items-center gap-3">
-          <svg class="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" /></svg>
+          <svg class="w-6 h-6 text-braun-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" /></svg>
           <div>
-            <p class="text-sm font-medium text-gray-700">No existing locations nearby</p>
-            <p class="text-xs text-gray-500">
+            <p class="text-sm font-medium text-braun-700">No existing locations nearby</p>
+            <p class="text-xs text-braun-500">
               Scanned {scanResult.scanned.locations} locations, {scanResult.scanned.sublocations} buildings, {scanResult.scanned.refmaps} reference points
             </p>
           </div>
@@ -307,7 +309,7 @@
         {#if onCreateNew}
           <button
             onclick={() => onCreateNew?.()}
-            class="mt-3 w-full px-4 py-2 bg-accent text-white text-sm font-medium rounded hover:opacity-90 transition"
+            class="mt-3 w-full px-4 py-2 bg-braun-900 text-white text-sm font-medium rounded hover:bg-braun-600 transition"
           >
             Create New Location
           </button>

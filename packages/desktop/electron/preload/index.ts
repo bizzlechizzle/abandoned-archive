@@ -4,7 +4,7 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // Types are import-only, they get stripped at compile time
-import type { Location, LocationInput, LocationFilters } from '@au-archive/core';
+import type { Location, LocationInput, LocationFilters } from '@aa/core';
 
 const api = {
   versions: {
@@ -72,11 +72,11 @@ const api = {
       countryCulturalRegionVerified: boolean;
     }): Promise<void> =>
       ipcRenderer.invoke('location:updateRegionData', id, regionData),
-    // Autocomplete helpers for Type/Sub-Type
-    getDistinctTypes: (): Promise<string[]> =>
-      ipcRenderer.invoke('location:getDistinctTypes'),
-    getDistinctSubTypes: (): Promise<string[]> =>
-      ipcRenderer.invoke('location:getDistinctSubTypes'),
+    // Autocomplete helpers for Category/Class
+    getDistinctCategories: (): Promise<string[]> =>
+      ipcRenderer.invoke('location:getDistinctCategories'),
+    getDistinctClasses: (): Promise<string[]> =>
+      ipcRenderer.invoke('location:getDistinctClasses'),
     // Migration 34: Track location views with per-user tracking
     trackView: (id: string): Promise<number> =>
       ipcRenderer.invoke('location:trackView', id),
@@ -125,12 +125,11 @@ const api = {
         locationId: string;
         locnam: string;
         akanam: string | null;
-        historicalName: string | null;
         state: string | null;
         matchType: 'gps' | 'name';
         distanceMeters?: number;
         nameSimilarity?: number;
-        matchedField?: 'locnam' | 'akanam' | 'historicalName';
+        matchedField?: 'locnam' | 'akanam';
         mediaCount: number;
       };
     }> =>
@@ -148,11 +147,11 @@ const api = {
   stats: {
     topStates: (limit?: number): Promise<Array<{ state: string; count: number }>> =>
       ipcRenderer.invoke('stats:topStates', limit),
-    topTypes: (limit?: number): Promise<Array<{ type: string; count: number }>> =>
-      ipcRenderer.invoke('stats:topTypes', limit),
-    // Dashboard: Top types with hero thumbnails
-    topTypesWithHero: (limit?: number): Promise<Array<{ type: string; count: number; heroThumbPath?: string }>> =>
-      ipcRenderer.invoke('stats:topTypesWithHero', limit),
+    topCategories: (limit?: number): Promise<Array<{ category: string; count: number }>> =>
+      ipcRenderer.invoke('stats:topCategories', limit),
+    // Dashboard: Top categories with hero thumbnails
+    topCategoriesWithHero: (limit?: number): Promise<Array<{ category: string; count: number; heroThumbPath?: string }>> =>
+      ipcRenderer.invoke('stats:topCategoriesWithHero', limit),
     // Dashboard: Top states with hero thumbnails
     topStatesWithHero: (limit?: number): Promise<Array<{ state: string; count: number; heroThumbPath?: string }>> =>
       ipcRenderer.invoke('stats:topStatesWithHero', limit),
@@ -322,6 +321,13 @@ const api = {
       requiresRestart?: boolean;
     }> =>
       ipcRenderer.invoke('database:resetLocation'),
+    wipe: (): Promise<{
+      success: boolean;
+      message: string;
+      backupPath?: string;
+      requiresRestart?: boolean;
+    }> =>
+      ipcRenderer.invoke('database:wipe'),
   },
 
   imports: {
@@ -356,7 +362,6 @@ const api = {
       locid: string;
       subid?: string | null;
       auth_imp: string | null;
-      deleteOriginals: boolean;
     }): Promise<unknown> =>
       ipcRenderer.invoke('media:import', input),
     // Phase-based import (whereswaldo11.md spec): LOG IT -> SERIALIZE IT -> COPY & NAME IT -> DUMP
@@ -365,8 +370,6 @@ const api = {
       locid: string;
       subid?: string | null;
       auth_imp: string | null;
-      deleteOriginals?: boolean;
-      useHardlinks?: boolean;
       verifyChecksums?: boolean;
     }): Promise<{
       success: boolean;
@@ -474,22 +477,22 @@ const api = {
 
     // Video Proxy System (Migration 36, updated OPT-053 Immich Model)
     // Proxies generated at import time, stored alongside originals, permanent (no purge)
-    generateProxy: (vidsha: string, sourcePath: string, metadata: { width: number; height: number }): Promise<{
+    generateProxy: (vidhash: string, sourcePath: string, metadata: { width: number; height: number }): Promise<{
       success: boolean;
       proxyPath?: string;
       error?: string;
       proxyWidth?: number;
       proxyHeight?: number;
     }> =>
-      ipcRenderer.invoke('media:generateProxy', vidsha, sourcePath, metadata),
+      ipcRenderer.invoke('media:generateProxy', vidhash, sourcePath, metadata),
 
     // Get proxy path for a video (returns null if not exists)
-    getProxyPath: (vidsha: string): Promise<string | null> =>
-      ipcRenderer.invoke('media:getProxyPath', vidsha),
+    getProxyPath: (vidhash: string): Promise<string | null> =>
+      ipcRenderer.invoke('media:getProxyPath', vidhash),
 
     // OPT-053: Fast filesystem check for proxy existence (no DB lookup)
-    proxyExists: (videoPath: string, vidsha: string): Promise<boolean> =>
-      ipcRenderer.invoke('media:proxyExists', videoPath, vidsha),
+    proxyExists: (videoPath: string, vidhash: string): Promise<boolean> =>
+      ipcRenderer.invoke('media:proxyExists', videoPath, vidhash),
 
     // Get cache statistics
     getProxyCacheStats: (): Promise<{
@@ -547,6 +550,101 @@ const api = {
     },
   },
 
+  // Import System v2.0 - 5-step pipeline with background jobs (wake-n-blake + shoemaker)
+  importV2: {
+    // Start a new import with paths and location info
+    start: (input: {
+      paths: string[];
+      locid: string;
+      loc12?: string;
+      address_state: string | null;
+      type?: string | null;
+      slocnam?: string | null;
+      subid?: string | null;
+      auth_imp?: string | null;
+      is_contributed?: number;
+      contribution_source?: string | null;
+    }): Promise<{
+      sessionId: string;
+      status: string;
+      scanResult?: { totalFiles: number };
+      hashResult?: { totalDuplicates: number; totalErrors: number };
+      copyResult?: { totalErrors: number };
+      validationResult?: { totalInvalid: number };
+      finalizationResult?: { totalFinalized: number; totalErrors: number; jobsQueued: number };
+      totalDurationMs: number;
+    }> =>
+      ipcRenderer.invoke('import:v2:start', input),
+    // Cancel running import
+    cancel: (sessionId: string): Promise<{ cancelled: boolean; reason?: string }> =>
+      ipcRenderer.invoke('import:v2:cancel', sessionId),
+    // Get current import status
+    status: (): Promise<{ sessionId: string | null; status: string }> =>
+      ipcRenderer.invoke('import:v2:status'),
+    // Get resumable import sessions
+    resumable: (): Promise<unknown[]> =>
+      ipcRenderer.invoke('import:v2:resumable'),
+    // Resume an incomplete import
+    resume: (sessionId: string): Promise<unknown> =>
+      ipcRenderer.invoke('import:v2:resume', sessionId),
+    // Progress event listener
+    onProgress: (callback: (progress: {
+      sessionId: string;
+      status: string;
+      step: number;
+      totalSteps: number;
+      percent: number;
+      currentFile: string;
+      filesProcessed: number;
+      filesTotal: number;
+      bytesProcessed: number;
+      bytesTotal: number;
+      duplicatesFound: number;
+      errorsFound: number;
+      estimatedRemainingMs: number;
+    }) => void) => {
+      const listener = (_event: unknown, progress: {
+        sessionId: string;
+        status: string;
+        step: number;
+        totalSteps: number;
+        percent: number;
+        currentFile: string;
+        filesProcessed: number;
+        filesTotal: number;
+        bytesProcessed: number;
+        bytesTotal: number;
+        duplicatesFound: number;
+        errorsFound: number;
+        estimatedRemainingMs: number;
+      }) => callback(progress);
+      ipcRenderer.on('import:v2:progress', listener);
+      return () => ipcRenderer.removeListener('import:v2:progress', listener);
+    },
+    // Completion event listener
+    onComplete: (callback: (event: {
+      sessionId: string;
+      status: string;
+      totalImported: number;
+      totalDuplicates: number;
+      totalErrors: number;
+      totalDurationMs: number;
+      jobsQueued: number;
+    }) => void) => {
+      const listener = (_event: unknown, eventData: {
+        sessionId: string;
+        status: string;
+        totalImported: number;
+        totalDuplicates: number;
+        totalErrors: number;
+        totalDurationMs: number;
+        jobsQueued: number;
+      }) => callback(eventData);
+      ipcRenderer.on('import:v2:complete', listener);
+      return () => ipcRenderer.removeListener('import:v2:complete', listener);
+    },
+  },
+
   notes: {
     create: (input: {
       locid: string;
@@ -581,15 +679,15 @@ const api = {
       status?: string | null;
       is_primary?: boolean;
       created_by?: string | null;
+    // ADR-046: Return types - removed sub12 field
     }): Promise<{
       subid: string;
-      sub12: string;
       locid: string;
       subnam: string;
       ssubname: string | null;
       type: string | null;
       status: string | null;
-      hero_imgsha: string | null;
+      hero_imghash: string | null;
       is_primary: boolean;
       created_date: string;
       created_by: string | null;
@@ -599,49 +697,44 @@ const api = {
       ipcRenderer.invoke('sublocation:create', input),
     findById: (subid: string): Promise<{
       subid: string;
-      sub12: string;
       locid: string;
       subnam: string;
       ssubname: string | null;
       type: string | null;
       status: string | null;
-      hero_imgsha: string | null;
+      hero_imghash: string | null;
       is_primary: boolean;
       created_date: string;
       created_by: string | null;
       modified_date: string | null;
       modified_by: string | null;
       akanam: string | null;
-      historicalName: string | null;
     } | null> =>
       ipcRenderer.invoke('sublocation:findById', subid),
     findByLocation: (locid: string): Promise<Array<{
       subid: string;
-      sub12: string;
       locid: string;
       subnam: string;
       ssubname: string | null;
       type: string | null;
       status: string | null;
-      hero_imgsha: string | null;
+      hero_imghash: string | null;
       is_primary: boolean;
       created_date: string;
       created_by: string | null;
       modified_date: string | null;
       modified_by: string | null;
       akanam: string | null;
-      historicalName: string | null;
     }>> =>
       ipcRenderer.invoke('sublocation:findByLocation', locid),
     findWithHeroImages: (locid: string): Promise<Array<{
       subid: string;
-      sub12: string;
       locid: string;
       subnam: string;
       ssubname: string | null;
       type: string | null;
       status: string | null;
-      hero_imgsha: string | null;
+      hero_imghash: string | null;
       is_primary: boolean;
       created_date: string;
       created_by: string | null;
@@ -649,7 +742,6 @@ const api = {
       modified_by: string | null;
       hero_thumb_path?: string;
       akanam: string | null;
-      historicalName: string | null;
     }>> =>
       ipcRenderer.invoke('sublocation:findWithHeroImages', locid),
     update: (subid: string, updates: {
@@ -657,27 +749,24 @@ const api = {
       ssubname?: string | null;
       type?: string | null;
       status?: string | null;
-      hero_imgsha?: string | null;
+      hero_imghash?: string | null;
       is_primary?: boolean;
       modified_by?: string | null;
       akanam?: string | null;
-      historicalName?: string | null;
     }): Promise<{
       subid: string;
-      sub12: string;
       locid: string;
       subnam: string;
       ssubname: string | null;
       type: string | null;
       status: string | null;
-      hero_imgsha: string | null;
+      hero_imghash: string | null;
       is_primary: boolean;
       created_date: string;
       created_by: string | null;
       modified_date: string | null;
       modified_by: string | null;
       akanam: string | null;
-      historicalName: string | null;
     } | null> =>
       ipcRenderer.invoke('sublocation:update', subid, updates),
     delete: (subid: string): Promise<void> =>
@@ -724,37 +813,6 @@ const api = {
       ipcRenderer.invoke('projects:isLocationInProject', project_id, locid),
   },
 
-  bookmarks: {
-    create: (input: {
-      url: string;
-      title?: string | null;
-      locid?: string | null;
-      auth_imp?: string | null;
-      thumbnail_path?: string | null;
-    }): Promise<unknown> =>
-      ipcRenderer.invoke('bookmarks:create', input),
-    findById: (bookmark_id: string): Promise<unknown> =>
-      ipcRenderer.invoke('bookmarks:findById', bookmark_id),
-    findByLocation: (locid: string): Promise<unknown[]> =>
-      ipcRenderer.invoke('bookmarks:findByLocation', locid),
-    findRecent: (limit?: number): Promise<unknown[]> =>
-      ipcRenderer.invoke('bookmarks:findRecent', limit),
-    findAll: (): Promise<unknown[]> =>
-      ipcRenderer.invoke('bookmarks:findAll'),
-    update: (bookmark_id: string, updates: {
-      url?: string;
-      title?: string | null;
-      locid?: string | null;
-      thumbnail_path?: string | null;
-    }): Promise<unknown> =>
-      ipcRenderer.invoke('bookmarks:update', bookmark_id, updates),
-    delete: (bookmark_id: string): Promise<void> =>
-      ipcRenderer.invoke('bookmarks:delete', bookmark_id),
-    count: (): Promise<number> =>
-      ipcRenderer.invoke('bookmarks:count'),
-    countByLocation: (locid: string): Promise<number> =>
-      ipcRenderer.invoke('bookmarks:countByLocation', locid),
-  },
   // Migration 25 - Phase 3: Location authors (multi-user attribution)
   locationAuthors: {
     add: (input: {
@@ -949,6 +1007,175 @@ const api = {
       ipcRenderer.invoke('research:status'),
   },
 
+  // Tagging Service - Visual-Buffet ML Pipeline (RAM++, Florence-2, SigLIP, PaddleOCR)
+  tagging: {
+    // Get full ML insights for an image
+    getImageTags: (imghash: string): Promise<{
+      success: boolean;
+      error?: string;
+      imghash?: string;
+      tags?: string[];
+      source?: string;
+      confidence?: Record<string, number>;
+      tagsBySource?: {
+        rampp?: Array<{ label: string; confidence: number; source: string }>;
+        florence2?: Array<{ label: string; confidence: number; source: string }>;
+        siglip?: Array<{ label: string; confidence: number; source: string }>;
+      };
+      taggedAt?: string;
+      qualityScore?: number;
+      viewType?: string;
+      caption?: string;
+      ocr?: {
+        hasText: boolean;
+        fullText: string | null;
+        textBlocks: Array<{ text: string; confidence: number }>;
+      };
+      processedAt?: string;
+    }> => ipcRenderer.invoke('tagging:getImageTags', imghash),
+
+    // Edit tags manually
+    editImageTags: (input: { imghash: string; tags: string[] }): Promise<{
+      success: boolean;
+      error?: string;
+      imghash?: string;
+      tags?: string[];
+    }> => ipcRenderer.invoke('tagging:editImageTags', input),
+
+    // Queue image for re-tagging via visual-buffet
+    retagImage: (imghash: string): Promise<{
+      success: boolean;
+      error?: string;
+      message?: string;
+    }> => ipcRenderer.invoke('tagging:retagImage', imghash),
+
+    // Clear all tags from an image
+    clearImageTags: (imghash: string): Promise<{
+      success: boolean;
+      error?: string;
+      imghash?: string;
+    }> => ipcRenderer.invoke('tagging:clearImageTags', imghash),
+
+    // Get aggregated tag summary for a location
+    getLocationSummary: (locid: string): Promise<{
+      success: boolean;
+      error?: string;
+      locid?: string;
+      taggedCount?: number;
+      totalTags?: number;
+      topTags?: Array<{ tag: string; count: number; avgConfidence: number }>;
+      viewTypes?: Record<string, number>;
+    }> => ipcRenderer.invoke('tagging:getLocationSummary', locid),
+
+    // Re-aggregate location tags
+    reaggregateLocation: (locid: string): Promise<{
+      success: boolean;
+      error?: string;
+      locid?: string;
+      taggedImages?: number;
+      uniqueTags?: number;
+    }> => ipcRenderer.invoke('tagging:reaggregateLocation', locid),
+
+    // Apply tag suggestions (placeholder)
+    applySuggestions: (input: unknown): Promise<{
+      success: boolean;
+      error?: string;
+    }> => ipcRenderer.invoke('tagging:applySuggestions', input),
+
+    // Get queue statistics for tagging jobs
+    getQueueStats: (): Promise<{
+      success: boolean;
+      error?: string;
+      stats?: {
+        pending: number;
+        processing: number;
+        completed: number;
+        failed: number;
+      };
+      breakdown?: {
+        mlThumbnail: { pending: number; processing: number; completed: number; failed: number };
+        visualBuffet: { pending: number; processing: number; completed: number; failed: number };
+      };
+    }> => ipcRenderer.invoke('tagging:getQueueStats'),
+
+    // Queue all untagged images in a location
+    queueUntaggedImages: (locid: string): Promise<{
+      success: boolean;
+      error?: string;
+      queued?: number;
+      total?: number;
+      message?: string;
+    }> => ipcRenderer.invoke('tagging:queueUntaggedImages', locid),
+
+    // Queue ALL untagged images across all locations (backfill)
+    queueAllUntaggedImages: (options?: { batchSize?: number }): Promise<{
+      success: boolean;
+      error?: string;
+      queued?: number;
+      totalUntagged?: number;
+      batchSize?: number;
+      message?: string;
+    }> => ipcRenderer.invoke('tagging:queueAllUntaggedImages', options),
+
+    // Get visual-buffet service status
+    getServiceStatus: (): Promise<{
+      success: boolean;
+      error?: string;
+      enabled?: boolean;
+      available?: boolean;
+      version?: string;
+      models?: string[];
+    }> => ipcRenderer.invoke('tagging:getServiceStatus'),
+
+    // Test visual-buffet connection
+    testConnection: (): Promise<{
+      success: boolean;
+      connected?: boolean;
+      version?: string;
+      error?: string;
+    }> => ipcRenderer.invoke('tagging:testConnection'),
+
+    // Sync tags from XMP sidecars to database
+    syncFromXmp: (input: { locid?: string; archivePath?: string }): Promise<{
+      success: boolean;
+      error?: string;
+      totalFiles?: number;
+      successful?: number;
+      failed?: number;
+      errors?: string[];
+    }> => ipcRenderer.invoke('tagging:syncFromXmp', input),
+
+    // Get XMP tags for a single image
+    getXmpTags: (imghash: string): Promise<{
+      success: boolean;
+      error?: string;
+      imghash?: string;
+      xmpPath?: string;
+      mlTagging?: unknown;
+      schemaVersion?: string;
+      contentHash?: string;
+    }> => ipcRenderer.invoke('tagging:getXmpTags', imghash),
+
+    // Real-time tag updates listener
+    onTagsReady: (callback: (data: {
+      hash: string;
+      tags?: string[];
+      viewType?: string;
+      qualityScore?: number;
+      source?: string;
+    }) => void) => {
+      const listener = (_event: unknown, data: {
+        hash: string;
+        tags?: string[];
+        viewType?: string;
+        qualityScore?: number;
+        source?: string;
+      }) => callback(data);
+      ipcRenderer.on('asset:tags-ready', listener);
+      return () => ipcRenderer.removeListener('asset:tags-ready', listener);
+    },
+  },
+
   // Import Intelligence - Smart location matching during import
   importIntelligence: {
     // Full scan for matches near GPS point
@@ -995,6 +1222,140 @@ const api = {
       ipcRenderer.invoke('import-intelligence:addAkaName', locid, newName),
   },
 
+  // ============================================
+  // Dispatch Hub Integration
+  // ============================================
+  dispatch: {
+    // Authentication
+    login: (username: string, password: string): Promise<boolean> =>
+      ipcRenderer.invoke('dispatch:login', username, password),
+    logout: (): Promise<void> =>
+      ipcRenderer.invoke('dispatch:logout'),
+    isAuthenticated: (): Promise<boolean> =>
+      ipcRenderer.invoke('dispatch:isAuthenticated'),
+
+    // Job operations
+    submitJob: (job: {
+      type: 'import' | 'thumbnail' | 'tag' | 'capture';
+      plugin: string;
+      priority?: 'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW' | 'BULK';
+      data: {
+        source: string;
+        destination?: string;
+        options?: Record<string, unknown>;
+      };
+    }): Promise<string> =>
+      ipcRenderer.invoke('dispatch:submitJob', job),
+    getJob: (jobId: string): Promise<{
+      jobId: string;
+      status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+      result?: unknown;
+      error?: string;
+      workerId?: string;
+      retryCount?: number;
+      movedToDLQ?: boolean;
+    } | null> =>
+      ipcRenderer.invoke('dispatch:getJob', jobId),
+    cancelJob: (jobId: string): Promise<void> =>
+      ipcRenderer.invoke('dispatch:cancelJob', jobId),
+    listJobs: (filter?: { status?: string; limit?: number }): Promise<Array<{
+      jobId: string;
+      status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+      result?: unknown;
+      error?: string;
+      workerId?: string;
+      retryCount?: number;
+      movedToDLQ?: boolean;
+    }>> =>
+      ipcRenderer.invoke('dispatch:listJobs', filter),
+
+    // Worker operations
+    listWorkers: (): Promise<Array<{
+      id: string;
+      name: string;
+      status: string;
+      capabilities: string[];
+      plugins: string[];
+    }>> =>
+      ipcRenderer.invoke('dispatch:listWorkers'),
+
+    // Connection status
+    isConnected: (): Promise<boolean> =>
+      ipcRenderer.invoke('dispatch:isConnected'),
+    checkConnection: (): Promise<boolean> =>
+      ipcRenderer.invoke('dispatch:checkConnection'),
+    getStatus: (): Promise<{
+      connected: boolean;
+      authenticated: boolean;
+      hubUrl: string;
+    }> =>
+      ipcRenderer.invoke('dispatch:getStatus'),
+
+    // Configuration
+    setHubUrl: (url: string): Promise<void> =>
+      ipcRenderer.invoke('dispatch:setHubUrl', url),
+    getHubUrl: (): Promise<string> =>
+      ipcRenderer.invoke('dispatch:getHubUrl'),
+
+    // Lifecycle
+    initialize: (): Promise<void> =>
+      ipcRenderer.invoke('dispatch:initialize'),
+
+    // Event listeners
+    onJobProgress: (callback: (data: { jobId: string; progress: number; stage?: string }) => void) => {
+      const handler = (_event: unknown, data: { jobId: string; progress: number; stage?: string }) => callback(data);
+      ipcRenderer.on('dispatch:job:progress', handler);
+      return () => ipcRenderer.removeListener('dispatch:job:progress', handler);
+    },
+    onJobUpdated: (callback: (data: {
+      jobId: string;
+      status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+      result?: unknown;
+      error?: string;
+      workerId?: string;
+      retryCount?: number;
+      movedToDLQ?: boolean;
+    }) => void) => {
+      const handler = (_event: unknown, data: {
+        jobId: string;
+        status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+        result?: unknown;
+        error?: string;
+        workerId?: string;
+        retryCount?: number;
+        movedToDLQ?: boolean;
+      }) => callback(data);
+      ipcRenderer.on('dispatch:job:updated', handler);
+      return () => ipcRenderer.removeListener('dispatch:job:updated', handler);
+    },
+    onConnectionChange: (callback: (connected: boolean) => void) => {
+      const handler = (_event: unknown, connected: boolean) => callback(connected);
+      ipcRenderer.on('dispatch:connection', handler);
+      return () => ipcRenderer.removeListener('dispatch:connection', handler);
+    },
+    onAuthRequired: (callback: () => void) => {
+      const handler = () => callback();
+      ipcRenderer.on('dispatch:auth:required', handler);
+      return () => ipcRenderer.removeListener('dispatch:auth:required', handler);
+    },
+    // Asset-ready events for UI refresh
+    onThumbnailReady: (callback: (data: { hash: string; mediaType?: string; locid?: string }) => void) => {
+      const handler = (_event: unknown, data: { hash: string; mediaType?: string; locid?: string }) => callback(data);
+      ipcRenderer.on('media:thumbnailReady', handler);
+      return () => ipcRenderer.removeListener('media:thumbnailReady', handler);
+    },
+    onMetadataReady: (callback: (data: { hash: string; mediaType?: string; locid?: string }) => void) => {
+      const handler = (_event: unknown, data: { hash: string; mediaType?: string; locid?: string }) => callback(data);
+      ipcRenderer.on('media:metadataReady', handler);
+      return () => ipcRenderer.removeListener('media:metadataReady', handler);
+    },
+    onLocationAssetsUpdated: (callback: (data: { locid: string }) => void) => {
+      const handler = (_event: unknown, data: { locid: string }) => callback(data);
+      ipcRenderer.on('location:assetsUpdated', handler);
+      return () => ipcRenderer.removeListener('location:assetsUpdated', handler);
+    },
+  },
+
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);
@@ -1004,11 +1365,14 @@ contextBridge.exposeInMainWorld('electronAPI', api);
 // ============================================
 // File objects lose their native path backing when passed through contextBridge.
 // Solution: Capture drop events in preload and extract paths using webUtils.
+// IMPORTANT: Always-on logging for drag-drop - this is critical for debugging
 
 let lastDroppedPaths: string[] = [];
 
 // Set up drop event listener after DOM is ready
 const setupDropListener = () => {
+  console.log('[Preload] Setting up drop listener, webUtils available:', !!webUtils);
+
   document.addEventListener('drop', (event: DragEvent) => {
     console.log('[Preload] Drop event captured');
     lastDroppedPaths = [];
@@ -1023,7 +1387,7 @@ const setupDropListener = () => {
     for (const file of Array.from(event.dataTransfer.files)) {
       try {
         const filePath = webUtils.getPathForFile(file);
-        console.log('[Preload] Extracted path:', filePath, 'for file:', file.name);
+        console.log('[Preload] webUtils.getPathForFile returned:', filePath);
         if (filePath) {
           lastDroppedPaths.push(filePath);
         }
@@ -1032,7 +1396,7 @@ const setupDropListener = () => {
       }
     }
 
-    console.log('[Preload] Total paths extracted:', lastDroppedPaths.length);
+    console.log('[Preload] Total paths extracted:', lastDroppedPaths.length, lastDroppedPaths);
   }, { capture: true });
 };
 
@@ -1046,14 +1410,15 @@ if (document.readyState === 'loading') {
 // Expose function to retrieve the paths extracted from the last drop event
 contextBridge.exposeInMainWorld('getDroppedFilePaths', (): string[] => {
   const paths = [...lastDroppedPaths];
-  console.log('[Preload] getDroppedFilePaths called, returning', paths.length, 'paths');
+  console.log('[Preload] getDroppedFilePaths called, returning', paths.length, 'paths:', paths);
   return paths;
 });
 
 // Also keep extractFilePaths for backwards compatibility
 contextBridge.exposeInMainWorld('extractFilePaths', (files: FileList): string[] => {
-  console.log('[Preload] extractFilePaths called');
-  return [...lastDroppedPaths];
+  const paths = [...lastDroppedPaths];
+  console.log('[Preload] extractFilePaths called, returning', paths.length, 'paths');
+  return paths;
 });
 
 // Type is exported from a separate .d.ts file to avoid CJS compilation issues

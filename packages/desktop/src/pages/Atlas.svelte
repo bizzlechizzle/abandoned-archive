@@ -5,7 +5,7 @@
   import { toasts } from '../stores/toast-store';
   import Map from '../components/Map.svelte';
   import LinkLocationModal from '../components/LinkLocationModal.svelte';
-  import type { Location } from '@au-archive/core';
+  import type { Location } from '@aa/core';
   import type { MapLocation } from '../types/electron';
 
   // OPT-041: Track map initialization state for skeleton loader
@@ -41,7 +41,7 @@
   let loading = $state(false); // OPT-038: Start false, set true only during actual fetch
   let showFilters = $state(false);
   let filterState = $state('');
-  let filterType = $state('');
+  let filterCategory = $state('');
   // Reference map layer toggle
   let showRefMapLayer = $state(false);
   let refMapPoints = $state<RefMapPoint[]>([]);
@@ -61,16 +61,56 @@
     routeQuery = route.query || {};
   });
 
+  // OPT-087: Handle gps-enriched events to update map markers
+  function handleAssetReady(event: CustomEvent<{ type: string; locid?: string; lat?: number; lng?: number }>) {
+    const { type, locid, lat, lng } = event.detail;
+    if (type === 'gps-enriched' && locid && lat != null && lng != null) {
+      // Find existing location and update its GPS, or reload bounds to show new pin
+      const idx = locations.findIndex(loc => loc.locid === locid);
+      if (idx >= 0) {
+        // Update existing location's GPS
+        locations[idx] = {
+          ...locations[idx],
+          gps_lat: lat,
+          gps_lng: lng,
+          gps_source: 'media_gps',
+        };
+        locations = [...locations]; // Trigger reactivity
+      } else if (currentBounds) {
+        // Location wasn't in view, reload bounds to potentially show new pin
+        loadLocationsInBounds(currentBounds);
+      }
+    }
+  }
+
   // OPT-016: Clean up router subscription on component destroy
   // OPT-037: Clean up bounds debounce timer
+  // OPT-087: Clean up asset-ready event listener
   onDestroy(() => {
     unsubscribeRouter();
     if (boundsDebounceTimer) {
       clearTimeout(boundsDebounceTimer);
     }
+    window.removeEventListener('asset-ready', handleAssetReady as EventListener);
   });
 
   const highlightLocid = $derived(routeQuery.locid || null);
+
+  // OPT-107: Parse URL parameters for center/zoom from mini-map expand
+  const urlLat = $derived(routeQuery.lat ? parseFloat(routeQuery.lat) : null);
+  const urlLng = $derived(routeQuery.lng ? parseFloat(routeQuery.lng) : null);
+  const urlZoom = $derived(routeQuery.zoom ? parseInt(routeQuery.zoom, 10) : null);
+
+  // Build center object if both lat/lng are valid numbers
+  const urlCenter = $derived(
+    urlLat !== null && urlLng !== null && !isNaN(urlLat) && !isNaN(urlLng)
+      ? { lat: urlLat, lng: urlLng }
+      : null
+  );
+
+  // OPT-107: Only fitBounds when NO explicit view is provided via URL
+  // When expanding from mini-map, we want to center on the specific location
+  const shouldFitBounds = $derived(!urlCenter);
 
   const urlLayer = $derived.by(() => {
     const layer = routeQuery.layer;
@@ -100,8 +140,8 @@
   let filteredLocations = $derived(() => {
     return locations.filter((loc) => {
       const matchesState = !filterState || loc.address_state === filterState;
-      const matchesType = !filterType || loc.type === filterType;
-      return matchesState && matchesType && isMappable(loc);
+      const matchesCategory = !filterCategory || loc.category === filterCategory;
+      return matchesState && matchesCategory && isMappable(loc);
     });
   });
 
@@ -112,9 +152,9 @@
   });
 
   // OPT-043: Updated to work with MapLocation type
-  let uniqueTypes = $derived(() => {
-    const types = new Set(locations.filter(isMappable).map(l => l.type).filter(Boolean));
-    return Array.from(types).sort();
+  let uniqueCategories = $derived(() => {
+    const categories = new Set(locations.filter(isMappable).map(l => l.category).filter(Boolean));
+    return Array.from(categories).sort();
   });
 
   /**
@@ -146,7 +186,7 @@
           locations = boundsLocations.map(loc => ({
             locid: loc.locid,
             locnam: loc.locnam,
-            type: loc.type,
+            category: loc.category,
             gps_lat: loc.gps?.lat ?? 0,
             gps_lng: loc.gps?.lng ?? 0,
             gps_accuracy: loc.gps?.accuracy,
@@ -185,7 +225,14 @@
       return;
     }
     try {
-      const points = await window.electronAPI.refMaps.getPointsInBounds(bounds);
+      // Extract plain object from Svelte 5 proxy to allow IPC cloning
+      const plainBounds = {
+        north: bounds.north,
+        south: bounds.south,
+        east: bounds.east,
+        west: bounds.west
+      };
+      const points = await window.electronAPI.refMaps.getPointsInBounds(plainBounds);
       refMapPoints = points;
     } catch (err) {
       console.error('Error loading reference points in bounds:', err);
@@ -247,7 +294,7 @@
       locations = allLocations.map(loc => ({
         locid: loc.locid,
         locnam: loc.locnam,
-        type: loc.type,
+        category: loc.category,
         gps_lat: loc.gps?.lat ?? 0,
         gps_lng: loc.gps?.lng ?? 0,
         gps_accuracy: loc.gps?.accuracy,
@@ -418,6 +465,9 @@
     const handleClickOutside = () => closeContextMenu();
     document.addEventListener('click', handleClickOutside);
 
+    // OPT-087: Listen for GPS enrichment events to update map markers
+    window.addEventListener('asset-ready', handleAssetReady as EventListener);
+
     return () => {
       document.removeEventListener('click', handleClickOutside);
     };
@@ -459,25 +509,25 @@
 </script>
 
 <div class="h-full flex flex-col">
-  <div class="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+  <div class="bg-white border-b border-braun-200 px-6 py-4 flex items-center justify-between">
     <h1 class="text-xl font-semibold text-foreground">Atlas</h1>
     <button
       onclick={() => showFilters = !showFilters}
-      class="px-4 py-2 bg-gray-100 text-foreground rounded hover:bg-gray-200 transition text-sm"
+      class="px-4 py-2 bg-braun-100 text-foreground rounded hover:bg-braun-200 transition text-sm"
     >
       {showFilters ? 'Hide' : 'Show'} Filters
     </button>
   </div>
 
   {#if showFilters}
-    <div class="bg-gray-50 border-b border-gray-200 px-6 py-4">
+    <div class="bg-braun-50 border-b border-braun-200 px-6 py-4">
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <label for="atlas-state" class="block text-xs font-medium text-gray-700 mb-1">State</label>
+          <label for="atlas-state" class="block text-xs font-medium text-braun-700 mb-1">State</label>
           <select
             id="atlas-state"
             bind:value={filterState}
-            class="w-full px-3 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full px-3 py-1.5 text-sm border border-braun-300 rounded focus:outline-none focus:border-braun-600"
           >
             <option value="">All States</option>
             {#each uniqueStates() as state}
@@ -487,31 +537,31 @@
         </div>
 
         <div>
-          <label for="atlas-type" class="block text-xs font-medium text-gray-700 mb-1">Type</label>
+          <label for="atlas-category" class="block text-xs font-medium text-braun-700 mb-1">Category</label>
           <select
-            id="atlas-type"
-            bind:value={filterType}
-            class="w-full px-3 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            id="atlas-category"
+            bind:value={filterCategory}
+            class="w-full px-3 py-1.5 text-sm border border-braun-300 rounded focus:outline-none focus:border-braun-600"
           >
-            <option value="">All Types</option>
-            {#each uniqueTypes() as type}
-              <option value={type}>{type}</option>
+            <option value="">All Categories</option>
+            {#each uniqueCategories() as category}
+              <option value={category}>{category}</option>
             {/each}
           </select>
         </div>
       </div>
       <!-- Reference Pins checkbox for reference map points -->
-      <div class="flex items-center gap-2 pt-3 mt-3 border-t border-gray-200">
+      <div class="flex items-center gap-2 pt-3 mt-3 border-t border-braun-200">
         <input
           type="checkbox"
           id="ref-pins"
           bind:checked={showRefMapLayer}
-          class="w-4 h-4 accent-accent rounded"
+          class="w-4 h-4 accent-braun-900 rounded"
         />
-        <label for="ref-pins" class="text-sm text-gray-700 cursor-pointer">
+        <label for="ref-pins" class="text-sm text-braun-700 cursor-pointer">
           Reference Pins
           {#if refMapPoints.length > 0}
-            <span class="text-gray-400">({refMapPoints.length})</span>
+            <span class="text-braun-400">({refMapPoints.length})</span>
           {/if}
         </label>
       </div>
@@ -519,37 +569,36 @@
   {/if}
 
   <div class="flex-1 relative">
-    <!-- OPT-041: Premium skeleton loader for perceived performance -->
+    <!-- OPT-041: Static skeleton loader for perceived performance (Braun: no animation) -->
     {#if !mapReady}
-      <div class="absolute inset-0 bg-gray-100 z-20 flex flex-col">
-        <!-- Skeleton map area with shimmer animation -->
+      <div class="absolute inset-0 bg-braun-100 z-20 flex flex-col">
+        <!-- Static skeleton map area -->
         <div class="flex-1 relative overflow-hidden">
-          <div class="absolute inset-0 bg-gradient-to-br from-gray-200 via-gray-100 to-gray-200">
+          <div class="absolute inset-0 bg-braun-200">
             <!-- Simulated map grid pattern -->
             <div class="absolute inset-0 opacity-10">
               {#each Array(8) as _, i}
-                <div class="absolute border-b border-gray-400" style="top: {12.5 * i}%; width: 100%;"></div>
-                <div class="absolute border-r border-gray-400" style="left: {12.5 * i}%; height: 100%;"></div>
+                <div class="absolute border-b border-braun-400" style="top: {12.5 * i}%; width: 100%;"></div>
+                <div class="absolute border-r border-braun-400" style="left: {12.5 * i}%; height: 100%;"></div>
               {/each}
             </div>
-            <!-- Shimmer overlay -->
-            <div class="absolute inset-0 skeleton-shimmer"></div>
           </div>
-          <!-- Center marker placeholder -->
+          <!-- Center marker placeholder (static) -->
           <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-            <div class="w-12 h-12 rounded-full bg-accent/30 animate-pulse flex items-center justify-center">
-              <div class="w-4 h-4 rounded-full bg-accent"></div>
+            <div class="w-12 h-12 rounded-full bg-braun-900/30 flex items-center justify-center">
+              <div class="w-4 h-4 rounded-full bg-braun-900"></div>
             </div>
           </div>
           <!-- Loading text -->
-          <div class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-white/90 px-4 py-2 rounded-lg shadow-sm">
-            <p class="text-gray-600 text-sm font-medium">Initializing Atlas...</p>
+          <div class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-white/90 px-4 py-2 rounded border border-braun-200">
+            <p class="text-braun-600 text-sm font-medium">Initializing Atlas...</p>
           </div>
         </div>
       </div>
     {/if}
 
     <!-- ALWAYS show the map - it's an atlas, not a placeholder -->
+    <!-- OPT-107: Pass center/zoom from URL params for mini-map expand navigation -->
     <Map
       locations={filteredLocations()}
       onLocationClick={handleLocationClick}
@@ -557,54 +606,56 @@
       onMapRightClick={handleMapRightClick}
       popupMode="minimal"
       defaultLayer={urlLayer ?? 'satellite-labels'}
+      center={urlCenter}
+      zoom={urlZoom}
       refMapPoints={refMapPoints}
       showRefMapLayer={showRefMapLayer}
       onCreateFromRefPoint={handleCreateFromRefPoint}
       onLinkRefPoint={handleLinkRefPoint}
       onDeleteRefPoint={handleDeleteRefPoint}
       hideAttribution={true}
-      fitBounds={true}
+      fitBounds={shouldFitBounds}
       onBoundsChange={handleBoundsChange}
     />
     {#if loading && mapReady}
-      <div class="absolute top-2 left-1/2 -translate-x-1/2 bg-white px-4 py-2 rounded shadow-lg z-10">
-        <p class="text-gray-500 text-sm">Loading locations...</p>
+      <div class="absolute top-2 left-1/2 -translate-x-1/2 bg-white px-4 py-2 rounded border border-braun-300 z-10">
+        <p class="text-braun-500 text-sm">Loading locations...</p>
       </div>
     {/if}
 
     <!-- BUG-2 FIX: Right-click context menu positioned at click location -->
     {#if contextMenu.show}
       <div
-        class="fixed bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50 min-w-[160px]"
+        class="fixed bg-white rounded border border-braun-300 py-1 z-50 min-w-[160px]"
         style="left: {Math.min(contextMenu.x, window.innerWidth - 180)}px; top: {Math.min(contextMenu.y, window.innerHeight - 150)}px;"
         onclick={(e) => e.stopPropagation()}
       >
-        <div class="px-3 py-2 border-b border-gray-100">
-          <p class="text-xs text-gray-500 font-mono">
+        <div class="px-3 py-2 border-b border-braun-100">
+          <p class="text-xs text-braun-500 font-mono">
             {contextMenu.lat.toFixed(6)}, {contextMenu.lng.toFixed(6)}
           </p>
         </div>
         <button
           onclick={handleAddLocation}
-          class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 transition flex items-center gap-2"
+          class="w-full text-left px-3 py-2 text-sm hover:bg-braun-100 transition flex items-center gap-2"
         >
-          <svg class="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="w-4 h-4 text-braun-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
           Add Location
         </button>
         <button
           onclick={handleCopyGps}
-          class="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 transition flex items-center gap-2"
+          class="w-full text-left px-3 py-2 text-sm hover:bg-braun-100 transition flex items-center gap-2"
         >
-          <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="w-4 h-4 text-braun-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
           </svg>
           Copy GPS
         </button>
         <button
           onclick={closeContextMenu}
-          class="w-full text-left px-3 py-2 text-sm text-gray-400 hover:bg-gray-100 transition"
+          class="w-full text-left px-3 py-2 text-sm text-braun-400 hover:bg-braun-100 transition"
         >
           Cancel
         </button>
@@ -622,35 +673,4 @@
   />
 {/if}
 
-<style>
-  /* OPT-041: Premium skeleton shimmer animation for Atlas loading */
-  .skeleton-shimmer {
-    position: relative;
-    overflow: hidden;
-  }
-
-  .skeleton-shimmer::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      rgba(255, 255, 255, 0.4) 50%,
-      transparent 100%
-    );
-    animation: shimmer 2s infinite;
-  }
-
-  @keyframes shimmer {
-    0% {
-      transform: translateX(-100%);
-    }
-    100% {
-      transform: translateX(100%);
-    }
-  }
-</style>
+<!-- Braun/Ulm: No shimmer animation - static loading states only -->

@@ -14,9 +14,10 @@
   interface Props {
     videos: MediaVideo[];
     onOpenLightbox: (index: number) => void;
+    label?: string;  // Custom label, defaults to "Videos"
   }
 
-  let { videos, onOpenLightbox }: Props = $props();
+  let { videos, onOpenLightbox, label = "Videos" }: Props = $props();
 
   const VIDEO_LIMIT = 8; // 4x2 grid for preview
   const COLUMNS = 4; // Grid columns for virtual mode
@@ -74,7 +75,7 @@
   const videoIndexMap = $derived(() => {
     const map = new Map<string, number>();
     for (let i = 0; i < videos.length; i++) {
-      map.set(videos[i].vidsha, i);
+      map.set(videos[i].vidhash, i);
     }
     return map;
   });
@@ -97,16 +98,16 @@
 </script>
 
 {#if videos.length > 0}
-  <div class="border-b border-gray-100 last:border-b-0">
+  <div class="border-b border-braun-200 last:border-b-0">
     <!-- Sub-accordion header -->
     <button
       onclick={() => isOpen = !isOpen}
       aria-expanded={isOpen}
-      class="w-full py-3 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
+      class="w-full py-3 flex items-center justify-between text-left hover:bg-braun-100 transition-colors"
     >
-      <h3 class="text-sm font-medium text-gray-700">Videos ({videos.length})</h3>
+      <h3 class="text-sm font-medium text-braun-900">{label} ({videos.length})</h3>
       <svg
-        class="w-4 h-4 text-gray-400 transition-transform duration-200 {isOpen ? 'rotate-180' : ''}"
+        class="w-4 h-4 text-braun-400 transition-transform duration-200 {isOpen ? 'rotate-180' : ''}"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -121,7 +122,7 @@
           <!-- OPT-039: Virtual scrolling grid for large collections -->
           <div
             bind:this={scrollContainerRef}
-            class="overflow-auto rounded-lg"
+            class="overflow-auto rounded"
             style="height: 500px; max-height: 60vh;"
           >
             <div
@@ -135,17 +136,19 @@
                   {#each getRowVideos(virtualRow.index) as { video, globalIndex }}
                     <button
                       onclick={() => onOpenLightbox(globalIndex)}
-                      class="video-card aspect-[1.618/1] bg-gray-100 rounded-lg overflow-hidden relative group"
+                      class="video-card aspect-[1.618/1] bg-braun-100 rounded overflow-hidden relative group"
                     >
                       {#if video.thumb_path_sm || video.thumb_path}
+                        <!-- OPT-110: Fade-in transition for smooth image loading -->
                         <img
                           src={`media://${video.thumb_path_sm || video.thumb_path}?v=${cacheVersion}`}
                           alt={video.vidnam}
                           loading="lazy"
-                          class="w-full h-full object-cover"
+                          class="w-full h-full object-cover opacity-0 transition-opacity duration-200"
+                          onload={(e) => e.currentTarget.classList.remove('opacity-0')}
                         />
                       {:else}
-                        <div class="absolute inset-0 flex items-center justify-center text-gray-400 bg-gray-200">
+                        <div class="absolute inset-0 flex items-center justify-center text-braun-400 bg-braun-200">
                           <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                           </svg>
@@ -175,22 +178,25 @@
           </div>
         {:else}
           <!-- Standard grid for preview or smaller collections -->
+          <!-- OPT-110: Keyed by vidhash to prevent DOM thrashing on array updates -->
           <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {#each displayedVideos as video, displayIndex}
-              {@const actualIndex = videoIndexMap().get(video.vidsha) ?? displayIndex}
+            {#each displayedVideos as video (video.vidhash)}
+              {@const actualIndex = videoIndexMap().get(video.vidhash) ?? 0}
               <button
                 onclick={() => onOpenLightbox(actualIndex)}
-                class="video-card aspect-[1.618/1] bg-gray-100 rounded-lg overflow-hidden relative group"
+                class="video-card aspect-[1.618/1] bg-braun-100 rounded overflow-hidden relative group"
               >
                 {#if video.thumb_path_sm || video.thumb_path}
+                  <!-- OPT-110: Fade-in transition for smooth image loading -->
                   <img
                     src={`media://${video.thumb_path_sm || video.thumb_path}?v=${cacheVersion}`}
                     alt={video.vidnam}
                     loading="lazy"
-                    class="w-full h-full object-cover"
+                    class="w-full h-full object-cover opacity-0 transition-opacity duration-200"
+                    onload={(e) => e.currentTarget.classList.remove('opacity-0')}
                   />
                 {:else}
-                  <div class="absolute inset-0 flex items-center justify-center text-gray-400 bg-gray-200">
+                  <div class="absolute inset-0 flex items-center justify-center text-braun-400 bg-braun-200">
                     <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                     </svg>
@@ -222,7 +228,7 @@
           <div class="mt-3 text-center">
             <button
               onclick={() => showAllVideos = !showAllVideos}
-              class="text-sm text-accent hover:underline"
+              class="text-sm text-braun-900 hover:underline"
             >
               {showAllVideos ? 'Show Less' : `Show All (${videos.length - VIDEO_LIMIT} more)`}
             </button>
@@ -234,15 +240,14 @@
 {/if}
 
 <style>
-  /* Premium hover effect */
+  /* Premium hover effect - Braun design system */
   .video-card {
-    transition: transform 200ms ease, box-shadow 200ms ease;
+    transition: transform 200ms ease, border-color 200ms ease;
     border: 2px solid transparent;
   }
 
   .video-card:hover {
     transform: scale(1.02);
-    box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.15);
-    border-color: var(--color-accent, #b9975c);
+    border-color: #1C1C1A; /* braun-900 */
   }
 </style>

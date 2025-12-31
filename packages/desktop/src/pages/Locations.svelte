@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { router } from '../stores/router';
   import { createVirtualizer } from '@tanstack/svelte-virtual';
-  import type { Location } from '@au-archive/core';
+  import type { Location } from '@aa/core';
   import SkeletonLoader from '../components/SkeletonLoader.svelte';
 
   // OPT-036: Locations now loaded with database-side filtering
@@ -10,8 +10,8 @@
   let totalCount = $state(0);
   let searchQuery = $state('');
   let filterState = $state('');
-  let filterType = $state('');
-  let filterStype = $state('');
+  let filterCategory = $state('');
+  let filterClass = $state('');
   let filterCondition = $state('');
   let filterStatus = $state('');
   let filterCity = $state('');
@@ -34,8 +34,8 @@
   // OPT-036: Filter options loaded via efficient SELECT DISTINCT (not from full location array)
   let filterOptions = $state<{
     states: string[];
-    types: string[];
-    stypes: string[];
+    categories: string[];
+    classes: string[];
     cities: string[];
     counties: string[];
     censusRegions: string[];
@@ -43,8 +43,8 @@
     culturalRegions: string[];
   }>({
     states: [],
-    types: [],
-    stypes: [],
+    categories: [],
+    classes: [],
     cities: [],
     counties: [],
     censusRegions: [],
@@ -103,8 +103,8 @@
     // Apply URL query params to filters
     if (q.filter) specialFilter = q.filter;
     if (q.state) filterState = q.state;
-    if (q.type) filterType = q.type;
-    if (q.stype) filterStype = q.stype;
+    if (q.category) filterCategory = q.category;
+    if (q.class) filterClass = q.class;
     if (q.condition) filterCondition = q.condition;
     if (q.status) filterStatus = q.status;
     if (q.city) filterCity = q.city;
@@ -129,7 +129,7 @@
 
     // Count active filters
     activeFilterCount = [
-      filterState, filterType, filterStype, filterCondition, filterStatus,
+      filterState, filterCategory, filterClass, filterCondition, filterStatus,
       filterCity, filterCounty, filterDocumentation, filterAccess, filterAuthor,
       filterAuthorId, filterCensusRegion, filterCensusDivision, filterCulturalRegion,
       filterStateDirection, specialFilter
@@ -171,8 +171,8 @@
       const filters: Record<string, any> = {};
 
       if (filterState) filters.state = filterState;
-      if (filterType) filters.type = filterType;
-      if (filterStype) filters.stype = filterStype;
+      if (filterCategory) filters.category = filterCategory;
+      if (filterClass) filters.class = filterClass;
       if (filterCounty) filters.county = filterCounty;
       if (filterAccess) filters.access = filterAccess;
       if (searchQuery) filters.search = searchQuery;
@@ -233,7 +233,7 @@
 
   // OPT-036: Use memoized filter options instead of computing from locations
   let uniqueStates = $derived(() => filterOptions.states);
-  let uniqueTypes = $derived(() => filterOptions.types);
+  let uniqueCategories = $derived(() => filterOptions.categories);
   let uniqueCensusRegions = $derived(() => filterOptions.censusRegions);
   let uniqueCensusDivisions = $derived(() => filterOptions.censusDivisions);
   let uniqueCulturalRegions = $derived(() => filterOptions.culturalRegions);
@@ -241,8 +241,8 @@
   function clearAllFilters() {
     specialFilter = '';
     filterState = '';
-    filterType = '';
-    filterStype = '';
+    filterCategory = '';
+    filterClass = '';
     filterCondition = '';
     filterStatus = '';
     filterCity = '';
@@ -268,8 +268,8 @@
     switch (filterName) {
       case 'filter': specialFilter = ''; break;
       case 'state': filterState = ''; break;
-      case 'type': filterType = ''; break;
-      case 'stype': filterStype = ''; break;
+      case 'category': filterCategory = ''; break;
+      case 'class': filterClass = ''; break;
       case 'condition': filterCondition = ''; break;
       case 'status': filterStatus = ''; break;
       case 'city': filterCity = ''; break;
@@ -288,8 +288,8 @@
     const newQuery: Record<string, string> = {};
     if (specialFilter) newQuery.filter = specialFilter;
     if (filterState) newQuery.state = filterState;
-    if (filterType) newQuery.type = filterType;
-    if (filterStype) newQuery.stype = filterStype;
+    if (filterCategory) newQuery.category = filterCategory;
+    if (filterClass) newQuery.class = filterClass;
     if (filterCondition) newQuery.condition = filterCondition;
     if (filterStatus) newQuery.status = filterStatus;
     if (filterCity) newQuery.city = filterCity;
@@ -313,8 +313,8 @@
     const filters: Array<{ key: string; label: string; value: string }> = [];
     if (specialFilter) filters.push({ key: 'filter', label: 'Filter', value: specialFilter });
     if (filterState) filters.push({ key: 'state', label: 'State', value: filterState });
-    if (filterType) filters.push({ key: 'type', label: 'Type', value: filterType });
-    if (filterStype) filters.push({ key: 'stype', label: 'Sub-Type', value: filterStype });
+    if (filterCategory) filters.push({ key: 'category', label: 'Category', value: filterCategory });
+    if (filterClass) filters.push({ key: 'class', label: 'Class', value: filterClass });
     if (filterCondition) filters.push({ key: 'condition', label: 'Condition', value: filterCondition });
     if (filterStatus) filters.push({ key: 'status', label: 'Status', value: filterStatus });
     if (filterCity) filters.push({ key: 'city', label: 'City', value: filterCity });
@@ -356,31 +356,31 @@
 
 <div class="p-8">
   <div class="mb-8">
-    <h1 class="text-3xl font-bold text-foreground mb-2">Locations</h1>
-    <p class="text-gray-600">Browse and manage abandoned locations</p>
+    <h1 class="text-[28px] font-medium text-braun-900 tracking-tight mb-1">Locations</h1>
+    <p class="text-sm text-braun-600">Browse and manage abandoned locations</p>
   </div>
 
   {#if activeFilters().length > 0}
-    <div class="mb-4 p-3 bg-accent/10 border border-accent/20 rounded-lg">
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-sm text-foreground font-medium">
+    <div class="mb-4 p-4 bg-braun-100 border border-braun-300 rounded">
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-[11px] font-semibold uppercase tracking-wider text-braun-600">
           Active Filters ({activeFilters().length})
         </span>
         <button
           onclick={clearAllFilters}
-          class="text-sm text-accent hover:underline"
+          class="text-xs text-braun-600 hover:text-braun-900 hover:underline font-medium"
         >
           Clear all
         </button>
       </div>
       <div class="flex flex-wrap gap-2">
         {#each activeFilters() as filter}
-          <span class="inline-flex items-center gap-1 px-2 py-1 bg-accent/20 text-foreground text-sm rounded">
-            <span class="text-gray-500 text-xs">{filter.label}:</span>
+          <span class="inline-flex items-center gap-1 px-2 py-1 bg-white border border-braun-300 text-braun-900 text-sm rounded-sm">
+            <span class="text-braun-500 text-xs">{filter.label}:</span>
             <span class="font-medium">{filter.value}</span>
             <button
               onclick={() => clearFilter(filter.key)}
-              class="ml-1 text-gray-500 hover:text-red-500"
+              class="ml-1 text-braun-400 hover:text-error"
               title="Remove filter"
             >
               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -393,27 +393,27 @@
     </div>
   {/if}
 
-  <div class="bg-white rounded-lg shadow p-6 mb-6">
+  <div class="bg-white border border-braun-300 rounded p-6 mb-6">
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
       <div>
-        <label for="search" class="block text-sm font-medium text-gray-700 mb-2">Search</label>
+        <label for="search" class="form-label">Search</label>
         <input
           id="search"
           type="text"
           value={searchQuery}
           oninput={handleSearchInput}
           placeholder="Search by name..."
-          class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+          class="w-full px-4 py-3 bg-white border border-braun-400 rounded text-sm text-braun-900 placeholder:text-braun-400 focus:outline-none focus:border-braun-600 transition-colors"
         />
       </div>
 
       <div>
-        <label for="state" class="block text-sm font-medium text-gray-700 mb-2">State</label>
+        <label for="state" class="form-label">State</label>
         <select
           id="state"
           bind:value={filterState}
           onchange={handleFilterChange}
-          class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+          class="w-full px-4 py-3 bg-white border border-braun-400 rounded text-sm text-braun-900 focus:outline-none focus:border-braun-600 transition-colors"
         >
           <option value="">All States</option>
           {#each uniqueStates() as state}
@@ -423,16 +423,16 @@
       </div>
 
       <div>
-        <label for="type" class="block text-sm font-medium text-gray-700 mb-2">Type</label>
+        <label for="category" class="form-label">Category</label>
         <select
-          id="type"
-          bind:value={filterType}
+          id="category"
+          bind:value={filterCategory}
           onchange={handleFilterChange}
-          class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+          class="w-full px-4 py-3 bg-white border border-braun-400 rounded text-sm text-braun-900 focus:outline-none focus:border-braun-600 transition-colors"
         >
-          <option value="">All Types</option>
-          {#each uniqueTypes() as type}
-            <option value={type}>{type}</option>
+          <option value="">All Categories</option>
+          {#each uniqueCategories() as category}
+            <option value={category}>{category}</option>
           {/each}
         </select>
       </div>
@@ -440,14 +440,14 @@
 
     <!-- DECISION-012: Census Region Filters -->
     {#if uniqueCensusRegions().length > 0 || uniqueCensusDivisions().length > 0 || uniqueCulturalRegions().length > 0}
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-200">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 pt-4 border-t border-braun-200">
         <div>
-          <label for="censusRegion" class="block text-sm font-medium text-gray-700 mb-2">Census Region</label>
+          <label for="censusRegion" class="form-label">Census Region</label>
           <select
             id="censusRegion"
             bind:value={filterCensusRegion}
             onchange={handleFilterChange}
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full px-4 py-3 bg-white border border-braun-400 rounded text-sm text-braun-900 focus:outline-none focus:border-braun-600 transition-colors"
           >
             <option value="">All Regions</option>
             {#each uniqueCensusRegions() as region}
@@ -457,12 +457,12 @@
         </div>
 
         <div>
-          <label for="censusDivision" class="block text-sm font-medium text-gray-700 mb-2">Census Division</label>
+          <label for="censusDivision" class="form-label">Census Division</label>
           <select
             id="censusDivision"
             bind:value={filterCensusDivision}
             onchange={handleFilterChange}
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full px-4 py-3 bg-white border border-braun-400 rounded text-sm text-braun-900 focus:outline-none focus:border-braun-600 transition-colors"
           >
             <option value="">All Divisions</option>
             {#each uniqueCensusDivisions() as division}
@@ -472,12 +472,12 @@
         </div>
 
         <div>
-          <label for="culturalRegion" class="block text-sm font-medium text-gray-700 mb-2">Cultural Region</label>
+          <label for="culturalRegion" class="form-label">Cultural Region</label>
           <select
             id="culturalRegion"
             bind:value={filterCulturalRegion}
             onchange={handleFilterChange}
-            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
+            class="w-full px-4 py-3 bg-white border border-braun-400 rounded text-sm text-braun-900 focus:outline-none focus:border-braun-600 transition-colors"
           >
             <option value="">All Cultural Regions</option>
             {#each uniqueCulturalRegions() as region}
@@ -491,32 +491,32 @@
 
   {#if loading}
     <!-- OPT-040: Premium skeleton loaders for table -->
-    <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="bg-white border border-braun-300 rounded overflow-hidden">
       <!-- Header skeleton -->
-      <div class="grid grid-cols-[1fr_150px_200px_80px] bg-gray-50 border-b border-gray-200">
-        <div class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</div>
-        <div class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</div>
-        <div class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</div>
-        <div class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">GPS</div>
+      <div class="grid grid-cols-[1fr_150px_200px_80px] bg-braun-50 border-b border-braun-300">
+        <div class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-braun-500">Name</div>
+        <div class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-braun-500">Category</div>
+        <div class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-braun-500">Location</div>
+        <div class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-braun-500">GPS</div>
       </div>
       <!-- Row skeletons -->
       <SkeletonLoader type="table-row" count={10} />
     </div>
   {:else if filteredLocations().length > 0}
     <!-- OPT-038: Virtual scrolling for performance with 4K+ locations -->
-    <div class="bg-white rounded-lg shadow overflow-hidden">
+    <div class="bg-white border border-braun-300 rounded overflow-hidden">
       <!-- Fixed header -->
-      <div class="grid grid-cols-[1fr_150px_200px_80px] bg-gray-50 border-b border-gray-200">
-        <div class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+      <div class="grid grid-cols-[1fr_150px_200px_80px] bg-braun-50 border-b border-braun-300">
+        <div class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-braun-500">
           Name
         </div>
-        <div class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-          Type
+        <div class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-braun-500">
+          Category
         </div>
-        <div class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+        <div class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-braun-500">
           Location
         </div>
-        <div class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+        <div class="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-braun-500">
           GPS
         </div>
       </div>
@@ -533,20 +533,20 @@
           {#each virtualItems as virtualRow (virtualRow.index)}
             {@const location = filteredLocations()[virtualRow.index]}
             <div
-              class="grid grid-cols-[1fr_150px_200px_80px] absolute top-0 left-0 w-full hover:bg-gray-50 cursor-pointer border-b border-gray-100"
+              class="grid grid-cols-[1fr_150px_200px_80px] absolute top-0 left-0 w-full hover:bg-braun-100 cursor-pointer border-b border-braun-200"
               style="height: {virtualRow.size}px; transform: translateY({virtualRow.start}px);"
               onclick={() => router.navigate(`/location/${location.locid}`)}
             >
               <div class="px-6 py-4 flex flex-col justify-center overflow-hidden">
-                <div class="text-sm font-medium text-gray-900 truncate">{location.locnam}</div>
+                <div class="text-sm font-medium text-braun-900 truncate">{location.locnam}</div>
                 {#if location.akanam}
-                  <div class="text-xs text-gray-500 truncate">{location.akanam}</div>
+                  <div class="text-xs text-braun-500 truncate">{location.akanam}</div>
                 {/if}
               </div>
-              <div class="px-6 py-4 flex items-center text-sm text-gray-500 truncate">
-                {location.type || '-'}
+              <div class="px-6 py-4 flex items-center text-sm text-braun-600 truncate">
+                {location.category || '-'}
               </div>
-              <div class="px-6 py-4 flex items-center text-sm text-gray-500 truncate">
+              <div class="px-6 py-4 flex items-center text-sm text-braun-600 truncate">
                 {#if location.address?.city && location.address?.state}
                   {location.address.city}, {location.address.state}
                 {:else if location.address?.state}
@@ -557,11 +557,11 @@
               </div>
               <div class="px-6 py-4 flex items-center">
                 {#if location.gps}
-                  <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                  <span class="px-2 inline-flex text-xs leading-5 font-medium rounded-sm bg-gps-verified/10 text-gps-verified">
                     Yes
                   </span>
                 {:else}
-                  <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                  <span class="px-2 inline-flex text-xs leading-5 font-medium rounded-sm bg-braun-100 text-braun-500">
                     No
                   </span>
                 {/if}
@@ -571,13 +571,13 @@
         </div>
       </div>
     </div>
-    <div class="mt-4 text-sm text-gray-600">
+    <div class="mt-4 text-sm text-braun-600">
       Showing {filteredLocations().length} of {locations.length} locations
     </div>
   {:else}
-    <div class="bg-white rounded-lg shadow p-6 text-center text-gray-400">
-      <p class="text-lg">No locations found</p>
-      <p class="text-sm mt-2">
+    <div class="bg-white border border-braun-300 rounded p-8 text-center">
+      <p class="text-base text-braun-600">No locations found</p>
+      <p class="text-sm text-braun-500 mt-2">
         {#if locations.length === 0}
           Add your first location from the Atlas page
         {:else}

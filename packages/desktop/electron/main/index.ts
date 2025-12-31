@@ -2,8 +2,8 @@ import { app, BrowserWindow, dialog, session, protocol, net } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { getDatabase, closeDatabase } from './database';
-import { registerIpcHandlers } from './ipc-handlers';
+import { getDatabase, closeDatabase, getRawDatabase } from './database';
+import { registerIpcHandlers, shutdownDispatchClient } from './ipc-handlers';
 import { getHealthMonitor } from '../services/health-monitor';
 import { getRecoverySystem } from '../services/recovery-system';
 import { getConfigService } from '../services/config-service';
@@ -14,11 +14,18 @@ import { getBackupScheduler } from '../services/backup-scheduler';
 import { initBrowserViewManager, destroyBrowserViewManager } from '../services/browser-view-manager';
 import { startBookmarkAPIServer, stopBookmarkAPIServer } from '../services/bookmark-api-server';
 import { startWebSocketServer, stopWebSocketServer } from '../services/websocket-server';
-import { closeResearchBrowser } from '../services/research-browser-service';
+import { terminateDetachedBrowser } from '../services/detached-browser-service';
 import { getDatabaseArchiveService } from '../services/database-archive-service';
-import { SQLiteBookmarksRepository } from '../repositories/sqlite-bookmarks-repository';
+import { stopOllama } from '../services/ollama-lifecycle-service';
+import { stopLiteLLM } from '../services/litellm-lifecycle-service';
+import { getPreprocessingService } from '../services/extraction/preprocessing-service';
+import { SQLiteWebSourcesRepository } from '../repositories/sqlite-websources-repository';
 import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
 import { SQLiteSubLocationRepository } from '../repositories/sqlite-sublocation-repository';
+// CLI-first architecture: Bridge to @aa/services
+import { initCliBridge } from '../services/cli-bridge';
+// Pipeline tools auto-update on startup
+import { updateAllPipelineTools } from '../services/pipeline-tools-updater';
 
 /**
  * OPT-045: GPU mitigation flags for macOS Leaflet/map rendering
@@ -56,13 +63,23 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 // Crash handlers - log errors before exiting
+// OPT-080: Enhanced error logging for structured clone debugging
 process.on('uncaughtException', (error: Error) => {
+  console.error('=== UNCAUGHT EXCEPTION ===');
+  console.error('Message:', error.message);
+  console.error('Name:', error.name);
+  console.error('Stack:', error.stack);
+  try {
+    console.error('Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+  } catch (e) {
+    console.error('Could not stringify error:', e);
+  }
+
   try {
     getLogger().error('Main', 'Uncaught exception', error);
   } catch {
     // Logger might not be initialized yet
   }
-  console.error('Uncaught exception:', error);
 
   dialog.showErrorBox(
     'Application Error',
@@ -73,13 +90,25 @@ process.on('uncaughtException', (error: Error) => {
 });
 
 process.on('unhandledRejection', (reason: unknown) => {
+  console.error('=== UNHANDLED REJECTION ===');
+  console.error('Reason:', reason);
+  if (reason instanceof Error) {
+    console.error('Message:', reason.message);
+    console.error('Name:', reason.name);
+    console.error('Stack:', reason.stack);
+    try {
+      console.error('Full error:', JSON.stringify(reason, Object.getOwnPropertyNames(reason), 2));
+    } catch (e) {
+      console.error('Could not stringify error:', e);
+    }
+  }
+
   const error = reason instanceof Error ? reason : new Error(String(reason));
   try {
     getLogger().error('Main', 'Unhandled promise rejection', error);
   } catch {
     // Logger might not be initialized yet
   }
-  console.error('Unhandled rejection:', reason);
 
   dialog.showErrorBox(
     'Application Error',
@@ -223,10 +252,39 @@ async function startupOrchestrator(): Promise<void> {
     await configService.load();
     logger.info('Main', 'Configuration loaded successfully');
 
+    // Step 1b: Update pipeline tools from GitHub (non-blocking)
+    logger.info('Main', 'Step 1b: Updating pipeline tools');
+    try {
+      const toolsResult = await updateAllPipelineTools();
+      if (toolsResult.success) {
+        logger.info('Main', 'Pipeline tools updated successfully', {
+          updated: toolsResult.results.filter((r) => r.action !== 'already-up-to-date').length,
+          total: toolsResult.results.length,
+          durationMs: toolsResult.totalDurationMs,
+        });
+      } else {
+        const failed = toolsResult.results.filter((r) => !r.success);
+        logger.warn('Main', 'Some pipeline tools failed to update', {
+          failed: failed.map((r) => r.name),
+          durationMs: toolsResult.totalDurationMs,
+        });
+      }
+    } catch (toolsError) {
+      // Non-fatal: log warning but continue startup
+      logger.warn('Main', 'Pipeline tools update failed', {
+        message: (toolsError as Error).message,
+      });
+    }
+
     // Step 2: Initialize database
     logger.info('Main', 'Step 2/5: Initializing database');
-    getDatabase();
+    const db = getDatabase();
     logger.info('Main', 'Database initialized successfully');
+
+    // Step 2b: Initialize CLI bridge for @aa/services integration
+    logger.info('Main', 'Step 2b: Initializing CLI bridge');
+    initCliBridge(getRawDatabase());
+    logger.info('Main', 'CLI bridge initialized successfully');
 
     // Step 3: Initialize health monitoring
     logger.info('Main', 'Step 3/5: Initializing health monitoring');
@@ -261,7 +319,7 @@ async function startupOrchestrator(): Promise<void> {
       }
     } catch (gpsCheckError) {
       // Non-fatal: log warning but continue startup
-      logger.warn('Main', 'GPS/address consistency check failed', gpsCheckError as Error);
+      logger.warn('Main', 'GPS/address consistency check failed', { message: (gpsCheckError as Error).message, stack: (gpsCheckError as Error).stack });
     }
 
     // Step 5: Register IPC handlers
@@ -270,17 +328,17 @@ async function startupOrchestrator(): Promise<void> {
     logger.info('Main', 'IPC handlers registered successfully');
 
     // Step 5b: Start Bookmark API Server for Research Browser extension
+    // OPT-109: Uses WebSourcesRepository (replaces deprecated BookmarksRepository)
     logger.info('Main', 'Starting Bookmark API Server');
-    const db = getDatabase();
-    const bookmarksRepo = new SQLiteBookmarksRepository(db);
+    const webSourcesRepo = new SQLiteWebSourcesRepository(db);
     const locationsRepo = new SQLiteLocationRepository(db);
     const subLocationsRepo = new SQLiteSubLocationRepository(db);
     try {
-      await startBookmarkAPIServer(bookmarksRepo, locationsRepo, subLocationsRepo);
+      await startBookmarkAPIServer(webSourcesRepo, locationsRepo, subLocationsRepo, db);
       logger.info('Main', 'Bookmark API Server started successfully');
     } catch (error) {
       // Non-fatal: log warning but continue startup (research browser feature may not work)
-      logger.warn('Main', 'Failed to start Bookmark API Server', error as Error);
+      logger.warn('Main', 'Failed to start Bookmark API Server', { message: (error as Error).message, stack: (error as Error).stack });
     }
 
     // Step 5c: Start WebSocket Server for real-time extension updates
@@ -290,7 +348,7 @@ async function startupOrchestrator(): Promise<void> {
       logger.info('Main', 'WebSocket Server started successfully');
     } catch (error) {
       // Non-fatal: extension will work without real-time updates
-      logger.warn('Main', 'Failed to start WebSocket Server', error as Error);
+      logger.warn('Main', 'Failed to start WebSocket Server', { message: (error as Error).message, stack: (error as Error).stack });
     }
 
     // FIX 5.1: Step 6 - Auto backup on startup (if enabled)
@@ -307,7 +365,7 @@ async function startupOrchestrator(): Promise<void> {
         }
       } catch (backupError) {
         // Non-fatal: log warning but continue startup
-        logger.warn('Main', 'Failed to create startup backup', backupError as Error);
+        logger.warn('Main', 'Failed to create startup backup', { message: (backupError as Error).message, stack: (backupError as Error).stack });
       }
     } else {
       logger.info('Main', 'Step 6/7: Startup backup skipped (disabled in config)');
@@ -340,6 +398,7 @@ async function startupOrchestrator(): Promise<void> {
 app.whenReady().then(async () => {
   // Register the media:// protocol handler
   // Converts media://path/to/file.jpg to actual file access
+  // SECURITY: Validates paths are within allowed directories to prevent path traversal
   protocol.handle('media', async (request) => {
     try {
       // Extract file path from URL: media:///path/to/file -> /path/to/file
@@ -351,11 +410,55 @@ app.whenReady().then(async () => {
         filePath = filePath.slice(1);
       }
 
-      // Security: Verify file exists before serving
-      if (!fs.existsSync(filePath)) {
-        console.error('[media protocol] File not found:', filePath);
+      // SECURITY: Normalize path to prevent traversal attacks (../ sequences)
+      const normalizedPath = path.normalize(filePath);
+
+      // SECURITY: Get allowed directories from settings
+      const db = getDatabase();
+      const archiveSetting = await db.selectFrom('settings').select('value').where('key', '=', 'archive_folder').executeTakeFirst();
+      const archiveFolder = archiveSetting?.value;
+
+      // SECURITY: Define allowed base directories
+      // - Archive folder (user-configured media storage)
+      // - User data path (for thumbnails, previews, proxies in .previews/, .thumbnails/, .proxies/)
+      const userDataPath = app.getPath('userData');
+      const allowedPaths: string[] = [];
+
+      if (archiveFolder) {
+        allowedPaths.push(path.resolve(archiveFolder));
+      }
+      allowedPaths.push(path.resolve(userDataPath));
+
+      // Also allow absolute paths within the app's temp directory
+      const tempPath = app.getPath('temp');
+      allowedPaths.push(path.resolve(tempPath));
+
+      // SECURITY: Resolve to absolute path and check against allowed directories
+      const absolutePath = path.resolve(normalizedPath);
+      const isAllowed = allowedPaths.some(allowed => absolutePath.startsWith(allowed + path.sep) || absolutePath === allowed);
+
+      if (!isAllowed) {
+        console.error('[media protocol] SECURITY: Path traversal blocked:', normalizedPath);
+        return new Response('Access denied', { status: 403 });
+      }
+
+      // SECURITY: Verify file exists before serving
+      if (!fs.existsSync(absolutePath)) {
+        console.error('[media protocol] File not found:', absolutePath);
         return new Response('File not found', { status: 404 });
       }
+
+      // SECURITY: Resolve symlinks and re-check path
+      const realPath = fs.realpathSync(absolutePath);
+      const realPathAllowed = allowedPaths.some(allowed => realPath.startsWith(allowed + path.sep) || realPath === allowed);
+
+      if (!realPathAllowed) {
+        console.error('[media protocol] SECURITY: Symlink escape blocked:', realPath);
+        return new Response('Access denied', { status: 403 });
+      }
+
+      // Use the validated real path for file operations
+      filePath = realPath;
 
       const stats = fs.statSync(filePath);
       const fileSize = stats.size;
@@ -504,9 +607,9 @@ app.on('before-quit', async () => {
     console.error('Failed to export database to archive:', error);
   }
 
-  // Close research browser (external Ungoogled Chromium)
+  // Close research browser (external Ungoogled Chromium - zero-detection mode)
   try {
-    await closeResearchBrowser();
+    await terminateDetachedBrowser();
     console.log('Research browser closed successfully');
   } catch (error) {
     console.error('Failed to close research browser:', error);
@@ -543,6 +646,39 @@ app.on('before-quit', async () => {
     console.log('Health monitoring shut down successfully');
   } catch (error) {
     console.error('Failed to shutdown health monitoring:', error);
+  }
+
+  // OPT-125: Stop Ollama if we started it (seamless lifecycle management)
+  try {
+    stopOllama();
+    console.log('Ollama stopped successfully');
+  } catch (error) {
+    console.error('Failed to stop Ollama:', error);
+  }
+
+  // Migration 86: Stop LiteLLM proxy if we started it
+  try {
+    await stopLiteLLM();
+    console.log('LiteLLM proxy stopped successfully');
+  } catch (error) {
+    console.error('Failed to stop LiteLLM proxy:', error);
+  }
+
+  // Shutdown Dispatch client (disconnect from hub, close offline queue)
+  try {
+    shutdownDispatchClient();
+    console.log('Dispatch client shut down successfully');
+  } catch (error) {
+    console.error('Failed to shutdown Dispatch client:', error);
+  }
+
+  // Stop spaCy preprocessing server if we started it
+  try {
+    const preprocessingService = getPreprocessingService();
+    await preprocessingService.shutdown();
+    console.log('spaCy preprocessing server stopped successfully');
+  } catch (error) {
+    console.error('Failed to stop spaCy preprocessing server:', error);
   }
 
   closeDatabase();

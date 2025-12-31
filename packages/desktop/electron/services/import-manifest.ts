@@ -1,6 +1,6 @@
 import path from 'path';
 import fs from 'fs/promises';
-import { randomUUID } from 'crypto';
+import { generateId } from '../main/ipc-validation';
 
 /**
  * Import Phase States per whereswaldo11.md spec:
@@ -56,16 +56,17 @@ export interface ManifestFileEntry {
 
   // Phase 4: Database results
   database_id?: string;
-  original_deleted?: boolean;
 }
 
+/**
+ * Location metadata for import manifests
+ * ADR-046: Removed loc12/slocnam - folder paths now use locid directly
+ */
 export interface ManifestLocation {
   locid: string;
   locnam: string;
-  slocnam: string | null;
-  loc12: string;
   state: string | null;
-  type: string | null;
+  category: string | null;
   gps?: { lat: number; lng: number } | null;
   address?: {
     street?: string | null;
@@ -77,8 +78,6 @@ export interface ManifestLocation {
 }
 
 export interface ManifestOptions {
-  delete_originals: boolean;
-  use_hardlinks: boolean;
   verify_checksums: boolean;
 }
 
@@ -109,9 +108,10 @@ export interface ImportManifestData {
     address?: {
       street?: string | null;
       city?: string | null;
+      county?: string | null;
       state?: string | null;
       zipcode?: string | null;
-    };
+    } | null;
   };
 
   // Phase 4 results
@@ -140,7 +140,7 @@ export class ImportManifest {
 
   private createEmptyManifest(): ImportManifestData {
     return {
-      import_id: `imp-${this.formatDate()}-${randomUUID().substring(0, 8)}`,
+      import_id: `imp-${this.formatDate()}-${generateId().substring(0, 8)}`,
       version: '1.0',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -148,14 +148,10 @@ export class ImportManifest {
       location: {
         locid: '',
         locnam: '',
-        slocnam: null,
-        loc12: '',
         state: null,
-        type: null,
+        category: null,
       },
       options: {
-        delete_originals: false,
-        use_hardlinks: false,
         verify_checksums: true,
       },
       files: [],
@@ -179,8 +175,6 @@ export class ImportManifest {
 
     this.data.location = location;
     this.data.options = {
-      delete_originals: options.delete_originals ?? false,
-      use_hardlinks: options.use_hardlinks ?? false,
       verify_checksums: options.verify_checksums ?? true,
     };
 
@@ -307,7 +301,6 @@ export class ImportManifest {
     index: number,
     updates: {
       database_id?: string;
-      original_deleted?: boolean;
       status?: FileStatus;
     }
   ): void {
@@ -315,7 +308,6 @@ export class ImportManifest {
     if (!file) return;
 
     if (updates.database_id !== undefined) file.database_id = updates.database_id;
-    if (updates.original_deleted !== undefined) file.original_deleted = updates.original_deleted;
     if (updates.status !== undefined) file.status = updates.status;
 
     this.data.updated_at = new Date().toISOString();

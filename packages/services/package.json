@@ -1,0 +1,56 @@
+{
+  "name": "@aa/services",
+  "version": "0.1.0",
+  "description": "Shared services for Abandoned Archive",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./location": {
+      "import": "./dist/location/index.js",
+      "types": "./dist/location/index.d.ts"
+    },
+    "./shared": {
+      "import": "./dist/shared/index.js",
+      "types": "./dist/shared/index.d.ts"
+    },
+    "./dispatch": {
+      "import": "./dist/dispatch/index.js",
+      "types": "./dist/dispatch/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@aa/core": "workspace:*",
+    "keytar": "^7.9.0",
+    "kysely": "^0.27.0",
+    "socket.io-client": "^4.8.3",
+    "zod": "^3.22.0",
+    "blake3": "^2.1.0",
+    "exiftool-vendored": "^28.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.0.0"
+  },
+  "peerDependencies": {
+    "sharp": "^0.33.0",
+    "fluent-ffmpeg": "^2.1.0"
+  },
+  "files": [
+    "dist"
+  ]
+}

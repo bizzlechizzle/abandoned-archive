@@ -1,12 +1,45 @@
 import { z } from 'zod';
+import { randomBytes } from 'crypto';
 
 /**
  * IPC Input Validation Schemas
  * Validates all user inputs from renderer process
  */
 
-// Common validators
-export const UuidSchema = z.string().uuid();
+/**
+ * ADR-049: Unified 16-char hex ID format
+ * All IDs use 16 lowercase hex characters (64 bits)
+ * - Sufficient entropy for local archive (2^64 = 18 quintillion)
+ * - Consistent format across all entity types
+ * - Smaller than UUID (16 chars vs 36 chars)
+ */
+export const Hex16IdSchema = z.string().length(16).regex(/^[a-f0-9]+$/, 'Must be 16-char lowercase hex');
+
+/**
+ * Generate a new 16-char hex ID
+ */
+export function generateId(): string {
+  return randomBytes(8).toString('hex');
+}
+
+// Semantic aliases for specific ID types (all use same format)
+export const LocIdSchema = Hex16IdSchema;      // Location ID
+export const SubIdSchema = Hex16IdSchema;      // Sub-location ID
+
+// User ID supports both new hex format and legacy string format (e.g., "user_default_1234")
+export const UserIdSchema = z.string().min(1).max(64);
+export const NoteIdSchema = Hex16IdSchema;     // Note ID
+export const BookmarkIdSchema = Hex16IdSchema; // Bookmark ID
+export const ProjectIdSchema = Hex16IdSchema;  // Project ID
+export const ImportIdSchema = Hex16IdSchema;   // Import record ID
+export const MapIdSchema = Hex16IdSchema;      // Reference map ID
+export const PointIdSchema = Hex16IdSchema;    // Reference map point ID
+export const ViewIdSchema = Hex16IdSchema;     // Location view ID
+export const ExclusionIdSchema = Hex16IdSchema; // Location exclusion ID
+export const VersionIdSchema = Hex16IdSchema;  // Websource version ID
+
+// Legacy alias (deprecated - use Hex16IdSchema)
+export const Blake3IdSchema = Hex16IdSchema;
 export const PositiveIntSchema = z.number().int().positive();
 export const NonNegativeIntSchema = z.number().int().nonnegative();
 export const LimitSchema = z.number().int().positive().max(1000).default(10);
@@ -31,14 +64,28 @@ export function validate<T>(schema: z.ZodType<T>, data: unknown): T {
   }
 }
 
-// Common parameter schemas
+// Common parameter schemas (ADR-049: unified 16-char hex)
 export const IdParamSchema = z.object({
-  id: UuidSchema,
+  id: Hex16IdSchema,
 });
 
 export const TwoIdParamsSchema = z.object({
-  id1: UuidSchema,
-  id2: UuidSchema,
+  id1: Hex16IdSchema,
+  id2: Hex16IdSchema,
+});
+
+// Location/SubLocation ID parameter schemas
+export const LocIdParamSchema = z.object({
+  locid: Blake3IdSchema,
+});
+
+export const SubIdParamSchema = z.object({
+  subid: Blake3IdSchema,
+});
+
+export const LocSubIdParamsSchema = z.object({
+  locid: Blake3IdSchema,
+  subid: Blake3IdSchema.nullable().optional(),
 });
 
 export const PaginationSchema = z.object({
@@ -62,17 +109,14 @@ export const SettingKeySchema = z.enum([
   'archive_folder',
   'current_user',
   'current_user_id',
-  'delete_on_import',
   'setup_complete',
   'app_mode',
   'require_login',
   'login_required',
   'import_map',
   'map_import',
-  // Dashboard hero settings
-  'dashboard_hero_imgsha',
-  'dashboard_hero_focal_x',
-  'dashboard_hero_focal_y',
+  // Import settings
+  'import_skip_acr',  // Skip .acr files during import (Adobe Camera Raw settings)
 ]);
 
 export const SettingValueSchema = z.union([

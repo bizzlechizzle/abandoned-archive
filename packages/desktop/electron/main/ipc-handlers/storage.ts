@@ -175,19 +175,19 @@ export function registerStorageHandlers() {
       // Count files with missing file_size_bytes (need backfill)
       const [imgNull, vidNull, docNull, mapNull] = await Promise.all([
         db.selectFrom('imgs')
-          .select(eb => eb.fn.count<string>('imgsha').as('count'))
+          .select(eb => eb.fn.count<string>('imghash').as('count'))
           .where('file_size_bytes', 'is', null)
           .executeTakeFirst(),
         db.selectFrom('vids')
-          .select(eb => eb.fn.count<string>('vidsha').as('count'))
+          .select(eb => eb.fn.count<string>('vidhash').as('count'))
           .where('file_size_bytes', 'is', null)
           .executeTakeFirst(),
         db.selectFrom('docs')
-          .select(eb => eb.fn.count<string>('docsha').as('count'))
+          .select(eb => eb.fn.count<string>('dochash').as('count'))
           .where('file_size_bytes', 'is', null)
           .executeTakeFirst(),
         db.selectFrom('maps')
-          .select(eb => eb.fn.count<string>('mapsha').as('count'))
+          .select(eb => eb.fn.count<string>('maphash').as('count'))
           .where('file_size_bytes', 'is', null)
           .executeTakeFirst(),
       ]);
@@ -233,7 +233,8 @@ export function registerStorageHandlers() {
       };
     } catch (error) {
       console.error('Error getting storage stats:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 
@@ -337,10 +338,10 @@ export function registerStorageHandlers() {
       }
 
       // Verify all media tables
-      await verifyTable('imgs', 'imgsha', 'imgloc', 'file_size_bytes');
-      await verifyTable('vids', 'vidsha', 'vidloc', 'file_size_bytes');
-      await verifyTable('docs', 'docsha', 'docloc', 'file_size_bytes');
-      await verifyTable('maps', 'mapsha', 'maploc', 'file_size_bytes');
+      await verifyTable('imgs', 'imghash', 'imgloc', 'file_size_bytes');
+      await verifyTable('vids', 'vidhash', 'vidloc', 'file_size_bytes');
+      await verifyTable('docs', 'dochash', 'docloc', 'file_size_bytes');
+      await verifyTable('maps', 'maphash', 'maploc', 'file_size_bytes');
 
       // Update generated content sizes by scanning directories
       const thumbnailsDir = path.join(archivePath, '.thumbnails');
@@ -373,7 +374,8 @@ export function registerStorageHandlers() {
       return results;
     } catch (error) {
       console.error('Error verifying storage integrity:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
     }
   });
 }

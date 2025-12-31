@@ -157,12 +157,206 @@ Detects platform (macOS/Linux/Windows) and locates config directory accordingly.
 
 ---
 
+### scripts/backfill-extractions.py
+
+- **Path**: `scripts/backfill-extractions.py`
+- **Lines**: 249
+- **Runtime**: python3
+- **Purpose**: OPT-120 backfill script - queues pending web sources for LLM extraction and auto-tags locations
+- **Usage**:
+  ```bash
+  python3 scripts/backfill-extractions.py             # Apply changes
+  python3 scripts/backfill-extractions.py --dry-run   # Preview only
+  ```
+- **Inputs**: CLI flags (--dry-run)
+- **Outputs**: stdout (queued sources, tagged locations, queue status)
+- **Side Effects**:
+  - Inserts records into extraction_queue table for web sources with text
+  - Updates location_type and era on locs table based on keyword detection
+- **Dependencies**: python3, sqlite3 (built-in)
+- **Last Verified**: 2025-12-13
+
+Finds web sources with extracted_text but missing smart_title/extraction and queues them for processing.
+Also auto-tags locations with missing location_type or era based on:
+- Location name keywords (e.g., "golf", "hospital", "factory")
+- Built year for era detection
+
+---
+
+### scripts/extract-text.py
+
+- **Path**: `scripts/extract-text.py`
+- **Lines**: ~280
+- **Runtime**: python3
+- **Purpose**: OPT-115 comprehensive text extraction from HTML using Trafilatura, BeautifulSoup, and Readability
+- **Usage**:
+  ```bash
+  python3 scripts/extract-text.py page.html             # Extract from file
+  cat page.html | python3 scripts/extract-text.py --stdin  # Extract from stdin
+  python3 scripts/extract-text.py page.html --output text  # Plain text output
+  python3 scripts/extract-text.py page.html --output all   # All methods comparison
+  ```
+- **Inputs**: HTML file path or stdin
+- **Outputs**: JSON with extracted text, word count, metadata, headings, links
+- **Side Effects**: None (read-only)
+- **Dependencies**: python3, trafilatura, beautifulsoup4, lxml, readability-lxml
+- **Last Verified**: 2025-12-12
+
+Multi-strategy extraction:
+1. Trafilatura (main article content, author, date, categories)
+2. BeautifulSoup (structured: headings, links, images)
+3. Readability (article detection fallback)
+
+---
+
+### scripts/spacy-server/main.py
+
+- **Path**: `scripts/spacy-server/main.py`
+- **Lines**: ~160
+- **Runtime**: python3 (FastAPI/uvicorn)
+- **Purpose**: spaCy NLP preprocessing server for LLM extraction pipeline - pre-filters text BEFORE sending to LLMs
+- **Usage**:
+  ```bash
+  # Auto-spawned by app - no manual setup required!
+  # The PreprocessingService automatically starts this server on demand.
+
+  # Manual startup (for debugging):
+  cd scripts/spacy-server
+  python3 -m venv venv
+  source venv/bin/activate
+  pip install -r requirements.txt
+  python -m spacy download en_core_web_sm
+  python main.py
+  ```
+- **Inputs**: Text via POST /preprocess endpoint
+- **Outputs**: JSON with preprocessed sentences, entities, verbs, timeline candidates, profile candidates
+- **Side Effects**: Loads spaCy model into memory (~50MB)
+- **Dependencies**: python3, spacy>=3.7, fastapi, uvicorn, pydantic
+- **Last Verified**: 2025-12-14
+
+**Key Features:**
+- Named Entity Recognition (PERSON, ORG, DATE, GPE, etc.)
+- Verb-based timeline relevancy detection (built, demolished, opened, etc.)
+- Profile candidate extraction with normalized names
+- Relevancy scoring for efficient LLM context building
+
+**Endpoints:**
+- `GET /health` - Service health check
+- `POST /preprocess` - Preprocess text for LLM extraction
+- `GET /verb-categories` - Get verb category definitions
+
+**Auto-spawn:** The app automatically starts this server when preprocessing is needed. No manual setup required. Falls back to basic sentence splitting if spaCy unavailable.
+
+---
+
+### scripts/spacy-server/preprocessor.py
+
+- **Path**: `scripts/spacy-server/preprocessor.py`
+- **Lines**: ~380
+- **Runtime**: python3
+- **Purpose**: Core spaCy preprocessing logic - extracts entities, verbs, and builds timeline/profile candidates
+- **Usage**: Imported by main.py, not run directly
+- **Last Verified**: 2025-12-14
+
+---
+
+### scripts/spacy-server/verb_patterns.py
+
+- **Path**: `scripts/spacy-server/verb_patterns.py`
+- **Lines**: ~175
+- **Runtime**: python3
+- **Purpose**: Defines verb categories for timeline-relevant date extraction
+- **Usage**: Imported by preprocessor.py, not run directly
+- **Last Verified**: 2025-12-14
+
+**Verb Categories:**
+| Category | Description | Example Verbs |
+|----------|-------------|---------------|
+| build_date | Construction/creation | built, constructed, erected |
+| opening | Opening/inauguration | opened, launched, inaugurated |
+| closure | Closing/shutdown | closed, shut, ceased |
+| demolition | Destruction/tear-down | demolished, razed, burned |
+| renovation | Repair/restoration | renovated, restored, rebuilt |
+| event | Notable incidents | occurred, exploded, flooded |
+| visit | Visits/explorations | visited, explored, photographed |
+| publication | Publication dates | published, reported, announced |
+| ownership | Transfer/acquisition | acquired, purchased, sold |
+
+---
+
+### scripts/vlm_enhancer.py
+
+- **Path**: `scripts/vlm_enhancer.py`
+- **Lines**: 346 ⚠️ (exceeds 300 LOC guideline)
+- **Runtime**: python3 (requires venv at `scripts/vlm-server/venv/`)
+- **Purpose**: Stage 2 VLM deep image analysis using Qwen3-VL or similar large vision-language models
+- **Usage**:
+  ```bash
+  # Using VLM venv
+  source scripts/vlm-server/venv/bin/activate
+  python scripts/vlm_enhancer.py --image /path/to/image.jpg
+
+  # With context from Stage 0/1 + database
+  python scripts/vlm_enhancer.py --image /path/to/image.jpg \
+    --view-type interior \
+    --tags "decay,graffiti,hospital" \
+    --location-type hospital \
+    --location-name "Abandoned Memorial Hospital" \
+    --state "New York"
+
+  # Options
+  python scripts/vlm_enhancer.py --image /path/to/image.jpg --model qwen3-vl   # Default model
+  python scripts/vlm_enhancer.py --image /path/to/image.jpg --device mps       # Mac GPU
+  python scripts/vlm_enhancer.py --image /path/to/image.jpg --max-tokens 512   # Response length
+  python scripts/vlm_enhancer.py --image /path/to/image.jpg --output text      # Human-readable
+  ```
+- **Inputs**: Image file path, optional context flags (--view-type, --tags, --location-type, --location-name, --state, --model, --device, --max-tokens)
+- **Outputs**: JSON to stdout with rich analysis:
+  ```json
+  {
+    "description": "Rich 2-3 sentence description...",
+    "caption": "Short alt text caption",
+    "architectural_style": "Art Deco",
+    "estimated_period": {"start": 1920, "end": 1940, "confidence": 0.7, "reasoning": "..."},
+    "condition_assessment": {"overall": "poor", "score": 0.3, "details": "...", "observations": ["..."]},
+    "notable_features": ["feature1", "feature2"],
+    "search_keywords": ["keyword1", "keyword2"],
+    "duration_ms": 5000,
+    "model": "qwen3-vl",
+    "device": "mps"
+  }
+  ```
+- **Side Effects**: Downloads ~7GB model on first run, high GPU memory usage (~16GB recommended)
+- **Dependencies**: Python 3.12, torch, transformers, Pillow, accelerate
+- **Last Verified**: 2025-12-15
+
+**Purpose:** Stage 2 optional deep analysis for hero image candidates.
+Provides rich descriptions, architectural style detection, period estimation, and condition assessment.
+
+**Model:** Qwen/Qwen2-VL-7B-Instruct (~7GB)
+- Large vision-language model with strong reasoning
+- Returns structured JSON with detailed analysis
+- ~10-20 seconds per image on Mac with MPS
+
+**Key Features:**
+- Architectural style detection (Art Deco, Mid-Century Modern, etc.)
+- Construction period estimation with reasoning
+- Detailed condition assessment with observations
+- Notable features extraction for search indexing
+
+Called by `vlm-enhancement-service.ts` as subprocess for high-value images.
+
+Per CLAUDE.md Rule 9: Local LLMs for background tasks only.
+
+---
+
 ## Scripts Exceeding 300 LOC
 
 | Script | Lines | Status | Action |
 |--------|-------|--------|--------|
 | `scripts/setup.sh` | 514 | ⚠️ Exceeds | Exempt - complex multi-phase installer with extensive error handling |
 | `resetdb.py` | 384 | ⚠️ Exceeds | Exempt - comprehensive reset utility with multiple modes and platform detection |
+| `scripts/vlm_enhancer.py` | 346 | ⚠️ Exceeds | Exempt - VLM analysis with structured JSON parsing and prompt building |
 
 ---
 

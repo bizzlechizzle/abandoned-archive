@@ -1,5 +1,4 @@
 import { Kysely } from 'kysely';
-import { randomUUID } from 'crypto';
 import path from 'path';
 import fs from 'fs/promises';
 import type { Database, LocsTable } from '../main/database.types';
@@ -9,7 +8,8 @@ import {
   Location,
   LocationInput,
   LocationEntity
-} from '@au-archive/core';
+} from '@aa/core';
+import { generateLocationId } from '../services/crypto-service';
 
 /**
  * OPT-043: Lean location type for map display - only essential fields
@@ -18,7 +18,7 @@ import {
 export interface MapLocation {
   locid: string;
   locnam: string;
-  type?: string;
+  category?: string;
   gps_lat: number;
   gps_lng: number;
   gps_accuracy?: number;
@@ -62,8 +62,8 @@ export class SQLiteLocationRepository implements LocationRepository {
   }
 
   async create(input: LocationInput): Promise<Location> {
-    const locid = randomUUID();
-    const loc12 = LocationEntity.generateLoc12(locid);
+    // ADR-046: Use BLAKE3 16-char ID instead of UUID+loc12
+    const locid = generateLocationId();
     const slocnam = input.slocnam || LocationEntity.generateShortName(input.locnam);
     const locadd = new Date().toISOString();
 
@@ -101,16 +101,16 @@ export class SQLiteLocationRepository implements LocationRepository {
       lng: input.gps?.lng,
     });
 
+    // ADR-046: Removed loc12 and sub12 from insert - locid is the only ID now
     await this.db
       .insertInto('locs')
       .values({
         locid,
-        loc12,
         locnam: input.locnam,
         slocnam,
         akanam: input.akanam || null,
-        type: input.type || null,
-        stype: input.stype || null,
+        category: input.category || null,
+        class: input.class || null,
         gps_lat: input.gps?.lat || null,
         gps_lng: input.gps?.lng || null,
         gps_accuracy: input.gps?.accuracy || null,
@@ -153,16 +153,22 @@ export class SQLiteLocationRepository implements LocationRepository {
         doc_web_history: input.docWebHistory ? 1 : 0,
         doc_map_find: input.docMapFind ? 1 : 0,
         status_changed_at: input.statusChangedAt || null,
-        // DECISION-019: Information Box overhaul fields
-        historical_name: input.historicalName || null,
+        // DECISION-019: Information Box overhaul fields (historicalName removed)
         locnam_verified: input.locnamVerified ? 1 : 0,
-        historical_name_verified: input.historicalNameVerified ? 1 : 0,
+        historical_name_verified: 0,
         akanam_verified: input.akanamVerified ? 1 : 0,
-        // Migration 21: Hero display name fields
-        locnam_short: input.locnamShort || null,
-        locnam_use_the: input.locnamUseThe ? 1 : 0,
+        // Hero image defaults (Kanye6)
+        hero_focal_x: 0.5,
+        hero_focal_y: 0.5,
+        // View tracking defaults (Migration 33)
+        view_count: 0,
+        // Media stats defaults
+        img_count: 0,
+        vid_count: 0,
+        doc_count: 0,
+        map_count: 0,
+        total_size_bytes: 0,
         sublocs: null,
-        sub12: null,
         is_host_only: input.isHostOnly ? 1 : 0,
         locadd,
         locup: null,
@@ -235,8 +241,8 @@ export class SQLiteLocationRepository implements LocationRepository {
       query = query.where('address_state', '=', filters.state);
     }
 
-    if (filters?.type) {
-      query = query.where('type', '=', filters.type);
+    if (filters?.category) {
+      query = query.where('category', '=', filters.category);
     }
 
     if (filters?.hasGPS) {
@@ -273,8 +279,8 @@ export class SQLiteLocationRepository implements LocationRepository {
       query = query.where('address_county', '=', filters.county);
     }
 
-    if (filters?.stype) {
-      query = query.where('stype', '=', filters.stype);
+    if (filters?.class) {
+      query = query.where('class', '=', filters.class);
     }
 
     if (filters?.access) {
@@ -316,8 +322,8 @@ export class SQLiteLocationRepository implements LocationRepository {
    */
   async getFilterOptions(): Promise<{
     states: string[];
-    types: string[];
-    stypes: string[];
+    categories: string[];
+    classes: string[];
     cities: string[];
     counties: string[];
     censusRegions: string[];
@@ -327,8 +333,8 @@ export class SQLiteLocationRepository implements LocationRepository {
     // Run all SELECT DISTINCT queries in parallel for maximum performance
     const [
       statesResult,
-      typesResult,
-      stypesResult,
+      categoriesResult,
+      classesResult,
       citiesResult,
       countiesResult,
       censusRegionsResult,
@@ -336,8 +342,8 @@ export class SQLiteLocationRepository implements LocationRepository {
       culturalRegionsResult,
     ] = await Promise.all([
       this.db.selectFrom('locs').select('address_state').distinct().where('address_state', 'is not', null).orderBy('address_state').execute(),
-      this.db.selectFrom('locs').select('type').distinct().where('type', 'is not', null).orderBy('type').execute(),
-      this.db.selectFrom('locs').select('stype').distinct().where('stype', 'is not', null).orderBy('stype').execute(),
+      this.db.selectFrom('locs').select('category').distinct().where('category', 'is not', null).orderBy('category').execute(),
+      this.db.selectFrom('locs').select('class').distinct().where('class', 'is not', null).orderBy('class').execute(),
       this.db.selectFrom('locs').select('address_city').distinct().where('address_city', 'is not', null).orderBy('address_city').execute(),
       this.db.selectFrom('locs').select('address_county').distinct().where('address_county', 'is not', null).orderBy('address_county').execute(),
       this.db.selectFrom('locs').select('census_region').distinct().where('census_region', 'is not', null).orderBy('census_region').execute(),
@@ -347,8 +353,8 @@ export class SQLiteLocationRepository implements LocationRepository {
 
     return {
       states: statesResult.map(r => r.address_state!).filter(Boolean),
-      types: typesResult.map(r => r.type!).filter(Boolean),
-      stypes: stypesResult.map(r => r.stype!).filter(Boolean),
+      categories: categoriesResult.map(r => r.category!).filter(Boolean),
+      classes: classesResult.map(r => r.class!).filter(Boolean),
       cities: citiesResult.map(r => r.address_city!).filter(Boolean),
       counties: countiesResult.map(r => r.address_county!).filter(Boolean),
       censusRegions: censusRegionsResult.map(r => r.census_region!).filter(Boolean),
@@ -379,8 +385,8 @@ export class SQLiteLocationRepository implements LocationRepository {
     if (input.locnam !== undefined) updates.locnam = input.locnam;
     if (input.slocnam !== undefined) updates.slocnam = input.slocnam;
     if (input.akanam !== undefined) updates.akanam = input.akanam;
-    if (input.type !== undefined) updates.type = input.type;
-    if (input.stype !== undefined) updates.stype = input.stype;
+    if (input.category !== undefined) updates.category = input.category;
+    if (input.class !== undefined) updates.class = input.class;
 
     if (input.gps !== undefined) {
       updates.gps_lat = input.gps.lat;
@@ -418,6 +424,10 @@ export class SQLiteLocationRepository implements LocationRepository {
       updates.address_normalized = AddressService.format(addressRecord.normalized);
       updates.address_parsed_json = JSON.stringify(addressRecord.parsed);
       updates.address_source = addressRecord.source;
+      // DECISION-010: Address verification flag
+      if (input.address.verified !== undefined) {
+        updates.address_verified = input.address.verified ? 1 : 0;
+      }
     }
 
     // P0: condition and status removed - use access only
@@ -425,7 +435,9 @@ export class SQLiteLocationRepository implements LocationRepository {
     if (input.access !== undefined) updates.access = input.access;
     if (input.historic !== undefined) updates.historic = input.historic ? 1 : 0;
     if (input.favorite !== undefined) updates.favorite = input.favorite ? 1 : 0;
-    if (input.hero_imgsha !== undefined) updates.hero_imgsha = input.hero_imgsha;
+    if (input.hero_imghash !== undefined) updates.hero_imghash = input.hero_imghash;
+    if (input.hero_focal_x !== undefined) updates.hero_focal_x = input.hero_focal_x;
+    if (input.hero_focal_y !== undefined) updates.hero_focal_y = input.hero_focal_y;
     if (input.auth_imp !== undefined) updates.auth_imp = input.auth_imp;
     // DECISION-013: Information box fields
     if (input.builtYear !== undefined) updates.built_year = input.builtYear;
@@ -439,17 +451,9 @@ export class SQLiteLocationRepository implements LocationRepository {
     if (input.docWebHistory !== undefined) updates.doc_web_history = input.docWebHistory ? 1 : 0;
     if (input.docMapFind !== undefined) updates.doc_map_find = input.docMapFind ? 1 : 0;
     if (input.statusChangedAt !== undefined) updates.status_changed_at = input.statusChangedAt;
-    // DECISION-019: Information Box overhaul fields
-    if (input.historicalName !== undefined) updates.historical_name = input.historicalName;
+    // DECISION-019: Information Box overhaul fields (historicalName removed)
     if (input.locnamVerified !== undefined) updates.locnam_verified = input.locnamVerified ? 1 : 0;
-    if (input.historicalNameVerified !== undefined) updates.historical_name_verified = input.historicalNameVerified ? 1 : 0;
     if (input.akanamVerified !== undefined) updates.akanam_verified = input.akanamVerified ? 1 : 0;
-    // Migration 21: Hero display name fields
-    if (input.locnamShort !== undefined) updates.locnam_short = input.locnamShort;
-    if (input.locnamUseThe !== undefined) updates.locnam_use_the = input.locnamUseThe ? 1 : 0;
-    // Migration 22: Hero focal point fields
-    if (input.hero_focal_x !== undefined) updates.hero_focal_x = input.hero_focal_x;
-    if (input.hero_focal_y !== undefined) updates.hero_focal_y = input.hero_focal_y;
     // OPT-062: Host-only location flag
     if (input.isHostOnly !== undefined) updates.is_host_only = input.isHostOnly ? 1 : 0;
 
@@ -591,52 +595,52 @@ export class SQLiteLocationRepository implements LocationRepository {
       throw new Error(`Location not found: ${id}`);
     }
 
-    // 2. Collect all media SHAs with separate queries (simpler, reliable)
-    const imgShas = await this.db
+    // 2. Collect all media hashes with separate queries (simpler, reliable)
+    const imgHashes = await this.db
       .selectFrom('imgs')
-      .select('imgsha as sha')
+      .select('imghash as hash')
       .where('locid', '=', id)
       .execute();
 
-    const vidShas = await this.db
+    const vidHashes = await this.db
       .selectFrom('vids')
-      .select('vidsha as sha')
+      .select('vidhash as hash')
       .where('locid', '=', id)
       .execute();
 
-    const docShas = await this.db
+    const docHashes = await this.db
       .selectFrom('docs')
-      .select('docsha as sha')
+      .select('dochash as hash')
       .where('locid', '=', id)
       .execute();
 
     // Combine with type annotations
-    const mediaShas: Array<{ sha: string; type: 'img' | 'vid' | 'doc' }> = [
-      ...imgShas.map(r => ({ sha: r.sha, type: 'img' as const })),
-      ...vidShas.map(r => ({ sha: r.sha, type: 'vid' as const })),
-      ...docShas.map(r => ({ sha: r.sha, type: 'doc' as const })),
+    const mediaHashes: Array<{ hash: string; type: 'img' | 'vid' | 'doc' }> = [
+      ...imgHashes.map(r => ({ hash: r.hash, type: 'img' as const })),
+      ...vidHashes.map(r => ({ hash: r.hash, type: 'vid' as const })),
+      ...docHashes.map(r => ({ hash: r.hash, type: 'doc' as const })),
     ];
 
     // 3. Get video proxy paths (separate table with trigger cleanup)
-    const videoShas = mediaShas.filter(m => m.type === 'vid').map(m => m.sha);
+    const videoHashes = mediaHashes.filter(m => m.type === 'vid').map(m => m.hash);
     const proxyPaths: string[] = [];
-    if (videoShas.length > 0) {
+    if (videoHashes.length > 0) {
       const proxies = await this.db
         .selectFrom('video_proxies')
         .select('proxy_path')
-        .where('vidsha', 'in', videoShas)
+        .where('vidhash', 'in', videoHashes)
         .execute();
       proxyPaths.push(...proxies.map(p => p.proxy_path).filter((p): p is string => !!p));
     }
 
     // 4. Audit log BEFORE deletion
+    // ADR-046: Removed loc12 from audit log - locid is the only ID now
     logger.info('LocationRepository', `DELETION AUDIT: Deleting location with files`, {
       locid: id,
       locnam: location.locnam,
-      loc12: location.loc12,
       state: location.address?.state,
-      type: location.type,
-      media_count: mediaShas.length,
+      category: location.category,
+      media_count: mediaHashes.length,
       video_proxies: proxyPaths.length,
       deleted_at: new Date().toISOString(),
     });
@@ -646,22 +650,19 @@ export class SQLiteLocationRepository implements LocationRepository {
 
     // 6. Background file cleanup (non-blocking for instant UI response)
     const archivePath = await this.getArchivePath();
-    const loc12 = location.loc12;
+    // ADR-046: New folder structure uses STATE/LOCID instead of STATE-TYPE/SLOCNAM-LOC12
     const state = location.address?.state?.toUpperCase() || 'XX';
-    const locType = location.type || 'Unknown';
-    const slocnam = location.slocnam || location.locnam.substring(0, 12);
 
     setImmediate(async () => {
       try {
         // 6a. Delete location folder (contains all original media + BagIt)
-        if (archivePath && loc12) {
-          // Sanitize folder name components (remove special chars)
-          const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9-_]/g, '_').substring(0, 50);
+        // ADR-046: New structure: locations/[STATE]/[LOCID]/
+        if (archivePath) {
           const locationFolder = path.join(
             archivePath,
             'locations',
-            `${state}-${sanitize(locType)}`,
-            `${sanitize(slocnam)}-${loc12}`
+            state,
+            id
           );
 
           try {
@@ -673,26 +674,26 @@ export class SQLiteLocationRepository implements LocationRepository {
           }
         }
 
-        // 6b. Delete thumbnails/previews/posters by SHA
-        if (archivePath && mediaShas.length > 0) {
+        // 6b. Delete thumbnails/previews/posters by hash
+        if (archivePath && mediaHashes.length > 0) {
           const mediaPathService = new MediaPathService(archivePath);
 
-          for (const { sha, type } of mediaShas) {
+          for (const { hash, type } of mediaHashes) {
             // Thumbnails (all sizes including legacy)
             for (const size of [400, 800, 1920, undefined] as const) {
-              const thumbPath = mediaPathService.getThumbnailPath(sha, size as 400 | 800 | 1920 | undefined);
+              const thumbPath = mediaPathService.getThumbnailPath(hash, size as 400 | 800 | 1920 | undefined);
               await fs.unlink(thumbPath).catch(() => {});
             }
 
             // Previews (images/RAW only)
             if (type === 'img') {
-              const previewPath = mediaPathService.getPreviewPath(sha);
+              const previewPath = mediaPathService.getPreviewPath(hash);
               await fs.unlink(previewPath).catch(() => {});
             }
 
             // Posters (videos only)
             if (type === 'vid') {
-              const posterPath = mediaPathService.getPosterPath(sha);
+              const posterPath = mediaPathService.getPosterPath(hash);
               await fs.unlink(posterPath).catch(() => {});
             }
           }
@@ -731,8 +732,8 @@ export class SQLiteLocationRepository implements LocationRepository {
       query = query.where('address_state', '=', filters.state);
     }
 
-    if (filters?.type) {
-      query = query.where('type', '=', filters.type);
+    if (filters?.category) {
+      query = query.where('category', '=', filters.category);
     }
 
     if (filters?.hasGPS) {
@@ -766,8 +767,8 @@ export class SQLiteLocationRepository implements LocationRepository {
       query = query.where('address_county', '=', filters.county);
     }
 
-    if (filters?.stype) {
-      query = query.where('stype', '=', filters.stype);
+    if (filters?.class) {
+      query = query.where('class', '=', filters.class);
     }
 
     if (filters?.access) {
@@ -778,15 +779,18 @@ export class SQLiteLocationRepository implements LocationRepository {
     return Number(result?.count || 0);
   }
 
+  /**
+   * Map database row to Location entity
+   * ADR-046: Removed loc12 and sub12 - locid is the only ID now
+   */
   private mapRowToLocation(row: LocsTable): Location {
     return {
       locid: row.locid,
-      loc12: row.loc12,
       locnam: row.locnam,
       slocnam: row.slocnam ?? undefined,
       akanam: row.akanam ?? undefined,
-      type: row.type ?? undefined,
-      stype: row.stype ?? undefined,
+      category: row.category ?? undefined,
+      class: row.class ?? undefined,
       // GPS: Use explicit null check to handle coordinates at 0 (equator/prime meridian)
       gps:
         row.gps_lat !== null && row.gps_lat !== undefined &&
@@ -831,9 +835,10 @@ export class SQLiteLocationRepository implements LocationRepository {
       docWebHistory: row.doc_web_history === 1,
       docMapFind: row.doc_map_find === 1,
       statusChangedAt: row.status_changed_at ?? undefined,
-      hero_imgsha: row.hero_imgsha ?? undefined,
+      hero_imghash: row.hero_imghash ?? undefined,
+      hero_focal_x: row.hero_focal_x ?? 0.5,
+      hero_focal_y: row.hero_focal_y ?? 0.5,
       sublocs: row.sublocs ? JSON.parse(row.sublocs) : [],
-      sub12: row.sub12 ?? undefined,
       locadd: row.locadd ?? new Date().toISOString(),
       locup: row.locup ?? undefined,
       auth_imp: row.auth_imp ?? undefined,
@@ -852,23 +857,15 @@ export class SQLiteLocationRepository implements LocationRepository {
       localCulturalRegionVerified: row.local_cultural_region_verified === 1,
       country: row.country ?? 'United States',
       continent: row.continent ?? 'North America',
-      // DECISION-019: Information Box overhaul fields
-      historicalName: row.historical_name ?? undefined,
+      // DECISION-019: Information Box overhaul fields (historicalName removed)
       locnamVerified: row.locnam_verified === 1,
-      historicalNameVerified: row.historical_name_verified === 1,
       akanamVerified: row.akanam_verified === 1,
-      // Migration 21: Hero display name fields
-      locnamShort: row.locnam_short ?? undefined,
-      locnamUseThe: row.locnam_use_the === 1,
       // Migration 25: Activity tracking
       createdById: row.created_by_id ?? undefined,
       createdBy: row.created_by ?? undefined,
       modifiedById: row.modified_by_id ?? undefined,
       modifiedBy: row.modified_by ?? undefined,
       modifiedAt: row.modified_at ?? undefined,
-      // Migration 22: Hero focal point fields
-      hero_focal_x: row.hero_focal_x ?? 0.5,
-      hero_focal_y: row.hero_focal_y ?? 0.5,
       // Migration 33: View tracking for Nerd Stats
       viewCount: row.view_count ?? 0,
       lastViewedAt: row.last_viewed_at ?? undefined,
@@ -1081,7 +1078,7 @@ export class SQLiteLocationRepository implements LocationRepository {
   static readonly MAP_LOCATION_FIELDS = [
     'locid',
     'locnam',
-    'type',
+    'category',
     'gps_lat',
     'gps_lng',
     'gps_accuracy',
@@ -1113,7 +1110,7 @@ export class SQLiteLocationRepository implements LocationRepository {
       .select([
         'locid',
         'locnam',
-        'type',
+        'category',
         'gps_lat',
         'gps_lng',
         'gps_accuracy',
@@ -1148,7 +1145,7 @@ export class SQLiteLocationRepository implements LocationRepository {
     return rows.map((row) => ({
       locid: row.locid,
       locnam: row.locnam,
-      type: row.type ?? undefined,
+      category: row.category ?? undefined,
       gps_lat: row.gps_lat!,
       gps_lng: row.gps_lng!,
       gps_accuracy: row.gps_accuracy ?? undefined,
@@ -1175,11 +1172,11 @@ export class SQLiteLocationRepository implements LocationRepository {
     const results: Array<Location & { heroThumbPath?: string }> = [];
     for (const row of rows) {
       let heroThumbPath: string | undefined;
-      if (row.hero_imgsha) {
+      if (row.hero_imghash) {
         const img = await this.db
           .selectFrom('imgs')
           .select(['thumb_path_sm', 'thumb_path_lg', 'thumb_path'])
-          .where('imgsha', '=', row.hero_imgsha)
+          .where('imghash', '=', row.hero_imghash)
           .executeTakeFirst();
         heroThumbPath = img?.thumb_path_sm || img?.thumb_path_lg || img?.thumb_path || undefined;
       }
@@ -1209,11 +1206,11 @@ export class SQLiteLocationRepository implements LocationRepository {
     const results: Array<Location & { heroThumbPath?: string }> = [];
     for (const row of rows) {
       let heroThumbPath: string | undefined;
-      if (row.hero_imgsha) {
+      if (row.hero_imghash) {
         const img = await this.db
           .selectFrom('imgs')
           .select(['thumb_path_sm', 'thumb_path_lg', 'thumb_path'])
-          .where('imgsha', '=', row.hero_imgsha)
+          .where('imghash', '=', row.hero_imghash)
           .executeTakeFirst();
         heroThumbPath = img?.thumb_path_sm || img?.thumb_path_lg || img?.thumb_path || undefined;
       }

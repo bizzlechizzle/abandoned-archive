@@ -1,8 +1,18 @@
 /**
  * Global import state management
  * Tracks active and recent import jobs across the app
+ * ADR-049: Uses unified 16-char hex IDs
  */
 import { writable, derived } from 'svelte/store';
+
+/**
+ * ADR-049: Generate 16-char hex ID (client-side equivalent of server's generateId)
+ */
+function generateClientId(): string {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
 
 export interface ImportJob {
   id: string;
@@ -10,10 +20,14 @@ export interface ImportJob {
   locationName: string;
   totalFiles: number;
   processedFiles: number;
+  // OPT-088: Percent from orchestrator (weighted by step, not just file count)
+  percent: number;
   // FIX 4.1: Track current filename being processed
   currentFilename?: string;
   // FIX 4.3: Track import ID for cancellation
   importId?: string;
+  // Human-readable step name (e.g., "Computing hashes", "Copying files")
+  stepName?: string;
   status: 'pending' | 'running' | 'completed' | 'error' | 'cancelled';
   startedAt: Date;
   completedAt?: Date;
@@ -42,11 +56,12 @@ function createImportStore() {
      */
     startJob(locid: string, locationName: string, totalFiles: number): string {
       const job: ImportJob = {
-        id: crypto.randomUUID(),
+        id: generateClientId(),
         locid,
         locationName,
         totalFiles,
         processedFiles: 0,
+        percent: 0,  // OPT-088: Initialize at 0, will be updated by orchestrator
         status: 'running',
         startedAt: new Date(),
       };
@@ -75,10 +90,11 @@ function createImportStore() {
 
     /**
      * Update progress of active job
+     * OPT-088: Now accepts percent from orchestrator (weighted by step)
      * FIX 4.1: Now includes filename being processed
      * FIX 4.3: Now includes importId for cancellation
      */
-    updateProgress(current: number, total: number, filename?: string, importId?: string) {
+    updateProgress(current: number, total: number, percent: number, filename?: string, importId?: string, stepName?: string) {
       update(state => {
         if (state.activeJob) {
           return {
@@ -87,8 +103,10 @@ function createImportStore() {
               ...state.activeJob,
               processedFiles: current,
               totalFiles: total,
+              percent,  // OPT-088: Use orchestrator's weighted percent
               currentFilename: filename,
               importId: importId || state.activeJob.importId,
+              stepName,
             },
           };
         }
@@ -179,20 +197,39 @@ export const importStore = createImportStore();
 // Derived store for quick checks
 export const isImporting = derived(importStore, $store => $store.activeJob !== null);
 
-export const importProgress = derived(importStore, $store => {
+/**
+ * OPT-105: Simplified progress display
+ *
+ * The backend (orchestrator) now emits granular per-file progress events.
+ * We no longer need aggressive sandbagging - just pass through real values.
+ * CSS transitions in the UI handle visual smoothing.
+ *
+ * Previous OPT-104 sandbagging was too aggressive (150ms/1% limit) and made
+ * progress feel sluggish even when real data was available.
+ */
+export const importProgress = derived(importStore, ($store) => {
   if (!$store.activeJob) return null;
   const job = $store.activeJob;
-  const percent = job.totalFiles > 0
-    ? Math.round((job.processedFiles / job.totalFiles) * 100)
-    : 0;
+
+  // OPT-107: Extract just the filename, not the full path
+  let displayFilename = job.currentFilename;
+  if (displayFilename) {
+    const lastSlash = displayFilename.lastIndexOf('/');
+    if (lastSlash !== -1) {
+      displayFilename = displayFilename.slice(lastSlash + 1);
+    }
+  }
+
+  // OPT-105: Use real values directly from orchestrator
+  // UI will use CSS transitions for visual smoothing
   return {
     current: job.processedFiles,
     total: job.totalFiles,
-    percent,
+    percent: Math.round(job.percent),
     locationName: job.locationName,
     locid: job.locid,
-    // FIX 4.1: Include current filename
-    currentFilename: job.currentFilename,
+    currentFilename: displayFilename,
+    stepName: job.stepName,
   };
 });
 

@@ -66,6 +66,9 @@ export interface VideoMetadata {
   fps: number | null;
   dateTaken: string | null;
   rawMetadata: string;
+  // OPT-077: Rotation metadata for aspect ratio correction
+  // 0, 90, 180, 270 degrees - null if not present
+  rotation: number | null;
 }
 
 /**
@@ -121,6 +124,9 @@ export class FFmpegService {
             videoStream?.tags?.creation_time ||
             null;
 
+          // OPT-077: Extract rotation for aspect ratio correction
+          const rotation = this.parseRotation(videoStream);
+
           resolve({
             duration: metadata.format?.duration ? parseFloat(metadata.format.duration) : null,
             width: videoStream?.width || null,
@@ -131,6 +137,7 @@ export class FFmpegService {
               : null,
             dateTaken: creationTime ? new Date(creationTime).toISOString() : null,
             rawMetadata: JSON.stringify(metadata, null, 2),
+            rotation,
           });
         } catch (parseError) {
           reject(new Error(`Failed to parse FFprobe output: ${parseError}`));
@@ -159,6 +166,75 @@ export class FFmpegService {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * OPT-077: Parse rotation metadata from video stream
+   * Mobile devices record portrait video as landscape pixels + rotation metadata.
+   * FFprobe stores rotation in different places depending on the video format:
+   * - stream.tags.rotate (older format)
+   * - stream.side_data_list[].rotation (newer format)
+   * - stream.side_data_list[].displaymatrix (contains "rotation of X degrees")
+   *
+   * @param videoStream - The video stream object from ffprobe
+   * @returns Rotation in degrees (0, 90, 180, 270) or null if not present
+   */
+  private parseRotation(videoStream: any): number | null {
+    if (!videoStream) return null;
+
+    // Check tags.rotate (older videos, common on Android)
+    if (videoStream.tags?.rotate) {
+      const rotation = parseInt(videoStream.tags.rotate, 10);
+      if (!isNaN(rotation)) {
+        console.log(`[FFmpegService] Found rotation in tags.rotate: ${rotation}°`);
+        return this.normalizeRotation(rotation);
+      }
+    }
+
+    // Check side_data_list (newer videos, common on iPhone)
+    const sideData = videoStream.side_data_list;
+    if (Array.isArray(sideData)) {
+      for (const sd of sideData) {
+        // Direct rotation value
+        if (sd.rotation !== undefined) {
+          const rotation = typeof sd.rotation === 'number' ? sd.rotation : parseFloat(sd.rotation);
+          if (!isNaN(rotation)) {
+            console.log(`[FFmpegService] Found rotation in side_data.rotation: ${rotation}°`);
+            return this.normalizeRotation(rotation);
+          }
+        }
+
+        // Parse displaymatrix string (e.g., "rotation of -90.00 degrees")
+        if (sd.displaymatrix && typeof sd.displaymatrix === 'string') {
+          const match = sd.displaymatrix.match(/rotation of ([-\d.]+)/i);
+          if (match) {
+            const rotation = parseFloat(match[1]);
+            if (!isNaN(rotation)) {
+              console.log(`[FFmpegService] Found rotation in displaymatrix: ${rotation}°`);
+              return this.normalizeRotation(rotation);
+            }
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Normalize rotation to 0, 90, 180, or 270 degrees
+   * Handles negative values and values outside 0-360 range
+   */
+  private normalizeRotation(degrees: number): number {
+    // Round to nearest integer
+    let rotation = Math.round(degrees);
+    // Handle negative rotations (-90 -> 270)
+    rotation = ((rotation % 360) + 360) % 360;
+    // Snap to nearest 90-degree increment
+    if (rotation >= 315 || rotation < 45) return 0;
+    if (rotation >= 45 && rotation < 135) return 90;
+    if (rotation >= 135 && rotation < 225) return 180;
+    return 270;
   }
 
   /**

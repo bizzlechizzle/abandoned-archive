@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   validate,
-  UuidSchema,
+  Hex16IdSchema,
   LimitSchema,
   OffsetSchema,
   FilePathSchema,
@@ -13,30 +13,34 @@ import {
 import { z } from 'zod';
 
 describe('IPC Validation', () => {
-  describe('UuidSchema', () => {
-    it('should validate correct UUIDs', () => {
-      const validUuids = [
-        '123e4567-e89b-12d3-a456-426614174000',
-        'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-        '00000000-0000-0000-0000-000000000000',
+  // ADR-049: Unified 16-char hex ID format
+  describe('Hex16IdSchema', () => {
+    it('should validate correct 16-char hex IDs', () => {
+      const validIds = [
+        'a7f3b2c1e9d4f086',  // Standard 16-char lowercase hex
+        '0000000000000000',  // All zeros
+        'ffffffffffffffff',  // All f's
+        '1234567890abcdef',  // Mixed digits and letters
       ];
 
-      validUuids.forEach((uuid) => {
-        expect(() => UuidSchema.parse(uuid)).not.toThrow();
+      validIds.forEach((id) => {
+        expect(() => Hex16IdSchema.parse(id)).not.toThrow();
       });
     });
 
-    it('should reject invalid UUIDs', () => {
-      const invalidUuids = [
-        'not-a-uuid',
-        '123456',
-        'zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz',
-        '',
-        '123e4567-e89b-12d3-a456-42661417400', // too short
+    it('should reject invalid hex IDs', () => {
+      const invalidIds = [
+        'not-a-hex-id',                           // Not hex
+        '123456',                                 // Too short
+        'a7f3b2c1e9d4f0867',                      // 17 chars (too long)
+        '',                                       // Empty
+        'A7F3B2C1E9D4F086',                       // Uppercase (must be lowercase)
+        '123e4567-e89b-12d3-a456-426614174000',  // UUID format (not allowed)
+        'g7f3b2c1e9d4f086',                       // Invalid hex char 'g'
       ];
 
-      invalidUuids.forEach((uuid) => {
-        expect(() => UuidSchema.parse(uuid)).toThrow();
+      invalidIds.forEach((id) => {
+        expect(() => Hex16IdSchema.parse(id)).toThrow();
       });
     });
   });

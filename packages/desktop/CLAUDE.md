@@ -21,12 +21,16 @@ Electron main process, preload bridge, and Svelte renderer.
 
 All services are in `electron/services/`:
 - `address-normalizer.ts`, `address-service.ts` — Address normalization and geocoding
-- `crypto-service.ts` — SHA256 hashing
+- `crypto-service.ts` — BLAKE3 hashing (16-char hex)
 - `exiftool-service.ts`, `ffmpeg-service.ts` — Metadata extraction
 - `file-import-service.ts` — Import pipeline orchestration
 - `geocoding-service.ts` — Reverse/forward geocoding with cache
 - `health-monitor.ts`, `integrity-checker.ts` — System health and data integrity
 - `media-path-service.ts` — Archive folder structure management
+- `monitoring/` — Metrics, tracing, and alerting (see @docs/contracts/monitoring.md)
+  - `metrics-collector.ts` — Counters, gauges, histograms, timers
+  - `tracer.ts` — Distributed tracing with spans
+  - `alert-manager.ts` — Rule-based alerting with cooldowns
 - And many more...
 
 **Note:** Originally planned for `packages/core/src/services/` but kept in desktop due to Electron/native module dependencies.

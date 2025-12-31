@@ -4,12 +4,15 @@ import { getIntegrityChecker } from './integrity-checker';
 import { getDiskSpaceMonitor } from './disk-space-monitor';
 import { getMaintenanceScheduler } from './maintenance-scheduler';
 import { getConfigService } from './config-service';
+import { getMetricsCollector, MetricNames } from './monitoring/metrics-collector';
+import { getAlertManager } from './monitoring/alert-manager';
 import type { BackupManifest } from './backup-scheduler';
 import type { IntegrityResult } from './integrity-checker';
 import type { DiskSpaceInfo } from './disk-space-monitor';
 import type { MaintenanceHistory } from './maintenance-scheduler';
 
 const logger = getLogger();
+const metrics = getMetricsCollector();
 
 export interface HealthStatus {
   overall: 'healthy' | 'warning' | 'critical';
@@ -173,6 +176,32 @@ export class HealthMonitor {
       overall = 'warning';
     }
 
+    // Record metrics for health status
+    metrics.gauge(MetricNames.SYSTEM_DISK_FREE, diskSpace.available, {});
+    metrics.gauge(MetricNames.SYSTEM_MEMORY_USED, process.memoryUsage().rss, {});
+    metrics.gauge(MetricNames.SYSTEM_MEMORY_HEAP, process.memoryUsage().heapUsed, {});
+
+    // Check alert conditions
+    const alertManager = getAlertManager();
+    // Convert disk space to the format AlertManager expects
+    const diskPercentFree = (diskSpace.available / diskSpace.total) * 100;
+    const diskSpaceFreeGB = diskSpace.available / (1024 * 1024 * 1024);
+    await alertManager.checkAlerts({
+      diskSpacePercent: diskPercentFree,
+      diskSpaceFreeGB,
+      jobsPending: 0,
+      jobsProcessing: 0,
+      jobsFailed: 0,
+      jobsDead: 0,
+      oldestJobAgeMinutes: 0,
+      activeImports: 0,
+      importErrorRate: 0,
+      workersActive: 1,
+      workersIdle: 0,
+      errorsLastHour: 0,
+      errorRatePerMinute: 0,
+    });
+
     return {
       overall,
       components: {
@@ -213,6 +242,45 @@ export class HealthMonitor {
     this.lastIntegrityCheck = await integrityChecker.runFullCheck();
 
     return this.getHealthStatus();
+  }
+
+  /**
+   * Create a health snapshot for persistence
+   * Returns data suitable for storing in health_snapshots table
+   */
+  async createSnapshot(): Promise<{
+    overall_status: string;
+    disk_free: number;
+    disk_total: number;
+    memory_used: number;
+    memory_heap: number;
+    job_queue_pending: number;
+    job_queue_processing: number;
+    error_count: number;
+    components_json: string;
+  }> {
+    const status = await this.getHealthStatus();
+    const diskSpaceMonitor = getDiskSpaceMonitor();
+    const diskSpace = await diskSpaceMonitor.checkDiskSpace();
+    const memUsage = process.memoryUsage();
+
+    // Get job queue stats from metrics (if available)
+    const metricsSummary = metrics.getSummary();
+    const jobQueuePending = metricsSummary.gauges['jobs.queue.depth'] ?? 0;
+    const jobQueueProcessing = 0; // Would need to track separately
+    const errorCount = metricsSummary.counters['errors.count'] ?? 0;
+
+    return {
+      overall_status: status.overall,
+      disk_free: diskSpace.available,
+      disk_total: diskSpace.total,
+      memory_used: memUsage.rss,
+      memory_heap: memUsage.heapUsed,
+      job_queue_pending: jobQueuePending,
+      job_queue_processing: jobQueueProcessing,
+      error_count: errorCount,
+      components_json: JSON.stringify(status.components),
+    };
   }
 
   /**

@@ -2,8 +2,18 @@
  * Toast notification store
  * FIX 4.6: Provides toast/snackbar notifications for user feedback
  * OPT-018: Timer cleanup to prevent memory leaks
+ * ADR-049: Uses unified 16-char hex IDs
  */
 import { writable } from 'svelte/store';
+
+/**
+ * ADR-049: Generate 16-char hex ID (client-side equivalent of server's generateId)
+ */
+function generateClientId(): string {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
 
 export interface Toast {
   id: string;
@@ -24,7 +34,7 @@ function createToastStore() {
      * Show a toast notification
      */
     show(message: string, type: Toast['type'] = 'info', duration = 5000): string {
-      const id = crypto.randomUUID();
+      const id = generateClientId();
       update(toasts => [...toasts, { id, message, type, duration }]);
 
       if (duration > 0) {

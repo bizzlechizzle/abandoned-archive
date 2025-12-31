@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { LocationEntity, GPSCoordinatesSchema, AddressSchema, LocationInputSchema } from './location';
 
 // DECISION-013 & DECISION-017 & DECISION-019: Base location fixture with all required fields
+// ADR-046: locid is now BLAKE3 16-char hash (not UUID, no separate loc12)
 const baseLocation = {
-  locid: '550e8400-e29b-41d4-a716-446655440000',
-  loc12: '550e8400e29b',
+  locid: 'a7f3b2c1e9d4f086',
   locnam: 'Test Location',
   historic: false,
   favorite: false,
@@ -23,14 +23,9 @@ const baseLocation = {
   localCulturalRegionVerified: false,
   country: 'United States',
   continent: 'North America',
-  // DECISION-019: Information Box overhaul verification fields
+  // DECISION-019: Information Box overhaul verification fields (historicalName removed)
   locnamVerified: false,
-  historicalNameVerified: false,
   akanamVerified: false,
-  locnamUseThe: false,
-  // Migration 22: Hero focal point
-  hero_focal_x: 0.5,
-  hero_focal_y: 0.5,
   // Per-user view tracking
   viewCount: 0,
   lastViewedAt: undefined,
@@ -82,14 +77,8 @@ describe('LocationEntity', () => {
     });
   });
 
-  describe('generateLoc12', () => {
-    it('should generate 12-character IDs from UUIDs', () => {
-      const uuid = '550e8400-e29b-41d4-a716-446655440000';
-      const loc12 = LocationEntity.generateLoc12(uuid);
-      expect(loc12).toBe('550e8400e29b');
-      expect(loc12.length).toBe(12);
-    });
-  });
+  // ADR-046: generateLoc12 removed - locid is now BLAKE3 16-char hash
+  // Use generateLocationId() from crypto-service.ts instead
 
   describe('getGPSConfidence', () => {
     it('should return verified for user map click with verification', () => {
