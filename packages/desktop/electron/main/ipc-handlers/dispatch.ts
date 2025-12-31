@@ -153,6 +153,31 @@ function registerDispatchEventHandlers(dispatchClient: DispatchClient): void {
       } else if (data.type === 'metadata' && hash) {
         console.log(`[Dispatch] Metadata ready for ${hash.slice(0, 12)}...`);
         broadcastToWindows('media:metadataReady', { hash, mediaType, locid });
+      } else if ((data.type === 'tag' || data.type === 'ml.tag' || data.plugin === 'visual-buffet') && hash) {
+        // Extract tags from job result for immediate UI update
+        const result = data.result as {
+          success?: boolean;
+          output?: Array<{
+            tags?: string[];
+            viewType?: string;
+            qualityScore?: number;
+          }>;
+        } | undefined;
+        const output = Array.isArray(result?.output) ? result.output[0] : result?.output;
+        const tags = output?.tags || [];
+        const viewType = output?.viewType;
+        const qualityScore = output?.qualityScore;
+
+        console.log(`[Dispatch] Tags ready for ${hash.slice(0, 12)}... (${tags.length} tags)`);
+        // Use 'asset:tags-ready' to match preload's onTagsReady listener
+        broadcastToWindows('asset:tags-ready', {
+          hash,
+          tags,
+          source: 'visual-buffet',
+          viewType,
+          qualityScore,
+          locid,
+        });
       }
 
       // Emit location-level refresh for any completed job with locid

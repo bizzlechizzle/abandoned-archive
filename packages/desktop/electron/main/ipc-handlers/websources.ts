@@ -19,9 +19,6 @@ import {
   ComponentStatus,
 } from '../../repositories/sqlite-websources-repository';
 import { validate, LimitSchema, Blake3IdSchema } from '../ipc-validation';
-// NOTE: Local job queue disabled - all processing goes through dispatch hub
-// Websource archiving requires a dispatch plugin (not yet implemented)
-// import { JobQueue, IMPORT_QUEUES } from '../../services/job-queue';
 import { getExtractionQueueService } from '../../services/extraction/extraction-queue-service';
 import { getRawDatabase } from '../database';
 
@@ -146,8 +143,6 @@ const SearchOptionsSchema = z.object({
 
 export function registerWebSourcesHandlers(db: Kysely<Database>) {
   const webSourcesRepo = new SQLiteWebSourcesRepository(db);
-  // NOTE: Local job queue disabled - all processing through dispatch
-  // const jobQueue = new JobQueue(db);
 
   // ---------------------------------------------------------------------------
   // Core CRUD Operations

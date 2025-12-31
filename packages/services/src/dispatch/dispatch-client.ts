@@ -40,6 +40,13 @@ import type {
   WebSource,
   WebSourceVersion,
   TimelineEvent,
+  LocationAuthor,
+  AuthorStats,
+  AuthorSummary,
+  DateExtractionStats,
+  LocationDateRange,
+  ImportJob,
+  ImportStats,
 } from './types.js';
 
 export interface DispatchClientOptions {
@@ -1373,6 +1380,134 @@ export class DispatchClient extends EventEmitter {
       authenticated: this.isAuthenticated(),
       hubUrl: this.config.hubUrl,
     };
+  }
+
+  // ============================================
+  // Author Tracking Operations
+  // ============================================
+
+  async getLocationAuthors(locationId: string): Promise<LocationAuthor[]> {
+    const result = await this.apiRequest<{ authors: LocationAuthor[] }>(
+      `/api/locations/${locationId}/authors`
+    );
+    return result.authors;
+  }
+
+  async getAllAuthors(): Promise<AuthorSummary[]> {
+    const result = await this.apiRequest<{ authors: AuthorSummary[] }>('/api/authors');
+    return result.authors;
+  }
+
+  async getAuthorStats(): Promise<AuthorStats> {
+    return this.apiRequest<AuthorStats>('/api/authors/stats');
+  }
+
+  async getAuthorLocations(userId: string): Promise<Array<{
+    id: string;
+    name: string;
+    category: string | null;
+    addressState: string | null;
+  }>> {
+    const result = await this.apiRequest<{ locations: Array<{
+      id: string;
+      name: string;
+      category: string | null;
+      addressState: string | null;
+    }> }>(`/api/authors/${userId}/locations`);
+    return result.locations;
+  }
+
+  // ============================================
+  // Date Extraction Operations
+  // ============================================
+
+  async getMediaWithoutDates(options?: {
+    locationId?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<PaginatedResponse<ApiMedia>> {
+    const params = new URLSearchParams();
+    if (options?.locationId) params.set('locationId', options.locationId);
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.offset) params.set('offset', String(options.offset));
+    const query = params.toString();
+
+    const result = await this.apiRequest<{
+      media: ApiMedia[];
+      pagination: { total: number; limit: number; offset: number };
+    }>(`/api/media/without-dates${query ? `?${query}` : ''}`);
+
+    return {
+      data: result.media,
+      pagination: result.pagination,
+    };
+  }
+
+  async getDateExtractionStats(locationId?: string): Promise<DateExtractionStats> {
+    const params = new URLSearchParams();
+    if (locationId) params.set('locationId', locationId);
+    const query = params.toString();
+    return this.apiRequest<DateExtractionStats>(`/api/media/date-stats${query ? `?${query}` : ''}`);
+  }
+
+  async getLocationDateRange(locationId: string): Promise<LocationDateRange> {
+    return this.apiRequest<LocationDateRange>(`/api/locations/${locationId}/date-range`);
+  }
+
+  // ============================================
+  // Import History Operations
+  // ============================================
+
+  async getImports(options?: {
+    status?: string;
+    locationId?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    imports: ImportJob[];
+    pagination: { total: number; limit: number; offset: number };
+  }> {
+    const params = new URLSearchParams();
+    if (options?.status) params.set('status', options.status);
+    if (options?.locationId) params.set('locationId', options.locationId);
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.offset) params.set('offset', String(options.offset));
+    const query = params.toString();
+    return this.apiRequest(`/api/imports${query ? `?${query}` : ''}`);
+  }
+
+  async getImport(importId: string): Promise<{
+    import: ImportJob;
+    events: Array<{ id: string; event: string; data?: Record<string, unknown>; timestamp: string }>;
+  }> {
+    return this.apiRequest(`/api/imports/${importId}`);
+  }
+
+  async getImportStats(): Promise<ImportStats> {
+    return this.apiRequest<ImportStats>('/api/imports/stats');
+  }
+
+  async getImportsByLocation(locationId: string, options?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    imports: Array<{
+      id: string;
+      status: string;
+      progress: number;
+      stage?: string;
+      plugin: string;
+      type: string;
+      createdAt: string;
+      completedAt?: string;
+    }>;
+    pagination: { total: number; limit: number; offset: number };
+  }> {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.offset) params.set('offset', String(options.offset));
+    const query = params.toString();
+    return this.apiRequest(`/api/imports/by-location/${locationId}${query ? `?${query}` : ''}`);
   }
 
   // ============================================

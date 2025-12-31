@@ -455,3 +455,80 @@ export interface TimelineEvent {
   updatedAt?: string;
   updatedBy?: string;
 }
+
+// ============================================
+// Author Tracking
+// ============================================
+
+export interface LocationAuthor {
+  userId: string;
+  username: string;
+  contributionCount: number;
+  mediaCount: number;
+  noteCount: number;
+  firstContribution: string;
+  lastContribution: string;
+}
+
+export interface AuthorStats {
+  totalAuthors: number;
+  totalContributions: number;
+}
+
+export interface AuthorSummary {
+  userId: string;
+  username: string;
+  locationCount: number;
+  mediaCount: number;
+}
+
+// ============================================
+// Date Extraction
+// ============================================
+
+export interface DateExtractionStats {
+  total: number;
+  withDates: number;
+  withoutDates: number;
+  earliest: string | null;
+  latest: string | null;
+  percentageWithDates: number;
+}
+
+export interface LocationDateRange {
+  locationId: string;
+  earliest: string | null;
+  latest: string | null;
+  mediaWithDates: number;
+  mediaWithoutDates: number;
+}
+
+// ============================================
+// Import History
+// ============================================
+
+export interface ImportJob {
+  id: string;
+  status: string;
+  progress: number;
+  stage?: string;
+  plugin: string;
+  type: string;
+  data?: Record<string, unknown>;
+  result?: Record<string, unknown>;
+  error?: string;
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  mediaCount?: number;
+}
+
+export interface ImportStats {
+  total: number;
+  pending: number;
+  running: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+  totalMediaImported: number;
+}

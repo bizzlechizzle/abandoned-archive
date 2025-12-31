@@ -321,6 +321,13 @@ const api = {
       requiresRestart?: boolean;
     }> =>
       ipcRenderer.invoke('database:resetLocation'),
+    wipe: (): Promise<{
+      success: boolean;
+      message: string;
+      backupPath?: string;
+      requiresRestart?: boolean;
+    }> =>
+      ipcRenderer.invoke('database:wipe'),
   },
 
   imports: {

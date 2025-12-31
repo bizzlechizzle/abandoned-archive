@@ -654,7 +654,8 @@
   async function setHeroImage(imghash: string) {
     if (!location) return;
     try {
-      await window.electronAPI.locations.update(locationId, { hero_imghash: imghash });
+      // Truncate hash to 16 chars to match LocationInputSchema.hero_imghash requirement
+      await window.electronAPI.locations.update(locationId, { hero_imghash: imghash.slice(0, 16) });
       await loadLocation();
     } catch (err) { console.error('Error setting hero image:', err); }
   }
@@ -1363,16 +1364,16 @@
       focalY={currentSubLocation?.hero_focal_y ?? location?.hero_focal_y ?? 0.5}
       onSetHeroImage={currentSubLocation
         ? async (imghash, focalX, focalY) => {
-            await window.electronAPI.sublocations.update(currentSubLocation.subid, { hero_imghash: imghash, hero_focal_x: focalX, hero_focal_y: focalY });
+            await window.electronAPI.sublocations.update(currentSubLocation.subid, { hero_imghash: imghash.slice(0, 16), hero_focal_x: focalX, hero_focal_y: focalY });
             await loadLocation();
           }
         : async (imghash, focalX, focalY) => {
-            await window.electronAPI.locations.update(locationId, { hero_imghash: imghash, hero_focal_x: focalX, hero_focal_y: focalY });
+            await window.electronAPI.locations.update(locationId, { hero_imghash: imghash.slice(0, 16), hero_focal_x: focalX, hero_focal_y: focalY });
             await loadLocation();
           }}
       onSetHostHeroImage={currentSubLocation
         ? async (imghash, focalX, focalY) => {
-            await window.electronAPI.locations.update(locationId, { hero_imghash: imghash, hero_focal_x: focalX, hero_focal_y: focalY });
+            await window.electronAPI.locations.update(locationId, { hero_imghash: imghash.slice(0, 16), hero_focal_x: focalX, hero_focal_y: focalY });
             await loadLocation();
           }
         : undefined}

@@ -10,7 +10,7 @@
     "postinstall": "electron-rebuild -f -o better-sqlite3,sharp",
     "dev": "vite",
     "build": "vite build",
-    "build:electron": "electron-builder --config electron-builder.config.json",
+    "build:electron": "electron-builder --config electron-builder.config.json && pnpm run rebuild",
     "build:all": "pnpm run build && pnpm run build:electron",
     "dist": "electron-builder --mac --config electron-builder.config.json",
     "dist:arm64": "electron-builder --mac --arm64 --config electron-builder.config.json",

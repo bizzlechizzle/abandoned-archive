@@ -4,6 +4,12 @@
  *
  * LILBITS Compliance: Each handler module is <300 lines
  *
+ * ADR-047: Unified Repository Factory
+ * - Supports both SQLite (local) and API (dispatch hub) backends
+ * - Backend is determined by USE_DISPATCH_API environment variable
+ * - In API mode, data operations go through dispatch hub PostgreSQL
+ * - In SQLite mode (default), data stays local in au-archive.db
+ *
  * Modules:
  * - locations.ts: location:* handlers
  * - location-authors.ts: location-authors:* handlers (Migration 25 - Phase 3)
@@ -24,6 +30,7 @@
  */
 
 import { getDatabase } from '../database';
+import { isUsingApiBackend, getBackendStatus } from '../../repositories/unified-repository-factory';
 import { registerLocationHandlers } from './locations';
 import { registerLocationAuthorsHandlers } from './location-authors';
 import { registerStatsHandlers, registerSettingsHandlers, registerLibpostalHandlers } from './stats-settings';
@@ -63,132 +70,176 @@ import { registerCostTrackingHandlers } from './cost-tracking';
 import { registerAIHandlers } from './ai';
 import { registerTaggingHandlers } from './tagging';
 import { registerDispatchHandlers, initializeDispatchClient, shutdownDispatchClient } from './dispatch';
+// API-based handlers (used when USE_DISPATCH_API=true)
+import { registerApiIpcHandlers, shutdownApiIpcHandlers } from './api-handlers';
 
 export function registerIpcHandlers() {
   const db = getDatabase();
-
-  // Location handlers (returns locationRepo for media handlers)
-  const locationRepo = registerLocationHandlers(db);
-
-  // Stats and settings
-  registerStatsHandlers(db);
-  registerSettingsHandlers(db);
-
-  // Shell and dialog
-  registerShellHandlers();
-  registerDialogHandlers();
-
-  // Imports (returns importRepo for media handlers)
-  const importRepo = registerImportsHandlers(db);
-
-  // Media import handlers (returns services for processing handlers)
-  const { mediaRepo, exifToolService, ffmpegService } = registerMediaImportHandlers(db, locationRepo, importRepo);
-
-  // Media processing handlers
-  registerMediaProcessingHandlers(db, mediaRepo, exifToolService, ffmpegService);
-
-  // Entity handlers
-  registerNotesHandlers(db);
-  registerProjectsHandlers(db);
-  registerUsersHandlers(db);
-  registerSubLocationHandlers(db);
-
-  // OPT-109: Web Sources Archiving (replaces simple bookmarks)
-  registerWebSourcesHandlers(db);
-
-  // Migration 25 - Phase 3: Location authors (multi-user attribution)
-  registerLocationAuthorsHandlers(db);
-
-  // Database operations
-  registerDatabaseHandlers();
-
-  // Health monitoring
-  registerHealthHandlers();
-
-  // Geocoding
-  registerGeocodeHandlers(db);
-
-  // Kanye11: Address parsing with libpostal
-  registerLibpostalHandlers();
-
-  // Research browser (external Ungoogled Chromium)
-  registerResearchBrowserHandlers();
-
-  // Reference maps (imported KML, GPX, GeoJSON, CSV)
-  registerRefMapsHandlers(db);
-
-  // Import intelligence (smart location matching)
-  registerImportIntelligenceHandlers(db);
-
-  // Storage monitoring
-  registerStorageHandlers();
-
-  // BagIt self-documenting archive (RFC 8493)
-  registerBagItHandlers(db);
-
-  // Import System v2.0 (5-step pipeline + background jobs)
-  registerImportV2Handlers(db);
-  initializeJobWorker(db);
-
-  // Monitoring & Audit System (Migration 51)
-  registerMonitoringHandlers(db);
-
-  // Timeline events (Migration 69)
-  registerTimelineHandlers(db);
-
-  // Image Downloader (Migration 72 - pHash, URL patterns, staging)
-  registerImageDownloaderHandlers(db);
-
-  // Date Engine (Migration 73 - NLP date extraction from web sources)
-  registerDateEngineHandlers(db);
-
-  // Document Intelligence Extraction (spaCy + Ollama + Cloud providers)
   const sqliteDb = getRawDatabase();
-  registerExtractionHandlers(db, sqliteDb);
+  const backendStatus = getBackendStatus();
+  const useApi = isUsingApiBackend();
 
-  // OPT-125: Ollama Lifecycle Management (auto-start/stop)
-  // Clean up orphan from previous crash, register handlers
-  cleanupOrphanOllama();
-  registerOllamaLifecycleHandlers();
+  console.log(`[IPC] Backend mode: ${backendStatus.mode} (API=${useApi})`);
+  if (useApi) {
+    console.log(`[IPC] Dispatch hub URL: ${backendStatus.hubUrl}`);
+  }
 
-  // Credential Management (Migration 85)
-  // Secure API key storage using Electron safeStorage
-  registerCredentialHandlers();
-
-  // LiteLLM Proxy Gateway (Migration 86)
-  // Unified AI gateway for cloud providers
-  // Clean up orphan from previous crash, register handlers
-  cleanupOrphanLiteLLM();
-  registerLiteLLMHandlers();
-
-  // Cost Tracking (Migration 88)
-  // Track LLM usage costs for cloud providers
-  registerCostTrackingHandlers(sqliteDb);
-
-  // AI Service (Unified Abstraction)
-  // Single entry point for all AI operations
-  registerAIHandlers();
-
-  // Browser Image Capture (network monitoring, context menu)
-  initializeBrowserImageCapture({
-    filter: {
-      minSize: 5000, // Ignore tiny images
-    },
-  });
-
-  // Dispatch Hub Integration
-  // Connect to distributed job orchestration hub
-  // IMPORTANT: Must be registered BEFORE tagging handlers to ensure
-  // dispatch client singleton is created with proper Electron token storage
+  // ADR-047: Dispatch Hub Integration must be initialized FIRST
+  // This ensures the dispatch client singleton is created with proper token storage
+  // before any handlers (SQLite or API) try to use it
   registerDispatchHandlers();
   initializeDispatchClient();
 
-  // Tagging Service (Visual-Buffet ML Pipeline)
-  // RAM++, Florence-2, SigLIP, PaddleOCR
-  // Uses dispatch client for job submission - must be after dispatch init
-  registerTaggingHandlers(db, sqliteDb);
+  if (useApi) {
+    // ============================================
+    // API MODE: Use dispatch hub for data operations
+    // ============================================
+    console.log('[IPC] Registering API-based handlers (dispatch hub mode)');
 
-  console.log('IPC handlers registered (modular)');
+    // Register API handlers (locations, media, maps, etc.)
+    registerApiIpcHandlers();
+
+    // These handlers work the same in both modes (no data access)
+    registerShellHandlers();
+    registerDialogHandlers();
+    registerHealthHandlers();
+    registerResearchBrowserHandlers();
+    registerStorageHandlers();
+
+    // Credential and AI services work in both modes
+    registerCredentialHandlers();
+    cleanupOrphanLiteLLM();
+    registerLiteLLMHandlers();
+    registerAIHandlers();
+
+    // Ollama lifecycle management
+    cleanupOrphanOllama();
+    registerOllamaLifecycleHandlers();
+
+    // Browser Image Capture (network monitoring, context menu)
+    initializeBrowserImageCapture({
+      filter: {
+        minSize: 5000,
+      },
+    });
+
+    console.log('[IPC] API-based handlers registered');
+  } else {
+    // ============================================
+    // SQLITE MODE: Use local database (default)
+    // ============================================
+    console.log('[IPC] Registering SQLite-based handlers (local mode)');
+
+    // Location handlers (returns locationRepo for media handlers)
+    const locationRepo = registerLocationHandlers(db);
+
+    // Stats and settings
+    registerStatsHandlers(db);
+    registerSettingsHandlers(db);
+
+    // Shell and dialog
+    registerShellHandlers();
+    registerDialogHandlers();
+
+    // Imports (returns importRepo for media handlers)
+    const importRepo = registerImportsHandlers(db);
+
+    // Media import handlers (returns services for processing handlers)
+    const { mediaRepo, exifToolService, ffmpegService } = registerMediaImportHandlers(db, locationRepo, importRepo);
+
+    // Media processing handlers
+    registerMediaProcessingHandlers(db, mediaRepo, exifToolService, ffmpegService);
+
+    // Entity handlers
+    registerNotesHandlers(db);
+    registerProjectsHandlers(db);
+    registerUsersHandlers(db);
+    registerSubLocationHandlers(db);
+
+    // OPT-109: Web Sources Archiving (replaces simple bookmarks)
+    registerWebSourcesHandlers(db);
+
+    // Migration 25 - Phase 3: Location authors (multi-user attribution)
+    registerLocationAuthorsHandlers(db);
+
+    // Database operations
+    registerDatabaseHandlers();
+
+    // Health monitoring
+    registerHealthHandlers();
+
+    // Geocoding
+    registerGeocodeHandlers(db);
+
+    // Kanye11: Address parsing with libpostal
+    registerLibpostalHandlers();
+
+    // Research browser (external Ungoogled Chromium)
+    registerResearchBrowserHandlers();
+
+    // Reference maps (imported KML, GPX, GeoJSON, CSV)
+    registerRefMapsHandlers(db);
+
+    // Import intelligence (smart location matching)
+    registerImportIntelligenceHandlers(db);
+
+    // Storage monitoring
+    registerStorageHandlers();
+
+    // BagIt self-documenting archive (RFC 8493)
+    registerBagItHandlers(db);
+
+    // Import System v2.0 (5-step pipeline + background jobs)
+    registerImportV2Handlers(db);
+    initializeJobWorker(db);
+
+    // Monitoring & Audit System (Migration 51)
+    registerMonitoringHandlers(db);
+
+    // Timeline events (Migration 69)
+    registerTimelineHandlers(db);
+
+    // Image Downloader (Migration 72 - pHash, URL patterns, staging)
+    registerImageDownloaderHandlers(db);
+
+    // Date Engine (Migration 73 - NLP date extraction from web sources)
+    registerDateEngineHandlers(db);
+
+    // Document Intelligence Extraction (spaCy + Ollama + Cloud providers)
+    registerExtractionHandlers(db, sqliteDb);
+
+    // OPT-125: Ollama Lifecycle Management (auto-start/stop)
+    cleanupOrphanOllama();
+    registerOllamaLifecycleHandlers();
+
+    // Credential Management (Migration 85)
+    registerCredentialHandlers();
+
+    // LiteLLM Proxy Gateway (Migration 86)
+    cleanupOrphanLiteLLM();
+    registerLiteLLMHandlers();
+
+    // Cost Tracking (Migration 88)
+    registerCostTrackingHandlers(sqliteDb);
+
+    // AI Service (Unified Abstraction)
+    registerAIHandlers();
+
+    // Browser Image Capture (network monitoring, context menu)
+    initializeBrowserImageCapture({
+      filter: {
+        minSize: 5000,
+      },
+    });
+
+    // Tagging Service (Visual-Buffet ML Pipeline)
+    // Uses dispatch client for job submission - must be after dispatch init
+    registerTaggingHandlers(db, sqliteDb);
+
+    console.log('[IPC] SQLite-based handlers registered');
+  }
+
+  console.log(`IPC handlers registered (${useApi ? 'API' : 'SQLite'} mode)`);
 }
 
 // Export job worker shutdown for app cleanup
@@ -211,3 +262,6 @@ export { shutdownLiteLLM as stopLiteLLMLifecycle };
 
 // Export Dispatch client shutdown for app cleanup
 export { shutdownDispatchClient };
+
+// Export API handlers shutdown for app cleanup
+export { shutdownApiIpcHandlers };

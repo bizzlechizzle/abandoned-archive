@@ -1686,6 +1686,41 @@
     }
   }
 
+  // Wipe database - complete fresh start
+  let wiping = $state(false);
+  let wipeMessage = $state('');
+
+  async function wipeDatabase() {
+    if (!window.electronAPI?.database?.wipe) {
+      wipeMessage = 'Wipe not available';
+      setTimeout(() => { wipeMessage = ''; }, 5000);
+      return;
+    }
+
+    try {
+      wiping = true;
+      wipeMessage = '';
+
+      const result = await window.electronAPI.database.wipe();
+
+      if (result.success) {
+        wipeMessage = result.message;
+        if (result.backupPath) {
+          wipeMessage += ` Backup saved to: ${result.backupPath}`;
+        }
+      } else {
+        wipeMessage = result.message || 'Wipe canceled';
+        setTimeout(() => { wipeMessage = ''; }, 5000);
+      }
+    } catch (error) {
+      console.error('Error wiping database:', error);
+      wipeMessage = 'Error wiping database';
+      setTimeout(() => { wipeMessage = ''; }, 5000);
+    } finally {
+      wiping = false;
+    }
+  }
+
   // Database Archive Export: Load archive status
   async function loadArchiveExportStatus() {
     if (!window.electronAPI?.database?.archiveStatus) return;
@@ -2324,6 +2359,11 @@
                   {restoreMessage}
                 </p>
               {/if}
+              {#if wipeMessage}
+                <p class="text-sm mt-2 {wipeMessage.includes('Error') || wipeMessage.includes('canceled') ? 'text-error' : 'text-warning'}">
+                  {wipeMessage}
+                </p>
+              {/if}
 
               <!-- Archive Export Section -->
               <div class="mt-4 pt-3 border-t border-braun-200">
@@ -2364,6 +2404,21 @@
                 <p class="text-xs text-braun-400 mt-2">
                   Auto-exports on backup and quit. Stored in archive/_database/
                 </p>
+              </div>
+
+              <!-- Danger Zone: Wipe Database -->
+              <div class="mt-4 pt-3 border-t border-red-200">
+                <h4 class="text-sm font-medium text-red-700 mb-2">Danger Zone</h4>
+                <p class="text-xs text-red-500 mb-2">
+                  Wipe ALL data and start fresh. A backup will be created automatically.
+                </p>
+                <button
+                  onclick={wipeDatabase}
+                  disabled={wiping || backingUp || restoring || userExporting}
+                  class="px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition disabled:opacity-50"
+                >
+                  {wiping ? 'Wiping...' : 'Wipe Database'}
+                </button>
               </div>
             </div>
             {/if}

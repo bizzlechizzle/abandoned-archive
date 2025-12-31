@@ -398,6 +398,7 @@ async function startupOrchestrator(): Promise<void> {
 app.whenReady().then(async () => {
   // Register the media:// protocol handler
   // Converts media://path/to/file.jpg to actual file access
+  // SECURITY: Validates paths are within allowed directories to prevent path traversal
   protocol.handle('media', async (request) => {
     try {
       // Extract file path from URL: media:///path/to/file -> /path/to/file
@@ -409,11 +410,55 @@ app.whenReady().then(async () => {
         filePath = filePath.slice(1);
       }
 
-      // Security: Verify file exists before serving
-      if (!fs.existsSync(filePath)) {
-        console.error('[media protocol] File not found:', filePath);
+      // SECURITY: Normalize path to prevent traversal attacks (../ sequences)
+      const normalizedPath = path.normalize(filePath);
+
+      // SECURITY: Get allowed directories from settings
+      const db = getDatabase();
+      const archiveSetting = await db.selectFrom('settings').select('value').where('key', '=', 'archive_folder').executeTakeFirst();
+      const archiveFolder = archiveSetting?.value;
+
+      // SECURITY: Define allowed base directories
+      // - Archive folder (user-configured media storage)
+      // - User data path (for thumbnails, previews, proxies in .previews/, .thumbnails/, .proxies/)
+      const userDataPath = app.getPath('userData');
+      const allowedPaths: string[] = [];
+
+      if (archiveFolder) {
+        allowedPaths.push(path.resolve(archiveFolder));
+      }
+      allowedPaths.push(path.resolve(userDataPath));
+
+      // Also allow absolute paths within the app's temp directory
+      const tempPath = app.getPath('temp');
+      allowedPaths.push(path.resolve(tempPath));
+
+      // SECURITY: Resolve to absolute path and check against allowed directories
+      const absolutePath = path.resolve(normalizedPath);
+      const isAllowed = allowedPaths.some(allowed => absolutePath.startsWith(allowed + path.sep) || absolutePath === allowed);
+
+      if (!isAllowed) {
+        console.error('[media protocol] SECURITY: Path traversal blocked:', normalizedPath);
+        return new Response('Access denied', { status: 403 });
+      }
+
+      // SECURITY: Verify file exists before serving
+      if (!fs.existsSync(absolutePath)) {
+        console.error('[media protocol] File not found:', absolutePath);
         return new Response('File not found', { status: 404 });
       }
+
+      // SECURITY: Resolve symlinks and re-check path
+      const realPath = fs.realpathSync(absolutePath);
+      const realPathAllowed = allowedPaths.some(allowed => realPath.startsWith(allowed + path.sep) || realPath === allowed);
+
+      if (!realPathAllowed) {
+        console.error('[media protocol] SECURITY: Symlink escape blocked:', realPath);
+        return new Response('Access denied', { status: 403 });
+      }
+
+      // Use the validated real path for file operations
+      filePath = realPath;
 
       const stats = fs.statSync(filePath);
       const fileSize = stats.size;

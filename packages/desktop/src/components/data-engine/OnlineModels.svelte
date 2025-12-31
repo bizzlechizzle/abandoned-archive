@@ -52,7 +52,6 @@
 
   // Sub-accordion state
   let languageModelsExpanded = $state(true);
-  let visualModelsExpanded = $state(false);
 
   // State
   let litellmStatus = $state<LiteLLMStatus | null>(null);
@@ -342,16 +341,16 @@
   {#if expanded}
     <div class="pl-4 pb-4 space-y-4">
       <p class="text-xs text-braun-500">
-        Cloud-based AI models for text extraction and analysis. Requires internet connection.
+        Cloud-based AI models for text extraction and image analysis. GPT-4o and Claude support both text and vision.
       </p>
 
-      <!-- Language Models Sub-accordion -->
+      <!-- Cloud AI Providers (Text & Vision) -->
       <div class="border border-braun-200 rounded overflow-hidden">
         <button
           onclick={() => languageModelsExpanded = !languageModelsExpanded}
           class="w-full py-3 px-4 flex items-center justify-between text-left hover:bg-braun-50 transition-colors bg-white"
         >
-          <span class="text-sm font-medium text-braun-900">Language Models</span>
+          <span class="text-sm font-medium text-braun-900">Cloud AI Providers</span>
           <svg
             class="w-4 h-4 text-braun-400 transition-transform duration-200 {languageModelsExpanded ? 'rotate-180' : ''}"
             fill="none"
@@ -503,37 +502,6 @@
         {/if}
       </div>
 
-      <!-- Visual Models Sub-accordion -->
-      <div class="border border-braun-200 rounded overflow-hidden">
-        <button
-          onclick={() => visualModelsExpanded = !visualModelsExpanded}
-          class="w-full py-3 px-4 flex items-center justify-between text-left hover:bg-braun-50 transition-colors bg-white"
-        >
-          <div class="flex items-center gap-2">
-            <span class="text-sm font-medium text-braun-900">Visual Models</span>
-            <span class="px-2 py-0.5 text-xs bg-braun-100 text-braun-600 rounded">coming soon</span>
-          </div>
-          <svg
-            class="w-4 h-4 text-braun-400 transition-transform duration-200 {visualModelsExpanded ? 'rotate-180' : ''}"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-
-        {#if visualModelsExpanded}
-          <div class="p-4 border-t border-braun-200 bg-braun-50">
-            <div class="text-center py-6">
-              <p class="text-sm text-braun-500">Cloud-based visual AI models coming soon.</p>
-              <p class="text-xs text-braun-400 mt-1">
-                Claude Vision, GPT-4 Vision for image analysis.
-              </p>
-            </div>
-          </div>
-        {/if}
-      </div>
     </div>
   {/if}
 </div>

@@ -27,8 +27,6 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import type { Kysely } from 'kysely';
 import type { Database } from '../../main/database.types';
-// NOTE: Local job queue disabled - all processing through dispatch hub
-// import { JobQueue, IMPORT_QUEUES, JOB_PRIORITY, type JobInput } from '../job-queue.js';
 import { getDispatchClient, type JobSubmission } from '@aa/services';
 import { generateId } from '../../main/ipc-validation.js';
 import { getLogger } from '../logger-service.js';
@@ -269,8 +267,9 @@ export class ImportService {
         const firstIsDir = isDirectory(sourcePaths[0]);
 
         if (firstIsDir) {
-          // Multiple directories - use first one (legacy behavior)
-          // TODO: Support multiple directory imports
+          // Multiple directories selected - use first directory only
+          // This is intentional: batch import processes one directory at a time
+          // Users can run multiple imports sequentially if needed
           sourcePath = sourcePaths[0];
           logger.warn('ImportService', 'Multiple directories passed - using first only', {
             count: sourcePaths.length,

@@ -5,16 +5,16 @@
  */
 
 // Shared utilities
-export * from './shared';
+export * from './shared/index.js';
 
 // Location services
-export * from './location';
+export * from './location/index.js';
 
 // Pipeline orchestration
-export * from './pipeline';
+export * from './pipeline/index.js';
 
 // Re-export service classes for convenience
-export { LocationService } from './location/location-service';
+export { LocationService } from './location/location-service.js';
 
 // Re-export pipeline classes for convenience
 export {
@@ -23,7 +23,7 @@ export {
   PipelineHelpers,
   ProgressServer,
   createProgressServer,
-} from './pipeline';
+} from './pipeline/index.js';
 
 // Dispatch hub integration
-export * from './dispatch';
+export * from './dispatch/index.js';

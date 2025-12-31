@@ -22,9 +22,6 @@ import {
   type ImportProgress,
   type ImportResult,
 } from '../../services/import';
-// NOTE: Local job worker disabled - all processing through dispatch hub
-// import { getJobWorkerService, startJobWorker, stopJobWorker } from '../../services/job-worker-service';
-// import { JobQueue, IMPORT_QUEUES } from '../../services/job-queue';
 import { getCurrentUser } from '../../services/user-service';
 
 // Singleton orchestrator instance
@@ -529,14 +526,9 @@ export function registerImportV2Handlers(db: Kysely<Database>): void {
  * Event forwarding is handled by dispatch IPC handlers in dispatch.ts.
  */
 export function initializeJobWorker(_db: Kysely<Database>): void {
-  console.log('[JobWorker] Local job worker DISABLED - all processing through dispatch hub');
-  // const workerService = startJobWorker(db);
-  //
-  // Event forwarding is now handled by dispatch:
-  // - dispatch:job:progress → asset:thumbnail-ready, asset:metadata-complete, etc.
-  // - dispatch:job:updated → job completion/failure events
-  //
-  // See dispatch.ts for event forwarding implementation.
+  // All job processing goes through dispatch hub - local worker disabled
+  // Event forwarding handled by dispatch.ts IPC handlers
+  console.log('[JobWorker] Processing via dispatch hub');
 }
 
 /**
@@ -545,6 +537,5 @@ export function initializeJobWorker(_db: Kysely<Database>): void {
  * NOTE: No-op since local worker is disabled.
  */
 export async function shutdownJobWorker(): Promise<void> {
-  // await stopJobWorker();
-  console.log('[JobWorker] Shutdown called (local worker disabled)');
+  console.log('[JobWorker] Shutdown complete');
 }

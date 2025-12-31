@@ -1,11 +1,8 @@
 /**
  * API-based Import Repository
  *
- * Tracks import sessions through dispatch hub instead of local SQLite.
+ * Tracks import sessions through dispatch hub job system.
  * Import records help track when media was added and from what source.
- *
- * NOTE: Full import tracking via dispatch job system is not yet implemented.
- * This is a stub implementation that submits jobs but cannot fully track them.
  */
 
 import type { DispatchClient } from '@aa/services';
@@ -20,6 +17,10 @@ export interface ImportRecord {
   doc_count: number;
   map_count: number;
   notes: string | null;
+  status: string;
+  progress: number;
+  stage?: string;
+  completedAt?: string;
   locnam?: string;
   address_state?: string;
   heroThumbPath?: string;
@@ -35,6 +36,16 @@ export interface ImportInput {
   doc_count?: number;
   map_count?: number;
   notes?: string | null;
+}
+
+export interface ImportStats {
+  total: number;
+  pending: number;
+  running: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+  totalMediaImported: number;
 }
 
 /**
@@ -55,7 +66,7 @@ export class ApiImportRepository {
     // Submit job and use job ID as import ID
     const jobId = await this.client.submitJob({
       type: 'import',
-      plugin: 'archive-import',
+      plugin: 'wake-n-blake',
       priority: 'NORMAL',
       data: {
         source: input.source_path || '',
@@ -83,68 +94,188 @@ export class ApiImportRepository {
       doc_count: input.doc_count || 0,
       map_count: input.map_count || 0,
       notes: input.notes || null,
+      status: 'pending',
+      progress: 0,
     };
   }
 
   /**
-   * Find import by ID (job lookup)
-   * NOTE: JobUpdate type doesn't expose full job data, returns partial record
+   * Find import by ID
    */
   async findById(import_id: string): Promise<ImportRecord | null> {
     try {
-      const job = await this.client.getJob(import_id);
-      if (!job) return null;
+      const result = await this.client.getImport(import_id);
+      const imp = result.import;
 
-      // JobUpdate only has: jobId, status, result, error, workerId, retryCount
-      // Return minimal record with available data
+      // Extract location ID from job data if available
+      const data = imp.data || {};
+      const options = (data.options as Record<string, unknown>) || {};
+      const counts = (options.counts as Record<string, number>) || {};
+
       return {
-        import_id: job.jobId,
-        locid: null, // Not available from JobUpdate
-        import_date: new Date().toISOString(),
-        auth_imp: null,
-        img_count: 0,
-        vid_count: 0,
-        doc_count: 0,
-        map_count: 0,
-        notes: null,
+        import_id: imp.id,
+        locid: (options.locationId as string) || null,
+        import_date: imp.createdAt,
+        auth_imp: (options.author as string) || null,
+        img_count: counts.images || imp.mediaCount || 0,
+        vid_count: counts.videos || 0,
+        doc_count: counts.documents || 0,
+        map_count: counts.maps || 0,
+        notes: (options.notes as string) || null,
+        status: imp.status,
+        progress: imp.progress,
+        stage: imp.stage,
+        completedAt: imp.completedAt,
       };
-    } catch {
+    } catch (error) {
+      console.error('ApiImportRepository.findById error:', error);
       return null;
     }
   }
 
   /**
    * Find recent imports
-   * NOTE: Dispatch job list doesn't provide full import details
    */
-  async findRecent(limit: number = 5): Promise<ImportRecord[]> {
-    console.warn('ApiImportRepository.findRecent: Full import history not yet available via dispatch');
-    return [];
+  async findRecent(limit: number = 20): Promise<ImportRecord[]> {
+    try {
+      const result = await this.client.getImports({ limit });
+      return result.imports.map(imp => this.mapImportJobToRecord(imp));
+    } catch (error) {
+      console.error('ApiImportRepository.findRecent error:', error);
+      return [];
+    }
   }
 
   /**
    * Find imports by location
-   * TODO: Dispatch hub needs import-by-location endpoint
    */
   async findByLocation(locid: string): Promise<ImportRecord[]> {
-    console.warn('ApiImportRepository.findByLocation: Not yet implemented in dispatch hub');
-    return [];
+    try {
+      const result = await this.client.getImportsByLocation(locid);
+      return result.imports.map(imp => ({
+        import_id: imp.id,
+        locid,
+        import_date: imp.createdAt,
+        auth_imp: null,
+        img_count: 0,
+        vid_count: 0,
+        doc_count: 0,
+        map_count: 0,
+        notes: null,
+        status: imp.status,
+        progress: imp.progress,
+        stage: imp.stage,
+        completedAt: imp.completedAt,
+      }));
+    } catch (error) {
+      console.error('ApiImportRepository.findByLocation error:', error);
+      return [];
+    }
   }
 
   /**
    * Find all imports
    */
-  async findAll(): Promise<ImportRecord[]> {
-    return this.findRecent(100);
+  async findAll(options?: { limit?: number; offset?: number }): Promise<ImportRecord[]> {
+    try {
+      const result = await this.client.getImports({
+        limit: options?.limit || 100,
+        offset: options?.offset || 0,
+      });
+      return result.imports.map(imp => this.mapImportJobToRecord(imp));
+    } catch (error) {
+      console.error('ApiImportRepository.findAll error:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Find imports by status
+   */
+  async findByStatus(status: string, limit: number = 50): Promise<ImportRecord[]> {
+    try {
+      const result = await this.client.getImports({ status, limit });
+      return result.imports.map(imp => this.mapImportJobToRecord(imp));
+    } catch (error) {
+      console.error('ApiImportRepository.findByStatus error:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get import statistics
+   */
+  async getStats(): Promise<ImportStats> {
+    try {
+      return await this.client.getImportStats();
+    } catch (error) {
+      console.error('ApiImportRepository.getStats error:', error);
+      return {
+        total: 0,
+        pending: 0,
+        running: 0,
+        completed: 0,
+        failed: 0,
+        cancelled: 0,
+        totalMediaImported: 0,
+      };
+    }
   }
 
   /**
    * Get total media count across all imports
-   * Should query media table in dispatch instead
    */
   async getTotalMediaCount(): Promise<{ images: number; videos: number; documents: number; maps: number }> {
-    // TODO: Get counts from dispatch media API
-    console.warn('ApiImportRepository.getTotalMediaCount: Should use media API stats endpoint');
-    return { images: 0, videos: 0, documents: 0, maps: 0 };
+    try {
+      const stats = await this.client.getImportStats();
+      // We only get total media count from stats - need media API for breakdown
+      return {
+        images: stats.totalMediaImported,
+        videos: 0,
+        documents: 0,
+        maps: 0,
+      };
+    } catch (error) {
+      console.error('ApiImportRepository.getTotalMediaCount error:', error);
+      return { images: 0, videos: 0, documents: 0, maps: 0 };
+    }
+  }
+
+  /**
+   * Map import job to import record
+   */
+  private mapImportJobToRecord(imp: {
+    id: string;
+    status: string;
+    progress: number;
+    stage?: string;
+    plugin: string;
+    type: string;
+    data?: Record<string, unknown>;
+    result?: Record<string, unknown>;
+    error?: string;
+    createdAt: string;
+    startedAt?: string;
+    completedAt?: string;
+  }): ImportRecord {
+    const data = imp.data || {};
+    const options = (data.options as Record<string, unknown>) || {};
+    const counts = (options.counts as Record<string, number>) || {};
+
+    return {
+      import_id: imp.id,
+      locid: (options.locationId as string) || (data.locationId as string) || null,
+      import_date: imp.createdAt,
+      auth_imp: (options.author as string) || null,
+      img_count: counts.images || 0,
+      vid_count: counts.videos || 0,
+      doc_count: counts.documents || 0,
+      map_count: counts.maps || 0,
+      notes: (options.notes as string) || null,
+      status: imp.status,
+      progress: imp.progress,
+      stage: imp.stage,
+      completedAt: imp.completedAt,
+    };
   }
 }

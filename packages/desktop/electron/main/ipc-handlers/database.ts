@@ -427,6 +427,55 @@ export function registerDatabaseHandlers() {
       };
     }
   });
+
+  /**
+   * Wipe ALL data from the database - complete fresh start
+   * This is a destructive operation that cannot be undone!
+   */
+  ipcMain.handle('database:wipe', async () => {
+    try {
+      const dbPath = getDatabasePath();
+
+      // Show confirmation dialog
+      const result = await dialog.showMessageBox({
+        type: 'warning',
+        buttons: ['Cancel', 'Wipe Everything'],
+        defaultId: 0,
+        cancelId: 0,
+        title: 'Wipe Database',
+        message: 'Are you sure you want to wipe ALL data?',
+        detail: 'This will delete:\n- All locations\n- All images, videos, documents, maps\n- All projects and notes\n- All settings and preferences\n\nThis action CANNOT be undone!\n\nA backup will be created automatically.',
+      });
+
+      if (result.response !== 1) {
+        return { success: false, message: 'Operation canceled' };
+      }
+
+      // Create automatic backup before wipe
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const backupPath = dbPath.replace('.db', `-pre-wipe-${timestamp}.db`);
+      await fs.copyFile(dbPath, backupPath);
+      console.log(`[Database] Created pre-wipe backup at: ${backupPath}`);
+
+      // Close the database connection
+      closeDatabase();
+
+      // Delete the database file
+      await fs.unlink(dbPath);
+      console.log(`[Database] Deleted database file: ${dbPath}`);
+
+      return {
+        success: true,
+        message: 'Database wiped. Please restart the application to create a fresh database.',
+        backupPath,
+        requiresRestart: true,
+      };
+    } catch (error) {
+      console.error('Error wiping database:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
+    }
+  });
 }
 
 // Helper to format file size

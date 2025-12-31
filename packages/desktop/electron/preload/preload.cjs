@@ -253,6 +253,8 @@ const api = {
     // Database Archive Export: Export to archive folder for portable backup
     archiveExport: () => invokeAuto("database:archiveExport")(),
     archiveStatus: () => invokeAuto("database:archiveStatus")(),
+    // Wipe database - complete fresh start
+    wipe: () => invokeAuto("database:wipe")(),
   },
 
   imports: {

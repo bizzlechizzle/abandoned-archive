@@ -17,8 +17,6 @@
 import { generateId } from '../../main/ipc-validation';
 import type { Kysely } from 'kysely';
 import type { Database } from '../../main/database.types';
-// NOTE: Local job queue disabled - using dispatch hub
-// import { JobQueue, IMPORT_QUEUES, JOB_PRIORITY, type JobInput } from '../job-queue';
 import { getDispatchClient, type JobSubmission } from '@aa/services';
 import { getLogger } from '../logger-service';
 
