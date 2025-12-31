@@ -5,11 +5,13 @@
  */
 
 export { default as LocationHeader } from './LocationHeader.svelte';
+export { default as LocationHero } from './LocationHero.svelte';
 export { default as LocationInfo } from './LocationInfo.svelte';
 export { default as LocationMapSection } from './LocationMapSection.svelte';
 export { default as LocationGallery } from './LocationGallery.svelte';
 export { default as LocationVideos } from './LocationVideos.svelte';
 export { default as LocationDocuments } from './LocationDocuments.svelte';
+export { default as LocationOriginalAssets } from './LocationOriginalAssets.svelte';
 export { default as LocationMaps } from './LocationMaps.svelte'; // MAP-MEDIA-FIX-001
 export { default as LocationRecords } from './LocationRecords.svelte';
 export { default as LocationImportZone } from './LocationImportZone.svelte';

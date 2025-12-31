@@ -54,3 +54,9 @@ export function getAllCategories(): string[] {
 export function getClassesForCategory(category: string): string[] {
   return CATEGORY_HIERARCHY[category] || [];
 }
+
+/**
+ * Alias for getCategoryForClass - used by ImportModal.
+ * Maps subtype (class) → type (category)
+ */
+export const getTypeForSubtype = getCategoryForClass;
