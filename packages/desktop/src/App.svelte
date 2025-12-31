@@ -36,8 +36,6 @@
   import Setup from './pages/Setup.svelte';
   // Migration 24: Login page
   import Login from './pages/Login.svelte';
-  // Phase 4: Developer Playground for AI model comparison
-  import Playground from './pages/Playground.svelte';
 
   let currentRoute = $state({ path: '/dashboard', params: {} });
   let setupComplete = $state(false);
@@ -51,14 +49,56 @@
 
   // Import progress listener
   let unsubscribeProgress: (() => void) | null = null;
-  // ADR-050: Import v2 progress listener
-  let unsubscribeV2Progress: (() => void) | null = null;
   // FIX: Import started listener (receives importId immediately for cancel to work)
   let unsubscribeStarted: (() => void) | null = null;
   // FIX 5.4: Backup status listener
   let unsubscribeBackup: (() => void) | null = null;
-  // OPT-087: Asset ready listener for surgical cache invalidation
-  let unsubscribeAssetReady: (() => void) | null = null;
+
+  // DESIGN_SYSTEM: System theme change listener
+  let mediaQueryListener: ((e: MediaQueryListEvent) => void) | null = null;
+
+  /**
+   * DESIGN_SYSTEM: Apply theme to document root
+   * Called before first paint to prevent flash of wrong theme
+   */
+  function applyTheme(theme: 'dark' | 'light' | 'system') {
+    if (theme === 'system') {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+    } else {
+      document.documentElement.setAttribute('data-theme', theme);
+    }
+  }
+
+  /**
+   * DESIGN_SYSTEM: Initialize theme on app startup
+   * Loads saved preference and applies before first paint
+   */
+  async function initializeTheme() {
+    try {
+      if (window.electronAPI?.settings) {
+        const savedTheme = await window.electronAPI.settings.get('theme');
+        const theme = (savedTheme as 'dark' | 'light' | 'system') || 'light';
+        applyTheme(theme);
+
+        // If using system theme, listen for OS theme changes
+        if (theme === 'system') {
+          const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+          mediaQueryListener = (e: MediaQueryListEvent) => {
+            document.documentElement.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+          };
+          mediaQuery.addEventListener('change', mediaQueryListener);
+        }
+      } else {
+        // Default to light if settings not available
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    } catch (error) {
+      console.error('Error initializing theme:', error);
+      // Default to light on error
+      document.documentElement.setAttribute('data-theme', 'light');
+    }
+  }
 
   /**
    * Check if login is required based on user setting
@@ -154,18 +194,10 @@
       if (setupComplete) {
         requiresLogin = await checkAuthRequired();
 
-        // Check if multiple users exist
-        const users = await window.electronAPI.users.findAll();
-        const hasMultipleUsers = users.length > 1;
-
-        if (hasMultipleUsers) {
-          // Multiple users - always show user selection (PIN check happens on Login page)
-          requiresLogin = true;
-        } else if (!requiresLogin) {
-          // Single user, no PIN required - auto-login
+        if (!requiresLogin) {
+          // Auto-login if no PIN required
           await autoLogin();
         }
-        // If requiresLogin is true, the Login page will be shown
       }
     } catch (error) {
       console.error('Error checking setup status:', error);
@@ -175,6 +207,9 @@
   }
 
   onMount(() => {
+    // DESIGN_SYSTEM: Initialize theme before first paint
+    initializeTheme();
+
     router.init();
     checkFirstRun();
 
@@ -185,27 +220,11 @@
       });
     }
 
-    // Subscribe to import progress events from main process (legacy import system)
-    // OPT-088: Calculate percent for legacy imports that don't provide weighted percent
+    // Subscribe to import progress events from main process
+    // FIX 4.1 & 4.3: Pass filename and importId to updateProgress
     if (window.electronAPI?.media?.onImportProgress) {
       unsubscribeProgress = window.electronAPI.media.onImportProgress((progress) => {
-        const percent = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
-        importStore.updateProgress(progress.current, progress.total, percent, progress.filename, progress.importId);
-      });
-    }
-
-    // ADR-050: Subscribe to Import v2 progress events (5-step pipeline)
-    // This is the new import system with incremental filesProcessed tracking
-    if (window.electronAPI?.importV2?.onProgress) {
-      unsubscribeV2Progress = window.electronAPI.importV2.onProgress((progress) => {
-        // Map v2 progress fields to import store
-        importStore.updateProgress(
-          progress.filesProcessed,
-          progress.filesTotal,
-          Math.round(progress.percent),
-          progress.currentFile,
-          progress.sessionId
-        );
+        importStore.updateProgress(progress.current, progress.total, progress.filename, progress.importId);
       });
     }
 
@@ -227,16 +246,6 @@
         // Non-fatal - don't show error to user
       });
     }
-
-    // OPT-087: Subscribe to asset ready events for surgical cache invalidation
-    // This enables thumbnails to "pop in" after background jobs complete
-    if (window.electronAPI?.jobs?.onAssetReady) {
-      unsubscribeAssetReady = window.electronAPI.jobs.onAssetReady((event) => {
-        // Dispatch a custom event that components can listen to
-        // This allows LocationDetail, Dashboard, etc. to refresh specific assets
-        window.dispatchEvent(new CustomEvent('asset-ready', { detail: event }));
-      });
-    }
   });
 
   onDestroy(() => {
@@ -246,17 +255,13 @@
     if (unsubscribeProgress) {
       unsubscribeProgress();
     }
-    // ADR-050: Cleanup v2 progress listener
-    if (unsubscribeV2Progress) {
-      unsubscribeV2Progress();
-    }
     // FIX 5.4: Cleanup backup listener
     if (unsubscribeBackup) {
       unsubscribeBackup();
     }
-    // OPT-087: Cleanup asset ready listener
-    if (unsubscribeAssetReady) {
-      unsubscribeAssetReady();
+    // DESIGN_SYSTEM: Cleanup system theme listener
+    if (mediaQueryListener) {
+      window.matchMedia('(prefers-color-scheme: dark)').removeEventListener('change', mediaQueryListener);
     }
   });
 
@@ -269,12 +274,11 @@
 </script>
 
 {#if checkingSetup}
-  <div class="min-h-screen flex items-center justify-center bg-braun-50">
+  <!-- DESIGN_SYSTEM: Use design tokens for loading screen -->
+  <div class="min-h-screen flex items-center justify-center bg-[var(--color-bg)]">
     <div class="text-center">
-      <div class="inline-block rounded-full h-12 w-12 border-2 border-braun-300 mb-4 flex items-center justify-center">
-        <div class="w-4 h-4 bg-braun-900 rounded-full"></div>
-      </div>
-      <p class="text-braun-600">Loading...</p>
+      <div class="inline-block rounded-full h-12 w-12 border-b-2 border-[var(--color-accent)] mb-4"></div>
+      <p class="text-[var(--color-text-muted)]">Loading...</p>
     </div>
   </div>
 {:else if currentRoute.path === '/setup'}
@@ -303,8 +307,6 @@
         <Research />
       {:else if currentRoute.path === '/settings'}
         <Settings />
-      {:else if currentRoute.path === '/playground'}
-        <Playground />
       {:else if currentRoute.path === '/location/:id'}
         <LocationDetail locationId={currentRoute.params?.id || ''} />
       {:else if currentRoute.path === '/location/:locid/sub/:subid'}

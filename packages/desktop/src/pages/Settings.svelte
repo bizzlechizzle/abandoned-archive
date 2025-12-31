@@ -1,10 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { thumbnailCache } from '../stores/thumbnail-cache-store';
-  import DataEngineSettings from '../components/data-engine/DataEngineSettings.svelte';
-  import { dispatchStore, dispatchConnectionStatus, dispatchWorkers } from '../stores/dispatch-store';
-  import DispatchStatus from '../components/DispatchStatus.svelte';
-  import DispatchJobProgress from '../components/DispatchJobProgress.svelte';
 
   interface User {
     user_id: string;
@@ -16,11 +12,11 @@
   }
 
   let archivePath = $state('');
+  let deleteOriginals = $state(false);
   let currentUserId = $state<string | null>(null);
   let currentUsername = $state('default');
   let importMap = $state(true);
   let mapImport = $state(true);
-  let importSkipAcr = $state(true); // Skip .acr files during import (default: true)
   let loading = $state(true);
   let saveMessage = $state('');
 
@@ -59,16 +55,9 @@
   let databaseExpanded = $state(false);
   let healthExpanded = $state(false);
 
-  // Data Engine accordion state (consolidates Date Engine, Image Auto-Tagging, AI & Cloud Providers)
-  let dataEngineExpanded = $state(false);
-
-  // Dispatch Hub accordion state
-  let dispatchExpanded = $state(false);
-  let dispatchHubUrl = $state('http://192.168.1.199:3000');
-  let dispatchUsername = $state('');
-  let dispatchPassword = $state('');
-  let dispatchLoggingIn = $state(false);
-  let dispatchError = $state('');
+  // DESIGN_SYSTEM: Theme state (dark/light/system)
+  let appearanceExpanded = $state(true); // Open by default for visibility
+  let currentTheme = $state<'dark' | 'light' | 'system'>('dark');
 
   // Storage bar state - OPT-047: Enhanced with database-backed tracking
   let storageStats = $state<{
@@ -102,10 +91,13 @@
 
   // PIN verification modal state
   let showPinModal = $state(false);
-  let pinAction = $state<'archive' | 'startupPin' | null>(null);
+  let pinAction = $state<'archive' | 'deleteOnImport' | 'startupPin' | null>(null);
   let pinInput = $state('');
   let pinError = $state('');
   let pinVerifying = $state(false);
+
+  // Delete warning modal state
+  let showDeleteWarning = $state(false);
 
   // Location picker modal state
   interface LocationBasic {
@@ -229,13 +221,6 @@
   let validationProgress = $state<{ current: number; total: number; currentLocation: string } | null>(null);
   let bagValidationMessage = $state('');
 
-  // ML Tagging state (Visual-Buffet)
-  let mlTaggingExpanded = $state(false);
-  let mlTaggingStatus = $state<{ available: boolean; version?: string; enabled?: boolean } | null>(null);
-  let mlTaggingQueueStats = $state<{ pending: number; processing: number; completed: number; failed: number } | null>(null);
-  let mlTaggingRunning = $state(false);
-  let mlTaggingMessage = $state('');
-
   // Database Archive Export state
   let archiveExportStatus = $state<{
     configured: boolean;
@@ -255,12 +240,6 @@
   let archiveExporting = $state(false);
   let archiveExportMessage = $state('');
 
-  // OPT-113: Web Source Archive state
-  let webSourcesExpanded = $state(false);
-  let pendingWebSourceCount = $state(0);
-  let archivingWebSources = $state(false);
-  let webSourceArchiveMessage = $state('');
-
   async function loadSettings() {
     try {
       loading = true;
@@ -271,13 +250,16 @@
       const settings = await window.electronAPI.settings.getAll();
 
       archivePath = settings.archive_folder || '';
+      deleteOriginals = settings.delete_on_import === 'true';
       currentUserId = settings.current_user_id || null;
       currentUsername = settings.current_user || 'default';
       appMode = (settings.app_mode as 'single' | 'multi') || 'single';
       requireLogin = settings.require_login === 'true';
       importMap = settings.import_map !== 'false'; // Default true
       mapImport = settings.map_import !== 'false'; // Default true
-      importSkipAcr = settings.import_skip_acr !== 'false'; // Default true (skip .acr files)
+
+      // DESIGN_SYSTEM: Load theme preference (light is default)
+      currentTheme = (settings.theme as 'dark' | 'light' | 'system') || 'light';
 
       // Load users for multi-user mode
       await loadUsers();
@@ -294,6 +276,42 @@
       users = await window.electronAPI.users.findAll();
     } catch (error) {
       console.error('Error loading users:', error);
+    }
+  }
+
+  /**
+   * DESIGN_SYSTEM: Set theme and persist to settings
+   * Applies data-theme attribute to document root for CSS custom property switching
+   */
+  async function setTheme(theme: 'dark' | 'light' | 'system') {
+    currentTheme = theme;
+
+    // Apply theme to document
+    applyTheme(theme);
+
+    // Persist to settings
+    if (window.electronAPI?.settings) {
+      try {
+        await window.electronAPI.settings.set('theme', theme);
+        saveMessage = `Theme set to ${theme}`;
+        setTimeout(() => saveMessage = '', 2000);
+      } catch (error) {
+        console.error('Error saving theme:', error);
+      }
+    }
+  }
+
+  /**
+   * DESIGN_SYSTEM: Apply theme to document root
+   * Called both from setTheme and on initial load (via App.svelte)
+   */
+  function applyTheme(theme: 'dark' | 'light' | 'system') {
+    if (theme === 'system') {
+      // Use system preference
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+    } else {
+      document.documentElement.setAttribute('data-theme', theme);
     }
   }
 
@@ -331,19 +349,6 @@
       setTimeout(() => saveMessage = '', 3000);
     } catch (error) {
       console.error('Error toggling require login:', error);
-    }
-  }
-
-  async function toggleImportSkipAcr() {
-    if (!window.electronAPI?.settings) return;
-    try {
-      const newValue = !importSkipAcr;
-      await window.electronAPI.settings.set('import_skip_acr', newValue.toString());
-      importSkipAcr = newValue;
-      saveMessage = newValue ? 'Adobe Camera Raw (.acr) files will be skipped during import' : 'Adobe Camera Raw (.acr) files will be imported';
-      setTimeout(() => saveMessage = '', 3000);
-    } catch (error) {
-      console.error('Error toggling import skip ACR:', error);
     }
   }
 
@@ -986,10 +991,7 @@
   }
 
   /**
-   * Import reference map file(s)
-   * ADR-048: Now supports multi-select
-   * - 1 file → existing preview/dedup flow
-   * - Multiple files → batch import with auto-skip duplicates
+   * Import a new reference map file (with preview dialog)
    */
   async function importRefMap() {
     if (!window.electronAPI?.refMaps) {
@@ -999,41 +1001,16 @@
 
     try {
       importingRefMap = true;
-      refMapMessage = 'Selecting files...';
+      refMapMessage = 'Selecting file...';
 
-      // Open file dialog (now returns string[])
-      const files = await window.electronAPI.refMaps.selectFile();
+      // Open file dialog
+      const result = await window.electronAPI.refMaps.selectFile();
 
-      if (!files || files.length === 0) {
+      if (!result) {
         refMapMessage = '';
         importingRefMap = false;
         return;
       }
-
-      // ADR-048: Multiple files → batch import
-      if (files.length > 1) {
-        refMapMessage = `Importing ${files.length} maps...`;
-        const batchResult = await window.electronAPI.refMaps.importBatch(files, currentUserId || undefined);
-
-        if (batchResult.totalPoints > 0) {
-          refMapMessage = `Imported ${batchResult.totalPoints} points from ${batchResult.successCount} map${batchResult.successCount > 1 ? 's' : ''}`;
-          if (batchResult.skippedCount > 0) {
-            refMapMessage += ` (${batchResult.skippedCount} skipped as duplicates)`;
-          }
-        } else if (batchResult.skippedCount > 0) {
-          refMapMessage = `All ${batchResult.skippedCount} maps were duplicates`;
-        } else {
-          refMapMessage = 'No points imported';
-        }
-
-        await loadRefMaps();
-        importingRefMap = false;
-        setTimeout(() => { refMapMessage = ''; }, 5000);
-        return;
-      }
-
-      // Single file → existing preview flow
-      const result = files[0];
 
       // Show preview with deduplication check
       previewLoading = true;
@@ -1176,14 +1153,13 @@
 
   /**
    * Get color class for similarity percentage pill
-   * 100% = black (primary), 90%+ = success, 72%+ = warning, <72% = error
-   * Uses functional colors per Braun design (color = information)
+   * 100% = gold (accent), 90%+ = green, 72%+ = yellow, <72% = red
    */
   function getSimilarityPillClass(similarity: number): string {
-    if (similarity === 100) return 'bg-braun-900 text-white';
-    if (similarity >= 90) return 'bg-success text-white';
-    if (similarity >= 72) return 'bg-warning text-white';
-    return 'bg-error text-white';
+    if (similarity === 100) return 'bg-accent text-white';
+    if (similarity >= 90) return 'bg-green-500 text-white';
+    if (similarity >= 72) return 'bg-yellow-500 text-white';
+    return 'bg-red-500 text-white';
   }
 
 
@@ -1280,12 +1256,35 @@
     }
   }
 
-  function executePinAction(action: 'archive' | 'startupPin') {
+  function executePinAction(action: 'archive' | 'deleteOnImport' | 'startupPin') {
     if (action === 'archive') {
       selectArchiveFolder();
+    } else if (action === 'deleteOnImport') {
+      // If turning ON delete on import, show warning first
+      if (!deleteOriginals) {
+        showDeleteWarning = true;
+      } else {
+        // Turning off, no warning needed
+        toggleDeleteOnImport();
+      }
     } else if (action === 'startupPin') {
       toggleRequireLogin();
     }
+  }
+
+  async function toggleDeleteOnImport() {
+    deleteOriginals = !deleteOriginals;
+    showDeleteWarning = false;
+    // Auto-save the setting
+    if (window.electronAPI?.settings) {
+      await window.electronAPI.settings.set('delete_on_import', deleteOriginals.toString());
+      saveMessage = deleteOriginals ? 'Files will be deleted after import' : 'Original files will be preserved';
+      setTimeout(() => saveMessage = '', 3000);
+    }
+  }
+
+  function cancelDeleteWarning() {
+    showDeleteWarning = false;
   }
 
   // Location picker modal helpers
@@ -1686,41 +1685,6 @@
     }
   }
 
-  // Wipe database - complete fresh start
-  let wiping = $state(false);
-  let wipeMessage = $state('');
-
-  async function wipeDatabase() {
-    if (!window.electronAPI?.database?.wipe) {
-      wipeMessage = 'Wipe not available';
-      setTimeout(() => { wipeMessage = ''; }, 5000);
-      return;
-    }
-
-    try {
-      wiping = true;
-      wipeMessage = '';
-
-      const result = await window.electronAPI.database.wipe();
-
-      if (result.success) {
-        wipeMessage = result.message;
-        if (result.backupPath) {
-          wipeMessage += ` Backup saved to: ${result.backupPath}`;
-        }
-      } else {
-        wipeMessage = result.message || 'Wipe canceled';
-        setTimeout(() => { wipeMessage = ''; }, 5000);
-      }
-    } catch (error) {
-      console.error('Error wiping database:', error);
-      wipeMessage = 'Error wiping database';
-      setTimeout(() => { wipeMessage = ''; }, 5000);
-    } finally {
-      wiping = false;
-    }
-  }
-
   // Database Archive Export: Load archive status
   async function loadArchiveExportStatus() {
     if (!window.electronAPI?.database?.archiveStatus) return;
@@ -1870,94 +1834,6 @@
     }
   }
 
-  // OPT-113: Load pending web source count
-  async function loadPendingWebSourceCount() {
-    if (!window.electronAPI?.websources?.countPending) return;
-    try {
-      pendingWebSourceCount = await window.electronAPI.websources.countPending();
-    } catch (error) {
-      console.error('Failed to load pending web source count:', error);
-    }
-  }
-
-  // OPT-113: Archive all pending web sources
-  async function archiveAllPendingWebSources() {
-    if (!window.electronAPI?.websources?.archiveAllPending || archivingWebSources) return;
-
-    try {
-      archivingWebSources = true;
-      webSourceArchiveMessage = 'Queueing archives...';
-
-      const result = await window.electronAPI.websources.archiveAllPending();
-
-      if (result.queued === 0) {
-        webSourceArchiveMessage = 'No pending sources to archive';
-      } else {
-        webSourceArchiveMessage = `Queued ${result.queued} sources for archiving`;
-      }
-
-      setTimeout(() => { webSourceArchiveMessage = ''; }, 5000);
-    } catch (error) {
-      console.error('Failed to archive web sources:', error);
-      webSourceArchiveMessage = 'Failed to queue archives';
-    } finally {
-      archivingWebSources = false;
-    }
-  }
-
-  // ML Tagging functions
-  async function refreshMlTaggingStatus() {
-    try {
-      const [statusResult, queueResult] = await Promise.all([
-        window.electronAPI?.tagging?.getServiceStatus(),
-        window.electronAPI?.tagging?.getQueueStats(),
-      ]);
-
-      if (statusResult?.success) {
-        mlTaggingStatus = {
-          available: statusResult.available ?? false,
-          version: statusResult.version,
-          enabled: statusResult.enabled,
-        };
-      }
-
-      if (queueResult?.success && queueResult.stats) {
-        mlTaggingQueueStats = queueResult.stats;
-      }
-    } catch (error) {
-      console.error('Failed to load ML tagging status:', error);
-    }
-  }
-
-  async function queueAllUntaggedImages() {
-    if (!window.electronAPI?.tagging?.queueAllUntaggedImages) {
-      mlTaggingMessage = 'ML tagging not available';
-      return;
-    }
-
-    try {
-      mlTaggingRunning = true;
-      mlTaggingMessage = 'Queueing untagged images...';
-
-      const result = await window.electronAPI.tagging.queueAllUntaggedImages({ batchSize: 500 });
-
-      if (result.success) {
-        mlTaggingMessage = result.message || `Queued ${result.queued} images`;
-        // Refresh status to show updated queue
-        await refreshMlTaggingStatus();
-      } else {
-        mlTaggingMessage = result.error || 'Failed to queue images';
-      }
-
-      setTimeout(() => { mlTaggingMessage = ''; }, 10000);
-    } catch (error) {
-      console.error('Failed to queue untagged images:', error);
-      mlTaggingMessage = 'Failed to queue images';
-    } finally {
-      mlTaggingRunning = false;
-    }
-  }
-
   onMount(() => {
     loadSettings();
     loadProxyCacheStats();
@@ -1966,20 +1842,6 @@
     loadDatabaseHealth();
     loadBagSummary();
     loadArchiveExportStatus();
-    loadPendingWebSourceCount();
-    refreshMlTaggingStatus();
-
-    // OPT-113: Listen for archive completion to update pending count
-    let cleanupArchiveListener: (() => void) | undefined;
-    if (window.electronAPI?.websources?.onArchiveComplete) {
-      cleanupArchiveListener = window.electronAPI.websources.onArchiveComplete(async () => {
-        await loadPendingWebSourceCount();
-      });
-    }
-
-    return () => {
-      cleanupArchiveListener?.();
-    };
   });
 </script>
 
@@ -1987,18 +1849,71 @@
   <div class="mb-8">
     <div class="flex items-baseline justify-between">
       <h1 class="text-3xl font-bold text-foreground mb-2">Settings</h1>
-      <span class="text-sm text-braun-400">v0.1.0</span>
+      <span class="text-sm text-gray-400">v0.1.0</span>
     </div>
   </div>
 
   {#if loading}
     <div class="max-w-2xl">
-      <p class="text-braun-500">Loading settings...</p>
+      <p class="text-gray-500">Loading settings...</p>
     </div>
   {:else}
     <div class="max-w-2xl">
+      <!-- DESIGN_SYSTEM: Appearance Settings -->
+      <div class="bg-surface rounded-lg border border-default mb-6 {appearanceExpanded ? 'p-6' : 'px-6 py-4'}">
+        <!-- Accordion Header -->
+        <button
+          onclick={() => appearanceExpanded = !appearanceExpanded}
+          aria-expanded={appearanceExpanded}
+          class="w-full flex items-center justify-between text-left hover:opacity-80 transition-opacity"
+        >
+          <h2 class="text-lg font-semibold text-primary leading-none">Appearance</h2>
+          <svg
+            class="w-5 h-5 text-accent transition-transform duration-200 {appearanceExpanded ? 'rotate-180' : ''}"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            viewBox="0 0 24 24"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {#if appearanceExpanded}
+        <div class="mt-4">
+          <label class="block text-sm font-medium text-secondary mb-3">Theme</label>
+          <div class="flex gap-2">
+            <button
+              onclick={() => setTheme('dark')}
+              class="flex-1 px-4 py-3 rounded-md text-sm font-medium transition-all {currentTheme === 'dark' ? 'bg-accent text-neutral-950 shadow-sm' : 'bg-surface-elevated border border-default text-secondary hover:border-strong'}"
+            >
+              <span class="block text-center">Dark</span>
+              <span class="block text-xs opacity-70 mt-1">Moody, focused</span>
+            </button>
+            <button
+              onclick={() => setTheme('light')}
+              class="flex-1 px-4 py-3 rounded-md text-sm font-medium transition-all {currentTheme === 'light' ? 'bg-accent text-neutral-950 shadow-sm' : 'bg-surface-elevated border border-default text-secondary hover:border-strong'}"
+            >
+              <span class="block text-center">Light</span>
+              <span class="block text-xs opacity-70 mt-1">Bright, clear</span>
+            </button>
+            <button
+              onclick={() => setTheme('system')}
+              class="flex-1 px-4 py-3 rounded-md text-sm font-medium transition-all {currentTheme === 'system' ? 'bg-accent text-neutral-950 shadow-sm' : 'bg-surface-elevated border border-default text-secondary hover:border-strong'}"
+            >
+              <span class="block text-center">System</span>
+              <span class="block text-xs opacity-70 mt-1">Match OS</span>
+            </button>
+          </div>
+          <p class="text-xs text-muted mt-3">
+            Theme changes apply immediately across all pages.
+          </p>
+        </div>
+        {/if}
+      </div>
+
       <!-- User Management -->
-      <div class="bg-white rounded border border-braun-300 mb-6 {usersExpanded ? 'p-6' : 'px-6 py-4'}">
+      <div class="bg-surface rounded-lg border border-default mb-6 {usersExpanded ? 'p-6' : 'px-6 py-4'}">
         <!-- Accordion Header -->
         <button
           onclick={() => usersExpanded = !usersExpanded}
@@ -2007,7 +1922,7 @@
         >
           <h2 class="text-lg font-semibold text-foreground leading-none">Users</h2>
           <svg
-            class="w-5 h-5 text-braun-900 transition-transform duration-200 {usersExpanded ? 'rotate-180' : ''}"
+            class="w-5 h-5 text-accent transition-transform duration-200 {usersExpanded ? 'rotate-180' : ''}"
             fill="none"
             stroke="currentColor"
             stroke-width="2.5"
@@ -2021,26 +1936,26 @@
         <!-- User List -->
         <div class="space-y-3 mt-4">
           {#each users as user}
-            <div class="border border-braun-200 rounded p-4">
+            <div class="border border-gray-200 rounded-lg p-4">
               {#if editingUserId === user.user_id}
                 <!-- Edit Mode -->
                 <div class="space-y-3">
                   <div class="grid grid-cols-2 gap-3">
                     <div>
-                      <label class="block text-xs font-medium text-braun-600 mb-1">Username</label>
+                      <label class="block text-xs font-medium text-gray-600 mb-1">Username</label>
                       <input
                         type="text"
                         bind:value={editUsername}
-                        class="w-full px-2 py-1 text-sm border border-braun-300 rounded focus:outline-none focus:border-braun-600"
+                        class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent"
                       />
                     </div>
                     <div>
-                      <label class="block text-xs font-medium text-braun-600 mb-1">Display Name</label>
+                      <label class="block text-xs font-medium text-gray-600 mb-1">Display Name</label>
                       <input
                         type="text"
                         bind:value={editDisplayName}
                         placeholder="Optional"
-                        class="w-full px-2 py-1 text-sm border border-braun-300 rounded focus:outline-none focus:border-braun-600"
+                        class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent"
                       />
                     </div>
                   </div>
@@ -2050,13 +1965,13 @@
                   <div class="flex gap-2">
                     <button
                       onclick={saveEditUser}
-                      class="px-3 py-1 text-sm bg-braun-900 text-white rounded hover:bg-braun-600"
+                      class="px-3 py-1 text-sm bg-accent text-white rounded hover:opacity-90"
                     >
                       Save
                     </button>
                     <button
                       onclick={cancelEditUser}
-                      class="px-3 py-1 text-sm bg-braun-100 text-braun-700 rounded hover:bg-braun-200"
+                      class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
                     >
                       Cancel
                     </button>
@@ -2070,7 +1985,7 @@
                   </p>
                   <div class="grid grid-cols-2 gap-3">
                     <div>
-                      <label class="block text-xs font-medium text-braun-600 mb-1">New PIN</label>
+                      <label class="block text-xs font-medium text-gray-600 mb-1">New PIN</label>
                       <input
                         type="password"
                         inputmode="numeric"
@@ -2078,11 +1993,11 @@
                         maxlength="6"
                         bind:value={changePin}
                         placeholder="4-6 digits"
-                        class="w-full px-2 py-1 text-sm border border-braun-300 rounded focus:outline-none focus:border-braun-600 text-center"
+                        class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent text-center"
                       />
                     </div>
                     <div>
-                      <label class="block text-xs font-medium text-braun-600 mb-1">Confirm PIN</label>
+                      <label class="block text-xs font-medium text-gray-600 mb-1">Confirm PIN</label>
                       <input
                         type="password"
                         inputmode="numeric"
@@ -2090,7 +2005,7 @@
                         maxlength="6"
                         bind:value={changeConfirmPin}
                         placeholder="Re-enter"
-                        class="w-full px-2 py-1 text-sm border border-braun-300 rounded focus:outline-none focus:border-braun-600 text-center"
+                        class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent text-center"
                       />
                     </div>
                   </div>
@@ -2100,13 +2015,13 @@
                   <div class="flex gap-2">
                     <button
                       onclick={saveChangePin}
-                      class="px-3 py-1 text-sm bg-braun-900 text-white rounded hover:bg-braun-600"
+                      class="px-3 py-1 text-sm bg-accent text-white rounded hover:opacity-90"
                     >
                       Save PIN
                     </button>
                     <button
                       onclick={cancelChangePin}
-                      class="px-3 py-1 text-sm bg-braun-100 text-braun-700 rounded hover:bg-braun-200"
+                      class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
                     >
                       Cancel
                     </button>
@@ -2119,17 +2034,17 @@
                     <div class="flex items-center gap-2">
                       <span class="font-medium text-foreground">{user.display_name || user.username}</span>
                       {#if currentUserId === user.user_id}
-                        <span class="text-xs bg-braun-100 text-braun-900 px-1.5 py-0.5 rounded">Current</span>
+                        <span class="text-xs bg-accent/10 text-accent px-1.5 py-0.5 rounded">Current</span>
                       {/if}
                     </div>
                     {#if user.display_name}
-                      <p class="text-xs text-braun-500">@{user.username}</p>
+                      <p class="text-xs text-gray-500">@{user.username}</p>
                     {/if}
                   </div>
                   <div class="flex gap-1">
                     <button
                       onclick={() => startEditUser(user)}
-                      class="p-1.5 text-braun-500 hover:text-braun-700 hover:bg-braun-100 rounded"
+                      class="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
                       title="Edit user"
                     >
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2138,7 +2053,7 @@
                     </button>
                     <button
                       onclick={() => startChangePin(user)}
-                      class="p-1.5 text-braun-500 hover:text-braun-700 hover:bg-braun-100 rounded"
+                      class="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
                       title="Change PIN"
                     >
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2148,7 +2063,7 @@
                     {#if users.length > 1}
                       <button
                         onclick={() => deleteUser(user)}
-                        class="p-1.5 text-braun-500 hover:text-red-600 hover:bg-red-50 rounded"
+                        class="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded"
                         title="Delete user"
                       >
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2166,7 +2081,7 @@
           <div class="flex items-center justify-end pt-4 mt-4">
             <button
               onclick={openAddUser}
-              class="text-sm text-braun-900 hover:underline"
+              class="text-sm text-accent hover:underline"
               title="Add user"
             >
               add user
@@ -2175,32 +2090,32 @@
 
           <!-- Add User Form -->
           {#if showAddUser}
-            <div class="border border-braun-400 rounded p-4 bg-braun-50">
+            <div class="border border-accent rounded-lg p-4 bg-accent/5">
               <h3 class="font-medium text-foreground mb-3">Add New User</h3>
               <div class="space-y-3">
                 <div class="grid grid-cols-2 gap-3">
                   <div>
-                    <label class="block text-xs font-medium text-braun-600 mb-1">Username *</label>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Username *</label>
                     <input
                       type="text"
                       bind:value={newUsername}
                       placeholder="Enter username"
-                      class="w-full px-2 py-1 text-sm border border-braun-300 rounded focus:outline-none focus:border-braun-600"
+                      class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent"
                     />
                   </div>
                   <div>
-                    <label class="block text-xs font-medium text-braun-600 mb-1">Display Name</label>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Display Name</label>
                     <input
                       type="text"
                       bind:value={newDisplayName}
                       placeholder="Optional"
-                      class="w-full px-2 py-1 text-sm border border-braun-300 rounded focus:outline-none focus:border-braun-600"
+                      class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent"
                     />
                   </div>
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                   <div>
-                    <label class="block text-xs font-medium text-braun-600 mb-1">PIN *</label>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">PIN *</label>
                     <input
                       type="password"
                       inputmode="numeric"
@@ -2208,11 +2123,11 @@
                       maxlength="6"
                       bind:value={newPin}
                       placeholder="4-6 digits"
-                      class="w-full px-2 py-1 text-sm border border-braun-300 rounded focus:outline-none focus:border-braun-600 text-center"
+                      class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent text-center"
                     />
                   </div>
                   <div>
-                    <label class="block text-xs font-medium text-braun-600 mb-1">Confirm PIN *</label>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Confirm PIN *</label>
                     <input
                       type="password"
                       inputmode="numeric"
@@ -2220,7 +2135,7 @@
                       maxlength="6"
                       bind:value={newConfirmPin}
                       placeholder="Re-enter"
-                      class="w-full px-2 py-1 text-sm border border-braun-300 rounded focus:outline-none focus:border-braun-600 text-center"
+                      class="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-accent text-center"
                     />
                   </div>
                 </div>
@@ -2230,13 +2145,13 @@
                 <div class="flex gap-2">
                   <button
                     onclick={createUser}
-                    class="px-3 py-1 text-sm bg-braun-900 text-white rounded hover:bg-braun-600"
+                    class="px-3 py-1 text-sm bg-accent text-white rounded hover:opacity-90"
                   >
                     Create User
                   </button>
                   <button
                     onclick={cancelAddUser}
-                    class="px-3 py-1 text-sm bg-braun-100 text-braun-700 rounded hover:bg-braun-200"
+                    class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
                   >
                     Cancel
                   </button>
@@ -2244,30 +2159,19 @@
               </div>
             </div>
           {/if}
-
-          <!-- Startup PIN Required -->
-          <div class="flex items-center justify-between pt-4 mt-4 border-t border-braun-200">
-            <span class="text-sm font-medium text-braun-700">Startup PIN Required</span>
-            <button
-              onclick={() => requestPinForAction('startupPin')}
-              class="text-sm px-2 py-0.5 rounded transition {requireLogin ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-braun-100 text-braun-600 hover:bg-braun-200'}"
-            >
-              {requireLogin ? 'Enabled' : 'Disabled'}
-            </button>
-          </div>
         </div>
         {/if}
       </div>
 
       <!-- Archive Accordion -->
-      <div class="bg-white rounded border border-braun-300 mb-6 overflow-hidden">
+      <div class="bg-white rounded-lg shadow mb-6 overflow-hidden">
         <button
           onclick={() => archiveExpanded = !archiveExpanded}
-          class="w-full flex items-center justify-between text-left transition-colors hover:bg-braun-50 {archiveExpanded ? 'p-6' : 'px-6 py-4'}"
+          class="w-full flex items-center justify-between text-left transition-colors hover:bg-gray-50 {archiveExpanded ? 'p-6' : 'px-6 py-4'}"
         >
           <h2 class="text-lg font-semibold text-foreground">Archive</h2>
           <svg
-            class="w-5 h-5 text-braun-900 transition-transform duration-200 {archiveExpanded ? 'rotate-180' : ''}"
+            class="w-5 h-5 text-accent transition-transform duration-200 {archiveExpanded ? 'rotate-180' : ''}"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -2279,11 +2183,33 @@
         {#if archiveExpanded}
         <div class="px-6 pb-6 space-y-4">
           <!-- Archive Location Row -->
-          <div class="flex items-center justify-between py-2 border-b border-braun-100">
-            <span class="text-sm font-medium text-braun-700">Archive Location</span>
+          <div class="flex items-center justify-between py-2 border-b border-gray-100">
+            <span class="text-sm font-medium text-gray-700">Archive Location</span>
             <button
               onclick={() => requestPinForAction('archive')}
-              class="text-sm text-braun-900 hover:underline"
+              class="text-sm text-accent hover:underline"
+            >
+              edit
+            </button>
+          </div>
+
+          <!-- Delete on Import Row -->
+          <div class="flex items-center justify-between py-2 border-b border-gray-100">
+            <span class="text-sm font-medium text-gray-700">Delete Original Files on Import</span>
+            <button
+              onclick={() => requestPinForAction('deleteOnImport')}
+              class="text-sm text-accent hover:underline"
+            >
+              edit
+            </button>
+          </div>
+
+          <!-- Startup PIN Row -->
+          <div class="flex items-center justify-between py-2 border-b border-gray-100">
+            <span class="text-sm font-medium text-gray-700">Startup PIN Required</span>
+            <button
+              onclick={() => requestPinForAction('startupPin')}
+              class="text-sm text-accent hover:underline"
             >
               edit
             </button>
@@ -2293,11 +2219,11 @@
           <div>
             <button
               onclick={() => databaseExpanded = !databaseExpanded}
-              class="w-full flex items-center justify-between py-2 border-b border-braun-100 text-left hover:bg-braun-50 transition-colors"
+              class="w-full flex items-center justify-between py-2 border-b border-gray-100 text-left hover:bg-gray-50 transition-colors"
             >
-              <span class="text-sm font-medium text-braun-700">Database</span>
+              <span class="text-sm font-medium text-gray-700">Database</span>
               <svg
-                class="w-4 h-4 text-braun-900 transition-transform duration-200 {databaseExpanded ? 'rotate-180' : ''}"
+                class="w-4 h-4 text-accent transition-transform duration-200 {databaseExpanded ? 'rotate-180' : ''}"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -2310,10 +2236,10 @@
             <div class="py-3">
               <!-- Status pills inside accordion -->
               <div class="flex items-center gap-2 mb-3">
-                <span class="text-xs px-1.5 py-0.5 rounded {dbHealthy ? 'bg-braun-100 text-success' : 'bg-braun-100 text-error'}">
+                <span class="text-xs px-1.5 py-0.5 rounded {dbHealthy ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
                   {dbHealthy ? 'healthy' : 'needs attention'}
                 </span>
-                <span class="text-xs px-1.5 py-0.5 rounded {backupCount > 0 ? 'bg-braun-100 text-success' : 'bg-braun-100 text-warning'}">
+                <span class="text-xs px-1.5 py-0.5 rounded {backupCount > 0 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}">
                   {backupCount} backups
                 </span>
               </div>
@@ -2323,65 +2249,60 @@
                 <button
                   onclick={backupDatabase}
                   disabled={backingUp || restoring || userExporting}
-                  class="px-3 py-1.5 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
                 >
                   {backingUp ? 'Backing up...' : 'Backup'}
                 </button>
                 <button
                   onclick={userBackupDatabase}
                   disabled={userExporting || backingUp || restoring}
-                  class="px-3 py-1.5 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
                 >
                   {userExporting ? 'Exporting...' : 'User Backup'}
                 </button>
                 <button
                   onclick={openRestoreModal}
                   disabled={restoring || backingUp || userExporting}
-                  class="px-3 py-1.5 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
                 >
                   Restore
                 </button>
                 <button
                   onclick={restoreDatabase}
                   disabled={restoring || backingUp || userExporting}
-                  class="px-3 py-1.5 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
                 >
                   {restoring ? 'Restoring...' : 'User Restore'}
                 </button>
               </div>
               {#if backupMessage}
-                <p class="text-sm mt-2 {backupMessage.includes('Error') || backupMessage.includes('canceled') ? 'text-error' : 'text-success'}">
+                <p class="text-sm mt-2 {backupMessage.includes('Error') || backupMessage.includes('canceled') ? 'text-red-600' : 'text-green-600'}">
                   {backupMessage}
                 </p>
               {/if}
               {#if restoreMessage}
-                <p class="text-sm mt-2 {restoreMessage.includes('Error') || restoreMessage.includes('canceled') || restoreMessage.includes('Invalid') ? 'text-error' : 'text-success'}">
+                <p class="text-sm mt-2 {restoreMessage.includes('Error') || restoreMessage.includes('canceled') || restoreMessage.includes('Invalid') ? 'text-red-600' : 'text-green-600'}">
                   {restoreMessage}
-                </p>
-              {/if}
-              {#if wipeMessage}
-                <p class="text-sm mt-2 {wipeMessage.includes('Error') || wipeMessage.includes('canceled') ? 'text-error' : 'text-warning'}">
-                  {wipeMessage}
                 </p>
               {/if}
 
               <!-- Archive Export Section -->
-              <div class="mt-4 pt-3 border-t border-braun-200">
+              <div class="mt-4 pt-3 border-t border-gray-200">
                 <div class="flex items-center justify-between mb-2">
-                  <span class="text-sm font-medium text-braun-700">Archive Snapshot</span>
+                  <span class="text-sm font-medium text-gray-700">Archive Snapshot</span>
                   {#if archiveExportStatus?.configured}
-                    <span class="text-xs px-1.5 py-0.5 rounded {archiveExportStatus.verified ? 'bg-braun-100 text-success' : archiveExportStatus.exported ? 'bg-braun-100 text-warning' : 'bg-braun-100 text-braun-600'}">
+                    <span class="text-xs px-1.5 py-0.5 rounded {archiveExportStatus.verified ? 'bg-green-100 text-green-700' : archiveExportStatus.exported ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}">
                       {archiveExportStatus.verified ? 'verified' : archiveExportStatus.exported ? 'exported' : 'none'}
                     </span>
                   {:else}
-                    <span class="text-xs px-1.5 py-0.5 rounded bg-braun-100 text-braun-500">
+                    <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
                       not configured
                     </span>
                   {/if}
                 </div>
 
                 {#if archiveExportStatus?.lastExport}
-                  <p class="text-xs text-braun-500 mb-2">
+                  <p class="text-xs text-gray-500 mb-2">
                     Last: {new Date(archiveExportStatus.lastExport.exportedAt).toLocaleString()}
                   </p>
                 {/if}
@@ -2389,64 +2310,35 @@
                 <button
                   onclick={exportToArchive}
                   disabled={archiveExporting || !archiveExportStatus?.configured}
-                  class="px-3 py-1.5 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
                   title={!archiveExportStatus?.configured ? 'Set archive location first' : 'Export database to archive folder'}
                 >
                   {archiveExporting ? 'Exporting...' : 'Export to Archive'}
                 </button>
 
                 {#if archiveExportMessage}
-                  <p class="text-sm mt-2 {archiveExportMessage.includes('failed') || archiveExportMessage.includes('Error') ? 'text-error' : 'text-success'}">
+                  <p class="text-sm mt-2 {archiveExportMessage.includes('failed') || archiveExportMessage.includes('Error') ? 'text-red-600' : 'text-green-600'}">
                     {archiveExportMessage}
                   </p>
                 {/if}
 
-                <p class="text-xs text-braun-400 mt-2">
+                <p class="text-xs text-gray-400 mt-2">
                   Auto-exports on backup and quit. Stored in archive/_database/
                 </p>
               </div>
-
-              <!-- Danger Zone: Wipe Database -->
-              <div class="mt-4 pt-3 border-t border-red-200">
-                <h4 class="text-sm font-medium text-red-700 mb-2">Danger Zone</h4>
-                <p class="text-xs text-red-500 mb-2">
-                  Wipe ALL data and start fresh. A backup will be created automatically.
-                </p>
-                <button
-                  onclick={wipeDatabase}
-                  disabled={wiping || backingUp || restoring || userExporting}
-                  class="px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition disabled:opacity-50"
-                >
-                  {wiping ? 'Wiping...' : 'Wipe Database'}
-                </button>
-              </div>
             </div>
             {/if}
-          </div>
-
-          <!-- Import Settings Row -->
-          <div class="flex items-center justify-between py-2 border-b border-braun-100">
-            <div>
-              <span class="text-sm font-medium text-braun-700">Skip .acr Files</span>
-              <p class="text-xs text-braun-500">Adobe Camera Raw settings files are skipped during import</p>
-            </div>
-            <button
-              onclick={toggleImportSkipAcr}
-              class="text-sm px-2 py-0.5 rounded transition {importSkipAcr ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-braun-100 text-braun-600 hover:bg-braun-200'}"
-            >
-              {importSkipAcr ? 'Enabled' : 'Disabled'}
-            </button>
           </div>
 
           <!-- Maps Sub-Accordion (Reference Maps) -->
           <div>
             <button
               onclick={() => mapsExpanded = !mapsExpanded}
-              class="w-full flex items-center justify-between py-2 border-b border-braun-100 text-left hover:bg-braun-50 transition-colors"
+              class="w-full flex items-center justify-between py-2 border-b border-gray-100 text-left hover:bg-gray-50 transition-colors"
             >
-              <span class="text-sm font-medium text-braun-700">Maps</span>
+              <span class="text-sm font-medium text-gray-700">Maps</span>
               <svg
-                class="w-4 h-4 text-braun-900 transition-transform duration-200 {mapsExpanded ? 'rotate-180' : ''}"
+                class="w-4 h-4 text-accent transition-transform duration-200 {mapsExpanded ? 'rotate-180' : ''}"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -2459,14 +2351,14 @@
             <div class="py-3">
               <!-- Stats -->
               {#if refMapStats}
-                <div class="bg-braun-50 rounded p-3 mb-3">
+                <div class="bg-gray-50 rounded-lg p-3 mb-3">
                   <div class="flex gap-6 text-sm">
                     <div>
-                      <span class="text-braun-500">Imported maps:</span>
+                      <span class="text-gray-500">Imported maps:</span>
                       <span class="font-medium ml-1">{refMapStats.mapCount}</span>
                     </div>
                     <div>
-                      <span class="text-braun-500">Total points:</span>
+                      <span class="text-gray-500">Total points:</span>
                       <span class="font-medium ml-1">{refMapStats.pointCount.toLocaleString()}</span>
                     </div>
                   </div>
@@ -2477,19 +2369,19 @@
               {#if refMaps.length > 0}
                 <div class="space-y-2 mb-3 max-h-48 overflow-y-auto">
                   {#each refMaps as map}
-                    <div class="flex items-center justify-between border border-braun-200 rounded p-2">
+                    <div class="flex items-center justify-between border border-gray-200 rounded-lg p-2">
                       <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2">
                           <span class="text-sm font-medium text-foreground truncate">{map.mapName}</span>
-                          <span class="text-xs bg-braun-100 text-braun-600 px-1 py-0.5 rounded uppercase">{map.fileType}</span>
+                          <span class="text-xs bg-gray-100 text-gray-600 px-1 py-0.5 rounded uppercase">{map.fileType}</span>
                         </div>
-                        <p class="text-xs text-braun-500">
+                        <p class="text-xs text-gray-500">
                           {map.pointCount} points - {new Date(map.importedAt).toLocaleDateString()}
                         </p>
                       </div>
                       <button
                         onclick={() => deleteRefMap(map.mapId)}
-                        class="p-1 text-braun-400 hover:text-red-600 hover:bg-red-50 rounded"
+                        class="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
                         title="Delete map"
                       >
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2508,7 +2400,7 @@
                   <button
                     onclick={loadCataloguedCount}
                     disabled={loadingCatalogued}
-                    class="px-3 py-1.5 text-sm bg-braun-100 text-braun-700 rounded hover:bg-braun-200 transition disabled:opacity-50"
+                    class="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition disabled:opacity-50"
                     title="Find reference points that match existing locations (may take a moment)"
                   >
                     {loadingCatalogued ? 'Checking...' : 'Check Duplicates'}
@@ -2517,7 +2409,7 @@
                   <button
                     onclick={purgeCataloguedPoints}
                     disabled={purgingPoints}
-                    class="px-3 py-1.5 text-sm bg-braun-600 text-white rounded hover:bg-braun-500 transition disabled:opacity-50"
+                    class="px-3 py-1.5 text-sm bg-gray-600 text-white rounded hover:opacity-90 transition disabled:opacity-50"
                     title="Remove reference points that are already in your locations database"
                   >
                     {purgingPoints ? 'Purging...' : `Purge ${cataloguedCount} Catalogued`}
@@ -2526,16 +2418,16 @@
                 <button
                   onclick={importRefMap}
                   disabled={importingRefMap}
-                  class="px-3 py-1.5 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
                 >
                   {importingRefMap ? 'Importing...' : 'Import Map'}
                 </button>
               </div>
               {#if refMapMessage}
-                <p class="text-sm text-braun-600 mt-2">{refMapMessage}</p>
+                <p class="text-sm text-gray-600 mt-2">{refMapMessage}</p>
               {/if}
               {#if purgeMessage}
-                <p class="text-sm text-braun-600 mt-2">{purgeMessage}</p>
+                <p class="text-sm text-gray-600 mt-2">{purgeMessage}</p>
               {/if}
             </div>
             {/if}
@@ -2545,11 +2437,11 @@
           <div>
             <button
               onclick={() => maintenanceExpanded = !maintenanceExpanded}
-              class="w-full flex items-center justify-between py-2 border-b border-braun-100 text-left hover:bg-braun-50 transition-colors"
+              class="w-full flex items-center justify-between py-2 border-b border-gray-100 text-left hover:bg-gray-50 transition-colors"
             >
-              <span class="text-sm font-medium text-braun-700">Repair</span>
+              <span class="text-sm font-medium text-gray-700">Repair</span>
               <svg
-                class="w-4 h-4 text-braun-900 transition-transform duration-200 {maintenanceExpanded ? 'rotate-180' : ''}"
+                class="w-4 h-4 text-accent transition-transform duration-200 {maintenanceExpanded ? 'rotate-180' : ''}"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -2565,91 +2457,23 @@
                 <button
                   onclick={() => openLocationPicker('addresses')}
                   disabled={normalizing || backfillingRegions}
-                  class="px-3 py-1.5 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
                 >
                   Fix Addresses
                 </button>
                 <button
                   onclick={() => openLocationPicker('images')}
                   disabled={regenerating || renderingDng || detectingLivePhotos}
-                  class="px-3 py-1.5 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
                 >
                   Fix Images
                 </button>
                 <button
                   onclick={() => openLocationPicker('videos')}
                   disabled={fixingVideos || detectingLivePhotos}
-                  class="px-3 py-1.5 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
                 >
                   Fix Videos
-                </button>
-              </div>
-            </div>
-            {/if}
-          </div>
-
-          <!-- ML Tagging Sub-Accordion (Visual-Buffet) -->
-          <div>
-            <button
-              onclick={() => mlTaggingExpanded = !mlTaggingExpanded}
-              class="w-full flex items-center justify-between py-2 border-b border-braun-100 text-left hover:bg-braun-50 transition-colors"
-            >
-              <span class="text-sm font-medium text-braun-700">ML Tagging</span>
-              <svg
-                class="w-4 h-4 text-braun-900 transition-transform duration-200 {mlTaggingExpanded ? 'rotate-180' : ''}"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {#if mlTaggingExpanded}
-            <div class="py-3">
-              <!-- Status -->
-              {#if mlTaggingStatus}
-                <div class="bg-braun-50 rounded p-3 mb-3">
-                  <div class="flex flex-wrap gap-4 text-sm">
-                    <div class="flex items-center gap-1">
-                      <span class="w-2 h-2 rounded-full {mlTaggingStatus.available ? 'bg-success' : 'bg-error'}"></span>
-                      <span class="text-braun-500">Visual-Buffet:</span>
-                      <span class="font-medium">{mlTaggingStatus.available ? `v${mlTaggingStatus.version}` : 'Not Found'}</span>
-                    </div>
-                    {#if mlTaggingQueueStats}
-                      <div class="flex items-center gap-1">
-                        <span class="text-braun-500">Pending:</span>
-                        <span class="font-medium">{mlTaggingQueueStats.pending}</span>
-                      </div>
-                      <div class="flex items-center gap-1">
-                        <span class="text-braun-500">Processing:</span>
-                        <span class="font-medium">{mlTaggingQueueStats.processing}</span>
-                      </div>
-                    {/if}
-                  </div>
-                </div>
-              {/if}
-
-              <!-- Message -->
-              {#if mlTaggingMessage}
-                <p class="text-sm text-braun-600 mb-3">{mlTaggingMessage}</p>
-              {/if}
-
-              <!-- Actions -->
-              <div class="flex flex-wrap gap-2">
-                <button
-                  onclick={queueAllUntaggedImages}
-                  disabled={mlTaggingRunning || !mlTaggingStatus?.available}
-                  class="px-3 py-1.5 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
-                >
-                  {mlTaggingRunning ? 'Queueing...' : 'Tag All Untagged Images'}
-                </button>
-                <button
-                  onclick={refreshMlTaggingStatus}
-                  disabled={mlTaggingRunning}
-                  class="px-3 py-1.5 text-sm border border-braun-300 rounded hover:bg-braun-50 transition disabled:opacity-50"
-                >
-                  Refresh Status
                 </button>
               </div>
             </div>
@@ -2660,11 +2484,11 @@
           <div>
             <button
               onclick={() => integrityExpanded = !integrityExpanded}
-              class="w-full flex items-center justify-between py-2 border-b border-braun-100 text-left hover:bg-braun-50 transition-colors"
+              class="w-full flex items-center justify-between py-2 border-b border-gray-100 text-left hover:bg-gray-50 transition-colors"
             >
-              <span class="text-sm font-medium text-braun-700">Integrity</span>
+              <span class="text-sm font-medium text-gray-700">Integrity</span>
               <svg
-                class="w-4 h-4 text-braun-900 transition-transform duration-200 {integrityExpanded ? 'rotate-180' : ''}"
+                class="w-4 h-4 text-accent transition-transform duration-200 {integrityExpanded ? 'rotate-180' : ''}"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -2677,31 +2501,31 @@
             <div class="py-3">
               <!-- Summary Stats -->
               {#if bagSummary}
-                <div class="bg-braun-50 rounded p-3 mb-3">
+                <div class="bg-gray-50 rounded-lg p-3 mb-3">
                   <div class="flex flex-wrap gap-4 text-sm">
                     <div class="flex items-center gap-1">
-                      <span class="w-2 h-2 rounded-full bg-success"></span>
-                      <span class="text-braun-500">Valid:</span>
+                      <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                      <span class="text-gray-500">Valid:</span>
                       <span class="font-medium">{bagSummary.valid}</span>
                     </div>
                     <div class="flex items-center gap-1">
-                      <span class="w-2 h-2 rounded-full bg-warning"></span>
-                      <span class="text-braun-500">Incomplete:</span>
+                      <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                      <span class="text-gray-500">Incomplete:</span>
                       <span class="font-medium">{bagSummary.incomplete}</span>
                     </div>
                     <div class="flex items-center gap-1">
-                      <span class="w-2 h-2 rounded-full bg-error"></span>
-                      <span class="text-braun-500">Invalid:</span>
+                      <span class="w-2 h-2 rounded-full bg-red-500"></span>
+                      <span class="text-gray-500">Invalid:</span>
                       <span class="font-medium">{bagSummary.invalid}</span>
                     </div>
                     <div class="flex items-center gap-1">
-                      <span class="w-2 h-2 rounded-full bg-braun-400"></span>
-                      <span class="text-braun-500">None:</span>
+                      <span class="w-2 h-2 rounded-full bg-gray-400"></span>
+                      <span class="text-gray-500">None:</span>
                       <span class="font-medium">{bagSummary.none}</span>
                     </div>
                   </div>
                   {#if lastValidation}
-                    <p class="text-xs text-braun-500 mt-2">
+                    <p class="text-xs text-gray-500 mt-2">
                       Last validated: {new Date(lastValidation).toLocaleString()}
                     </p>
                   {/if}
@@ -2711,9 +2535,9 @@
               <!-- Progress bar during validation -->
               {#if validationProgress}
                 <div class="mb-3">
-                  <div class="h-2 bg-braun-200 rounded-full overflow-hidden">
+                  <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
                     <div
-                      class="h-full bg-braun-900 transition-all duration-300"
+                      class="h-full bg-accent transition-all duration-300"
                       style="width: {(validationProgress.current / validationProgress.total) * 100}%"
                     ></div>
                   </div>
@@ -2725,76 +2549,18 @@
                 <button
                   onclick={validateAllBags}
                   disabled={validatingAllBags}
-                  class="px-3 py-1.5 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
+                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
                 >
                   {validatingAllBags ? 'Validating...' : 'Verify All Locations'}
                 </button>
               </div>
 
               {#if bagValidationMessage}
-                <p class="text-sm text-braun-600 mt-2">{bagValidationMessage}</p>
+                <p class="text-sm text-gray-600 mt-2">{bagValidationMessage}</p>
               {/if}
 
-              <p class="text-xs text-braun-400 mt-3">
+              <p class="text-xs text-gray-400 mt-3">
                 Self-documenting archive per BagIt RFC 8493. Weekly automatic validation.
-              </p>
-            </div>
-            {/if}
-          </div>
-
-          <!-- OPT-113: Web Sources Sub-Accordion -->
-          <div>
-            <button
-              onclick={() => webSourcesExpanded = !webSourcesExpanded}
-              class="w-full flex items-center justify-between py-2 border-b border-braun-100 text-left hover:bg-braun-50 transition-colors"
-            >
-              <span class="text-sm font-medium text-braun-700">Web Sources</span>
-              <svg
-                class="w-4 h-4 text-braun-900 transition-transform duration-200 {webSourcesExpanded ? 'rotate-180' : ''}"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {#if webSourcesExpanded}
-            <div class="py-3">
-              <!-- Pending count -->
-              <div class="bg-braun-50 rounded p-3 mb-3">
-                <div class="flex items-center justify-between">
-                  <div>
-                    <span class="text-sm text-braun-600">Pending archives:</span>
-                    <span class="ml-2 font-medium text-braun-900">{pendingWebSourceCount}</span>
-                  </div>
-                  {#if pendingWebSourceCount === 0}
-                    <span class="text-xs text-success">All archived</span>
-                  {/if}
-                </div>
-              </div>
-
-              <!-- Actions -->
-              <div class="flex flex-wrap gap-2">
-                <button
-                  onclick={archiveAllPendingWebSources}
-                  disabled={archivingWebSources || pendingWebSourceCount === 0}
-                  class="px-3 py-1.5 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
-                >
-                  {#if archivingWebSources}
-                    Queueing...
-                  {:else}
-                    Archive All ({pendingWebSourceCount})
-                  {/if}
-                </button>
-              </div>
-
-              {#if webSourceArchiveMessage}
-                <p class="text-sm text-braun-600 mt-2">{webSourceArchiveMessage}</p>
-              {/if}
-
-              <p class="text-xs text-braun-400 mt-3">
-                Web sources are automatically archived when saved. Use this to archive any pending sources.
               </p>
             </div>
             {/if}
@@ -2802,33 +2568,33 @@
 
           <!-- Storage Section (at bottom) - OPT-047: Enhanced with detailed breakdown -->
           <div class="py-3 mt-2">
-            <span class="text-sm font-medium text-braun-700 mb-2 block">Storage</span>
+            <span class="text-sm font-medium text-gray-700 mb-2 block">Storage</span>
             {#if storageStats}
               {@const archivePercent = (storageStats.archiveBytes / storageStats.totalBytes) * 100}
               {@const otherUsedBytes = storageStats.totalBytes - storageStats.availableBytes - storageStats.archiveBytes}
               {@const otherUsedPercent = Math.max(0, (otherUsedBytes / storageStats.totalBytes) * 100)}
 
               <!-- Detailed breakdown -->
-              <div class="text-xs text-braun-600 mb-2 space-y-0.5">
+              <div class="text-xs text-gray-600 mb-2 space-y-0.5">
                 <div class="flex justify-between">
                   <span>Media files:</span>
                   <span class="font-medium">{formatBytes(storageStats.mediaBytes || 0)}</span>
                 </div>
                 {#if (storageStats.thumbnailBytes || 0) > 0 || (storageStats.previewBytes || 0) > 0 || (storageStats.proxyBytes || 0) > 0}
-                  <div class="flex justify-between text-braun-400">
+                  <div class="flex justify-between text-gray-400">
                     <span>Thumbnails:</span>
                     <span>{formatBytes(storageStats.thumbnailBytes || 0)}</span>
                   </div>
-                  <div class="flex justify-between text-braun-400">
+                  <div class="flex justify-between text-gray-400">
                     <span>Previews:</span>
                     <span>{formatBytes(storageStats.previewBytes || 0)}</span>
                   </div>
-                  <div class="flex justify-between text-braun-400">
+                  <div class="flex justify-between text-gray-400">
                     <span>Video proxies:</span>
                     <span>{formatBytes(storageStats.proxyBytes || 0)}</span>
                   </div>
                 {/if}
-                <div class="flex justify-between border-t border-braun-200 pt-1 mt-1">
+                <div class="flex justify-between border-t border-gray-200 pt-1 mt-1">
                   <span class="font-medium">Total archive:</span>
                   <span class="font-medium">{formatBytes(storageStats.archiveBytes)}</span>
                 </div>
@@ -2839,14 +2605,14 @@
               </div>
 
               <!-- Storage bar -->
-              <div class="h-4 bg-braun-200 rounded-full overflow-hidden flex">
-                <div class="bg-braun-900" style="width: {archivePercent}%"></div>
-                <div class="bg-braun-400" style="width: {otherUsedPercent}%"></div>
+              <div class="h-4 bg-gray-200 rounded-full overflow-hidden flex">
+                <div class="bg-accent" style="width: {archivePercent}%"></div>
+                <div class="bg-gray-400" style="width: {otherUsedPercent}%"></div>
               </div>
 
               <!-- Unmeasured warning and verify button -->
               {#if (storageStats.unmeasuredCount || 0) > 0}
-                <p class="text-xs text-warning mt-2">
+                <p class="text-xs text-amber-600 mt-2">
                   {storageStats.unmeasuredCount} files not yet measured
                 </p>
               {/if}
@@ -2854,25 +2620,25 @@
               <!-- Verify progress -->
               {#if verifyingStorage && verifyProgress}
                 <div class="mt-2">
-                  <p class="text-xs text-braun-500">Verifying: {verifyProgress.currentFile}</p>
-                  <p class="text-xs text-braun-400">{verifyProgress.processed} files processed</p>
+                  <p class="text-xs text-gray-500">Verifying: {verifyProgress.currentFile}</p>
+                  <p class="text-xs text-gray-400">{verifyProgress.processed} files processed</p>
                 </div>
               {/if}
 
               <!-- Verify result -->
               {#if verifyResult}
-                <div class="mt-2 p-2 bg-braun-100 rounded text-xs">
+                <div class="mt-2 p-2 bg-green-50 rounded text-xs">
                   {#if verifyResult.newMeasurements > 0}
-                    <p class="text-success">Measured {verifyResult.newMeasurements} files</p>
+                    <p class="text-green-700">Measured {verifyResult.newMeasurements} files</p>
                   {/if}
                   {#if verifyResult.sizeMismatches > 0}
-                    <p class="text-warning">Found {verifyResult.sizeMismatches} size mismatches</p>
+                    <p class="text-amber-600">Found {verifyResult.sizeMismatches} size mismatches</p>
                   {/if}
                   {#if verifyResult.missingFiles > 0}
-                    <p class="text-error">Found {verifyResult.missingFiles} missing files</p>
+                    <p class="text-red-600">Found {verifyResult.missingFiles} missing files</p>
                   {/if}
                   {#if verifyResult.newMeasurements === 0 && verifyResult.sizeMismatches === 0 && verifyResult.missingFiles === 0}
-                    <p class="text-success">All files verified</p>
+                    <p class="text-green-700">All files verified</p>
                   {/if}
                 </div>
               {/if}
@@ -2882,216 +2648,20 @@
                 <button
                   onclick={verifyStorageIntegrity}
                   disabled={verifyingStorage}
-                  class="text-xs text-braun-900 hover:underline disabled:opacity-50 disabled:no-underline"
+                  class="text-xs text-accent hover:underline disabled:opacity-50 disabled:no-underline"
                 >
                   {verifyingStorage ? 'Verifying...' : (storageStats.unmeasuredCount || 0) > 0 ? 'Measure All Files' : 'Verify Integrity'}
                 </button>
-                <span class="text-xs text-braun-400">
+                <span class="text-xs text-gray-400">
                   Last verified: {formatTimeAgo(storageStats.lastVerifiedAt)}
                 </span>
               </div>
             {:else if loadingStorage}
-              <div class="h-4 bg-braun-200 rounded-full"></div>
-              <p class="text-xs text-braun-400 mt-1">Loading storage info...</p>
+              <div class="h-4 bg-gray-200 rounded-full animate-pulse"></div>
+              <p class="text-xs text-gray-400 mt-1">Loading storage info...</p>
             {:else}
-              <p class="text-xs text-braun-400">Storage info unavailable</p>
+              <p class="text-xs text-gray-400">Storage info unavailable</p>
             {/if}
-          </div>
-        </div>
-        {/if}
-      </div>
-
-      <!-- Data Engine Accordion (consolidated from Date Engine, Image Auto-Tagging, AI & Cloud Providers) -->
-      <div class="bg-white rounded border border-braun-300 mb-6 overflow-hidden">
-        <button
-          onclick={() => dataEngineExpanded = !dataEngineExpanded}
-          class="w-full flex items-center justify-between text-left transition-colors hover:bg-braun-50 {dataEngineExpanded ? 'p-6' : 'px-6 py-4'}"
-        >
-          <h2 class="text-lg font-semibold text-foreground">Data Engine</h2>
-          <svg
-            class="w-5 h-5 text-braun-900 transition-transform duration-200 {dataEngineExpanded ? 'rotate-180' : ''}"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-
-        {#if dataEngineExpanded}
-        <div class="px-6 pb-6">
-          <DataEngineSettings />
-        </div>
-        {/if}
-      </div>
-
-      <!-- Dispatch Hub Accordion -->
-      <div class="bg-white rounded border border-braun-300 mb-6 overflow-hidden">
-        <button
-          onclick={() => dispatchExpanded = !dispatchExpanded}
-          class="w-full flex items-center justify-between text-left transition-colors hover:bg-braun-50 {dispatchExpanded ? 'p-6' : 'px-6 py-4'}"
-        >
-          <div class="flex items-center gap-3">
-            <h2 class="text-lg font-semibold text-foreground">Dispatch Hub</h2>
-            <!-- Connection status dot -->
-            <span
-              class="w-2 h-2 rounded-full {$dispatchConnectionStatus === 'authenticated' ? 'bg-green-500' : $dispatchConnectionStatus === 'connected' ? 'bg-amber-500' : 'bg-red-500'}"
-              title={$dispatchConnectionStatus === 'authenticated' ? 'Connected' : $dispatchConnectionStatus === 'connected' ? 'Not authenticated' : 'Disconnected'}
-            ></span>
-          </div>
-          <svg
-            class="w-5 h-5 text-braun-900 transition-transform duration-200 {dispatchExpanded ? 'rotate-180' : ''}"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-
-        {#if dispatchExpanded}
-        <div class="px-6 pb-6 space-y-6">
-          <!-- Connection Status -->
-          <div class="bg-braun-50 rounded p-4">
-            <DispatchStatus />
-          </div>
-
-          <!-- Hub URL Configuration -->
-          <div>
-            <label class="block text-sm font-medium text-braun-700 mb-2">Hub URL</label>
-            <div class="flex gap-2">
-              <input
-                type="url"
-                bind:value={dispatchHubUrl}
-                placeholder="http://192.168.1.199:3000"
-                class="flex-1 px-3 py-2 rounded border border-braun-300 focus:border-braun-900 focus:outline-none"
-              />
-              <button
-                onclick={async () => {
-                  await dispatchStore.setHubUrl(dispatchHubUrl);
-                  const connected = await dispatchStore.checkConnection();
-                  if (connected) {
-                    dispatchError = '';
-                  } else {
-                    dispatchError = 'Cannot reach hub at this URL';
-                  }
-                }}
-                class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-700 transition-colors text-sm"
-              >
-                Apply
-              </button>
-            </div>
-            {#if dispatchError}
-              <p class="text-red-600 text-sm mt-1">{dispatchError}</p>
-            {/if}
-          </div>
-
-          <!-- Login Form (only show if not authenticated) -->
-          {#if $dispatchConnectionStatus !== 'authenticated'}
-            <div class="border-t border-braun-200 pt-4">
-              <h3 class="text-sm font-medium text-braun-700 mb-3">Authentication</h3>
-              <div class="space-y-3">
-                <div>
-                  <label class="block text-xs text-braun-500 mb-1">Username</label>
-                  <input
-                    type="text"
-                    bind:value={dispatchUsername}
-                    placeholder="username"
-                    class="w-full px-3 py-2 rounded border border-braun-300 focus:border-braun-900 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label class="block text-xs text-braun-500 mb-1">Password</label>
-                  <input
-                    type="password"
-                    bind:value={dispatchPassword}
-                    placeholder="password"
-                    class="w-full px-3 py-2 rounded border border-braun-300 focus:border-braun-900 focus:outline-none"
-                  />
-                </div>
-                <button
-                  onclick={async () => {
-                    dispatchLoggingIn = true;
-                    dispatchError = '';
-                    try {
-                      const success = await dispatchStore.login(dispatchUsername, dispatchPassword);
-                      if (!success) {
-                        dispatchError = 'Login failed. Check credentials.';
-                      } else {
-                        dispatchUsername = '';
-                        dispatchPassword = '';
-                      }
-                    } catch (e) {
-                      dispatchError = e instanceof Error ? e.message : 'Login failed';
-                    } finally {
-                      dispatchLoggingIn = false;
-                    }
-                  }}
-                  disabled={dispatchLoggingIn || !dispatchUsername || !dispatchPassword}
-                  class="w-full px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-700 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {dispatchLoggingIn ? 'Logging in...' : 'Login'}
-                </button>
-              </div>
-            </div>
-          {:else}
-            <!-- Logout button when authenticated -->
-            <div class="border-t border-braun-200 pt-4">
-              <button
-                onclick={() => dispatchStore.logout()}
-                class="px-4 py-2 border border-braun-300 text-braun-700 rounded hover:bg-braun-50 transition-colors text-sm"
-              >
-                Logout
-              </button>
-            </div>
-          {/if}
-
-          <!-- Workers List (only show when authenticated) -->
-          {#if $dispatchConnectionStatus === 'authenticated'}
-            <div class="border-t border-braun-200 pt-4">
-              <div class="flex items-center justify-between mb-3">
-                <h3 class="text-sm font-medium text-braun-700">Workers</h3>
-                <button
-                  onclick={() => dispatchStore.refreshWorkers()}
-                  class="text-xs text-braun-500 hover:text-braun-900"
-                >
-                  Refresh
-                </button>
-              </div>
-              {#if $dispatchWorkers.length === 0}
-                <p class="text-sm text-braun-500">No workers connected</p>
-              {:else}
-                <div class="space-y-2">
-                  {#each $dispatchWorkers as worker}
-                    <div class="bg-braun-50 rounded p-3">
-                      <div class="flex items-center justify-between">
-                        <span class="font-medium text-sm">{worker.name}</span>
-                        <span
-                          class="text-xs px-2 py-0.5 rounded {worker.status === 'online' ? 'bg-green-100 text-green-700' : worker.status === 'busy' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}"
-                        >
-                          {worker.status}
-                        </span>
-                      </div>
-                      {#if worker.plugins.length > 0}
-                        <div class="mt-1 flex flex-wrap gap-1">
-                          {#each worker.plugins as plugin}
-                            <span class="text-xs bg-braun-200 text-braun-600 px-1.5 py-0.5 rounded">
-                              {plugin}
-                            </span>
-                          {/each}
-                        </div>
-                      {/if}
-                    </div>
-                  {/each}
-                </div>
-              {/if}
-            </div>
-          {/if}
-
-          <!-- Active Jobs -->
-          <div class="border-t border-braun-200 pt-4">
-            <h3 class="text-sm font-medium text-braun-700 mb-3">Active Jobs</h3>
-            <DispatchJobProgress />
           </div>
         </div>
         {/if}
@@ -3103,7 +2673,7 @@
 <!-- Import Preview Modal - Premium Archive Experience -->
 {#if showImportPreview && importPreview}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-white rounded border border-braun-300 max-w-md w-full mx-4 max-h-[80vh] flex flex-col">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 max-h-[80vh] flex flex-col">
       <!-- Header -->
       <div class="px-5 pt-5 pb-3">
         <h2 class="text-base font-semibold text-foreground">Import Reference Map</h2>
@@ -3114,12 +2684,12 @@
 
         <!-- Matches Found (enrichment opportunities) -->
         {#if importPreview.enrichmentCount > 0}
-          <div class="bg-[#FFFFFF] border border-braun-100 rounded p-4">
+          <div class="bg-[#FFFFFF] border border-gray-100 rounded-lg p-4">
             <div class="flex items-center justify-between mb-3">
               <span class="text-sm font-medium text-foreground">Matches Found</span>
               <button
                 onclick={selectAllEnrichments}
-                class="text-xs text-braun-900 hover:underline"
+                class="text-xs text-accent hover:underline"
               >
                 check all
               </button>
@@ -3132,12 +2702,12 @@
                   <span class="px-2 py-0.5 rounded text-xs font-medium {getSimilarityPillClass(similarity)}">
                     {similarity}%
                   </span>
-                  <span class="flex-1 truncate text-braun-700 text-xs">
+                  <span class="flex-1 truncate text-gray-700 text-xs">
                     {match.newPointName} — {match.existingName}
                   </span>
                   <button
                     onclick={() => toggleEnrichment(match)}
-                    class="w-4 h-4 rounded border-2 flex items-center justify-center transition flex-shrink-0 {isSelected ? 'bg-braun-900 border-braun-900' : 'border-braun-300 hover:border-braun-900'}"
+                    class="w-4 h-4 rounded border-2 flex items-center justify-center transition flex-shrink-0 {isSelected ? 'bg-accent border-accent' : 'border-gray-300 hover:border-accent'}"
                   >
                     {#if isSelected}
                       <svg class="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -3153,29 +2723,29 @@
 
         <!-- New Locations Found -->
         {#if importPreview.newPoints > 0}
-          <div class="bg-[#FFFFFF] border border-braun-100 rounded p-4">
+          <div class="bg-[#FFFFFF] border border-gray-100 rounded-lg p-4">
             <div class="flex items-center justify-between">
               <span class="text-sm font-medium text-foreground">New Locations</span>
-              <span class="text-sm text-braun-600">{importPreview.newPoints}</span>
+              <span class="text-sm text-gray-600">{importPreview.newPoints}</span>
             </div>
           </div>
         {/if}
 
         <!-- Duplicates -->
         {#if importPreview.cataloguedCount > 0 || importPreview.referenceCount > 0}
-          <div class="bg-[#FFFFFF] border border-braun-100 rounded p-4">
+          <div class="bg-[#FFFFFF] border border-gray-100 rounded-lg p-4">
             <span class="text-sm font-medium text-foreground block mb-2">Duplicates</span>
             <div class="space-y-1">
               {#if importPreview.cataloguedCount > 0}
                 <div class="flex items-center justify-between text-sm">
-                  <span class="text-braun-600">Already Catalogued</span>
-                  <span class="text-braun-600">{importPreview.cataloguedCount}</span>
+                  <span class="text-gray-600">Already Catalogued</span>
+                  <span class="text-gray-600">{importPreview.cataloguedCount}</span>
                 </div>
               {/if}
               {#if importPreview.referenceCount > 0}
                 <div class="flex items-center justify-between text-sm">
-                  <span class="text-braun-600">Reference Matches</span>
-                  <span class="text-braun-600">{importPreview.referenceCount}</span>
+                  <span class="text-gray-600">Reference Matches</span>
+                  <span class="text-gray-600">{importPreview.referenceCount}</span>
                 </div>
               {/if}
             </div>
@@ -3188,14 +2758,14 @@
       <div class="px-5 pb-5 pt-2 flex justify-end gap-3">
         <button
           onclick={cancelImportPreview}
-          class="px-4 py-2 text-sm text-braun-900 border border-braun-400 rounded hover:bg-braun-100 transition"
+          class="px-4 py-2 text-sm text-accent border border-accent rounded hover:bg-accent/10 transition"
         >
           Cancel
         </button>
         <button
           onclick={confirmImport}
           disabled={importingRefMap}
-          class="px-4 py-2 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
+          class="px-4 py-2 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
         >
           {#if importingRefMap}
             Importing...
@@ -3211,13 +2781,13 @@
 <!-- Location Picker Modal -->
 {#if showLocationPicker && pickerMode}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-white rounded border border-braun-300 max-w-md w-full mx-4">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
       <!-- Header -->
       <div class="p-4 border-b flex items-center justify-between">
         <h2 class="text-lg font-semibold text-foreground">{getPickerTitle()}</h2>
         <button
           onclick={closeLocationPicker}
-          class="p-1 text-braun-400 hover:text-braun-600 rounded"
+          class="p-1 text-gray-400 hover:text-gray-600 rounded"
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -3234,12 +2804,12 @@
             bind:value={pickerSearchQuery}
             oninput={handlePickerSearch}
             placeholder="Search location..."
-            class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600"
+            class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
           />
           {#if pickerSelectedLocation}
             <button
               onclick={clearPickerLocation}
-              class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-braun-400 hover:text-braun-600"
+              class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
             >
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -3250,15 +2820,15 @@
 
         <!-- Search Results Dropdown -->
         {#if pickerSearchResults.length > 0 && !pickerSelectedLocation}
-          <div class="mt-2 border border-braun-200 rounded max-h-48 overflow-y-auto">
+          <div class="mt-2 border border-gray-200 rounded-lg max-h-48 overflow-y-auto">
             {#each pickerSearchResults as loc}
               <button
                 onclick={() => selectPickerLocation(loc)}
-                class="w-full px-3 py-2 text-left hover:bg-braun-50 text-sm flex items-center justify-between border-b border-braun-100 last:border-b-0"
+                class="w-full px-3 py-2 text-left hover:bg-gray-50 text-sm flex items-center justify-between border-b border-gray-100 last:border-b-0"
               >
                 <span class="font-medium text-foreground truncate">{loc.locnam}</span>
                 {#if loc.state}
-                  <span class="text-braun-500 ml-2">{loc.state}</span>
+                  <span class="text-gray-500 ml-2">{loc.state}</span>
                 {/if}
               </button>
             {/each}
@@ -3267,28 +2837,28 @@
 
         <!-- Selected Location Display -->
         {#if pickerSelectedLocation}
-          <div class="mt-2 bg-braun-100 border border-braun-300 rounded px-3 py-2 flex items-center justify-between">
+          <div class="mt-2 bg-accent/10 border border-accent/30 rounded-lg px-3 py-2 flex items-center justify-between">
             <span class="text-sm font-medium text-foreground">{pickerSelectedLocation.locnam}</span>
             {#if pickerSelectedLocation.state}
-              <span class="text-sm text-braun-500">{pickerSelectedLocation.state}</span>
+              <span class="text-sm text-gray-500">{pickerSelectedLocation.state}</span>
             {/if}
           </div>
         {/if}
 
         <!-- Message -->
         {#if pickerMessage}
-          <p class="mt-3 text-sm {pickerMessage.includes('Error') || pickerMessage.includes('failed') ? 'text-error' : 'text-success'}">
+          <p class="mt-3 text-sm {pickerMessage.includes('Error') || pickerMessage.includes('failed') ? 'text-red-600' : 'text-green-600'}">
             {pickerMessage}
           </p>
         {/if}
       </div>
 
       <!-- Footer -->
-      <div class="p-4 border-t bg-braun-50 rounded-b flex justify-end">
+      <div class="p-4 border-t bg-gray-50 rounded-b-lg flex justify-end">
         <button
           onclick={runPickerAction}
           disabled={pickerLoading}
-          class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
+          class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
         >
           {pickerLoading ? 'Processing...' : getPickerButtonText()}
         </button>
@@ -3300,13 +2870,13 @@
 <!-- PIN Verification Modal -->
 {#if showPinModal}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-white rounded border border-braun-300 max-w-sm w-full mx-4">
+    <div class="bg-white rounded-lg shadow-xl max-w-sm w-full mx-4">
       <!-- Header -->
       <div class="p-4 border-b flex items-center justify-between">
         <h2 class="text-lg font-semibold text-foreground">Enter PIN</h2>
         <button
           onclick={closePinModal}
-          class="p-1 text-braun-400 hover:text-braun-600 rounded"
+          class="p-1 text-gray-400 hover:text-gray-600 rounded"
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -3316,7 +2886,7 @@
 
       <!-- Content -->
       <div class="p-4">
-        <p class="text-sm text-braun-600 mb-4">
+        <p class="text-sm text-gray-600 mb-4">
           {#if pinAction === 'archive'}
             Enter your PIN to change the archive location.
           {:else if pinAction === 'deleteOnImport'}
@@ -3330,28 +2900,71 @@
           bind:value={pinInput}
           placeholder="Enter 4-6 digit PIN"
           maxlength="6"
-          class="w-full px-3 py-2 border border-braun-300 rounded focus:outline-none focus:border-braun-600 text-center text-xl tracking-widest"
+          class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent text-center text-xl tracking-widest"
           onkeydown={(e) => e.key === 'Enter' && verifyAndExecutePinAction()}
         />
         {#if pinError}
-          <p class="text-sm text-error mt-2">{pinError}</p>
+          <p class="text-sm text-red-600 mt-2">{pinError}</p>
         {/if}
       </div>
 
       <!-- Footer -->
-      <div class="p-4 border-t bg-braun-50 rounded-b flex justify-end gap-2">
+      <div class="p-4 border-t bg-gray-50 rounded-b-lg flex justify-end gap-2">
         <button
           onclick={closePinModal}
-          class="px-4 py-2 bg-braun-100 text-braun-700 rounded hover:bg-braun-200 transition"
+          class="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition"
         >
           Cancel
         </button>
         <button
           onclick={verifyAndExecutePinAction}
           disabled={pinVerifying || pinInput.length < 4}
-          class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50"
+          class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
         >
           {pinVerifying ? 'Verifying...' : 'Confirm'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Delete Warning Modal -->
+{#if showDeleteWarning}
+  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+      <!-- Header -->
+      <div class="p-4 border-b flex items-center gap-3">
+        <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+          <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+        </div>
+        <h2 class="text-lg font-semibold text-foreground">Permanent File Deletion</h2>
+      </div>
+
+      <!-- Content -->
+      <div class="p-4">
+        <p class="text-sm text-gray-700 mb-3">
+          Enabling this setting will <strong class="text-red-600">permanently delete original files</strong> after they are imported into the archive.
+        </p>
+        <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+          <strong>Warning:</strong> There is no way to recover deleted files from this software. Make sure you have backups before enabling this feature.
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="p-4 border-t bg-gray-50 rounded-b-lg flex justify-end gap-2">
+        <button
+          onclick={cancelDeleteWarning}
+          class="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition"
+        >
+          Cancel
+        </button>
+        <button
+          onclick={toggleDeleteOnImport}
+          class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition"
+        >
+          Enable Deletion
         </button>
       </div>
     </div>
@@ -3361,11 +2974,11 @@
 <!-- Restore from Backup Modal -->
 {#if showRestoreModal}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-white rounded border border-braun-300 max-w-lg w-full mx-4 max-h-[80vh] flex flex-col">
+    <div class="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[80vh] flex flex-col">
       <!-- Header -->
       <div class="p-4 border-b">
         <h2 class="text-lg font-semibold text-foreground">Restore from Backup</h2>
-        <p class="text-sm text-braun-500 mt-1">Select a backup to restore</p>
+        <p class="text-sm text-gray-500 mt-1">Select a backup to restore</p>
       </div>
 
       <!-- Content -->
@@ -3376,25 +2989,25 @@
               <button
                 onclick={() => restoreFromBackup(backup.id)}
                 disabled={restoring}
-                class="w-full text-left p-3 border rounded hover:border-braun-400 hover:bg-braun-50 transition disabled:opacity-50"
+                class="w-full text-left p-3 border rounded-lg hover:border-accent hover:bg-accent/5 transition disabled:opacity-50"
               >
                 <div class="flex justify-between items-center">
                   <span class="font-medium text-foreground">{backup.date}</span>
-                  <span class="text-sm text-braun-500">{backup.size}</span>
+                  <span class="text-sm text-gray-500">{backup.size}</span>
                 </div>
               </button>
             {/each}
           </div>
         {:else}
-          <p class="text-sm text-braun-500 text-center py-8">No internal backups available</p>
+          <p class="text-sm text-gray-500 text-center py-8">No internal backups available</p>
         {/if}
       </div>
 
       <!-- Footer -->
-      <div class="p-4 border-t bg-braun-50 rounded-b flex justify-end">
+      <div class="p-4 border-t bg-gray-50 rounded-b-lg flex justify-end">
         <button
           onclick={() => showRestoreModal = false}
-          class="px-4 py-2 bg-braun-100 text-braun-700 rounded hover:bg-braun-200 transition"
+          class="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition"
         >
           Cancel
         </button>

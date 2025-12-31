@@ -7,17 +7,15 @@
    * - Displays RAW previews extracted by ExifTool
    * - Keyboard navigation (arrow keys, Escape to close)
    * - Two-tier metadata panel: Summary + All Fields
-   * - Hero image selection (for card thumbnails)
+   * - Hero image selection with focal point editor
    */
   import { thumbnailCache } from '../stores/thumbnail-cache-store';
-  import { toasts } from '../stores/toast-store';
 
   interface Props {
     mediaList: Array<{
       hash: string;
       path: string;
       thumbPath?: string | null;
-      thumbPathLg?: string | null; // OPT-105: 800px thumbnail for fallback chain
       previewPath?: string | null;
       type: 'image' | 'video' | 'document';
       name?: string;
@@ -40,13 +38,13 @@
     }>;
     startIndex?: number;
     onClose: () => void;
-    // Hero image props (for card thumbnails)
-    heroImghash?: string | null;
+    // Hero image props
+    heroImgsha?: string | null;
     focalX?: number;
     focalY?: number;
-    onSetHeroImage?: (imghash: string, focalX: number, focalY: number) => void;
+    onSetHeroImage?: (imgsha: string, focalX: number, focalY: number) => void;
     // Issue 7: Callback for setting host location hero from sub-location view
-    onSetHostHeroImage?: (imghash: string, focalX: number, focalY: number) => void;
+    onSetHostHeroImage?: (imgsha: string, focalX: number, focalY: number) => void;
     // Hidden status callback
     onHiddenChanged?: (hash: string, hidden: boolean) => void;
     // Delete and Move callbacks
@@ -60,7 +58,7 @@
     locid?: string;
   }
 
-  let { mediaList, startIndex = 0, onClose, heroImghash, focalX = 0.5, focalY = 0.5, onSetHeroImage, onSetHostHeroImage, onHiddenChanged, onDeleted, onMoved, sublocations = [], currentSubid = null, locid }: Props = $props();
+  let { mediaList, startIndex = 0, onClose, heroImgsha, focalX = 0.5, focalY = 0.5, onSetHeroImage, onSetHostHeroImage, onHiddenChanged, onDeleted, onMoved, sublocations = [], currentSubid = null, locid }: Props = $props();
 
   let currentIndex = $state(startIndex);
   let showExif = $state(false);
@@ -82,18 +80,14 @@
   let showAllFields = $state(false);
   let lastLoadedHash = $state<string | null>(null);
 
-  const currentMedia = $derived(mediaList[currentIndex]);
-  const isCurrentHero = $derived(currentMedia?.hash === heroImghash);
-  const canBeHero = $derived(currentMedia?.type === 'image');
-
   // Hero focal point editor state
   let isEditingFocal = $state(false);
   let pendingFocalX = $state(focalX);
   let pendingFocalY = $state(focalY);
-  let isDraggingFocal = $state(false);
-  let focalPreviewEl: HTMLDivElement | null = $state(null);
-  let settingHeroFor = $state<'building' | 'campus' | null>(null);
-  let hostLocationSelected = $state(false);
+
+  const currentMedia = $derived(mediaList[currentIndex]);
+  const isCurrentHero = $derived(currentMedia?.hash === heroImgsha);
+  const canBeHero = $derived(currentMedia?.type === 'image');
 
   // Hidden status
   const isCurrentHidden = $derived(currentMedia?.hidden === 1);
@@ -115,47 +109,14 @@
   // Cache version for busting browser cache after thumbnail regeneration
   const cacheVersion = $derived($thumbnailCache);
 
-  // Auto-tagging state (visual-buffet pipeline)
-  let imageTags = $state<string[]>([]);
-  let tagsSource = $state<string | null>(null);
-  let tagsViewType = $state<string | null>(null);
-  let tagsQualityScore = $state<number | null>(null);
-  let loadingTags = $state(false);
-  let editingTags = $state(false);
-  let tagEditValue = $state('');
-  let savingTags = $state(false);
-  let retagging = $state(false);
-
-  // ML Insights state (detailed visual-buffet data)
-  type TagBySource = { label: string; confidence: number; source: string };
-  let showMlModal = $state(false); // Full-screen ML insights modal
-  let tagsBySource = $state<{
-    rampp?: TagBySource[];
-    florence2?: TagBySource[];
-    siglip?: TagBySource[];
-  }>({});
-  let mlCaption = $state<string | null>(null);
-  let mlOcr = $state<{
-    hasText: boolean;
-    fullText: string | null;
-    textBlocks: { text: string; confidence: number }[];
-  }>({ hasText: false, fullText: null, textBlocks: [] });
-  let mlProcessedAt = $state<string | null>(null);
-  let mlError = $state<string | null>(null);
-
   // Get the best available image source
   // Uses custom media:// protocol registered in main process to bypass file:// restrictions
-  // OPT-105: Full fallback chain for RAW files where browser can't display original
   const imageSrc = $derived(() => {
     if (!currentMedia) return '';
-    // Priority: preview (extracted RAW/HEIC preview or 1920px thumb) -> 800px thumb -> original path
+    // Priority: preview (for RAW) -> original path
     // Append cache version to force reload after regeneration
     if (currentMedia.previewPath) {
       return `media://${currentMedia.previewPath}?v=${cacheVersion}`;
-    }
-    // OPT-105: Fallback to 800px thumbnail for RAW files without extracted preview
-    if (currentMedia.thumbPathLg) {
-      return `media://${currentMedia.thumbPathLg}?v=${cacheVersion}`;
     }
     return `media://${currentMedia.path}?v=${cacheVersion}`;
   });
@@ -163,9 +124,7 @@
   function handleKeydown(event: KeyboardEvent) {
     switch (event.key) {
       case 'Escape':
-        if (showMlModal) {
-          showMlModal = false;
-        } else if (isEditingFocal) {
+        if (isEditingFocal) {
           cancelFocalEdit();
         } else {
           onClose();
@@ -379,7 +338,17 @@
     }
   }
 
-  // Hero focal point editing functions
+  // Hero focal point editing
+  let isDraggingFocal = $state(false);
+  let focalPreviewEl: HTMLDivElement | null = $state(null);
+
+  // Issue 7: Track which hero type we're setting (building or campus)
+  let settingHeroFor = $state<'building' | 'campus' | null>(null);
+  // Track if Dashboard is selected as save target (two-click save)
+  let dashboardSelected = $state(false);
+  // Track if Host-Location is selected as save target (two-click save, like Dashboard)
+  let hostLocationSelected = $state(false);
+
   function startFocalEdit(heroType: 'building' | 'campus' = 'building') {
     pendingFocalX = isCurrentHero ? focalX : 0.5;
     pendingFocalY = isCurrentHero ? focalY : 0.5;
@@ -394,13 +363,15 @@
     pendingFocalY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
   }
 
+  // Preview click: start drag and update position
   function handleFocalMouseDown(e: MouseEvent) {
     isDraggingFocal = true;
     updateFocalFromEvent(e);
   }
 
+  // Pin grab: start drag without updating position (grab where pin is)
   function handlePinMouseDown(e: MouseEvent) {
-    e.stopPropagation();
+    e.stopPropagation(); // Don't trigger preview mousedown
     e.preventDefault();
     isDraggingFocal = true;
   }
@@ -415,6 +386,7 @@
     isDraggingFocal = false;
   }
 
+  // Global mouse tracking for smooth drag outside preview bounds
   function handleGlobalMouseMove(e: MouseEvent) {
     if (isDraggingFocal && focalPreviewEl) {
       updateFocalFromEvent(e);
@@ -427,6 +399,7 @@
 
   function saveFocalEdit() {
     if (currentMedia) {
+      // Issue 7: Call appropriate callback based on which hero type is being set
       if (settingHeroFor === 'campus' && onSetHostHeroImage) {
         onSetHostHeroImage(currentMedia.hash, pendingFocalX, pendingFocalY);
       } else if (onSetHeroImage) {
@@ -434,29 +407,59 @@
       }
     }
     settingHeroFor = null;
-    hostLocationSelected = false;
+    dashboardSelected = false;
     isEditingFocal = false;
   }
 
   function cancelFocalEdit() {
     settingHeroFor = null;
+    dashboardSelected = false;
     hostLocationSelected = false;
     isEditingFocal = false;
   }
 
+  /** Toggle Dashboard selection or save if already selected */
+  async function handleDashboardClick() {
+    if (dashboardSelected) {
+      // Second click: save to dashboard
+      if (!currentMedia) return;
+      try {
+        await window.electronAPI.settings.set('dashboard_hero_imgsha', currentMedia.hash);
+        await window.electronAPI.settings.set('dashboard_hero_focal_x', String(pendingFocalX));
+        await window.electronAPI.settings.set('dashboard_hero_focal_y', String(pendingFocalY));
+        isEditingFocal = false;
+        settingHeroFor = null;
+        dashboardSelected = false;
+        hostLocationSelected = false;
+      } catch (err) {
+        console.error('Error setting dashboard hero:', err);
+      }
+    } else {
+      // First click: select Dashboard as target
+      dashboardSelected = true;
+      hostLocationSelected = false; // Deselect Host-Location if it was selected
+    }
+  }
+
+  /** Toggle Host-Location selection or save if already selected (two-click pattern like Dashboard) */
   function handleHostLocationClick() {
     if (!currentMedia || !onSetHostHeroImage) return;
 
     if (hostLocationSelected) {
+      // Second click: save to host location
       onSetHostHeroImage(currentMedia.hash, pendingFocalX, pendingFocalY);
       isEditingFocal = false;
       settingHeroFor = null;
+      dashboardSelected = false;
       hostLocationSelected = false;
     } else {
+      // First click: select Host-Location as target
       hostLocationSelected = true;
+      dashboardSelected = false; // Deselect Dashboard if it was selected
     }
   }
 
+  // Handle escape key in focal editor
   function handleFocalKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       cancelFocalEdit();
@@ -610,133 +613,6 @@
   $effect(() => {
     triggerPreload();
   });
-
-  // Load tags when viewing an image
-  async function loadImageTags() {
-    if (!currentMedia || currentMedia.type !== 'image') {
-      imageTags = [];
-      tagsSource = null;
-      tagsBySource = {};
-      mlCaption = null;
-      mlOcr = { hasText: false, fullText: null, textBlocks: [] };
-      mlProcessedAt = null;
-      mlError = null;
-      return;
-    }
-
-    loadingTags = true;
-    try {
-      const result = await window.electronAPI?.tagging?.getImageTags(currentMedia.hash);
-      if (result?.success) {
-        imageTags = result.tags || [];
-        tagsSource = result.source || null;
-        tagsViewType = result.viewType || null;
-        tagsQualityScore = result.qualityScore || null;
-        // ML Insights data
-        tagsBySource = result.tagsBySource || {};
-        mlCaption = result.caption || null;
-        mlOcr = result.ocr || { hasText: false, fullText: null, textBlocks: [] };
-        mlProcessedAt = result.processedAt || null;
-        mlError = result.error || null;
-      }
-    } catch (err) {
-      console.error('Failed to load image tags:', err);
-    } finally {
-      loadingTags = false;
-    }
-  }
-
-  // Start editing tags
-  function startTagEdit() {
-    tagEditValue = imageTags.join(', ');
-    editingTags = true;
-  }
-
-  // Cancel tag editing
-  function cancelTagEdit() {
-    editingTags = false;
-    tagEditValue = '';
-  }
-
-  // Save edited tags
-  async function saveTagEdit() {
-    if (!currentMedia || savingTags) return;
-
-    savingTags = true;
-    const newTags = tagEditValue
-      .split(',')
-      .map(t => t.trim())
-      .filter(t => t.length > 0);
-
-    try {
-      const result = await window.electronAPI?.tagging?.editImageTags({
-        imghash: currentMedia.hash,
-        tags: newTags,
-      });
-
-      if (result?.success) {
-        imageTags = result.tags || newTags;
-        tagsSource = 'manual';
-        editingTags = false;
-      }
-    } catch (err) {
-      console.error('Failed to save tags:', err);
-    } finally {
-      savingTags = false;
-    }
-  }
-
-  // Request re-tagging
-  async function requestRetag() {
-    if (!currentMedia || retagging) return;
-
-    retagging = true;
-    try {
-      const result = await window.electronAPI?.tagging?.retagImage(currentMedia.hash);
-      if (result?.success) {
-        // Keep retagging=true until tags arrive via onTagsReady event
-        console.log('Re-tagging queued:', result.message);
-        toasts.info('Re-tag job submitted to dispatch');
-      } else {
-        // Failed to queue, show error and reset state
-        const errorMsg = result?.error || 'Failed to submit re-tag job';
-        console.error('Re-tagging failed:', errorMsg);
-        toasts.error(errorMsg);
-        retagging = false;
-      }
-    } catch (err) {
-      console.error('Failed to queue re-tagging:', err);
-      toasts.error('Failed to connect to dispatch hub');
-      retagging = false;
-    }
-  }
-
-  // Load tags when metadata panel opens or image changes
-  $effect(() => {
-    if (showExif && currentMedia?.type === 'image') {
-      loadImageTags();
-    }
-  });
-
-  // Listen for real-time tag updates
-  let cleanupTagsListener: (() => void) | undefined;
-  $effect(() => {
-    cleanupTagsListener = window.electronAPI?.tagging?.onTagsReady((data) => {
-      if (currentMedia && data.hash === currentMedia.hash) {
-        imageTags = data.tags || [];
-        tagsViewType = data.viewType || null;
-        tagsQualityScore = data.qualityScore || null;
-        tagsSource = data.source || 'visual-buffet';
-        // Reset retagging state - tags have arrived
-        retagging = false;
-        console.log('Tags received:', data.tags?.length, 'tags');
-      }
-    });
-
-    return () => {
-      cleanupTagsListener?.();
-    };
-  });
 </script>
 
 <svelte:window on:keydown={handleKeydown} />
@@ -749,7 +625,7 @@
   <!-- Close button -->
   <button
     onclick={onClose}
-    class="absolute top-2 right-2 p-3 text-foreground hover:text-braun-600 transition z-10"
+    class="absolute top-4 right-4 text-foreground hover:text-gray-600 transition z-10"
     aria-label="Close viewer"
   >
     <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -761,7 +637,7 @@
   {#if currentIndex > 0}
     <button
       onclick={goToPrevious}
-      class="absolute top-1/2 -translate-y-1/2 text-foreground hover:text-braun-600 transition p-2 {showExif ? 'left-[25rem]' : 'left-4'}"
+      class="absolute top-1/2 -translate-y-1/2 text-foreground hover:text-gray-600 transition p-2 {showExif ? 'left-[25rem]' : 'left-4'}"
       aria-label="Previous image"
     >
       <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -773,7 +649,7 @@
   {#if currentIndex < mediaList.length - 1}
     <button
       onclick={goToNext}
-      class="absolute right-4 top-1/2 -translate-y-1/2 text-foreground hover:text-braun-600 transition p-2"
+      class="absolute right-4 top-1/2 -translate-y-1/2 text-foreground hover:text-gray-600 transition p-2"
       aria-label="Next image"
     >
       <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -798,35 +674,33 @@
             >
               <track kind="captions" />
             </video>
-            <p class="text-xs text-braun-500">Playing original (may be slower)</p>
+            <p class="text-xs text-gray-500">Playing original (may be slower)</p>
           </div>
         {:else if generatingProxy}
-          <!-- Generating proxy indicator - static per Braun -->
+          <!-- Generating proxy indicator -->
           <div class="flex flex-col items-center gap-4 text-foreground">
-            <div class="w-12 h-12 border-2 border-braun-400 rounded flex items-center justify-center">
-              <div class="w-6 h-6 bg-braun-300 rounded"></div>
-            </div>
+            <div class="animate-spin w-12 h-12 border-4 border-accent border-t-transparent rounded-full"></div>
             <p class="text-lg">Preparing preview...</p>
-            <p class="text-sm text-braun-500">Optimizing video for smooth playback</p>
+            <p class="text-sm text-gray-500">Optimizing video for smooth playback</p>
           </div>
         {:else if proxyError}
           <!-- Proxy generation failed, offer fallback -->
           <div class="flex flex-col items-center gap-4 text-foreground text-center">
-            <svg class="w-16 h-16 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-16 h-16 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
             <p class="text-lg">Preview generation failed</p>
-            <p class="text-sm text-braun-500 max-w-md">{proxyError}</p>
+            <p class="text-sm text-gray-500 max-w-md">{proxyError}</p>
             <div class="flex gap-3 mt-2">
               <button
                 onclick={() => loadVideoProxy(currentMedia)}
-                class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition"
+                class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition"
               >
                 Retry
               </button>
               <button
                 onclick={() => playOriginal = true}
-                class="px-4 py-2 bg-braun-600 text-white rounded hover:bg-braun-600 transition"
+                class="px-4 py-2 bg-gray-600 text-white rounded hover:opacity-90 transition"
               >
                 Play Original
               </button>
@@ -843,19 +717,17 @@
             <track kind="captions" />
           </video>
         {:else}
-          <!-- Fallback: loading state before proxy check completes - static per Braun -->
+          <!-- Fallback: loading state before proxy check completes -->
           <div class="flex flex-col items-center gap-4 text-foreground">
-            <div class="w-12 h-12 bg-braun-200 rounded flex items-center justify-center">
-              <div class="w-6 h-6 bg-braun-300 rounded"></div>
-            </div>
-            <p class="text-sm text-braun-500">Loading video...</p>
+            <div class="animate-pulse w-12 h-12 bg-gray-300 rounded-full"></div>
+            <p class="text-sm text-gray-500">Loading video...</p>
           </div>
         {/if}
       {:else if imageError}
         <!-- Error state - show extract preview prompt -->
         <div class="text-center text-foreground">
           <p class="text-xl mb-4">Cannot display this file format</p>
-          <p class="text-braun-500 mb-4">{currentMedia.name || currentMedia.path}</p>
+          <p class="text-gray-500 mb-4">{currentMedia.name || currentMedia.path}</p>
 
           {#if regenerateError}
             <p class="text-red-500 mb-4">{regenerateError}</p>
@@ -866,13 +738,13 @@
             <button
               onclick={regeneratePreview}
               disabled={regenerating}
-              class="px-6 py-3 bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              class="px-6 py-3 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {regenerating ? 'Extracting Preview...' : 'Extract Preview'}
             </button>
           </div>
 
-          <p class="text-braun-500 text-sm mt-4">
+          <p class="text-gray-500 text-sm mt-4">
             RAW files require preview extraction to display
           </p>
         </div>
@@ -891,44 +763,48 @@
 
   <!-- Metadata Panel (Two-tier: Summary + All Fields + Hero Editor) -->
   {#if showExif && currentMedia}
-    <div class="absolute left-0 top-1/2 -translate-y-1/2 w-96 max-h-[80vh] bg-white/95 text-foreground overflow-y-auto border border-braun-300 border-r border-braun-200 rounded-r-lg z-[5]">
+    <div class="absolute left-0 top-1/2 -translate-y-1/2 w-96 max-h-[80vh] bg-white/95 text-foreground overflow-y-auto shadow-lg border-r border-gray-200 rounded-r-lg z-[5]">
       <div class="p-4">
         <h3 class="text-lg font-semibold mb-4">Metadata</h3>
 
         {#if loadingMetadata}
-          <div class="text-braun-500 text-sm">Loading metadata...</div>
+          <div class="text-gray-500 text-sm">Loading metadata...</div>
         {:else if metadataError}
           <div class="text-red-500 text-sm">{metadataError}</div>
         {:else}
           <!-- Hero Image Section (Images only) -->
           {#if canBeHero && onSetHeroImage}
-            <div class="pb-4 mb-4 border-b border-braun-200">
-              <div class="text-xs font-medium text-braun-400 uppercase tracking-wide mb-3">Hero Image</div>
+            <div class="pb-4 mb-4 border-b border-gray-200">
+              <div class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Hero Image</div>
 
               {#if !isEditingFocal}
-                <!-- Preview thumbnail with current focal point -->
+                <!-- Issue 6 & 7: Hero Preview + Action Buttons -->
                 <div class="space-y-3">
-                  <div class="relative w-full aspect-[4/1] bg-braun-100 rounded overflow-hidden">
+                  <!-- Preview thumbnail with current focal point -->
+                  <div class="relative w-full aspect-[2.35/1] bg-gray-100 rounded-lg overflow-hidden">
                     <img
                       src={imageSrc()}
                       alt="Hero preview"
                       class="w-full h-full object-cover opacity-80"
                       style="object-position: {(focalX ?? 0.5) * 100}% {(focalY ?? 0.5) * 100}%;"
                     />
+                    <!-- Semi-transparent overlay -->
                     <div class="absolute inset-0 bg-background/40"></div>
+                    <!-- Status badge -->
                     {#if isCurrentHero}
                       <div class="absolute top-2 left-2">
-                        <span class="inline-flex items-center px-2 py-1 bg-braun-900 text-white text-xs font-medium rounded">
+                        <span class="inline-flex items-center px-2 py-1 bg-accent text-white text-xs font-medium rounded shadow-sm">
                           Current Hero
                         </span>
                       </div>
                     {/if}
                   </div>
+                  <!-- Single button to open focal editor - Host-Location is an option inside the modal -->
                   <button
                     onclick={() => startFocalEdit('building')}
-                    class="w-full px-4 py-2.5 text-sm font-medium {isCurrentHero ? 'bg-braun-100 hover:bg-braun-200 text-braun-700' : 'bg-braun-900 text-white hover:bg-braun-900/90'} rounded transition"
+                    class="w-full px-4 py-2.5 text-sm font-medium {isCurrentHero ? 'bg-gray-100 hover:bg-gray-200 text-gray-700' : 'bg-accent text-white hover:bg-accent/90'} rounded-lg transition"
                   >
-                    {isCurrentHero ? 'Edit Focal Point' : 'Set as Hero Image'}
+                    Hero Image
                   </button>
                 </div>
               {/if}
@@ -938,11 +814,11 @@
           <!-- Summary Section -->
           <div class="space-y-3 text-sm">
             <!-- File Info -->
-            <div class="pb-3 border-b border-braun-100">
-              <div class="text-xs font-medium text-braun-400 uppercase tracking-wide mb-2">File</div>
+            <div class="pb-3 border-b border-gray-100">
+              <div class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">File</div>
               {#if currentMedia.name}
                 <div class="flex justify-between">
-                  <span class="text-braun-500">Name</span>
+                  <span class="text-gray-500">Name</span>
                   <span class="text-right truncate ml-2 max-w-[200px]" title={currentMedia.name}>{currentMedia.name}</span>
                 </div>
               {/if}
@@ -951,13 +827,13 @@
                 {@const fileType = getVal(fullMetadata, 'FileType', 'MIMEType')}
                 {#if fileSize}
                   <div class="flex justify-between">
-                    <span class="text-braun-500">Size</span>
+                    <span class="text-gray-500">Size</span>
                     <span>{formatFileSize(fileSize as string | number)}</span>
                   </div>
                 {/if}
                 {#if fileType}
                   <div class="flex justify-between">
-                    <span class="text-braun-500">Format</span>
+                    <span class="text-gray-500">Format</span>
                     <span>{fileType}</span>
                   </div>
                 {/if}
@@ -965,17 +841,17 @@
             </div>
 
             <!-- Dimensions / Duration -->
-            <div class="pb-3 border-b border-braun-100">
-              <div class="text-xs font-medium text-braun-400 uppercase tracking-wide mb-2">
+            <div class="pb-3 border-b border-gray-100">
+              <div class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">
                 {currentMedia.type === 'video' ? 'Video' : 'Image'}
               </div>
               {#if currentMedia.width && currentMedia.height}
                 <div class="flex justify-between">
-                  <span class="text-braun-500">Dimensions</span>
+                  <span class="text-gray-500">Dimensions</span>
                   <span>{currentMedia.width} × {currentMedia.height}</span>
                 </div>
                 <div class="flex justify-between">
-                  <span class="text-braun-500">Megapixels</span>
+                  <span class="text-gray-500">Megapixels</span>
                   <span>{((currentMedia.width * currentMedia.height) / 1000000).toFixed(1)} MP</span>
                 </div>
               {/if}
@@ -986,27 +862,27 @@
                 {@const audioStream = streams.find((s: Record<string, unknown>) => s.codec_type === 'audio')}
                 {#if duration}
                   <div class="flex justify-between">
-                    <span class="text-braun-500">Duration</span>
+                    <span class="text-gray-500">Duration</span>
                     <span>{Math.floor(duration / 60)}:{String(Math.floor(duration % 60)).padStart(2, '0')}</span>
                   </div>
                 {/if}
                 {#if videoStream}
                   <div class="flex justify-between">
-                    <span class="text-braun-500">Codec</span>
+                    <span class="text-gray-500">Codec</span>
                     <span>{videoStream.codec_name}</span>
                   </div>
                   {#if videoStream.r_frame_rate}
                     {@const fps = videoStream.r_frame_rate as string}
                     {@const [num, den] = fps.split('/').map(Number)}
                     <div class="flex justify-between">
-                      <span class="text-braun-500">Frame Rate</span>
+                      <span class="text-gray-500">Frame Rate</span>
                       <span>{den ? (num / den).toFixed(2) : num} fps</span>
                     </div>
                   {/if}
                 {/if}
                 {#if audioStream}
                   <div class="flex justify-between">
-                    <span class="text-braun-500">Audio</span>
+                    <span class="text-gray-500">Audio</span>
                     <span>{audioStream.codec_name}{audioStream.channels ? ` (${audioStream.channels}ch)` : ''}</span>
                   </div>
                 {/if}
@@ -1021,29 +897,29 @@
               {@const focalLength = getVal(fullMetadata, 'FocalLength')}
               {@const software = getVal(fullMetadata, 'Software')}
               {#if make || model || lens}
-                <div class="pb-3 border-b border-braun-100">
-                  <div class="text-xs font-medium text-braun-400 uppercase tracking-wide mb-2">Camera</div>
+                <div class="pb-3 border-b border-gray-100">
+                  <div class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Camera</div>
                   {#if make || model}
                     <div class="flex justify-between">
-                      <span class="text-braun-500">Device</span>
+                      <span class="text-gray-500">Device</span>
                       <span>{[make, model].filter(Boolean).join(' ')}</span>
                     </div>
                   {/if}
                   {#if lens}
                     <div class="flex justify-between">
-                      <span class="text-braun-500">Lens</span>
+                      <span class="text-gray-500">Lens</span>
                       <span class="text-right truncate ml-2 max-w-[180px]" title={String(lens)}>{lens}</span>
                     </div>
                   {/if}
                   {#if focalLength}
                     <div class="flex justify-between">
-                      <span class="text-braun-500">Focal Length</span>
+                      <span class="text-gray-500">Focal Length</span>
                       <span>{focalLength}</span>
                     </div>
                   {/if}
                   {#if software}
                     <div class="flex justify-between">
-                      <span class="text-braun-500">Software</span>
+                      <span class="text-gray-500">Software</span>
                       <span>{software}</span>
                     </div>
                   {/if}
@@ -1060,41 +936,41 @@
               {@const metering = getVal(fullMetadata, 'MeteringMode')}
               {@const flash = getVal(fullMetadata, 'Flash')}
               {#if exposure || aperture || iso}
-                <div class="pb-3 border-b border-braun-100">
-                  <div class="text-xs font-medium text-braun-400 uppercase tracking-wide mb-2">Exposure</div>
+                <div class="pb-3 border-b border-gray-100">
+                  <div class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Exposure</div>
                   {#if exposure}
                     <div class="flex justify-between">
-                      <span class="text-braun-500">Shutter</span>
+                      <span class="text-gray-500">Shutter</span>
                       <span>{formatExposure(exposure as string | number)}</span>
                     </div>
                   {/if}
                   {#if aperture}
                     <div class="flex justify-between">
-                      <span class="text-braun-500">Aperture</span>
+                      <span class="text-gray-500">Aperture</span>
                       <span>f/{aperture}</span>
                     </div>
                   {/if}
                   {#if iso}
                     <div class="flex justify-between">
-                      <span class="text-braun-500">ISO</span>
+                      <span class="text-gray-500">ISO</span>
                       <span>{iso}</span>
                     </div>
                   {/if}
                   {#if exposureComp !== undefined && exposureComp !== 0}
                     <div class="flex justify-between">
-                      <span class="text-braun-500">Compensation</span>
+                      <span class="text-gray-500">Compensation</span>
                       <span>{exposureComp > 0 ? '+' : ''}{exposureComp} EV</span>
                     </div>
                   {/if}
                   {#if metering}
                     <div class="flex justify-between">
-                      <span class="text-braun-500">Metering</span>
+                      <span class="text-gray-500">Metering</span>
                       <span>{metering}</span>
                     </div>
                   {/if}
                   {#if flash}
                     <div class="flex justify-between">
-                      <span class="text-braun-500">Flash</span>
+                      <span class="text-gray-500">Flash</span>
                       <span class="text-right truncate ml-2 max-w-[150px]" title={String(flash)}>{flash}</span>
                     </div>
                   {/if}
@@ -1107,15 +983,15 @@
               {@const dateTaken = getVal(fullMetadata, 'DateTimeOriginal', 'CreateDate')}
               {@const timezone = getVal(fullMetadata, 'OffsetTimeOriginal', 'OffsetTime', 'zone')}
               {#if dateTaken}
-                <div class="pb-3 border-b border-braun-100">
-                  <div class="text-xs font-medium text-braun-400 uppercase tracking-wide mb-2">Date & Time</div>
+                <div class="pb-3 border-b border-gray-100">
+                  <div class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Date & Time</div>
                   <div class="flex justify-between">
-                    <span class="text-braun-500">Captured</span>
+                    <span class="text-gray-500">Captured</span>
                     <span>{formatDate(dateTaken)}</span>
                   </div>
                   {#if timezone}
                     <div class="flex justify-between">
-                      <span class="text-braun-500">Timezone</span>
+                      <span class="text-gray-500">Timezone</span>
                       <span>{timezone}</span>
                     </div>
                   {/if}
@@ -1125,15 +1001,15 @@
 
             <!-- GPS -->
             {#if currentMedia.gpsLat && currentMedia.gpsLng}
-              <div class="pb-3 border-b border-braun-100">
-                <div class="text-xs font-medium text-braun-400 uppercase tracking-wide mb-2">Location</div>
+              <div class="pb-3 border-b border-gray-100">
+                <div class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Location</div>
                 <div class="flex justify-between">
-                  <span class="text-braun-500">Coordinates</span>
+                  <span class="text-gray-500">Coordinates</span>
                   <a
                     href={`https://www.openstreetmap.org/?mlat=${currentMedia.gpsLat}&mlon=${currentMedia.gpsLng}&zoom=15`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="text-braun-900 hover:underline"
+                    class="text-accent hover:underline"
                   >
                     {currentMedia.gpsLat.toFixed(6)}, {currentMedia.gpsLng.toFixed(6)}
                   </a>
@@ -1142,7 +1018,7 @@
                   {@const altitude = getVal(fullMetadata, 'GPSAltitude')}
                   {#if altitude}
                     <div class="flex justify-between">
-                      <span class="text-braun-500">Altitude</span>
+                      <span class="text-gray-500">Altitude</span>
                       <span>{typeof altitude === 'number' ? `${altitude.toFixed(1)} m` : altitude}</span>
                     </div>
                   {/if}
@@ -1152,131 +1028,26 @@
 
             <!-- Author / Attribution -->
             {#if currentMedia.auth_imp || currentMedia.imported_by || currentMedia.is_contributed}
-              <div class="pb-3 border-b border-braun-100">
-                <div class="text-xs font-medium text-braun-400 uppercase tracking-wide mb-2">Attribution</div>
+              <div class="pb-3 border-b border-gray-100">
+                <div class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Attribution</div>
                 {#if currentMedia.auth_imp}
                   <div class="flex justify-between">
-                    <span class="text-braun-500">Photographer</span>
-                    <span class="text-braun-900">{currentMedia.auth_imp}</span>
+                    <span class="text-gray-500">Photographer</span>
+                    <span class="text-accent">{currentMedia.auth_imp}</span>
                   </div>
                 {/if}
                 {#if currentMedia.imported_by && currentMedia.imported_by !== currentMedia.auth_imp}
                   <div class="flex justify-between">
-                    <span class="text-braun-500">Imported by</span>
+                    <span class="text-gray-500">Imported by</span>
                     <span>{currentMedia.imported_by}</span>
                   </div>
                 {/if}
                 {#if currentMedia.is_contributed === 1}
                   <div class="flex justify-between items-center">
-                    <span class="text-braun-500">Contributed</span>
-                    <span class="px-2 py-0.5 bg-braun-100 text-braun-600 rounded text-xs">
+                    <span class="text-gray-500">Contributed</span>
+                    <span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">
                       {currentMedia.contribution_source || 'External'}
                     </span>
-                  </div>
-                {/if}
-              </div>
-            {/if}
-
-            <!-- ML Tags Panel (Images only) -->
-            {#if currentMedia.type === 'image'}
-              <div class="pb-3 border-b border-braun-100">
-                <div class="flex items-center justify-between mb-2">
-                  <div class="text-xs font-medium text-braun-400 uppercase tracking-wide">Tags</div>
-                  <div class="flex gap-1">
-                    {#if !editingTags}
-                      <button
-                        onclick={startTagEdit}
-                        class="text-xs text-braun-500 hover:text-braun-700 px-1"
-                        title="Edit tags"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onclick={requestRetag}
-                        disabled={retagging}
-                        class="text-xs text-braun-500 hover:text-braun-700 px-1 disabled:opacity-50"
-                        title="Re-analyze with visual-buffet"
-                      >
-                        {retagging ? 'Tagging...' : 'Re-tag'}
-                      </button>
-                    {/if}
-                  </div>
-                </div>
-
-                {#if loadingTags}
-                  <div class="text-xs text-braun-400">Loading ML data...</div>
-                {:else if editingTags}
-                  <!-- Tag editing mode -->
-                  <div class="space-y-2">
-                    <textarea
-                      bind:value={tagEditValue}
-                      placeholder="Enter tags separated by commas..."
-                      class="w-full px-2 py-1.5 text-xs border border-braun-300 rounded resize-none focus:outline-none focus:border-braun-600"
-                      rows="3"
-                    ></textarea>
-                    <div class="flex gap-2 justify-end">
-                      <button
-                        onclick={cancelTagEdit}
-                        class="px-2 py-1 text-xs text-braun-600 hover:text-braun-800"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onclick={saveTagEdit}
-                        disabled={savingTags}
-                        class="px-2 py-1 text-xs bg-braun-900 text-white rounded hover:bg-braun-600 disabled:opacity-50"
-                      >
-                        {savingTags ? 'Saving...' : 'Save'}
-                      </button>
-                    </div>
-                  </div>
-                {:else if imageTags.length > 0}
-                  <!-- Tag preview (first 8 tags) -->
-                  <div class="flex flex-wrap gap-1 mb-2">
-                    {#each imageTags.slice(0, 8) as tag}
-                      <span class="px-2 py-0.5 bg-braun-100 text-braun-700 rounded text-xs">
-                        {tag}
-                      </span>
-                    {/each}
-                    {#if imageTags.length > 8}
-                      <span class="px-2 py-0.5 text-braun-500 text-xs">
-                        +{imageTags.length - 8} more
-                      </span>
-                    {/if}
-                  </div>
-                  <!-- Tag metadata badges -->
-                  <div class="flex flex-wrap gap-2 text-xs mb-2">
-                    {#if tagsViewType}
-                      <span class="px-2 py-0.5 bg-braun-50 text-braun-600 rounded border border-braun-200 capitalize">
-                        {tagsViewType}
-                      </span>
-                    {/if}
-                    {#if tagsQualityScore !== null}
-                      <span class="px-2 py-0.5 bg-braun-50 text-braun-600 rounded border border-braun-200">
-                        Quality: {(tagsQualityScore * 100).toFixed(0)}%
-                      </span>
-                    {/if}
-                  </div>
-                  <!-- View All button -->
-                  <button
-                    onclick={() => showMlModal = true}
-                    class="w-full px-3 py-2 text-xs font-medium text-braun-700 bg-braun-50 border border-braun-200 rounded hover:bg-braun-100 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                    </svg>
-                    View All ML Insights
-                  </button>
-                {:else}
-                  <div class="text-xs text-braun-400 italic">
-                    No tags yet.
-                    <button
-                      onclick={requestRetag}
-                      disabled={retagging}
-                      class="text-braun-600 hover:underline disabled:opacity-50"
-                    >
-                      {retagging ? 'Analyzing...' : 'Analyze'}
-                    </button>
                   </div>
                 {/if}
               </div>
@@ -1287,7 +1058,7 @@
               <div class="pt-2">
                 <button
                   onclick={() => showAllFields = !showAllFields}
-                  class="text-xs text-braun-500 hover:text-braun-700 flex items-center gap-1"
+                  class="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
                 >
                   <svg
                     class="w-3 h-3 transition-transform {showAllFields ? 'rotate-90' : ''}"
@@ -1301,12 +1072,12 @@
                 </button>
 
                 {#if showAllFields}
-                  <div class="mt-3 bg-braun-50 rounded p-3 max-h-80 overflow-y-auto">
+                  <div class="mt-3 bg-gray-50 rounded p-3 max-h-80 overflow-y-auto">
                     <div class="font-mono text-xs space-y-1">
                       {#each Object.entries(fullMetadata).sort(([a], [b]) => a.localeCompare(b)) as [key, value]}
                         <div class="flex gap-2">
-                          <span class="text-braun-500 shrink-0">{key}:</span>
-                          <span class="text-braun-700 break-all">
+                          <span class="text-gray-500 shrink-0">{key}:</span>
+                          <span class="text-gray-700 break-all">
                             {typeof value === 'object' ? JSON.stringify(value) : String(value)}
                           </span>
                         </div>
@@ -1322,8 +1093,108 @@
     </div>
   {/if}
 
+  <!-- Focal Point Editor Modal (large overlay) -->
+  {#if isEditingFocal && currentMedia}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-8"
+      onmousemove={handleGlobalMouseMove}
+      onmouseup={handleGlobalMouseUp}
+      onkeydown={handleFocalKeydown}
+    >
+      <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+        <!-- Header -->
+        <div class="px-6 py-4 border-b border-gray-200">
+          <h3 class="text-lg font-semibold text-gray-900">Set Hero Focal Point</h3>
+        </div>
+
+        <!-- Large Preview (matches hero constraints) -->
+        <div class="p-6 flex-1 overflow-hidden">
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            bind:this={focalPreviewEl}
+            class="relative w-full max-h-[40vh] mx-auto rounded-lg overflow-hidden cursor-crosshair select-none bg-gray-100"
+            style="aspect-ratio: 2.35 / 1;"
+            onmousedown={handleFocalMouseDown}
+            onmousemove={handleFocalMouseMove}
+            onmouseup={handleFocalMouseUp}
+          >
+            <img
+              src={imageSrc()}
+              alt="Hero preview"
+              class="absolute inset-0 w-full h-full object-cover"
+              style="object-position: {pendingFocalX * 100}% {pendingFocalY * 100}%;"
+            />
+            <!-- DESIGN_SYSTEM: No gradient overlay - pure photograph per DESIGN.md -->
+            <!-- Draggable focal point pin -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="absolute w-10 h-10 -translate-x-1/2 -translate-y-1/2 z-10 cursor-grab active:cursor-grabbing"
+              style="left: {pendingFocalX * 100}%; top: {pendingFocalY * 100}%;"
+              onmousedown={handlePinMouseDown}
+              role="slider"
+              aria-label="Focal point position"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(pendingFocalX * 100)}
+              tabindex="0"
+            >
+              <!-- Outer ring -->
+              <div class="absolute inset-0 rounded-full border-3 border-white shadow-lg" style="box-shadow: 0 2px 8px rgba(0,0,0,0.3), inset 0 0 0 2px rgba(0,0,0,0.1);"></div>
+              <!-- Inner circle -->
+              <div class="absolute inset-2 rounded-full bg-accent shadow-inner"></div>
+              <!-- Crosshair -->
+              <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div class="w-px h-4 bg-white/80"></div>
+              </div>
+              <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div class="w-4 h-px bg-white/80"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-xl flex items-center justify-between">
+          <!-- Left side: Additional hero destinations -->
+          <div class="flex gap-2">
+            <button
+              onclick={handleDashboardClick}
+              class="px-3 py-2 text-sm font-medium rounded-lg transition {dashboardSelected ? 'bg-accent text-white hover:bg-accent/90' : 'text-gray-600 bg-white border border-gray-300 hover:bg-gray-50'}"
+            >
+              {dashboardSelected ? 'Save' : 'Dashboard'}
+            </button>
+            {#if onSetHostHeroImage}
+              <button
+                onclick={handleHostLocationClick}
+                class="px-3 py-2 text-sm font-medium rounded-lg transition {hostLocationSelected ? 'bg-amber-500 text-white hover:bg-amber-600' : 'text-gray-600 bg-white border border-gray-300 hover:bg-gray-50'}"
+              >
+                {hostLocationSelected ? 'Save' : 'Host-Location'}
+              </button>
+            {/if}
+          </div>
+          <!-- Right side: Cancel/Save -->
+          <div class="flex gap-3">
+            <button
+              onclick={cancelFocalEdit}
+              class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+            >
+              Cancel
+            </button>
+            <button
+              onclick={saveFocalEdit}
+              class="px-5 py-2 text-sm font-medium text-white bg-accent rounded-lg hover:bg-accent/90 transition"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  {/if}
+
   <!-- Counter -->
-  <div class="absolute bottom-6 left-1/2 -translate-x-1/2 text-foreground text-sm bg-white/80 px-4 py-2 rounded border border-braun-300">
+  <div class="absolute bottom-6 left-1/2 -translate-x-1/2 text-foreground text-sm bg-white/80 px-4 py-2 rounded shadow">
     {currentIndex + 1} / {mediaList.length}
   </div>
 
@@ -1331,21 +1202,21 @@
   <div class="absolute bottom-6 right-6 flex flex-col gap-2 z-10">
     <button
       onclick={toggleInfo}
-      class="px-4 py-2 bg-white text-foreground rounded border border-braun-300 hover:bg-braun-50 transition text-sm"
+      class="px-4 py-2 bg-white text-foreground rounded shadow hover:bg-gray-50 transition text-sm"
       aria-pressed={showExif}
     >
       {showExif ? 'Hide Info' : 'Show Info'}
     </button>
     <button
       onclick={showInFinder}
-      class="px-4 py-2 bg-white text-foreground rounded border border-braun-300 hover:bg-braun-50 transition text-sm"
+      class="px-4 py-2 bg-white text-foreground rounded shadow hover:bg-gray-50 transition text-sm"
     >
       Show in Finder
     </button>
     <button
       onclick={toggleHidden}
       disabled={togglingHidden}
-      class="px-4 py-2 rounded border border-braun-300 transition text-sm disabled:opacity-50 disabled:cursor-not-allowed {isCurrentHidden ? 'bg-braun-200 text-braun-700 hover:bg-braun-300' : 'bg-white text-foreground hover:bg-braun-50'}"
+      class="px-4 py-2 rounded shadow transition text-sm disabled:opacity-50 disabled:cursor-not-allowed {isCurrentHidden ? 'bg-amber-100 text-amber-800 hover:bg-amber-200' : 'bg-white text-foreground hover:bg-gray-50'}"
       title={isCurrentHidden ? (isLivePhoto ? 'Live Photo video' : hiddenReason === 'sdr_duplicate' ? 'SDR duplicate' : 'Hidden by user') : 'Hide this item'}
     >
       {#if togglingHidden}
@@ -1373,7 +1244,7 @@
       {#if sublocations.length > 0 || locid}
         <button
           onclick={openMoveModal}
-          class="px-4 py-2 bg-white text-foreground rounded border border-braun-300 hover:bg-braun-50 transition text-sm"
+          class="px-4 py-2 bg-white text-foreground rounded shadow hover:bg-gray-50 transition text-sm"
         >
           <span class="flex items-center gap-1.5">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1383,10 +1254,10 @@
           </span>
         </button>
       {/if}
-      <!-- Delete button - uses functional error color -->
+      <!-- Delete button -->
       <button
         onclick={() => showDeleteConfirm = true}
-        class="px-4 py-2 bg-braun-50 text-error rounded border border-braun-300 hover:bg-braun-100 transition text-sm"
+        class="px-4 py-2 bg-red-50 text-red-700 rounded shadow hover:bg-red-100 transition text-sm"
       >
         <span class="flex items-center gap-1.5">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1407,25 +1278,25 @@
       aria-modal="true"
     >
       <div
-        class="bg-white rounded border border-braun-300 max-w-sm w-full"
+        class="bg-white rounded-lg shadow-xl max-w-sm w-full"
         onclick={(e) => e.stopPropagation()}
       >
         <div class="p-5">
-          <h3 class="text-lg font-semibold text-braun-900 mb-2">Delete File?</h3>
-          <p class="text-sm text-braun-600 mb-4">
+          <h3 class="text-lg font-semibold text-gray-900 mb-2">Delete File?</h3>
+          <p class="text-sm text-gray-600 mb-4">
             This will permanently delete the file from your archive. This cannot be undone.
           </p>
           <div class="flex gap-3 justify-end">
             <button
               onclick={() => showDeleteConfirm = false}
-              class="px-4 py-2 text-sm font-medium text-braun-700 bg-white border border-braun-300 rounded hover:bg-braun-50 transition"
+              class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
             >
               Cancel
             </button>
             <button
               onclick={handleDelete}
               disabled={deleting}
-              class="px-4 py-2 text-sm font-medium text-white bg-error rounded hover:opacity-90 transition disabled:opacity-50"
+              class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition disabled:opacity-50"
             >
               {deleting ? 'Deleting...' : 'Delete'}
             </button>
@@ -1444,51 +1315,51 @@
       aria-modal="true"
     >
       <div
-        class="bg-white rounded border border-braun-300 max-w-sm w-full"
+        class="bg-white rounded-lg shadow-xl max-w-sm w-full"
         onclick={(e) => e.stopPropagation()}
       >
         <div class="p-5">
-          <h3 class="text-lg font-semibold text-braun-900 mb-4">Move to Building</h3>
+          <h3 class="text-lg font-semibold text-gray-900 mb-4">Move to Building</h3>
 
           <!-- Sub-location options -->
           <div class="space-y-2 mb-4">
             <!-- Host location option -->
-            <label class="flex items-center gap-3 p-3 border rounded cursor-pointer hover:bg-braun-50 transition {selectedSubid === null && !creatingNewSub ? 'border-braun-900 bg-braun-900/5' : 'border-braun-200'}">
+            <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition {selectedSubid === null && !creatingNewSub ? 'border-accent bg-accent/5' : 'border-gray-200'}">
               <input
                 type="radio"
                 name="sublocation"
                 checked={selectedSubid === null && !creatingNewSub}
                 onchange={() => { selectedSubid = null; creatingNewSub = false; }}
-                class="w-4 h-4 text-braun-900"
+                class="w-4 h-4 text-accent"
               />
-              <span class="text-sm text-braun-700">Host Location (no building)</span>
+              <span class="text-sm text-gray-700">Host Location (no building)</span>
             </label>
 
             <!-- Existing sub-locations -->
             {#each sublocations as sub}
-              <label class="flex items-center gap-3 p-3 border rounded cursor-pointer hover:bg-braun-50 transition {selectedSubid === sub.subid && !creatingNewSub ? 'border-braun-900 bg-braun-900/5' : 'border-braun-200'}">
+              <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition {selectedSubid === sub.subid && !creatingNewSub ? 'border-accent bg-accent/5' : 'border-gray-200'}">
                 <input
                   type="radio"
                   name="sublocation"
                   checked={selectedSubid === sub.subid && !creatingNewSub}
                   onchange={() => { selectedSubid = sub.subid; creatingNewSub = false; }}
-                  class="w-4 h-4 text-braun-900"
+                  class="w-4 h-4 text-accent"
                 />
-                <span class="text-sm text-braun-700">{sub.subnam}</span>
+                <span class="text-sm text-gray-700">{sub.subnam}</span>
               </label>
             {/each}
 
             <!-- Create new option -->
             {#if locid}
-              <label class="flex items-center gap-3 p-3 border rounded cursor-pointer hover:bg-braun-50 transition {creatingNewSub ? 'border-braun-900 bg-braun-900/5' : 'border-braun-200'}">
+              <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition {creatingNewSub ? 'border-accent bg-accent/5' : 'border-gray-200'}">
                 <input
                   type="radio"
                   name="sublocation"
                   checked={creatingNewSub}
                   onchange={() => creatingNewSub = true}
-                  class="w-4 h-4 text-braun-900"
+                  class="w-4 h-4 text-accent"
                 />
-                <span class="text-sm text-braun-700">Create new...</span>
+                <span class="text-sm text-gray-700">Create new...</span>
               </label>
             {/if}
           </div>
@@ -1500,7 +1371,7 @@
                 type="text"
                 bind:value={newSubName}
                 placeholder="Building name..."
-                class="w-full px-3 py-2 border border-braun-300 rounded text-sm focus:outline-none focus:border-braun-600"
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
               />
             </div>
           {/if}
@@ -1509,283 +1380,18 @@
           <div class="flex gap-3 justify-end">
             <button
               onclick={() => showMoveModal = false}
-              class="px-4 py-2 text-sm font-medium text-braun-700 bg-white border border-braun-300 rounded hover:bg-braun-50 transition"
+              class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
             >
               Cancel
             </button>
             <button
               onclick={handleMove}
               disabled={moving || (creatingNewSub && !newSubName.trim())}
-              class="px-4 py-2 text-sm font-medium text-white bg-braun-900 rounded hover:bg-braun-900/90 transition disabled:opacity-50"
+              class="px-4 py-2 text-sm font-medium text-white bg-accent rounded-lg hover:bg-accent/90 transition disabled:opacity-50"
             >
               {moving ? 'Moving...' : 'Move'}
             </button>
           </div>
-        </div>
-      </div>
-    </div>
-  {/if}
-
-  <!-- Focal Point Editor Modal -->
-  {#if isEditingFocal && currentMedia}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div
-      class="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-8"
-      onmousemove={handleGlobalMouseMove}
-      onmouseup={handleGlobalMouseUp}
-      onkeydown={handleFocalKeydown}
-    >
-      <div class="bg-white rounded border border-braun-300 max-w-4xl w-full max-h-[90vh] flex flex-col">
-        <!-- Header -->
-        <div class="px-6 py-4 border-b border-braun-200">
-          <h3 class="text-lg font-semibold text-braun-900">Set Hero Focal Point</h3>
-          <p class="text-sm text-braun-500 mt-1">Drag the pin to set the center point for cropping</p>
-        </div>
-
-        <!-- Large Preview (matches hero constraints) -->
-        <div class="p-6 flex-1 overflow-hidden">
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div
-            bind:this={focalPreviewEl}
-            class="relative w-full max-h-[40vh] mx-auto rounded overflow-hidden cursor-crosshair select-none bg-braun-100"
-            style="aspect-ratio: 4 / 1;"
-            onmousedown={handleFocalMouseDown}
-            onmousemove={handleFocalMouseMove}
-            onmouseup={handleFocalMouseUp}
-          >
-            <img
-              src={imageSrc()}
-              alt="Hero preview"
-              class="absolute inset-0 w-full h-full object-cover"
-              style="object-position: {pendingFocalX * 100}% {pendingFocalY * 100}%;"
-            />
-            <!-- Draggable focal point pin -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <div
-              class="absolute w-10 h-10 -translate-x-1/2 -translate-y-1/2 z-10 cursor-grab active:cursor-grabbing"
-              style="left: {pendingFocalX * 100}%; top: {pendingFocalY * 100}%;"
-              onmousedown={handlePinMouseDown}
-              role="slider"
-              aria-label="Focal point position"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round(pendingFocalX * 100)}
-              tabindex="0"
-            >
-              <!-- Outer ring -->
-              <div class="absolute inset-0 rounded-full border-2 border-white"></div>
-              <!-- Inner circle -->
-              <div class="absolute inset-2 rounded-full bg-braun-900"></div>
-              <!-- Crosshair -->
-              <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div class="w-px h-4 bg-white/80"></div>
-              </div>
-              <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div class="w-4 h-px bg-white/80"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Footer -->
-        <div class="px-6 py-4 border-t border-braun-200 bg-braun-50 rounded-b flex items-center justify-between">
-          <!-- Left side: Host-Location option -->
-          <div class="flex gap-2">
-            {#if onSetHostHeroImage}
-              <button
-                onclick={handleHostLocationClick}
-                class="px-3 py-2 text-sm font-medium rounded transition {hostLocationSelected ? 'bg-braun-900 text-white hover:bg-braun-600' : 'text-braun-600 bg-white border border-braun-300 hover:bg-braun-50'}"
-              >
-                {hostLocationSelected ? 'Save to Host' : 'Host-Location'}
-              </button>
-            {/if}
-          </div>
-          <!-- Right side: Cancel/Save -->
-          <div class="flex gap-3">
-            <button
-              onclick={cancelFocalEdit}
-              class="px-4 py-2 text-sm font-medium text-braun-700 bg-white border border-braun-300 rounded hover:bg-braun-50 transition"
-            >
-              Cancel
-            </button>
-            <button
-              onclick={saveFocalEdit}
-              class="px-5 py-2 text-sm font-medium text-white bg-braun-900 rounded hover:bg-braun-900/90 transition"
-            >
-              Save
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  {/if}
-
-  <!-- Full-Screen ML Insights Modal -->
-  {#if showMlModal && currentMedia}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div
-      class="fixed inset-0 bg-braun-900/95 z-[80] overflow-y-auto"
-      role="dialog"
-      aria-modal="true"
-      aria-label="ML Insights"
-      onkeydown={(e) => e.key === 'Escape' && (showMlModal = false)}
-    >
-      <!-- Header -->
-      <div class="sticky top-0 bg-braun-900/98 border-b border-white/10 z-10">
-        <div class="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
-          <button
-            type="button"
-            onclick={() => { showMlModal = false; }}
-            class="flex items-center gap-2 text-white/60 hover:text-white transition-colors text-sm font-medium cursor-pointer"
-          >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            Back
-          </button>
-          <h2 class="text-xs font-medium text-white/40 uppercase tracking-widest">ML Insights</h2>
-          <div class="w-16"></div>
-        </div>
-      </div>
-
-      <!-- Content -->
-      <div class="max-w-3xl mx-auto px-6 py-8 space-y-8">
-        <!-- Processing Status -->
-        {#if mlError}
-          <div class="bg-red-500/10 border border-red-500/20 rounded px-4 py-3">
-            <p class="text-sm text-red-400">Error: {mlError}</p>
-          </div>
-        {/if}
-
-        <!-- Caption Section -->
-        {#if mlCaption}
-          <section>
-            <h3 class="text-xs font-medium text-white/40 uppercase tracking-widest mb-3">Caption</h3>
-            <blockquote class="bg-white/5 border-l-2 border-white/20 rounded-r px-4 py-3">
-              <p class="text-base text-white/90 leading-relaxed">{mlCaption}</p>
-            </blockquote>
-          </section>
-        {/if}
-
-        <!-- RAM++ Tags Section -->
-        {#if tagsBySource.rampp && tagsBySource.rampp.length > 0}
-          <section>
-            <div class="flex items-center justify-between mb-3">
-              <h3 class="text-xs font-medium text-white/40 uppercase tracking-widest">RAM++</h3>
-              <span class="text-xs text-white/30">{tagsBySource.rampp.length} tags</span>
-            </div>
-            <div class="flex flex-wrap gap-2">
-              {#each tagsBySource.rampp as tag}
-                {@const opacity = Math.max(0.4, Math.min(0.9, tag.confidence))}
-                <span
-                  class="px-3 py-1.5 rounded text-sm text-white border border-white/10"
-                  style="background: rgba(250, 250, 248, {opacity * 0.15})"
-                  title="{(tag.confidence * 100).toFixed(0)}% confidence"
-                >
-                  {tag.label}
-                </span>
-              {/each}
-            </div>
-          </section>
-        {/if}
-
-        <!-- Florence-2 Tags Section -->
-        {#if tagsBySource.florence2 && tagsBySource.florence2.length > 0}
-          <section>
-            <div class="flex items-center justify-between mb-3">
-              <h3 class="text-xs font-medium text-white/40 uppercase tracking-widest">Florence-2</h3>
-              <span class="text-xs text-white/30">{tagsBySource.florence2.length} tags</span>
-            </div>
-            <div class="flex flex-wrap gap-2">
-              {#each tagsBySource.florence2 as tag}
-                {@const opacity = Math.max(0.4, Math.min(0.9, tag.confidence))}
-                <span
-                  class="px-3 py-1.5 rounded text-sm text-white border border-white/10"
-                  style="background: rgba(250, 250, 248, {opacity * 0.15})"
-                  title="{(tag.confidence * 100).toFixed(0)}% confidence"
-                >
-                  {tag.label}
-                </span>
-              {/each}
-            </div>
-          </section>
-        {/if}
-
-        <!-- SigLIP Scores Section -->
-        {#if tagsBySource.siglip && tagsBySource.siglip.length > 0}
-          <section>
-            <div class="flex items-center justify-between mb-3">
-              <h3 class="text-xs font-medium text-white/40 uppercase tracking-widest">SigLIP Scores</h3>
-              <span class="text-xs text-white/30">{tagsBySource.siglip.length} scored</span>
-            </div>
-            <div class="space-y-2">
-              {#each tagsBySource.siglip.slice(0, 10) as tag}
-                <div class="flex items-center gap-3">
-                  <span class="text-sm text-white/80 w-28 truncate" title={tag.label}>{tag.label}</span>
-                  <div class="flex-1 h-1 bg-white/10 rounded overflow-hidden">
-                    <div
-                      class="h-full bg-white/60 rounded"
-                      style="width: {(tag.confidence * 100).toFixed(0)}%"
-                    ></div>
-                  </div>
-                  <span class="text-xs text-white/40 w-10 text-right">{(tag.confidence * 100).toFixed(0)}%</span>
-                </div>
-              {/each}
-              {#if tagsBySource.siglip.length > 10}
-                <p class="text-xs text-white/30 pt-1">+{tagsBySource.siglip.length - 10} more</p>
-              {/if}
-            </div>
-          </section>
-        {/if}
-
-        <!-- OCR Text Section -->
-        {#if mlOcr.hasText && mlOcr.fullText}
-          <section>
-            <h3 class="text-xs font-medium text-white/40 uppercase tracking-widest mb-3">OCR Text</h3>
-            <pre class="bg-white/5 border border-white/10 rounded p-4 text-sm text-white/80 font-mono whitespace-pre-wrap break-words max-h-48 overflow-y-auto">{mlOcr.fullText}</pre>
-          </section>
-        {/if}
-
-        <!-- No Data State -->
-        {#if !mlCaption && (!tagsBySource.rampp || tagsBySource.rampp.length === 0) && !mlOcr.hasText}
-          <div class="text-center py-12">
-            <p class="text-white/40 mb-4">No ML insights available for this image.</p>
-            <button
-              onclick={requestRetag}
-              disabled={retagging}
-              class="px-4 py-2 text-sm font-medium text-braun-900 bg-white rounded hover:bg-white/90 transition disabled:opacity-50"
-            >
-              {retagging ? 'Processing...' : 'Run visual-buffet'}
-            </button>
-          </div>
-        {/if}
-
-        <!-- Footer metadata -->
-        <div class="pt-6 border-t border-white/10">
-          <div class="flex flex-wrap items-center gap-4 text-xs text-white/30">
-            {#if mlProcessedAt}
-              <span>Processed: {new Date(mlProcessedAt).toLocaleDateString()}</span>
-            {/if}
-            {#if tagsQualityScore !== null}
-              <span>Quality: {(tagsQualityScore * 100).toFixed(0)}%</span>
-            {/if}
-            {#if tagsViewType}
-              <span class="capitalize">{tagsViewType}</span>
-            {/if}
-            {#if tagsSource}
-              <span>{tagsSource}</span>
-            {/if}
-          </div>
-          <!-- Re-analyze button -->
-          {#if mlCaption || (tagsBySource.rampp && tagsBySource.rampp.length > 0)}
-            <button
-              onclick={requestRetag}
-              disabled={retagging}
-              class="mt-4 text-xs text-white/40 hover:text-white/60 transition disabled:opacity-50"
-            >
-              {retagging ? 'Processing...' : 'Re-analyze with visual-buffet'}
-            </button>
-          {/if}
         </div>
       </div>
     </div>

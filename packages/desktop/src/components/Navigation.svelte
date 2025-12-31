@@ -1,14 +1,16 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  /**
+   * Navigation.svelte - Main sidebar navigation
+   * DESIGN_SYSTEM: Updated with Ulm School / Functional Minimalism styling
+   * - Typography-only wordmark (no logo)
+   * - Design tokens for all colors
+   * - Minimal, functional design
+   */
   import { router } from '../stores/router';
   import { openImportModal } from '../stores/import-modal-store';
-  import { userStore, currentUser } from '../stores/user-store';
-  import { dispatchStore, dispatchConnectionStatus } from '../stores/dispatch-store';
-  import UserSwitcher from './UserSwitcher.svelte';
+  import SidebarImportProgress from './SidebarImportProgress.svelte';
 
   let currentRoute = $state('/dashboard');
-  let showUserSwitcher = $state(false);
-  let isDraggingFolder = $state(false);
 
   $effect(() => {
     const unsubscribe = router.subscribe((route) => {
@@ -33,192 +35,162 @@
   function isActive(path: string): boolean {
     return currentRoute === path;
   }
-
-  function openUserSwitcher() {
-    showUserSwitcher = true;
-  }
-
-  function closeUserSwitcher() {
-    showUserSwitcher = false;
-  }
-
-  // Drag-drop handlers for "New Location" button
-  function extractFolderName(path: string): string {
-    // Handle both Unix and Windows paths
-    const name = path.split('/').pop() || path.split('\\').pop() || 'Untitled';
-    return name;
-  }
-
-  function handleDragOver(event: DragEvent) {
-    event.preventDefault();
-    event.stopPropagation();
-    // Only accept if it looks like a file/folder drag
-    if (event.dataTransfer?.types.includes('Files')) {
-      isDraggingFolder = true;
-      event.dataTransfer.dropEffect = 'copy';
-    }
-  }
-
-  function handleDragLeave(event: DragEvent) {
-    event.preventDefault();
-    isDraggingFolder = false;
-  }
-
-  async function handleDrop(event: DragEvent) {
-    event.preventDefault();
-    event.stopPropagation();
-    isDraggingFolder = false;
-
-    const files = event.dataTransfer?.files;
-    if (!files || files.length === 0) return;
-
-    // Small delay to ensure preload's drop handler has processed the files
-    // The preload captures drop events and extracts paths using webUtils.getPathForFile()
-    await new Promise(resolve => setTimeout(resolve, 10));
-
-    // Get paths extracted by preload's drop event handler
-    const droppedPaths = window.getDroppedFilePaths?.() || [];
-
-    if (droppedPaths.length === 0) {
-      console.warn('[Navigation] No paths found from drop event');
-      return;
-    }
-
-    // Use the first dropped path
-    const filePath = droppedPaths[0];
-
-    // Extract folder name from path for location name
-    const folderName = extractFolderName(filePath);
-
-    // Open modal with prefilled name and pending import path
-    openImportModal({
-      name: folderName,
-      pendingImportPaths: [filePath],
-    });
-  }
-
-  // Initialize user store and dispatch store on mount
-  onMount(() => {
-    userStore.init();
-    dispatchStore.initialize();
-  });
-
-  // Dispatch status colors
-  const dispatchStatusColors: Record<string, string> = {
-    authenticated: 'bg-green-500',
-    connected: 'bg-amber-500',
-    disconnected: 'bg-red-500',
-  };
-
-  const dispatchStatusText: Record<string, string> = {
-    authenticated: 'Dispatch: Connected',
-    connected: 'Dispatch: Not authenticated',
-    disconnected: 'Dispatch: Disconnected',
-  };
 </script>
 
-<nav class="w-64 h-screen bg-braun-50 text-braun-900 flex flex-col border-r border-braun-300">
+<nav class="nav-sidebar">
   <!-- macOS: Top padding for traffic light buttons (hiddenInset titlebar) -->
-  <div class="pt-8 drag-region-nav">
-    <!-- Wordmark: Stacked layout (Braun style) -->
-    <div class="p-6 border-b border-braun-300">
-      <span class="text-2xl font-bold tracking-tight uppercase text-braun-900 leading-tight block">
-        Abandoned<br/>Archive
-      </span>
+  <div class="pt-8">
+    <!-- DESIGN_SYSTEM: Typography-only wordmark per DESIGN.md -->
+    <div class="nav-header">
+      <div class="app-wordmark">
+        <span>ABANDONED</span>
+        <span>ARCHIVE</span>
+      </div>
     </div>
   </div>
 
-  <!-- P1: New Location button - primary action (near-black) -->
-  <!-- Supports drag-drop: drop a folder to create location + auto-import -->
-  <div class="px-4 py-4">
-    <button
-      onclick={() => openImportModal()}
-      ondragover={handleDragOver}
-      ondragleave={handleDragLeave}
-      ondrop={handleDrop}
-      class="w-full px-4 py-3 bg-braun-900 text-white rounded text-sm font-medium hover:bg-braun-600 transition-colors flex items-center justify-center
-             {isDraggingFolder ? 'ring-2 ring-braun-400 ring-offset-2 bg-braun-600' : ''}"
-    >
-      {isDraggingFolder ? 'Drop to Create' : 'New Location'}
+  <!-- P1: New Location button - opens global import modal -->
+  <div class="px-4 py-3">
+    <button onclick={() => openImportModal()} class="btn-primary w-full">
+      New Location
     </button>
   </div>
 
   <div class="flex-1 overflow-y-auto">
-    <ul class="py-2">
+    <ul class="py-4">
       {#each menuItems as item}
         <li>
           <button
             onclick={() => navigate(item.path)}
-            class="w-full px-6 py-2 text-left text-sm font-medium transition-colors
-                   {isActive(item.path)
-                     ? 'bg-braun-100 text-braun-900'
-                     : 'text-braun-600 hover:bg-braun-100 hover:text-braun-900'}"
+            class="nav-item {isActive(item.path) ? 'nav-item-active' : ''}"
           >
-            {item.label}
+            <span class="text-sm font-medium">{item.label}</span>
           </button>
         </li>
       {/each}
     </ul>
   </div>
 
-  <!-- Bottom Icon Bar: Dispatch status + Search and Settings (icons only, right-justified) -->
-  <div class="p-4 border-t border-braun-200">
-    <div class="flex justify-end items-center gap-2">
-      <!-- Dispatch Status Indicator -->
-      <div
-        class="flex items-center gap-1.5 mr-2 cursor-pointer"
-        onclick={() => navigate('/settings')}
-        title={dispatchStatusText[$dispatchConnectionStatus]}
-      >
-        <span class="w-2 h-2 rounded-full {dispatchStatusColors[$dispatchConnectionStatus]}"></span>
-      </div>
+  <!-- Import Progress: Shows above Search/Settings when importing -->
+  <SidebarImportProgress />
+
+  <!-- Bottom Icon Bar: Search and Settings -->
+  <div class="nav-footer">
+    <div class="flex justify-between items-center">
       <button
         onclick={() => navigate('/search')}
-        class="p-2 rounded hover:bg-braun-100 transition-colors {isActive('/search') ? 'bg-braun-100' : ''}"
+        class="nav-icon-btn {isActive('/search') ? 'nav-icon-btn-active' : ''}"
         title="Search"
       >
-        <svg class="w-5 h-5 text-braun-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
         </svg>
-      </button>
-      <button
-        onclick={() => navigate('/playground')}
-        class="p-2 rounded hover:bg-braun-100 transition-colors {isActive('/playground') ? 'bg-braun-100' : ''}"
-        title="Developer Playground"
-      >
-        <svg class="w-5 h-5 text-braun-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-        </svg>
+        <span class="text-sm">Search</span>
       </button>
       <button
         onclick={() => navigate('/settings')}
-        class="p-2 rounded hover:bg-braun-100 transition-colors {isActive('/settings') ? 'bg-braun-100' : ''}"
+        class="nav-icon-btn {isActive('/settings') ? 'nav-icon-btn-active' : ''}"
         title="Settings"
       >
-        <svg class="w-5 h-5 text-braun-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>
-      </button>
-      <!-- User Icon Button -->
-      <button
-        onclick={openUserSwitcher}
-        class="p-2 rounded hover:bg-braun-100 transition-colors {showUserSwitcher ? 'bg-braun-100' : ''}"
-        title={$currentUser ? ($currentUser.display_name || $currentUser.username) : 'User'}
-      >
-        <svg class="w-5 h-5 text-braun-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-        </svg>
+        <span class="text-sm">Settings</span>
       </button>
     </div>
   </div>
 </nav>
 
-<!-- User Switcher Modal -->
-<UserSwitcher isOpen={showUserSwitcher} onClose={closeUserSwitcher} />
-
 <style>
-  .drag-region-nav {
-    -webkit-app-region: drag;
+  /* DESIGN_SYSTEM: Navigation uses design tokens */
+  .nav-sidebar {
+    width: 16rem; /* w-64 */
+    height: 100vh;
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--color-border);
+  }
+
+  .nav-header {
+    padding: var(--space-6);
+    text-align: center;
+  }
+
+  /* DESIGN_SYSTEM: Typography-only wordmark per DESIGN.md */
+  .app-wordmark {
+    display: flex;
+    flex-direction: column;
+    font-size: var(--text-sm);
+    font-weight: var(--font-semibold);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-primary);
+    line-height: 1.4;
+    text-align: center;
+  }
+
+  /* DESIGN_SYSTEM: Primary button style */
+  .btn-primary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-2) var(--space-4);
+    background: var(--color-accent);
+    color: var(--color-accent-text);
+    border-radius: var(--radius-md);
+    font-weight: var(--font-medium);
+    font-size: var(--text-sm);
+    transition: opacity var(--duration-fast) var(--ease-out);
+  }
+
+  .btn-primary:hover {
+    opacity: 0.9;
+  }
+
+  /* DESIGN_SYSTEM: Navigation item styles */
+  .nav-item {
+    width: 100%;
+    padding: var(--space-3) var(--space-6);
+    text-align: left;
+    transition: background-color var(--duration-fast) var(--ease-out);
+    color: var(--color-text-secondary);
+  }
+
+  .nav-item:hover {
+    background: var(--color-surface-elevated);
+  }
+
+  .nav-item-active {
+    background: var(--color-surface-elevated);
+    border-left: 4px solid var(--color-accent);
+    color: var(--color-text-primary);
+  }
+
+  .nav-footer {
+    padding: var(--space-4);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .nav-icon-btn {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-lg);
+    color: var(--color-text-muted);
+    transition: background-color var(--duration-fast) var(--ease-out);
+  }
+
+  .nav-icon-btn:hover {
+    background: var(--color-surface-elevated);
+    color: var(--color-text-secondary);
+  }
+
+  .nav-icon-btn-active {
+    background: var(--color-surface-elevated);
+    color: var(--color-text-primary);
   }
 </style>

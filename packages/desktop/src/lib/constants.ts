@@ -99,19 +99,22 @@ export const FILE_CONFIG = {
   LOCATION_FOLDER_PATTERN: '[SLOCNAM]-[LOC12]' as const,
 } as const;
 
-// Theme Colors - Braun/Rams Design System
-// ADR: Gold accent removed entirely. Functional colors only.
+// Theme Colors - DESIGN_SYSTEM: Updated for dark/light mode support
+// Note: Use CSS custom properties (var(--color-*)) when possible
+// These constants are for non-CSS contexts (e.g., Leaflet markers, canvas)
 export const THEME = {
-  BACKGROUND: '#FAFAF8',       // cool paper
-  SURFACE: '#FFFFFF',          // white
-  FOREGROUND: '#1C1C1A',       // near-black
-  // GPS functional colors: color = information hierarchy
+  ACCENT: '#fbbf24', // DESIGN_SYSTEM: Amber accent
+  BACKGROUND_DARK: '#0a0a0b',
+  BACKGROUND_LIGHT: '#fafafa',
+  FOREGROUND_DARK: '#f4f4f6',
+  FOREGROUND_LIGHT: '#09090b',
+  // DESIGN_SYSTEM: GPS confidence colors per DESIGN.md
   GPS_CONFIDENCE_COLORS: {
-    verified: '#4A8C5E',       // muted sage green - map confirmed
-    high: '#5A7A94',           // muted steel blue - EXIF <10m
-    medium: '#C9A227',         // muted ochre - reverse geocoded
-    low: '#B85C4A',            // muted terracotta - manual/estimate
-    none: '#8A8A86',           // warm gray - no GPS
+    verified: '#22c55e', // Green
+    high: '#3b82f6',     // Blue
+    medium: '#eab308',   // Amber
+    low: '#ef4444',      // Red
+    none: '#6b7280',     // Gray
   },
 } as const;
 
@@ -133,39 +136,11 @@ export const SUCCESS_MESSAGES = {
   SETTINGS_SAVED: 'Settings saved successfully',
 } as const;
 
-// Migration 38+: Duplicate Detection Configuration
+// Migration 38: Duplicate Detection Configuration
 // ADR: ADR-pin-conversion-duplicate-prevention.md
-// Updated: 2025-12-11 with Token Set Ratio and multi-signal matching
 export const DUPLICATE_CONFIG = {
-  // === Cross-table matching (ref_map_points ↔ locs) ===
   GPS_RADIUS_METERS: 150,           // Same site threshold - locations within this distance are definite duplicates
   NAME_MATCH_RADIUS_METERS: 500,    // Max distance for name similarity matches - prevents matching by town name alone
-  NAME_SIMILARITY_THRESHOLD: 0.80,  // 80% combined (JW + Token Set Ratio) - catches word reordering
+  NAME_SIMILARITY_THRESHOLD: 0.85,  // 85% Jaro-Winkler - high confidence matches only
   NEARBY_RADIUS_METERS: 400,        // ~0.25 miles - show "nearby" hint during creation
-  GENERIC_NAME_GPS_RADIUS_METERS: 25, // Generic names (House, Church) require close GPS match
-  TOKEN_SET_WEIGHT: 0.5,            // Weight for Token Set Ratio in combined score (0=JW only, 1=TSR only)
-  AUTO_MERGE_CONFIDENCE: 70,        // Auto-merge threshold for multi-signal confidence (0-100)
-  USER_REVIEW_CONFIDENCE: 50,       // User review threshold for multi-signal confidence (0-100)
-
-  // === Within-table dedup (ref_map_points internal merging) ===
-  // Wider thresholds because same location from different map sources may vary
-  GPS_MERGE_THRESHOLD_METERS: 50,   // Same building tolerance for ref_map_points dedup (~150ft)
-  NAME_DEDUP_THRESHOLD: 0.85,       // 85% similarity for name-based dedup within ref_map_points
-  NAME_DEDUP_GPS_RADIUS_METERS: 500, // Max GPS distance for name-based dedup (same general area)
-} as const;
-
-// Generic names that require GPS confirmation for duplicate detection
-// These shouldn't match on name alone - too many "House" or "Church" entries
-export const GENERIC_LOCATION_NAMES = new Set([
-  'house', 'church', 'school', 'factory', 'industrial', 'industry',
-  'building', 'farm', 'barn', 'mill', 'warehouse', 'store', 'shop',
-  'hotel', 'motel', 'hospital', 'office', 'station', 'tower', 'plant',
-  'center', 'site', 'place', 'location', 'point', 'cars', 'trains', 'trucks',
-]) as ReadonlySet<string>;
-
-// Blocking words that indicate different places (North vs South, Building A vs B)
-export const BLOCKING_WORDS_CONFIG = {
-  directions: ['north', 'south', 'east', 'west', 'upper', 'lower', 'inner', 'outer'],
-  temporal: ['old', 'new', 'former', 'current', 'original', 'modern', 'historic'],
-  numbered: ['first', 'second', 'third', 'fourth', 'fifth', '1st', '2nd', '3rd', '4th', '5th'],
 } as const;

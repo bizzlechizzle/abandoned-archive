@@ -6,26 +6,22 @@
    * Per AAA: Import shows results immediately
    * DECISION-014: Removed auto-geocoding from onMount (GPS from EXIF/user action only)
    */
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount } from 'svelte';
   import { router } from '../stores/router';
   import { importStore, isImporting } from '../stores/import-store';
-  import { pendingLocationImport, clearPendingLocationImport } from '../stores/import-modal-store';
   import { toasts } from '../stores/toast-store';
   import LocationEditForm from '../components/LocationEditForm.svelte';
   import NotesSection from '../components/NotesSection.svelte';
   import MediaViewer from '../components/MediaViewer.svelte';
   import {
-    LocationInfo, LocationTimeline, LocationInfoHorizontal,
-    LocationMapSection, LocationRecords, LocationResearch,
+    LocationHero, LocationInfo,
+    LocationMapSection, LocationOriginalAssets,
     LocationImportZone, LocationBookmarks, LocationNerdStats,
-    LocationSettings, SubLocationGrid,
-    type MediaImage, type MediaVideo, type MediaDocument, type MediaMap, type Bookmark,
+    SubLocationGrid,
+    type MediaImage, type MediaVideo, type MediaDocument, type Bookmark,
     type GpsWarning, type FailedFile
   } from '../components/location';
-  import WebSourceDetailModal from '../components/location/WebSourceDetailModal.svelte';
-  import DateExtractionReview from '../components/location/DateExtractionReview.svelte';
-  import type { Location, LocationInput } from '@aa/core';
-  import { ACCESS_OPTIONS } from '../constants/location-enums';
+  import type { Location, LocationInput } from '@au-archive/core';
 
   interface Props {
     locationId: string;
@@ -40,11 +36,9 @@
     locid: string;
     subnam: string;
     ssubname: string | null;
-    category: string | null;
+    type: string | null;
     status: string | null;
-    hero_imghash: string | null;
-    hero_focal_x?: number;  // OPT-095: Hero focal point X (0-1)
-    hero_focal_y?: number;  // OPT-095: Hero focal point Y (0-1)
+    hero_imgsha: string | null;
     is_primary: boolean;
     hero_thumb_path?: string;
     // Migration 31: Sub-location GPS (separate from host location)
@@ -54,8 +48,9 @@
     gps_source: string | null;
     gps_verified_on_map: boolean;
     gps_captured_at: string | null;
-    // Migration 32: AKA name (historicalName removed)
+    // Migration 32: AKA and historical name
     akanam: string | null;
+    historicalName: string | null;
   }
 
   // State
@@ -65,7 +60,6 @@
   let images = $state<MediaImage[]>([]);
   let videos = $state<MediaVideo[]>([]);
   let documents = $state<MediaDocument[]>([]);
-  let maps = $state<MediaMap[]>([]); // MAP-MEDIA-FIX-001: Map media support
   // Issue 3: All media for author extraction (includes sub-location media on host view)
   let allImagesForAuthors = $state<MediaImage[]>([]);
   let allVideosForAuthors = $state<MediaVideo[]>([]);
@@ -79,36 +73,9 @@
   let selectedMediaIndex = $state<number | null>(null);
   let currentUser = $state('default');
   let isDragging = $state(false);
+  let importProgress = $state('');
   let verifyingGps = $state(false);
   let togglingFavorite = $state(false);
-
-  // Verify Location modal state (one-off modal for new imports)
-  let showVerifyModal = $state(false);
-  let verifyForm = $state({
-    locnam: '',
-    category: '',
-    class: '',
-    access: '',
-  });
-  let verifyCategoryOptions = $state<string[]>([]);
-  let verifyClassOptions = $state<string[]>([]);
-  let savingVerify = $state(false);
-
-  // OPT-119: Timeline web page detail modal state
-  let showWebSourceModal = $state(false);
-  let webSourceModalId = $state<string | null>(null);
-
-  // Timeline highlight box - reference to Research section for expand on click
-  let researchRef: { expand: () => void } | undefined;
-
-  // Handle timeline expand - scroll to Research section and auto-expand
-  function handleTimelineExpand() {
-    const researchEl = document.getElementById('research-section');
-    if (researchEl) {
-      researchEl.scrollIntoView({ behavior: 'smooth' });
-    }
-    researchRef?.expand();
-  }
 
   // Derived: Are we viewing a sub-location?
   const isViewingSubLocation = $derived(!!subId && !!currentSubLocation);
@@ -117,51 +84,6 @@
   const subLocationsWithGps = $derived(
     sublocations.filter(s => s.gps_lat !== null && s.gps_lng !== null)
   );
-
-  // Verification status for status line (green/yellow/red)
-  // MASTER VERIFICATION LOGIC - Weighted scoring:
-  //   Information (65%) + Location (25%) + Hero Image (10%)
-  // Colors: 0-80% = red, 80-100% = yellow, 100% = green
-  const verificationStatus = $derived.by((): 'green' | 'yellow' | 'red' => {
-    if (!location) return 'red';
-
-    // Information score (65% weight) - ALWAYS from host location
-    const infoComplete = !!(location.category && location.class && location.access);
-    const infoScore = infoComplete ? 100 : 0;
-
-    // Location score (25% weight) - GPS from sub-location when viewing building
-    let hasGps: boolean;
-    let gpsVerified: boolean;
-
-    if (isViewingSubLocation && currentSubLocation) {
-      hasGps = currentSubLocation.gps_lat != null && currentSubLocation.gps_lng != null;
-      gpsVerified = currentSubLocation.gps_verified_on_map === true;
-    } else {
-      hasGps = location.gps?.lat != null && location.gps?.lng != null;
-      gpsVerified = location.gps?.verifiedOnMap === true;
-    }
-
-    const hasAddress = !!(location.address?.city || location.address?.state);
-    const addressVerified = location.address?.verified === true;
-
-    // Location: 0% if missing data, 80% if has data but unverified, 100% if verified
-    const locationScore = (!hasGps || !hasAddress) ? 0
-      : (!gpsVerified || !addressVerified) ? 80
-      : 100;
-
-    // Hero Image score (10% weight) - from sub-location when viewing building, else host
-    const heroHash = isViewingSubLocation && currentSubLocation
-      ? currentSubLocation.hero_imghash
-      : location.hero_imghash;
-    const heroScore = heroHash ? 100 : 0;
-
-    // Weighted total: Information (65%) + Location (25%) + Hero (10%)
-    const total = (infoScore * 0.65) + (locationScore * 0.25) + (heroScore * 0.10);
-
-    if (total >= 100) return 'green';
-    if (total >= 80) return 'yellow';
-    return 'red';
-  });
 
   // Migration 26: Import attribution modal
   let showAttributionModal = $state(false);
@@ -172,76 +94,24 @@
   let users = $state<Array<{user_id: string, username: string, display_name: string | null}>>([]);
 
   // Migration 28: Add Building modal
-  // Migration 65: Added category/class for sub-location taxonomy
   let showAddBuildingModal = $state(false);
   let newBuildingName = $state('');
-  let newBuildingCategory = $state('');
-  let newBuildingClass = $state('');
   let newBuildingIsPrimary = $state(false);
   let addingBuilding = $state(false);
-  // Migration 65: Autocomplete options for sub-location categories (separate from host)
-  let sublocCategoryOptions = $state<string[]>([]);
-  let sublocClassOptions = $state<string[]>([]);
+
+  // Hero title auto-sizing: max 2 lines, never truncate
+  let heroTitleEl = $state<HTMLElement | null>(null);
+  let heroTitleFontSize = $state(108); // Start at max, shrink as needed
+  let heroContainerEl = $state<HTMLElement | null>(null);
 
   // OPT-066: Track if sub-locations tagline wraps to multiple lines
   let sublocTaglineEl = $state<HTMLElement | null>(null);
   let sublocTaglineWraps = $state(false);
 
-  // Auto-shrink title to fit single line
-  let titleEl = $state<HTMLHeadingElement | null>(null);
-  const TITLE_BASE_FONT_SIZE = 48; // text-5xl = 3rem = 48px
-  const TITLE_MIN_FONT_SIZE = 24;  // Don't go smaller than this
-
-  // OPT-092: Trailing debounce for background job notifications
-  // Accumulate events, show ONE toast per category after 3s of quiet
-  const pendingNotifications = { images: false, videos: false, gps: false };
-  let notificationTimer: ReturnType<typeof setTimeout> | null = null;
-  const NOTIFICATION_DELAY_MS = 3000;
-
-  function notifyRefresh(type: 'images' | 'videos' | 'gps') {
-    pendingNotifications[type] = true;
-
-    // Reset timer on each event (trailing debounce)
-    if (notificationTimer) clearTimeout(notificationTimer);
-
-    notificationTimer = setTimeout(() => {
-      if (pendingNotifications.images) {
-        toasts.info('Images updated', 3000);
-        pendingNotifications.images = false;
-      }
-      if (pendingNotifications.videos) {
-        toasts.info('Videos updated', 3000);
-        pendingNotifications.videos = false;
-      }
-      if (pendingNotifications.gps) {
-        toasts.info('GPS location updated', 4000);
-        pendingNotifications.gps = false;
-      }
-      notificationTimer = null;
-    }, NOTIFICATION_DELAY_MS);
-  }
-
-  // OPT-110: Debounced loadLocation to prevent page flash from rapid asset-ready events
-  // When multiple background jobs complete (thumbnails, metadata, proxies), coalesce into single refresh
-  let loadLocationDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-  const LOAD_LOCATION_DEBOUNCE_MS = 300;
-
-  function debouncedLoadLocation() {
-    if (loadLocationDebounceTimer) {
-      clearTimeout(loadLocationDebounceTimer);
-    }
-    loadLocationDebounceTimer = setTimeout(async () => {
-      loadLocationDebounceTimer = null;
-      await loadLocation();
-    }, LOAD_LOCATION_DEBOUNCE_MS);
-  }
-
   // Derived: Combined media list for MediaViewer (images first, then videos)
-  // OPT-105: Added thumbPathLg for fallback chain (RAW files without extracted preview)
   const imageMediaList = $derived(images.map(img => ({
-    hash: img.imghash, path: img.imgloc,
+    hash: img.imgsha, path: img.imgloc,
     thumbPath: img.thumb_path_sm || img.thumb_path || null,
-    thumbPathLg: img.thumb_path_lg || null,
     previewPath: img.preview_path || null, type: 'image' as const,
     name: img.imgnam, width: img.meta_width, height: img.meta_height,
     dateTaken: img.meta_date_taken, cameraMake: img.meta_camera_make || null,
@@ -259,9 +129,8 @@
   })));
 
   const videoMediaList = $derived(videos.map(vid => ({
-    hash: vid.vidhash, path: vid.vidloc,
+    hash: vid.vidsha, path: vid.vidloc,
     thumbPath: vid.thumb_path_sm || vid.thumb_path || null,
-    thumbPathLg: vid.thumb_path_lg || null,
     previewPath: vid.preview_path || null, type: 'video' as const,
     name: vid.vidnam, width: vid.meta_width, height: vid.meta_height,
     dateTaken: null, cameraMake: null, cameraModel: null,
@@ -280,27 +149,160 @@
   // Combined list: images first, then videos
   const mediaViewerList = $derived([...imageMediaList, ...videoMediaList]);
 
-  // Hero image thumbnail path for LocationInfo hero box
-  // OPT-095: Search ALL images (including sublocation images) since host location hero
-  // may be set from a sublocation's image, not just campus-level media
-  const heroThumbPath = $derived.by(() => {
-    const heroHash = currentSubLocation?.hero_imghash || location?.hero_imghash;
-    if (!heroHash) return null;
-    // Search allImagesForAuthors which contains ALL images regardless of subid filtering
-    const heroImg = allImagesForAuthors.find(img => img.imghash === heroHash);
-    return heroImg?.thumb_path_lg || heroImg?.thumb_path || null;
+  // Hero display name: uses custom short name or auto-generates from locnam
+  const LOCATION_SUFFIXES = new Set([
+    'church', 'hospital', 'factory', 'mill', 'school', 'building',
+    'house', 'mansion', 'hotel', 'motel', 'inn', 'theater', 'theatre',
+    'station', 'depot', 'warehouse', 'plant', 'complex', 'center',
+    'centre', 'asylum', 'sanitarium', 'sanatorium', 'prison', 'jail',
+    'penitentiary', 'cemetery', 'memorial', 'monument', 'cathedral',
+    'chapel', 'temple', 'synagogue', 'mosque', 'abbey', 'monastery',
+    'convent', 'rectory', 'parsonage', 'vicarage', 'catholic',
+    'works', 'facility', 'site', 'company', 'co', 'corp', 'inc'
+  ]);
+
+  function generateHeroName(name: string, type?: string, subtype?: string): string {
+    let words = name.split(/\s+/).filter(w => w.length > 0);
+
+    // NEVER shorten names with 3 or fewer words - return unchanged
+    if (words.length <= 3) return words.join(' ');
+
+    // Strip leading "The" for longer names - the toggle can add it back
+    if (words[0].toLowerCase() === 'the') {
+      words = words.slice(1);
+    }
+
+    // After stripping "The", check again - don't over-shorten
+    if (words.length <= 3) return words.join(' ');
+
+    const suffixesToStrip = new Set<string>(LOCATION_SUFFIXES);
+    if (type) { suffixesToStrip.add(type.toLowerCase()); suffixesToStrip.add(type.toLowerCase() + 's'); }
+    if (subtype) { suffixesToStrip.add(subtype.toLowerCase()); suffixesToStrip.add(subtype.toLowerCase() + 's'); }
+
+    // Keep "School" when name contains "Union" - "Union School" is meaningful
+    const lowerName = name.toLowerCase();
+    if (lowerName.includes('union')) {
+      suffixesToStrip.delete('school');
+    }
+
+    const result = [...words];
+    while (result.length > 3) {
+      const lastWord = result[result.length - 1].toLowerCase();
+      if (suffixesToStrip.has(lastWord)) result.pop();
+      else break;
+    }
+    return result.join(' ');
+  }
+
+  const heroDisplayName = $derived.by(() => {
+    // For sub-locations, show the sub-location name
+    if (currentSubLocation) return currentSubLocation.subnam;
+    if (!location) return '';
+    // Priority: custom short name > auto-generated
+    const baseName = location.locnamShort || generateHeroName(location.locnam, location.type, location.stype);
+    const prefix = location.locnamUseThe ? 'The ' : '';
+    return prefix + baseName;
   });
 
-  // Handle hero image click - open MediaViewer at hero image
-  // OPT-095: Note - this only works if hero is in current view's images array.
-  // If host hero is from a sublocation, clicking won't open MediaViewer (user must navigate to sublocation).
-  // This is acceptable behavior since we at least DISPLAY the hero thumbnail now.
-  function handleHeroClick() {
-    const heroHash = currentSubLocation?.hero_imghash || location?.hero_imghash;
-    if (!heroHash) return;
-    const index = images.findIndex(img => img.imghash === heroHash);
-    if (index >= 0) selectedMediaIndex = index;
+  // OPT-070: Host display name for consistent title sizing across host/sub-location views
+  // Always based on host location name, never sub-location name
+  const hostDisplayName = $derived.by(() => {
+    if (!location) return '';
+    const baseName = location.locnamShort || generateHeroName(location.locnam, location.type, location.stype);
+    const prefix = location.locnamUseThe ? 'The ' : '';
+    return prefix + baseName;
+  });
+
+  // Function to calculate and set title size
+  // RULES:
+  // 1. Never cut off titles, no exceptions
+  // 2. If only 2 words, always 1 line (never wrap)
+  // 3. If 3+ words, max 2 lines allowed
+  // OPT-070: Use hostDisplayName for sizing (consistent across host/sub-location views)
+  function fitTitle() {
+    const el = heroTitleEl;
+    const container = heroContainerEl;
+    if (!el || !container) return;
+
+    const maxSize = 128; // Max size cap
+    const minSize = 24;  // Min size ensures readability for long titles
+
+    // OPT-070: Use host name for size calculation (not displayed name)
+    // This ensures consistent title size when navigating between host and sub-locations
+    const wordCount = hostDisplayName.split(/\s+/).filter(w => w.length > 0).length;
+    const isTwoWordTitle = wordCount <= 2;
+
+    // For 2-word titles: force single line (no wrap)
+    // For 3+ word titles: allow up to 2 lines
+    if (isTwoWordTitle) {
+      el.style.whiteSpace = 'nowrap';
+    } else {
+      el.style.whiteSpace = 'normal';
+    }
+
+    const MAX_LINES = isTwoWordTitle ? 1 : 2;
+
+    // OPT-070: Temporarily swap in host name for measurement, then restore display name
+    const originalText = el.textContent;
+    el.textContent = hostDisplayName;
+
+    // Binary search for optimal size (faster and more accurate)
+    let low = minSize;
+    let high = maxSize;
+    let bestFit = minSize;
+
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+      el.style.fontSize = `${mid}px`;
+
+      // Force reflow to get accurate measurements
+      const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || mid * 1.2;
+      const maxAllowedHeight = lineHeight * MAX_LINES * 1.05; // lines with 5% tolerance
+      const actualHeight = el.scrollHeight;
+
+      // Also check horizontal overflow for single-line titles
+      const containerWidth = container.clientWidth;
+      const textWidth = el.scrollWidth;
+      const fitsHorizontally = isTwoWordTitle ? textWidth <= containerWidth : true;
+
+      if (actualHeight <= maxAllowedHeight && fitsHorizontally) {
+        // Fits - try larger
+        bestFit = mid;
+        low = mid + 1;
+      } else {
+        // Doesn't fit - try smaller
+        high = mid - 1;
+      }
+    }
+
+    // OPT-070: Restore the display name (host or sub-location) after measuring
+    el.textContent = originalText;
+    el.style.fontSize = `${bestFit}px`;
+    heroTitleFontSize = bestFit;
   }
+
+  // Effect: Auto-size title (2-word = 1 line, 3+ words = max 2 lines)
+  // OPT-070: Track hostDisplayName (not heroDisplayName) so size only recalculates when host changes
+  $effect(() => {
+    const name = hostDisplayName; // Track dependency on HOST name for consistent sizing
+    const el = heroTitleEl;
+    const container = heroContainerEl;
+    if (!el || !name) return;
+
+    // Initial fit
+    requestAnimationFrame(fitTitle);
+
+    // Refit on resize
+    const resizeObserver = new ResizeObserver(() => {
+      fitTitle();
+    });
+
+    if (container) {
+      resizeObserver.observe(container);
+    }
+
+    return () => resizeObserver.disconnect();
+  });
 
   // OPT-066: Detect if sub-locations tagline wraps to multiple lines
   function checkTaglineWrap() {
@@ -324,60 +326,16 @@
     return () => resizeObserver.disconnect();
   });
 
-  // Auto-shrink title effect: reduce font size until title fits on single line
-  $effect(() => {
-    const el = titleEl;
-    // Track dependencies to re-run when location/sublocation changes
-    const _loc = location?.locnam;
-    const _sub = currentSubLocation?.subnam;
-    if (!el) return;
-
-    // Use rAF to ensure DOM has updated
-    requestAnimationFrame(() => {
-      // Reset to base size first
-      el.style.fontSize = `${TITLE_BASE_FONT_SIZE}px`;
-      el.style.whiteSpace = 'nowrap';
-
-      // Shrink until it fits (or hit minimum)
-      let fontSize = TITLE_BASE_FONT_SIZE;
-      while (el.scrollWidth > el.clientWidth && fontSize > TITLE_MIN_FONT_SIZE) {
-        fontSize -= 2;
-        el.style.fontSize = `${fontSize}px`;
-      }
-    });
-  });
-
   // Load functions
   // Migration 28 + OPT-062: Check if this is a host location
   // Use database flag OR existing sub-locations (flag allows host-only without sub-locations yet)
   const isHostLocation = $derived(location?.isHostOnly || sublocations.length > 0);
 
-  // OPT-119: Timeline web page modal handlers
-  function handleOpenWebSource(websourceId: string) {
-    webSourceModalId = websourceId;
-    showWebSourceModal = true;
-  }
-
-  function handleCloseWebSourceModal() {
-    showWebSourceModal = false;
-    webSourceModalId = null;
-  }
-
   async function loadLocation() {
     try {
       loading = true; error = null;
-
-      // OPT-094: Server-side filtering for sub-location media
-      // - subId provided (viewing sub-location): pass subid to get that sub's media
-      // - subId null (viewing host/regular): pass null to get host-level media (subid IS NULL)
-      // This works for both host locations (returns campus-level) and regular locations (all media has subid=null)
-      const querySubid = subId || null;
-
-      const [loc, media, allMedia, sublocs] = await Promise.all([
+      const [loc, media, sublocs] = await Promise.all([
         window.electronAPI.locations.findById(locationId),
-        // Filtered media for display (server-side filtering)
-        window.electronAPI.media.findByLocation({ locid: locationId, subid: querySubid }),
-        // All media for author extraction (Issue 3 - needs ALL media including sub-location)
         window.electronAPI.media.findByLocation(locationId),
         window.electronAPI.sublocations.findWithHeroImages(locationId),
       ]);
@@ -398,24 +356,28 @@
         currentSubLocation = null;
       }
 
-      // Issue 3: Store all media for author extraction (used by LocationInfo)
-      if (allMedia) {
-        allImagesForAuthors = (allMedia.images as MediaImage[]) || [];
-        allVideosForAuthors = (allMedia.videos as MediaVideo[]) || [];
-        allDocumentsForAuthors = (allMedia.documents as MediaDocument[]) || [];
-      }
-
-      // OPT-094: Server-side filtering - no client-side filtering needed
-      // Server returns exact data based on subid parameter:
-      // ADR-046: subid is 16-char BLAKE3 hex ID
-      // - subid = '<blake3-id>' → returns only that sub-location's media
-      // - subid = null → returns only host-level media (subid IS NULL in DB)
-      // MAP-MEDIA-FIX-001: Added maps support
       if (media) {
-        images = (media.images as MediaImage[]) || [];
-        videos = (media.videos as MediaVideo[]) || [];
-        documents = (media.documents as MediaDocument[]) || [];
-        maps = (media.maps as MediaMap[]) || [];
+        // Issue 3: Store all media for author extraction (used by LocationInfo)
+        allImagesForAuthors = (media.images as MediaImage[]) || [];
+        allVideosForAuthors = (media.videos as MediaVideo[]) || [];
+        allDocumentsForAuthors = (media.documents as MediaDocument[]) || [];
+
+        if (subId) {
+          // Viewing a sub-location: filter to only media linked to this sub-location
+          images = ((media.images as MediaImage[]) || []).filter(img => img.subid === subId);
+          videos = ((media.videos as MediaVideo[]) || []).filter(vid => vid.subid === subId);
+          documents = ((media.documents as MediaDocument[]) || []).filter(doc => doc.subid === subId);
+        } else if (sublocations.length > 0) {
+          // Host location: only show media NOT linked to sub-locations (campus-level)
+          images = ((media.images as MediaImage[]) || []).filter(img => !img.subid);
+          videos = ((media.videos as MediaVideo[]) || []).filter(vid => !vid.subid);
+          documents = ((media.documents as MediaDocument[]) || []).filter(doc => !doc.subid);
+        } else {
+          // Regular location: show all media
+          images = (media.images as MediaImage[]) || [];
+          videos = (media.videos as MediaVideo[]) || [];
+          documents = (media.documents as MediaDocument[]) || [];
+        }
       }
     } catch (err) {
       console.error('Error loading location:', err);
@@ -489,6 +451,7 @@
     status?: string | null;
     is_primary?: boolean;
     akanam?: string | null;
+    historicalName?: string | null;
   }
 
   async function handleSubLocationSave(subUpdates: SubLocationUpdates, locUpdates: Partial<LocationInput>) {
@@ -505,49 +468,6 @@
     } catch (err) {
       console.error('Error saving sub-location:', err);
       throw err;
-    }
-  }
-
-  // Verify Location modal handlers
-  async function openVerifyModal() {
-    if (!location) return;
-    // Populate form with current values
-    verifyForm = {
-      locnam: location.locnam || '',
-      category: location.category || '',
-      class: location.class || '',
-      access: location.access || '',
-    };
-    // Load category/class options
-    try {
-      const [categories, classes] = await Promise.all([
-        window.electronAPI?.locations?.getDistinctCategories?.() || [],
-        window.electronAPI?.locations?.getDistinctClasses?.() || [],
-      ]);
-      verifyCategoryOptions = categories;
-      verifyClassOptions = classes;
-    } catch (err) {
-      console.error('Error loading category options:', err);
-    }
-    showVerifyModal = true;
-  }
-
-  async function handleVerifySave() {
-    if (!location || savingVerify) return;
-    savingVerify = true;
-    try {
-      await window.electronAPI.locations.update(location.locid, {
-        locnam: verifyForm.locnam,
-        category: verifyForm.category || undefined,
-        class: verifyForm.class || undefined,
-        access: verifyForm.access || undefined,
-      });
-      await loadLocation();
-      showVerifyModal = false;
-    } catch (err) {
-      console.error('Error saving verification:', err);
-    } finally {
-      savingVerify = false;
     }
   }
 
@@ -650,12 +570,15 @@
     await loadLocation();
   }
 
-  /** Set hero image for card thumbnails */
-  async function setHeroImage(imghash: string) {
+  /** Kanye6 + Migration 22: Set hero image with focal point */
+  async function setHeroImageWithFocal(imgsha: string, fx: number, fy: number) {
     if (!location) return;
     try {
-      // Truncate hash to 16 chars to match LocationInputSchema.hero_imghash requirement
-      await window.electronAPI.locations.update(locationId, { hero_imghash: imghash.slice(0, 16) });
+      await window.electronAPI.locations.update(locationId, {
+        hero_imgsha: imgsha,
+        hero_focal_x: fx,
+        hero_focal_y: fy,
+      });
       await loadLocation();
     } catch (err) { console.error('Error setting hero image:', err); }
   }
@@ -663,13 +586,13 @@
   /** Migration 23: Handle hidden status changes from MediaViewer */
   function handleHiddenChanged(hash: string, hidden: boolean) {
     // Update local state immediately for responsive UI
-    const imgIndex = images.findIndex(i => i.imghash === hash);
+    const imgIndex = images.findIndex(i => i.imgsha === hash);
     if (imgIndex >= 0) {
       images[imgIndex] = { ...images[imgIndex], hidden: hidden ? 1 : 0, hidden_reason: hidden ? 'user' : null };
       images = [...images]; // Trigger reactivity
       return;
     }
-    const vidIndex = videos.findIndex(v => v.vidhash === hash);
+    const vidIndex = videos.findIndex(v => v.vidsha === hash);
     if (vidIndex >= 0) {
       videos[vidIndex] = { ...videos[vidIndex], hidden: hidden ? 1 : 0, hidden_reason: hidden ? 'user' : null };
       videos = [...videos]; // Trigger reactivity
@@ -680,11 +603,11 @@
   function handleMediaDeleted(hash: string, type: 'image' | 'video' | 'document') {
     // Remove from local state immediately for responsive UI
     if (type === 'image') {
-      images = images.filter(i => i.imghash !== hash);
+      images = images.filter(i => i.imgsha !== hash);
     } else if (type === 'video') {
-      videos = videos.filter(v => v.vidhash !== hash);
+      videos = videos.filter(v => v.vidsha !== hash);
     } else {
-      documents = documents.filter(d => d.dochash !== hash);
+      documents = documents.filter(d => d.docsha !== hash);
     }
   }
 
@@ -714,20 +637,20 @@
     if (!e.dataTransfer?.files || e.dataTransfer.files.length === 0 || !location) return;
     await new Promise(r => setTimeout(r, 10));
     const droppedPaths = window.getDroppedFilePaths?.() || [];
-    if (droppedPaths.length === 0) { toasts.warning('No valid files found'); return; }
-    if (!window.electronAPI?.media?.expandPaths) { toasts.error('API not available'); return; }
-    // Expand to check if there are valid files (for count/validation)
+    if (droppedPaths.length === 0) { importProgress = 'No valid files found'; setTimeout(() => importProgress = '', 3000); return; }
+    if (!window.electronAPI?.media?.expandPaths) { importProgress = 'API not available'; setTimeout(() => importProgress = '', 3000); return; }
+    importProgress = 'Scanning files...';
     const expandedPaths = await window.electronAPI.media.expandPaths(droppedPaths);
     if (expandedPaths.length > 0) {
-      // Pass ORIGINAL paths (folders or files) to import - wake-n-blake handles scanning
-      // This fixes the bug where only the first expanded file was being imported
-      pendingImportPaths = droppedPaths;
+      // Show attribution modal instead of importing directly
+      pendingImportPaths = expandedPaths;
       isSomeoneElse = false;
       selectedAuthor = '';
       contributionSource = '';
       showAttributionModal = true;
+      importProgress = '';
     }
-    else { toasts.warning('No supported media files found'); }
+    else { importProgress = 'No supported media files found'; setTimeout(() => importProgress = '', 3000); }
   }
 
   async function handleSelectFiles() {
@@ -736,17 +659,18 @@
       const filePaths = await window.electronAPI.media.selectFiles();
       if (!filePaths || filePaths.length === 0) return;
       if (window.electronAPI.media.expandPaths) {
-        // Expand to validate files exist (for count/validation)
+        importProgress = 'Scanning files...';
         const expandedPaths = await window.electronAPI.media.expandPaths(filePaths);
         if (expandedPaths.length > 0) {
-          // Pass ORIGINAL paths (folders or files) - wake-n-blake handles scanning
-          pendingImportPaths = filePaths;
+          // Show attribution modal instead of importing directly
+          pendingImportPaths = expandedPaths;
           isSomeoneElse = false;
           selectedAuthor = '';
           contributionSource = '';
           showAttributionModal = true;
+          importProgress = '';
         }
-        else { toasts.warning('No supported media files found'); }
+        else { importProgress = 'No supported media files found'; setTimeout(() => importProgress = '', 3000); }
       } else {
         pendingImportPaths = filePaths;
         isSomeoneElse = false;
@@ -754,7 +678,7 @@
         contributionSource = '';
         showAttributionModal = true;
       }
-    } catch (err) { console.error('Error selecting files:', err); toasts.error('Error selecting files'); }
+    } catch (err) { console.error('Error selecting files:', err); importProgress = 'Error selecting files'; setTimeout(() => importProgress = '', 3000); }
   }
 
   // Called when user confirms attribution in modal
@@ -792,72 +716,129 @@
     contributionSource = '';
   }
 
-  /**
-   * Import files using v2 pipeline
-   * Per Import Spec v2.0: 5-step pipeline with background jobs
-   * - No chunking needed (v2 handles streaming internally)
-   * - Progress via IPC events
-   * - Background jobs for thumbnails/metadata
-   */
+  // OPT-034b: Chunked import configuration for memory-bounded processing
+  const IMPORT_CHUNK_SIZE = 50;    // Files per IPC call (prevents timeout and OOM)
+  const IMPORT_CHUNK_DELAY = 100;  // ms between chunks (GC breathing room)
+
   async function importFilePaths(filePaths: string[], author: string, contributed: number = 0, source: string = '') {
     if (!location || $isImporting) return;
+
+    // OPT-034b: Chunk files for memory-bounded processing
+    const chunks: string[][] = [];
+    for (let i = 0; i < filePaths.length; i += IMPORT_CHUNK_SIZE) {
+      chunks.push(filePaths.slice(i, i + IMPORT_CHUNK_SIZE));
+    }
 
     // Import job label varies based on whether viewing sub-location
     const jobLabel = currentSubLocation
       ? `${location.locnam} / ${currentSubLocation.subnam}`
       : location.locnam;
     importStore.startJob(location.locid, jobLabel, filePaths.length);
+    importProgress = 'Import started';
 
-    // Set up progress listener for real-time updates
-    const unsubscribeProgress = window.electronAPI.importV2.onProgress((progress) => {
-      // OPT-088: Update store with v2 progress including weighted percent
-      // OPT-091: Pass currentFile for activity indicator display
-      // Progress display handled by store + LocationImportZone clean progress bar
-      importStore.updateProgress(progress.filesProcessed, progress.filesTotal, progress.percent, progress.currentFile, progress.sessionId);
-    });
+    // Aggregate results across all chunks
+    let totalImported = 0;
+    let totalDuplicates = 0;
+    let totalErrors = 0;
+    let processedFiles = 0;
+    let allFailedFiles: typeof failedFiles = [];
+    let allGpsWarnings: typeof gpsWarnings = [];
 
     try {
-      // Use v2 import - no chunking needed, handles streaming internally
-      // OPT-080: Force plain object to avoid Svelte $state() proxy serialization issues
-      const importInput = JSON.parse(JSON.stringify({
-        paths: filePaths,
-        locid: location.locid,
-        loc12: location.loc12,
-        address_state: location.address?.state || null,
-        category: location.category || null,
-        slocnam: currentSubLocation?.subnam || null,
-        subid: subId || null,
-        auth_imp: author,
-        is_contributed: contributed,
-        contribution_source: source || null,
-      }));
-      console.log('[LocationDetail] Calling importV2.start with:', importInput);
-      const result = await window.electronAPI.importV2.start(importInput);
+      // Process chunks sequentially to bound memory usage
+      for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+        const chunk = chunks[chunkIdx];
 
-      // Extract results
-      const totalImported = result.finalizationResult?.totalFinalized ?? 0;
-      const totalDuplicates = result.hashResult?.totalDuplicates ?? 0;
-      const totalErrors = result.finalizationResult?.totalErrors ?? 0;
-      const jobsQueued = result.finalizationResult?.jobsQueued ?? 0;
+        const filesForImport = chunk.map(fp => ({
+          filePath: fp,
+          originalName: fp.split(/[\\/]/).pop()!,
+        }));
 
-      // Handle result status
-      if (result.status === 'failed' && result.error) {
-        const errorMsg = `Import failed: ${result.error}`;
+        try {
+          const result = await window.electronAPI.media.import({
+            files: filesForImport,
+            locid: location.locid,
+            subid: subId || null,
+            auth_imp: author,
+            deleteOriginals: false,
+            is_contributed: contributed,
+            contribution_source: source || null,
+            // OPT-058: Unified progress across chunks
+            chunkOffset: chunkIdx * IMPORT_CHUNK_SIZE,
+            totalOverall: filePaths.length,
+          });
+
+          // Aggregate chunk results
+          totalImported += result.imported;
+          totalDuplicates += result.duplicates;
+          totalErrors += result.errors;
+          processedFiles += chunk.length;
+
+          // OPT-058: Real-time IPC events now report global progress, no need to update store here
+
+          // Collect warnings and failures from this chunk
+          if (result.results) {
+            const chunkFailed = result.results
+              .map((r: any, i: number) => ({
+                filePath: filesForImport[i]?.filePath || '',
+                originalName: filesForImport[i]?.originalName || '',
+                error: r.error || 'Unknown',
+                success: r.success,
+              }))
+              .filter((f: any) => !f.success && f.filePath);
+            allFailedFiles = [...allFailedFiles, ...chunkFailed];
+
+            const chunkGpsWarnings = result.results
+              .filter((r: any) => r.gpsWarning)
+              .map((r: any, i: number) => ({
+                filename: filesForImport[i]?.originalName || 'Unknown',
+                message: r.gpsWarning.message,
+                distance: r.gpsWarning.distance,
+                severity: r.gpsWarning.severity,
+                mediaGPS: r.gpsWarning.mediaGPS,
+              }));
+            allGpsWarnings = [...allGpsWarnings, ...chunkGpsWarnings];
+          }
+
+        } catch (chunkError) {
+          console.error(`[Import] Chunk ${chunkIdx + 1} failed:`, chunkError);
+          // Count all files in failed chunk as errors, continue with next chunk
+          totalErrors += chunk.length;
+          processedFiles += chunk.length;
+          // OPT-058: Must update manually here since backend didn't send progress for failed chunk
+          importStore.updateProgress(processedFiles, filePaths.length);
+        }
+
+        // Brief pause between chunks for GC and UI responsiveness
+        if (chunkIdx < chunks.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, IMPORT_CHUNK_DELAY));
+        }
+      }
+
+      // Apply collected warnings and failures
+      if (allFailedFiles.length > 0) failedFiles = allFailedFiles;
+      if (allGpsWarnings.length > 0) {
+        gpsWarnings = [...gpsWarnings, ...allGpsWarnings];
+        toasts.warning(`${allGpsWarnings.length} file(s) have GPS mismatch`);
+      }
+
+      // Final status based on aggregated results
+      if (totalImported === 0 && totalErrors > 0) {
+        const errorMsg = `Import failed: ${totalErrors} files could not be imported`;
         importStore.completeJob(undefined, errorMsg);
+        importProgress = errorMsg;
         toasts.error(errorMsg);
-      } else if (result.status === 'cancelled') {
-        importStore.completeJob(undefined, 'Import cancelled');
-        toasts.info('Import was cancelled');
       } else {
-        // Success or partial success
         importStore.completeJob({ imported: totalImported, duplicates: totalDuplicates, errors: totalErrors });
-
         if (totalErrors > 0) {
+          importProgress = `Imported ${totalImported} files (${totalErrors} failed)`;
           toasts.warning(`Imported ${totalImported} files. ${totalErrors} failed.`);
         } else if (totalImported > 0) {
+          importProgress = `Imported ${totalImported} files successfully`;
           toasts.success(`Successfully imported ${totalImported} files`);
           failedFiles = [];
         } else if (totalDuplicates > 0) {
+          importProgress = `${totalDuplicates} files were already in archive`;
           toasts.info(`${totalDuplicates} files were already in archive`);
         }
       }
@@ -871,11 +852,11 @@
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
       importStore.completeJob(undefined, msg);
+      importProgress = `Import error: ${msg}`;
       toasts.error(`Import error: ${msg}`);
-    } finally {
-      // Clean up progress listener
-      unsubscribeProgress();
     }
+
+    setTimeout(() => importProgress = '', 8000);
   }
 
   async function retryFailedImports() {
@@ -888,24 +869,10 @@
 
   // Bookmark handlers
   // Migration 28: Add Building handlers
-  async function openAddBuildingModal() {
+  function openAddBuildingModal() {
     newBuildingName = '';
-    newBuildingCategory = '';
-    newBuildingClass = '';
     newBuildingIsPrimary = sublocations.length === 0; // First building is primary by default
     showAddBuildingModal = true;
-
-    // Migration 65: Load sub-location category options (separate from host locations)
-    try {
-      const [categories, classes] = await Promise.all([
-        window.electronAPI?.sublocations?.getDistinctCategories?.() || [],
-        window.electronAPI?.sublocations?.getDistinctClasses?.() || [],
-      ]);
-      sublocCategoryOptions = categories;
-      sublocClassOptions = classes;
-    } catch (err) {
-      console.error('Error loading sub-location category options:', err);
-    }
   }
 
   // Convert to Host Location - opens Add Building modal (adding first building makes it a host)
@@ -916,8 +883,6 @@
   function closeAddBuildingModal() {
     showAddBuildingModal = false;
     newBuildingName = '';
-    newBuildingCategory = '';
-    newBuildingClass = '';
     newBuildingIsPrimary = false;
     addingBuilding = false;
   }
@@ -930,9 +895,7 @@
       await window.electronAPI.sublocations.create({
         locid: location.locid,
         subnam: newBuildingName.trim(),
-        // Migration 65: Use sub-location specific category/class (not host's category)
-        category: newBuildingCategory.trim() || null,
-        class: newBuildingClass.trim() || null,
+        type: location.type || null,
         status: null,
         is_primary: newBuildingIsPrimary,
         created_by: currentUser || null,
@@ -965,106 +928,9 @@
 
   function handleOpenBookmark(url: string) { window.electronAPI?.shell?.openExternal(url); }
 
-  // OPT-087 + OPT-090 + OPT-105: Handle asset-ready events for surgical refresh + notifications
-  function handleAssetReady(event: CustomEvent<{
-    type: string;
-    hash?: string;
-    locid?: string;
-    lat?: number;
-    lng?: number;
-    paths?: { sm?: string; lg?: string; preview?: string };
-    proxyPath?: string;
-  }>) {
-    const { type, hash, paths, locid, lat, lng } = event.detail;
-
-    // OPT-105: Debug logging for asset-ready events
-    console.log('[LocationDetail] asset-ready event:', { type, hash, locid, hasPath: !!paths });
-
-    // OPT-090: Handle GPS enrichment for current location
-    // OPT-110: Use debounced reload to prevent page flash
-    if (type === 'gps-enriched' && locid === locationId && lat != null && lng != null) {
-      console.log('[LocationDetail] GPS enriched, scheduling debounced reload');
-      debouncedLoadLocation();
-      notifyRefresh('gps');
-      return;
-    }
-
-    // Handle thumbnail ready (images and videos)
-    if (type === 'thumbnail' && paths && hash) {
-      // Update image thumbnail paths
-      const imgIndex = images.findIndex(img => img.imghash === hash);
-      if (imgIndex >= 0) {
-        console.log('[LocationDetail] Updating image thumbnail:', hash);
-        images[imgIndex] = {
-          ...images[imgIndex],
-          thumb_path_sm: paths.sm || images[imgIndex].thumb_path_sm,
-          thumb_path_lg: paths.lg || images[imgIndex].thumb_path_lg,
-          preview_path: paths.preview || images[imgIndex].preview_path,
-        };
-        images = [...images]; // Trigger reactivity
-        notifyRefresh('images'); // OPT-090
-        return;
-      }
-
-      // Update video thumbnail paths
-      const vidIndex = videos.findIndex(vid => vid.vidhash === hash);
-      if (vidIndex >= 0) {
-        console.log('[LocationDetail] Updating video thumbnail:', hash);
-        videos[vidIndex] = {
-          ...videos[vidIndex],
-          thumb_path_sm: paths.sm || videos[vidIndex].thumb_path_sm,
-          thumb_path_lg: paths.lg || videos[vidIndex].thumb_path_lg,
-          preview_path: paths.preview || videos[vidIndex].preview_path,
-        };
-        videos = [...videos]; // Trigger reactivity
-        notifyRefresh('videos'); // OPT-090
-        return;
-      }
-    }
-
-    // OPT-090: Handle video proxy ready
-    // OPT-105: Reload video data to get updated proxy path
-    // OPT-110: Use debounced reload to prevent page flash
-    if (type === 'proxy' && hash) {
-      const vidIndex = videos.findIndex(vid => vid.vidhash === hash);
-      if (vidIndex >= 0) {
-        console.log('[LocationDetail] Video proxy ready, scheduling debounced reload:', hash);
-        // Debounced reload to get updated proxy_path from database
-        debouncedLoadLocation();
-        notifyRefresh('videos');
-      }
-    }
-
-    // OPT-105: Handle metadata complete - reload to get updated metadata
-    // OPT-110: Use debounced reload to prevent page flash
-    if (type === 'metadata' && hash) {
-      const imgIndex = images.findIndex(img => img.imghash === hash);
-      const vidIndex = videos.findIndex(vid => vid.vidhash === hash);
-      if (imgIndex >= 0 || vidIndex >= 0) {
-        console.log('[LocationDetail] Metadata complete, scheduling debounced reload:', hash);
-        debouncedLoadLocation();
-        notifyRefresh(imgIndex >= 0 ? 'images' : 'videos');
-      }
-    }
-  }
-
-  // FIX: Cleanup function for websource listener
-  let websourceUnsubscribe: (() => void) | null = null;
-
   onMount(async () => {
-    // OPT-087: Listen for asset-ready events from App.svelte
-    window.addEventListener('asset-ready', handleAssetReady as EventListener);
-
     await loadLocation();
     loadBookmarks();
-
-    // FIX (Rule 9): Listen for web sources saved from browser extension
-    websourceUnsubscribe = window.electronAPI?.websources?.onWebSourceSaved?.((payload) => {
-      if (payload.locid === locationId) {
-        toasts.success('Bookmark saved');
-      }
-    }) || null;
-
     // DECISION-014: Removed ensureGpsFromAddress() - GPS should only come from EXIF or user action
 
     // Migration 33: Track view for Nerd Stats (only for host locations, not sub-locations)
@@ -1088,180 +954,109 @@
     }
     catch (err) { console.error('Error loading user settings:', err); }
 
-    // Check for pending import from drag-drop on New Location button
-    // This triggers the normal import flow with progress UI
-    const pending = $pendingLocationImport;
-    if (pending && pending.locid === locationId && pending.paths.length > 0) {
-      // Clear first to prevent re-triggering on any re-render
-      clearPendingLocationImport();
-
-      // Small delay to ensure UI is ready, then auto-expand paths and trigger import
-      setTimeout(async () => {
-        try {
-          // Expand paths (handles folders recursively)
-          const expandedPaths = await window.electronAPI.media.expandPaths(pending.paths);
-          if (expandedPaths.length > 0) {
-            // Trigger import with current user as author (normal flow)
-            importFilePaths(expandedPaths, currentUser, 0, '');
-          } else {
-            toasts.warning('No supported media files found in dropped folders');
-          }
-        } catch (err) {
-          console.error('[LocationDetail] Auto-import from drag-drop failed:', err);
-          toasts.error('Failed to start import');
-        }
-      }, 300);
+    // Auto-open file browser if navigated from "Add Media" button on Import form
+    const hash = window.location.hash;
+    if (hash.includes('autoImport=true')) {
+      // Small delay to ensure UI is ready, then open file browser
+      setTimeout(() => handleSelectFiles(), 100);
+      // Clear the query param to prevent re-triggering on refresh
+      router.navigate(`/location/${locationId}`);
     }
-  });
-
-  // OPT-087: Cleanup asset-ready event listener to prevent memory leaks
-  // OPT-092: Also cleanup notification timer
-  // OPT-110: Also cleanup loadLocation debounce timer
-  // FIX: Also cleanup websource listener
-  onDestroy(() => {
-    window.removeEventListener('asset-ready', handleAssetReady as EventListener);
-    if (notificationTimer) clearTimeout(notificationTimer);
-    if (loadLocationDebounceTimer) clearTimeout(loadLocationDebounceTimer);
-    if (websourceUnsubscribe) websourceUnsubscribe();
   });
 </script>
 
+<!-- Resize handler for title text fitting -->
+<svelte:window onresize={fitTitle} />
+
 <div class="h-full overflow-auto">
   {#if loading}
-    <div class="flex items-center justify-center h-full"><p class="text-braun-500">Loading location...</p></div>
+    <div class="flex items-center justify-center h-full"><p class="text-gray-500">Loading location...</p></div>
   {:else if error || !location}
     <div class="flex items-center justify-center h-full">
       <div class="text-center">
-        <p class="text-error text-lg">{error || 'Location not found'}</p>
-        <button onclick={() => router.navigate('/locations')} class="mt-4 px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition-colors">Back to Locations</button>
+        <p class="text-red-500 text-lg">{error || 'Location not found'}</p>
+        <button onclick={() => router.navigate('/locations')} class="mt-4 px-4 py-2 bg-accent text-white rounded hover:opacity-90">Back to Locations</button>
       </div>
     </div>
   {:else}
-    <div class="max-w-6xl mx-auto px-8 pt-12 pb-8">
-      <!-- Index Card Header -->
-      <div class="mb-8">
-        <div class="index-card bg-white border border-braun-300 rounded p-6">
-          <div class="flex gap-6">
-            <!-- Left: Thumbnail (2:1 ratio) -->
-            {#if heroThumbPath}
-              {@const focalX = currentSubLocation?.hero_focal_x ?? location?.hero_focal_x ?? 0.5}
-              {@const focalY = currentSubLocation?.hero_focal_y ?? location?.hero_focal_y ?? 0.5}
+    <!-- Hero outside max-w container for full-width stretch -->
+    <!-- OPT-065: Pass allImagesForAuthors so hero can be found even when filtered images is empty -->
+    <LocationHero
+      images={allImagesForAuthors.length > 0 ? allImagesForAuthors : images}
+      heroImgsha={currentSubLocation?.hero_imgsha || location.hero_imgsha || null}
+      focalX={currentSubLocation ? 0.5 : (location.hero_focal_x ?? 0.5)}
+      focalY={currentSubLocation ? 0.5 : (location.hero_focal_y ?? 0.5)}
+      onRegeneratePreview={async (imgsha) => {
+        // Issue 1: Regenerate preview for low-quality hero image
+        // OPT-065: Search all images, not just filtered
+        const img = allImagesForAuthors.find(i => i.imgsha === imgsha) || images.find(i => i.imgsha === imgsha);
+        if (img && window.electronAPI?.media?.regenerateSingleFile) {
+          await window.electronAPI.media.regenerateSingleFile(imgsha, img.imgloc);
+          await loadLocation(); // Refresh to get new thumbnail paths
+        }
+      }}
+    />
+
+    <!-- DESIGN_SYSTEM: Solid metadata bar below hero (per DESIGN.md - no gradient overlay) -->
+    <div class="hero-metadata-bar">
+      <div bind:this={heroContainerEl} class="hero-metadata-content">
+        <h1
+          bind:this={heroTitleEl}
+          class="hero-title"
+          style="font-size: {heroTitleFontSize}px;"
+          title={isViewingSubLocation ? currentSubLocation?.subnam : location.locnam}
+        >
+          {heroDisplayName}
+        </h1>{#if isViewingSubLocation}
+          <!-- Host location tagline (sub-location view) -->
+          <button
+            onclick={() => router.navigate(`/location/${locationId}`)}
+            class="host-tagline block"
+          >
+            {location.locnam}
+          </button>
+        {:else if isHostLocation && sublocations.length > 0}
+          <!-- Buildings tagline (host location view) - list building names -->
+          <div
+            bind:this={sublocTaglineEl}
+            class="host-tagline host-tagline-list"
+          >
+            {#each sublocations as subloc}
               <button
-                onclick={handleHeroClick}
-                class="flex-shrink-0 w-72 rounded overflow-hidden group"
-                title="View hero image"
-              >
-                <!-- OPT-110: Fade-in transition for smooth hero image loading -->
-                <img
-                  src={`media://${heroThumbPath}`}
-                  alt="Hero thumbnail"
-                  class="w-full h-full object-cover scale-110 opacity-0 transition-opacity duration-200"
-                  style="aspect-ratio: 2 / 1; object-position: {focalX * 100}% {focalY * 100}%;"
-                  onload={(e) => e.currentTarget.classList.remove('opacity-0')}
-                />
-              </button>
-            {/if}
-
-            <!-- Right: Location Info (right-justified) -->
-            <div class="flex-1 min-w-0 space-y-3 text-right">
-              <!-- Title Row -->
-              {#if isViewingSubLocation && currentSubLocation}
-                <!-- Sub-location: Show host name above -->
-                <div>
-                  <button
-                    onclick={() => router.navigate(`/location/${locationId}`)}
-                    class="text-sm text-braun-500 hover:text-braun-900 hover:underline"
-                  >
-                    {location.locnam}
-                  </button>
-                  <h1 bind:this={titleEl} class="font-bold text-braun-900 leading-tight">
-                    {currentSubLocation.subnam}
-                  </h1>
-                </div>
-              {:else}
-                <h1 bind:this={titleEl} class="font-bold text-braun-900 leading-tight">
-                  {location.locnam}
-                </h1>
-              {/if}
-
-              <!-- Status + Class -->
-              <p class="text-base text-braun-700">
-                {#if location.access}{location.access}{/if}
-                {#if location.access && location.class} {/if}
-                {#if location.class}{location.class}{/if}
-                {#if !location.access && !location.class && !location.category}<button onclick={openVerifyModal} class="text-error hover:underline cursor-pointer">verify</button>{/if}
-              </p>
-
-              <!-- Built / Abandoned -->
-              {#if location.builtYear || location.abandonedYear}
-                <p class="text-base text-braun-700">
-                  {#if location.builtYear}Est. {location.builtYear}{/if}
-                  {#if location.builtYear && location.abandonedYear}<span class="text-braun-400"> · </span>{/if}
-                  {#if location.abandonedYear}Closed {location.abandonedYear}{/if}
-                </p>
-              {/if}
-
-              <!-- Buildings (Host Location) or Siblings (Sub-Location) -->
-              {#if isViewingSubLocation && sublocations.length > 1}
-                <p class="text-sm text-braun-500">
-                  {#each sublocations.filter(s => s.subid !== currentSubLocation?.subid) as subloc, i}
-                    {#if i > 0}<span class="text-braun-400"> · </span>{/if}
-                    <button
-                      onclick={() => router.navigate(`/location/${locationId}/sub/${subloc.subid}`)}
-                      class="hover:text-braun-900 hover:underline"
-                    >{subloc.subnam}</button>
-                  {/each}
-                </p>
-              {:else if !isViewingSubLocation && isHostLocation && sublocations.length > 0}
-                <p class="text-sm text-braun-500" bind:this={sublocTaglineEl}>
-                  {#each sublocations as subloc, i}
-                    {#if i > 0}<span class="text-braun-400"> · </span>{/if}
-                    <button
-                      onclick={() => router.navigate(`/location/${locationId}/sub/${subloc.subid}`)}
-                      class="hover:text-braun-900 hover:underline"
-                    >{subloc.subnam}</button>
-                  {/each}
-                </p>
-              {/if}
-            </div>
+                onclick={() => router.navigate(`/location/${locationId}/sub/${subloc.subid}`)}
+                class="hover:underline"
+              >{subloc.subnam}</button>
+            {/each}
           </div>
-        </div>
+        {/if}
       </div>
+      <!-- DESIGN_SYSTEM: GPS Confidence Bar (4px) per DESIGN.md -->
+      <div class="gps-confidence-bar gps-confidence-{location.gps_source || 'none'}"></div>
+    </div>
 
-      <!-- Verification Status Line -->
-      <div
-        class="h-1 rounded mx-4 mb-8"
-        style="background-color: {verificationStatus === 'green' ? '#4A8C5E' : verificationStatus === 'yellow' ? '#C9A227' : '#B85C4A'};"
-        title={verificationStatus === 'green' ? 'Complete: Info, Location, and Hero Image' :
-               verificationStatus === 'yellow' ? 'Partial: Missing some verification or hero image' :
-               'Incomplete: Missing info, location data, or hero image'}
-      ></div>
+    <div class="max-w-6xl mx-auto px-8 pt-6 pb-8">
 
       {#if isEditing}
         <LocationEditForm {location} onSave={handleSave} onCancel={() => isEditing = false} />
       {:else}
-        <!-- Side-by-side: Timeline on LEFT (55%), Map on RIGHT (45%) - equal height -->
-        <div class="flex gap-6 mb-8 items-stretch">
-          <!-- Left: Timeline (55% width) - PLAN: replaces LocationInfo position -->
-          <div class="w-[55%] flex flex-col">
-            <LocationTimeline
-              locid={location.locid}
-              subid={isViewingSubLocation && currentSubLocation ? currentSubLocation.subid : null}
-              isHostLocation={isHostLocation && !isViewingSubLocation}
-              onUpdate={loadLocation}
-              onOpenWebSource={handleOpenWebSource}
-              onExpandClick={handleTimelineExpand}
-            />
-            <!-- Date Extraction Review: Pending dates feed into Timeline -->
-            <DateExtractionReview
-              locid={location.locid}
-              subid={isViewingSubLocation && currentSubLocation ? currentSubLocation.subid : null}
-              onUpdate={loadLocation}
-            />
-          </div>
-
-          <!-- Right: Map Section (45% width) -->
-          <div class="w-[45%] flex flex-col">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <LocationInfo
+            {location}
+            {images}
+            {videos}
+            {documents}
+            {allImagesForAuthors}
+            {allVideosForAuthors}
+            {allDocumentsForAuthors}
+            onNavigateFilter={navigateToFilter}
+            onSave={handleSave}
+            {sublocations}
+            isHostLocation={isHostLocation && !isViewingSubLocation}
+            onConvertToHost={isViewingSubLocation ? undefined : handleConvertToHost}
+            currentSubLocation={isViewingSubLocation ? currentSubLocation : null}
+            onSubLocationSave={isViewingSubLocation ? handleSubLocationSave : undefined}
+          />
+          <div class="location-map-section">
             <!-- DECISION-011: Unified location box with verification checkmarks, edit modal -->
             <!-- Migration 31: Pass sub-location GPS props when viewing a sub-location -->
             <LocationMapSection
@@ -1284,18 +1079,10 @@
           </div>
         </div>
 
-        <!-- PLAN: Horizontal Info Strip (below Timeline/Map row) -->
-        <div class="mb-8">
-          <LocationInfoHorizontal
-            {location}
-            onNavigateFilter={navigateToFilter}
-            onSave={handleSave}
-            currentSubLocation={isViewingSubLocation ? currentSubLocation : null}
-            onSubLocationSave={isViewingSubLocation ? handleSubLocationSave : undefined}
-          />
-        </div>
+        <!-- Notes scoped to sub-location when viewing one -->
+        <NotesSection locid={isViewingSubLocation && currentSubLocation ? currentSubLocation.subid : location.locid} {currentUser} />
 
-        <!-- Sub-Location Grid (only for host locations, hide when viewing a sub-location) -->
+        <!-- Migration 28: Sub-Location Grid (only for host locations, hide when viewing a sub-location) -->
         {#if !isViewingSubLocation && isHostLocation}
           <div id="buildings-section">
             <SubLocationGrid
@@ -1306,12 +1093,10 @@
           </div>
         {/if}
 
-        <!-- Notes scoped to sub-location when viewing one -->
-        <NotesSection locid={isViewingSubLocation && currentSubLocation ? currentSubLocation.subid : location.locid} {currentUser} />
-
         <!-- Import zone - host locations get campus-level media, buildings get building media -->
         <LocationImportZone
           isImporting={$isImporting}
+          {importProgress}
           {isDragging}
           {gpsWarnings}
           {failedFiles}
@@ -1325,31 +1110,19 @@
           onDismissAllWarnings={() => gpsWarnings = []}
         />
 
+        <LocationBookmarks {bookmarks} onAddBookmark={handleAddBookmark} onDeleteBookmark={handleDeleteBookmark} onOpenBookmark={handleOpenBookmark} />
         <div id="media-gallery">
-          <LocationRecords
+          <LocationOriginalAssets
             {images}
             {videos}
             {documents}
-            heroImgsha={currentSubLocation?.hero_imghash || location.hero_imghash || null}
-            locid={location.locid}
+            heroImgsha={currentSubLocation?.hero_imgsha || location.hero_imgsha || null}
             onOpenImageLightbox={(i) => selectedMediaIndex = i}
             onOpenVideoLightbox={(i) => selectedMediaIndex = images.length + i}
             onOpenDocument={openMediaFile}
-            onOpenSource={(url) => window.electronAPI.shell.openExternal(url)}
           />
         </div>
-
-        <!-- Research section: Timeline (detailed), People, Companies -->
-        <LocationResearch
-          bind:this={researchRef}
-          locid={location.locid}
-          subid={isViewingSubLocation && currentSubLocation ? currentSubLocation.subid : null}
-          isHostLocation={isHostLocation && !isViewingSubLocation}
-          onOpenWebSource={handleOpenWebSource}
-        />
-
-        <LocationSettings {location} onLocationUpdated={loadLocation} />
-        <LocationNerdStats {location} imageCount={images.length} videoCount={videos.length} documentCount={documents.length} mapCount={maps.length} onLocationUpdated={loadLocation} />
+        <LocationNerdStats {location} imageCount={images.length} videoCount={videos.length} documentCount={documents.length} onLocationUpdated={loadLocation} />
       {/if}
     </div>
   {/if}
@@ -1359,24 +1132,16 @@
       mediaList={mediaViewerList}
       startIndex={selectedMediaIndex}
       onClose={() => selectedMediaIndex = null}
-      heroImghash={currentSubLocation?.hero_imghash || location?.hero_imghash || null}
-      focalX={currentSubLocation?.hero_focal_x ?? location?.hero_focal_x ?? 0.5}
-      focalY={currentSubLocation?.hero_focal_y ?? location?.hero_focal_y ?? 0.5}
+      heroImgsha={currentSubLocation?.hero_imgsha || location?.hero_imgsha || null}
+      focalX={currentSubLocation ? 0.5 : (location?.hero_focal_x ?? 0.5)}
+      focalY={currentSubLocation ? 0.5 : (location?.hero_focal_y ?? 0.5)}
       onSetHeroImage={currentSubLocation
-        ? async (imghash, focalX, focalY) => {
-            await window.electronAPI.sublocations.update(currentSubLocation.subid, { hero_imghash: imghash.slice(0, 16), hero_focal_x: focalX, hero_focal_y: focalY });
+        ? async (imgsha, fx, fy) => {
+            await window.electronAPI.sublocations.update(currentSubLocation.subid, { hero_imgsha: imgsha });
             await loadLocation();
           }
-        : async (imghash, focalX, focalY) => {
-            await window.electronAPI.locations.update(locationId, { hero_imghash: imghash.slice(0, 16), hero_focal_x: focalX, hero_focal_y: focalY });
-            await loadLocation();
-          }}
-      onSetHostHeroImage={currentSubLocation
-        ? async (imghash, focalX, focalY) => {
-            await window.electronAPI.locations.update(locationId, { hero_imghash: imghash.slice(0, 16), hero_focal_x: focalX, hero_focal_y: focalY });
-            await loadLocation();
-          }
-        : undefined}
+        : setHeroImageWithFocal}
+      onSetHostHeroImage={currentSubLocation ? setHeroImageWithFocal : undefined}
       onHiddenChanged={handleHiddenChanged}
       onDeleted={handleMediaDeleted}
       onMoved={handleMediaMoved}
@@ -1396,16 +1161,16 @@
       aria-labelledby="attribution-title"
     >
       <div
-        class="bg-white border border-braun-300 rounded w-full max-w-md mx-4"
+        class="bg-[var(--color-surface)] rounded-lg shadow-xl w-full max-w-md mx-4"
         onclick={(e) => e.stopPropagation()}
       >
-        <div class="p-5 border-b border-braun-200 flex justify-between items-center">
-          <h2 id="attribution-title" class="text-lg font-medium text-braun-900">
+        <div class="p-5 flex justify-between items-center">
+          <h2 id="attribution-title" class="text-xl font-semibold text-foreground">
             Import Author
           </h2>
           <button
             onclick={cancelImport}
-            class="text-braun-400 hover:text-braun-600 transition p-1 rounded hover:bg-braun-100"
+            class="text-gray-400 hover:text-gray-600 transition p-1 rounded hover:bg-gray-200"
             aria-label="Close"
           >
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1417,26 +1182,26 @@
         <div class="p-5 space-y-4">
           <!-- Current user or Someone Else -->
           <div class="space-y-3">
-            <label class="flex items-center gap-3 p-3 border rounded cursor-pointer hover:bg-braun-50 transition bg-white {!isSomeoneElse ? 'border-braun-900' : 'border-braun-300'}">
+            <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition bg-white {!isSomeoneElse ? 'border-accent' : 'border-gray-200'}">
               <input
                 type="radio"
                 name="attribution"
                 checked={!isSomeoneElse}
                 onchange={() => { isSomeoneElse = false; selectedAuthor = ''; contributionSource = ''; }}
-                class="w-4 h-4 text-braun-900"
+                class="w-4 h-4 text-accent"
               />
-              <span class="font-medium text-braun-900">{users.find(u => u.username === currentUser)?.display_name || currentUser}</span>
+              <span class="font-medium text-foreground">{users.find(u => u.username === currentUser)?.display_name || currentUser}</span>
             </label>
 
-            <label class="flex items-center gap-3 p-3 border rounded cursor-pointer hover:bg-braun-50 transition bg-white {isSomeoneElse ? 'border-braun-900' : 'border-braun-300'}">
+            <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition bg-white {isSomeoneElse ? 'border-accent' : 'border-gray-200'}">
               <input
                 type="radio"
                 name="attribution"
                 checked={isSomeoneElse}
                 onchange={() => isSomeoneElse = true}
-                class="w-4 h-4 text-braun-900"
+                class="w-4 h-4 text-accent"
               />
-              <span class="font-medium text-braun-900">Someone Else</span>
+              <span class="font-medium text-foreground">Someone Else</span>
             </label>
           </div>
 
@@ -1444,13 +1209,13 @@
           {#if isSomeoneElse}
             <div class="pt-2 space-y-3">
               <div>
-                <label for="author-select" class="form-label">
+                <label for="author-select" class="block text-sm font-medium text-gray-700 mb-1">
                   Who shot these?
                 </label>
                 <select
                   id="author-select"
                   bind:value={selectedAuthor}
-                  class="w-full px-4 py-3 bg-white border border-braun-400 rounded text-sm text-braun-900 focus:outline-none focus:border-braun-600 transition-colors"
+                  class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
                 >
                   <option value="">Select...</option>
                   {#each users.filter(u => u.username !== currentUser) as user}
@@ -1463,7 +1228,7 @@
               <!-- If External: show source field -->
               {#if selectedAuthor === 'external'}
                 <div>
-                  <label for="contribution-source" class="form-label">
+                  <label for="contribution-source" class="block text-sm font-medium text-gray-700 mb-1">
                     Source
                   </label>
                   <input
@@ -1471,7 +1236,7 @@
                     type="text"
                     bind:value={contributionSource}
                     placeholder="e.g., John Smith via text"
-                    class="w-full px-4 py-3 bg-white border border-braun-400 rounded text-sm text-braun-900 placeholder:text-braun-400 focus:outline-none focus:border-braun-600 transition-colors"
+                    class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-accent"
                   />
                 </div>
               {/if}
@@ -1479,17 +1244,17 @@
           {/if}
         </div>
 
-        <div class="p-5 border-t border-braun-200 flex justify-end gap-3">
+        <div class="p-5 flex justify-end gap-3">
           <button
             onclick={cancelImport}
-            class="px-4 py-2 text-sm text-braun-600 bg-white border border-braun-400 rounded hover:border-braun-500 transition font-medium"
+            class="px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition font-medium"
           >
             Cancel
           </button>
           <button
             onclick={confirmImport}
             disabled={isSomeoneElse && !selectedAuthor || (selectedAuthor === 'external' && !contributionSource.trim())}
-            class="px-4 py-2 text-sm bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+            class="px-3 py-1.5 text-sm bg-accent text-white rounded-lg hover:bg-accent/90 transition disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-sm"
           >
             Import
           </button>
@@ -1507,20 +1272,20 @@
       aria-modal="true"
     >
       <div
-        class="bg-white border border-braun-300 rounded w-full max-w-md mx-4"
+        class="bg-white rounded-lg shadow-xl w-full max-w-md mx-4"
         onclick={(e) => e.stopPropagation()}
       >
-        <div class="p-4 border-b border-braun-200">
-          <h2 class="text-lg font-medium text-braun-900">Add Building</h2>
-          <p class="text-sm text-braun-500 mt-1">
+        <div class="p-4 border-b">
+          <h2 class="text-lg font-semibold text-foreground">Add Building</h2>
+          <p class="text-sm text-gray-500 mt-1">
             Add a building to {location?.locnam || 'this location'}
           </p>
         </div>
 
         <div class="p-4 space-y-4">
           <div>
-            <label for="building-name" class="form-label">
-              Building Name <span class="text-error">*</span>
+            <label for="building-name" class="block text-sm font-medium text-gray-700 mb-1">
+              Building Name <span class="text-red-500">*</span>
             </label>
             <input
               id="building-name"
@@ -1528,46 +1293,8 @@
               bind:value={newBuildingName}
               disabled={addingBuilding}
               placeholder="e.g., Main Building, Powerhouse"
-              class="w-full px-4 py-3 bg-white border border-braun-400 rounded text-sm text-braun-900 placeholder:text-braun-400 focus:outline-none focus:border-braun-600 transition-colors disabled:opacity-50"
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
             />
-          </div>
-
-          <!-- Migration 65: Category and Class fields for sub-locations (separate taxonomy) -->
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label for="building-category" class="form-label">Category</label>
-              <input
-                id="building-category"
-                type="text"
-                list="building-category-options"
-                bind:value={newBuildingCategory}
-                disabled={addingBuilding}
-                placeholder="e.g., Administration"
-                class="w-full px-4 py-3 bg-white border border-braun-400 rounded text-sm text-braun-900 placeholder:text-braun-400 focus:outline-none focus:border-braun-600 transition-colors disabled:opacity-50"
-              />
-              <datalist id="building-category-options">
-                {#each sublocCategoryOptions as option}
-                  <option value={option} />
-                {/each}
-              </datalist>
-            </div>
-            <div>
-              <label for="building-class" class="form-label">Class</label>
-              <input
-                id="building-class"
-                type="text"
-                list="building-class-options"
-                bind:value={newBuildingClass}
-                disabled={addingBuilding}
-                placeholder="e.g., Office Wing"
-                class="w-full px-4 py-3 bg-white border border-braun-400 rounded text-sm text-braun-900 placeholder:text-braun-400 focus:outline-none focus:border-braun-600 transition-colors disabled:opacity-50"
-              />
-              <datalist id="building-class-options">
-                {#each sublocClassOptions as option}
-                  <option value={option} />
-                {/each}
-              </datalist>
-            </div>
           </div>
 
           <label class="flex items-center gap-3 cursor-pointer select-none">
@@ -1575,27 +1302,27 @@
               type="checkbox"
               bind:checked={newBuildingIsPrimary}
               disabled={addingBuilding}
-              class="h-5 w-5 rounded border-braun-400 text-braun-900 focus:ring-braun-600"
+              class="h-5 w-5 rounded border-gray-300 text-accent focus:ring-accent"
             />
             <div>
-              <span class="text-sm font-medium text-braun-900">Primary Building</span>
-              <p class="text-xs text-braun-500">Set as main structure of this campus</p>
+              <span class="text-sm font-medium text-gray-700">Primary Building</span>
+              <p class="text-xs text-gray-500">Set as main structure of this campus</p>
             </div>
           </label>
         </div>
 
-        <div class="p-4 border-t border-braun-200 flex justify-end gap-2">
+        <div class="p-4 border-t flex justify-end gap-2">
           <button
             onclick={closeAddBuildingModal}
             disabled={addingBuilding}
-            class="px-4 py-2 text-braun-600 bg-braun-100 rounded hover:bg-braun-200 transition disabled:opacity-50"
+            class="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200 transition disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             onclick={handleAddBuilding}
             disabled={addingBuilding || !newBuildingName.trim()}
-            class="px-4 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            class="px-4 py-2 bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {addingBuilding ? 'Adding...' : 'Add Building'}
           </button>
@@ -1603,129 +1330,73 @@
       </div>
     </div>
   {/if}
-
-  <!-- Verify Location Modal (Braun: 8pt grid, 4px radius, functional minimalism) -->
-  {#if showVerifyModal}
-    <div
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-[99999]"
-      onclick={() => showVerifyModal = false}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="verify-modal-title"
-    >
-      <div
-        class="bg-white rounded border border-braun-300 w-full max-w-md mx-4"
-        onclick={(e) => e.stopPropagation()}
-      >
-        <!-- Header -->
-        <div class="flex items-center justify-between px-6 py-4 border-b border-braun-200">
-          <h2 id="verify-modal-title" class="text-xl font-semibold text-braun-900">Verify Location</h2>
-          <button
-            onclick={() => showVerifyModal = false}
-            class="p-1 text-braun-400 hover:text-braun-600 transition"
-            aria-label="Close"
-          >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        <!-- Form: 2x2 Grid -->
-        <div class="p-6">
-          <div class="grid grid-cols-2 gap-4">
-            <!-- Row 1: Name | Type -->
-            <div>
-              <label for="verify-name" class="block text-xs font-semibold text-braun-500 uppercase tracking-wider mb-1">Name</label>
-              <input
-                id="verify-name"
-                type="text"
-                bind:value={verifyForm.locnam}
-                class="w-full px-3 py-2 border border-braun-300 rounded text-sm focus:outline-none focus:border-braun-600"
-                placeholder="Location name"
-              />
-            </div>
-            <div>
-              <label for="verify-category" class="block text-xs font-semibold text-braun-500 uppercase tracking-wider mb-1">Category</label>
-              <input
-                id="verify-category"
-                type="text"
-                list="verify-category-options"
-                bind:value={verifyForm.category}
-                class="w-full px-3 py-2 border border-braun-300 rounded text-sm focus:outline-none focus:border-braun-600"
-                placeholder="e.g., Hospital"
-              />
-              <datalist id="verify-category-options">
-                {#each verifyCategoryOptions as option}
-                  <option value={option} />
-                {/each}
-              </datalist>
-            </div>
-
-            <!-- Row 2: Status | Class -->
-            <div>
-              <label for="verify-status" class="block text-xs font-semibold text-braun-500 uppercase tracking-wider mb-1">Status</label>
-              <select
-                id="verify-status"
-                bind:value={verifyForm.access}
-                class="w-full px-3 py-2 border border-braun-300 rounded text-sm focus:outline-none focus:border-braun-600"
-              >
-                <option value="">Select status...</option>
-                {#each ACCESS_OPTIONS as option}
-                  <option value={option}>{option}</option>
-                {/each}
-              </select>
-            </div>
-            <div>
-              <label for="verify-class" class="block text-xs font-semibold text-braun-500 uppercase tracking-wider mb-1">Class</label>
-              <input
-                id="verify-class"
-                type="text"
-                list="verify-class-options"
-                bind:value={verifyForm.class}
-                class="w-full px-3 py-2 border border-braun-300 rounded text-sm focus:outline-none focus:border-braun-600"
-                placeholder="e.g., Psychiatric"
-              />
-              <datalist id="verify-class-options">
-                {#each verifyClassOptions as option}
-                  <option value={option} />
-                {/each}
-              </datalist>
-            </div>
-          </div>
-        </div>
-
-        <!-- Footer -->
-        <div class="px-6 py-4 border-t border-braun-200 flex justify-end gap-3">
-          <button
-            onclick={() => showVerifyModal = false}
-            disabled={savingVerify}
-            class="px-4 py-2 text-braun-600 bg-braun-100 rounded hover:bg-braun-200 transition text-sm disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            onclick={handleVerifySave}
-            disabled={savingVerify || !verifyForm.locnam.trim()}
-            class="px-6 py-2 bg-braun-900 text-white rounded hover:bg-braun-600 transition text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {savingVerify ? 'Saving...' : 'Save'}
-          </button>
-        </div>
-      </div>
-    </div>
-  {/if}
-
-  <!-- OPT-119: Web Source Detail Modal (from Timeline web page clicks) -->
-  {#if showWebSourceModal && webSourceModalId}
-    <WebSourceDetailModal
-      sourceId={webSourceModalId}
-      onClose={handleCloseWebSourceModal}
-      onOpenUrl={(url) => window.electronAPI.shell.openExternal(url)}
-    />
-  {/if}
 </div>
 
 <style>
-  /* Component styles - Braun design system */
+  /* DESIGN_SYSTEM: Solid metadata bar below hero (per DESIGN.md) */
+  .hero-metadata-bar {
+    background: var(--color-surface);
+    width: 100%;
+  }
+
+  .hero-metadata-content {
+    max-width: 72rem; /* 6xl */
+    margin: 0 auto;
+    padding: var(--space-6) var(--space-8);
+    text-align: center;
+  }
+
+  /* Hero title: auto-sized to fit max 2 lines, never truncate */
+  .hero-title {
+    color: var(--color-text-primary);
+    letter-spacing: 0.02em;
+    word-spacing: -0.02em;
+    font-weight: var(--font-bold);
+    text-wrap: balance;
+    text-transform: uppercase;
+    line-height: 1.1;
+    margin-bottom: var(--space-2);
+  }
+
+  /* Host location tagline */
+  .host-tagline {
+    color: var(--color-accent);
+    font-size: var(--text-lg);
+    letter-spacing: 0.08em;
+    font-weight: var(--font-semibold);
+    text-transform: uppercase;
+  }
+
+  .host-tagline-list {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-4);
+  }
+
+  /* DESIGN_SYSTEM: GPS Confidence Bar (4px) per DESIGN.md */
+  .gps-confidence-bar {
+    height: 4px;
+    width: 100%;
+  }
+
+  .gps-confidence-map_confirmed {
+    background: var(--gps-verified);
+  }
+
+  .gps-confidence-photo_exif {
+    background: var(--gps-high);
+  }
+
+  .gps-confidence-reverse_geocode {
+    background: var(--gps-medium);
+  }
+
+  .gps-confidence-manual {
+    background: var(--gps-low);
+  }
+
+  .gps-confidence-none {
+    background: var(--gps-none);
+  }
 </style>

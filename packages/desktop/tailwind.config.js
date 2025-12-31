@@ -1,3 +1,9 @@
+/**
+ * Tailwind Configuration
+ * Aligned with Abandoned Archive Design System
+ * See: DESIGN.md and docs/DESIGN_SYSTEM.md
+ */
+
 import { skeleton } from '@skeletonlabs/tw-plugin';
 
 export default {
@@ -6,84 +12,131 @@ export default {
     './src/**/*.{svelte,js,ts}',
     './node_modules/@skeletonlabs/skeleton/**/*.{html,js,svelte,ts}'
   ],
+  darkMode: ['class', '[data-theme="dark"]'],
   theme: {
     extend: {
       colors: {
-        // Braun neutral scale
-        braun: {
-          50: '#FAFAF8',   // Background
-          100: '#F4F4F2',  // Background alt
-          200: '#EEEEED',  // Border muted
-          300: '#E2E1DE',  // Border
-          400: '#C0BFBC',  // Text disabled
-          500: '#8A8A86',  // Text muted
-          600: '#5C5C58',  // Text secondary
-          900: '#1C1C1A',  // Text primary
+        // Neutral Scale (used via CSS custom properties for theming)
+        neutral: {
+          50: '#f4f4f6',
+          100: '#e4e4e8',
+          200: '#c4c4cc',
+          300: '#a3a3ad',
+          400: '#85858f',
+          500: '#5c5c66',
+          600: '#404047',
+          700: '#2e2e33',
+          800: '#1f1f23',
+          850: '#18181b',
+          900: '#111113',
+          950: '#0a0a0b',
         },
-
-        // Functional colors only (color = information)
-        // Braun/Ulm School muted functional palette
+        // Accent Scale (Amber)
+        accent: {
+          50: '#fffbeb',
+          100: '#fef3c7',
+          200: '#fde68a',
+          300: '#fcd34d',
+          400: '#fbbf24',
+          500: '#f59e0b',
+          600: '#d97706',
+          700: '#b45309',
+          800: '#92400e',
+          DEFAULT: '#fbbf24',
+        },
+        // Semantic Colors
+        success: {
+          DEFAULT: '#22c55e',
+          muted: '#166534',
+          light: '#dcfce7',
+        },
+        warning: {
+          DEFAULT: '#eab308',
+          muted: '#854d0e',
+          light: '#fef9c3',
+        },
+        error: {
+          DEFAULT: '#ef4444',
+          muted: '#991b1b',
+          light: '#fee2e2',
+        },
+        info: {
+          DEFAULT: '#3b82f6',
+          muted: '#1e40af',
+          light: '#dbeafe',
+        },
+        // GPS Confidence Colors
         gps: {
-          verified: '#4A8C5E',  // Muted sage green - map confirmed
-          high: '#5A7A94',      // Muted steel blue - EXIF high accuracy
-          medium: '#C9A227',    // Muted ochre - reverse geocoded
-          low: '#B85C4A',       // Muted terracotta - manual/estimate
-          none: '#8A8A86',      // Warm gray - no GPS
-        },
-
-        // Status colors (matching GPS muted palette)
-        success: '#4A8C5E',
-        error: '#B85C4A',
-        warning: '#C9A227',
-
-        // Legacy aliases (for gradual migration)
-        accent: '#1C1C1A',       // Now near-black, was gold
-        background: '#FAFAF8',   // Cool paper, was warm cream
-        foreground: '#1C1C1A',   // Near-black, was gunmetal
-        primary: '#1C1C1A',      // Near-black primary actions
-        secondary: '#5C5C58',    // Secondary text/elements
-        danger: '#B85C4A',       // Muted terracotta
-        verified: '#4A8C5E',     // Muted sage green
-        unverified: '#8A8A86',   // Warm gray
-
-        // Blue (REFERENCE PINS ONLY - preserved from original)
-        blue: {
-          DEFAULT: '#3B82F6',
-          light: '#60A5FA',
-          dark: '#1D4ED8',
+          verified: '#22c55e',
+          high: '#3b82f6',
+          medium: '#eab308',
+          low: '#ef4444',
+          none: '#6b7280',
         },
       },
       fontFamily: {
-        sans: ['Braun Linear', 'system-ui', '-apple-system', 'sans-serif'],
-        heading: ['Braun Linear', 'system-ui', '-apple-system', 'sans-serif'],
-        body: ['Braun Linear', 'system-ui', '-apple-system', 'sans-serif'],
+        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
+        mono: ['JetBrains Mono', 'SF Mono', 'SFMono-Regular', 'Consolas', 'Liberation Mono', 'Menlo', 'monospace'],
+      },
+      fontSize: {
+        xs: ['11px', { lineHeight: '16px' }],
+        sm: ['13px', { lineHeight: '20px' }],
+        base: ['15px', { lineHeight: '24px' }],
+        md: ['17px', { lineHeight: '24px' }],
+        lg: ['20px', { lineHeight: '28px' }],
+        xl: ['24px', { lineHeight: '32px' }],
+        '2xl': ['30px', { lineHeight: '36px' }],
+        '3xl': ['36px', { lineHeight: '40px' }],
+        '4xl': ['48px', { lineHeight: '52px' }],
+      },
+      spacing: {
+        '0.5': '2px',
+        '1': '4px',
+        '2': '8px',
+        '3': '12px',
+        '4': '16px',
+        '5': '20px',
+        '6': '24px',
+        '8': '32px',
+        '10': '40px',
+        '12': '48px',
+        '16': '64px',
+        '20': '80px',
+        '24': '96px',
       },
       borderRadius: {
-        DEFAULT: '4px',
-        sm: '2px',
-        md: '4px',  // Override md to match default (max 4px)
-        lg: '4px',  // Override lg to match default (max 4px)
-        xl: '4px',  // Override xl to match default (max 4px)
-        '2xl': '4px', // Override 2xl to match default (max 4px)
-        '3xl': '4px', // Override 3xl to match default (max 4px)
-        full: '9999px', // Keep full for specific circular use cases
-      },
-      letterSpacing: {
-        tighter: '-0.02em',
-        tight: '-0.01em',
-        normal: '0',
-        wide: '0.05em',
-        wider: '0.1em',
+        sm: '4px',
+        DEFAULT: '6px',
+        md: '6px',
+        lg: '8px',
+        xl: '12px',
       },
       boxShadow: {
-        // Remove decorative shadows - use borders instead
-        none: 'none',
-        sm: 'none',
-        DEFAULT: 'none',
-        md: 'none',
-        lg: 'none',
-        xl: 'none',
-        '2xl': 'none',
+        sm: '0 1px 2px rgba(0, 0, 0, 0.3)',
+        DEFAULT: '0 4px 6px rgba(0, 0, 0, 0.3)',
+        md: '0 4px 6px rgba(0, 0, 0, 0.3)',
+        lg: '0 10px 15px rgba(0, 0, 0, 0.3)',
+      },
+      transitionDuration: {
+        instant: '0ms',
+        fast: '100ms',
+        normal: '150ms',
+        slow: '250ms',
+        slower: '350ms',
+      },
+      transitionTimingFunction: {
+        'ease-out': 'cubic-bezier(0.25, 0, 0.25, 1)',
+        'ease-in': 'cubic-bezier(0.5, 0, 0.75, 0)',
+        'ease-in-out': 'cubic-bezier(0.45, 0, 0.55, 1)',
+      },
+      zIndex: {
+        dropdown: '100',
+        sticky: '200',
+        'modal-backdrop': '300',
+        modal: '400',
+        popover: '500',
+        tooltip: '600',
+        toast: '700',
       },
     },
   },
