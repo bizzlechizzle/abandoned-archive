@@ -135,8 +135,6 @@ export default defineConfig({
             rollupOptions: {
               external: [
                 'zod',
-                'better-sqlite3',
-                'kysely',
                 'electron',
                 // Sharp is a native module with platform-specific binaries
                 // that use dynamic requires - must be external to the bundle

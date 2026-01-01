@@ -144,8 +144,8 @@ describe('Scanner', () => {
 
       const controller = new AbortController();
 
-      // Abort after starting
-      setTimeout(() => controller.abort(), 10);
+      // Abort immediately to ensure it's cancelled before scan completes
+      controller.abort();
 
       await expect(
         scanner.scan([tempDir], {

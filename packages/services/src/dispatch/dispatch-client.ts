@@ -1367,7 +1367,7 @@ export class DispatchClient extends EventEmitter {
 
   async checkConnection(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.config.hubUrl}/health`);
+      const response = await fetch(`${this.config.hubUrl}/api/health`);
       return response.ok;
     } catch {
       return false;

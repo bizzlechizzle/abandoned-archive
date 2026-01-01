@@ -1,39 +1,16 @@
 /**
  * Unified Repository Factory
  *
- * Provides a single interface for getting repositories that can
- * switch between SQLite (local) and API (dispatch hub) backends
- * based on configuration.
+ * All data operations go through the Dispatch Hub's PostgreSQL database.
+ * There is no local SQLite storage - the desktop app is a thin client.
  *
- * Configuration is determined by:
- * 1. Environment variable: USE_DISPATCH_API=true
- * 2. Runtime setting: Settings → Data Source → Use Dispatch Hub
- *
- * In API mode, all data operations go through the dispatch hub's PostgreSQL.
- * In SQLite mode (default), data stays local in au-archive.db.
+ * Configuration:
+ * - DISPATCH_HUB_URL: Hub URL (default: http://192.168.1.199:3000)
  */
 
-import type { Kysely } from 'kysely';
-import type { Database } from '../main/database.types';
 import { getDispatchClient, type DispatchClient } from '@aa/services';
 
-// SQLite repositories
-import { SQLiteLocationRepository } from './sqlite-location-repository';
-import { SQLiteSubLocationRepository } from './sqlite-sublocation-repository';
-import { SQLiteMediaRepository } from './sqlite-media-repository';
-import { SqliteRefMapsRepository } from './sqlite-ref-maps-repository';
-import { SQLiteNotesRepository } from './sqlite-notes-repository';
-import { SQLiteUsersRepository } from './sqlite-users-repository';
-import { SQLiteImportRepository } from './sqlite-import-repository';
-import { SQLiteProjectsRepository } from './sqlite-projects-repository';
-import { SqliteTimelineRepository } from './sqlite-timeline-repository';
-import { SQLiteWebSourcesRepository } from './sqlite-websources-repository';
-import { SQLiteLocationViewsRepository } from './sqlite-location-views-repository';
-import { SQLiteLocationAuthorsRepository } from './sqlite-location-authors-repository';
-import { SQLiteLocationExclusionsRepository } from './sqlite-location-exclusions-repository';
-import { SqliteDateExtractionRepository } from './sqlite-date-extraction-repository';
-
-// API repositories
+// API repositories (PostgreSQL via Dispatch Hub)
 import { ApiLocationRepository } from './api-location-repository';
 import { ApiSublocationRepository } from './api-sublocation-repository';
 import { ApiMediaRepository } from './api-media-repository';
@@ -54,15 +31,11 @@ import { ApiDateExtractionRepository } from './api-date-extraction-repository';
 // ============================================================================
 
 export interface RepositoryConfig {
-  useDispatchApi: boolean;
   dispatchHubUrl: string;
-  offlineMode: boolean;
 }
 
-let config: RepositoryConfig = {
-  useDispatchApi: process.env.USE_DISPATCH_API === 'true',
+const config: RepositoryConfig = {
   dispatchHubUrl: process.env.DISPATCH_HUB_URL || 'http://192.168.1.199:3000',
-  offlineMode: process.env.OFFLINE_MODE === 'true',
 };
 
 /**
@@ -72,39 +45,24 @@ export function getRepositoryConfig(): RepositoryConfig {
   return { ...config };
 }
 
-/**
- * Update repository configuration
- * Note: Changing useDispatchApi requires app restart to take full effect
- */
-export function setRepositoryConfig(updates: Partial<RepositoryConfig>): void {
-  config = { ...config, ...updates };
-}
-
-/**
- * Check if currently using API backend
- */
-export function isUsingApiBackend(): boolean {
-  return config.useDispatchApi && !config.offlineMode;
-}
-
 // ============================================================================
-// Repository Types (common interface)
+// Repository Types
 // ============================================================================
 
-export type LocationRepository = SQLiteLocationRepository | ApiLocationRepository;
-export type SublocationRepository = SQLiteSubLocationRepository | ApiSublocationRepository;
-export type MediaRepository = SQLiteMediaRepository | ApiMediaRepository;
-export type MapRepository = SqliteRefMapsRepository | ApiMapRepository;
-export type NotesRepository = SQLiteNotesRepository | ApiNotesRepository;
-export type UsersRepository = SQLiteUsersRepository | ApiUsersRepository;
-export type ImportRepository = SQLiteImportRepository | ApiImportRepository;
-export type ProjectsRepository = SQLiteProjectsRepository | ApiProjectsRepository;
-export type TimelineRepository = SqliteTimelineRepository | ApiTimelineRepository;
-export type WebSourcesRepository = SQLiteWebSourcesRepository | ApiWebSourcesRepository;
-export type LocationViewsRepository = SQLiteLocationViewsRepository | ApiLocationViewsRepository;
-export type LocationAuthorsRepository = SQLiteLocationAuthorsRepository | ApiLocationAuthorsRepository;
-export type LocationExclusionsRepository = SQLiteLocationExclusionsRepository | ApiLocationExclusionsRepository;
-export type DateExtractionRepository = SqliteDateExtractionRepository | ApiDateExtractionRepository;
+export type LocationRepository = ApiLocationRepository;
+export type SublocationRepository = ApiSublocationRepository;
+export type MediaRepository = ApiMediaRepository;
+export type MapRepository = ApiMapRepository;
+export type NotesRepository = ApiNotesRepository;
+export type UsersRepository = ApiUsersRepository;
+export type ImportRepository = ApiImportRepository;
+export type ProjectsRepository = ApiProjectsRepository;
+export type TimelineRepository = ApiTimelineRepository;
+export type WebSourcesRepository = ApiWebSourcesRepository;
+export type LocationViewsRepository = ApiLocationViewsRepository;
+export type LocationAuthorsRepository = ApiLocationAuthorsRepository;
+export type LocationExclusionsRepository = ApiLocationExclusionsRepository;
+export type DateExtractionRepository = ApiDateExtractionRepository;
 
 // ============================================================================
 // Unified Factory
@@ -134,38 +92,14 @@ export interface UnifiedRepositories {
   dateExtraction: DateExtractionRepository;
 
   // Backend info
-  backend: 'sqlite' | 'api';
-  client?: DispatchClient;
+  backend: 'api';
+  client: DispatchClient;
 }
 
-let sqliteFactoryInstance: UnifiedRepositories | null = null;
-let apiFactoryInstance: UnifiedRepositories | null = null;
+let repositoryInstance: UnifiedRepositories | null = null;
 
 /**
- * Create SQLite repositories
- */
-function createSqliteRepositories(db: Kysely<Database>): UnifiedRepositories {
-  return {
-    locations: new SQLiteLocationRepository(db),
-    sublocations: new SQLiteSubLocationRepository(db),
-    media: new SQLiteMediaRepository(db),
-    maps: new SqliteRefMapsRepository(db),
-    notes: new SQLiteNotesRepository(db),
-    users: new SQLiteUsersRepository(db),
-    imports: new SQLiteImportRepository(db),
-    projects: new SQLiteProjectsRepository(db),
-    timeline: new SqliteTimelineRepository(db),
-    websources: new SQLiteWebSourcesRepository(db),
-    locationViews: new SQLiteLocationViewsRepository(db),
-    locationAuthors: new SQLiteLocationAuthorsRepository(db),
-    locationExclusions: new SQLiteLocationExclusionsRepository(db),
-    dateExtraction: new SqliteDateExtractionRepository(db),
-    backend: 'sqlite',
-  };
-}
-
-/**
- * Create API repositories
+ * Create API repositories connected to Dispatch Hub
  */
 function createApiRepositories(): UnifiedRepositories {
   const client = getDispatchClient();
@@ -191,29 +125,15 @@ function createApiRepositories(): UnifiedRepositories {
 }
 
 /**
- * Get repositories based on current configuration.
+ * Get repositories connected to Dispatch Hub.
  *
- * @param db - Kysely database instance (required for SQLite mode)
- * @returns Repository collection for the configured backend
+ * @returns Repository collection for API backend
  */
-export function getUnifiedRepositories(db?: Kysely<Database>): UnifiedRepositories {
-  if (isUsingApiBackend()) {
-    if (!apiFactoryInstance) {
-      apiFactoryInstance = createApiRepositories();
-    }
-    return apiFactoryInstance;
+export function getUnifiedRepositories(): UnifiedRepositories {
+  if (!repositoryInstance) {
+    repositoryInstance = createApiRepositories();
   }
-
-  // SQLite mode requires database
-  if (!db) {
-    throw new Error('Database instance required for SQLite mode. Pass db parameter or set USE_DISPATCH_API=true');
-  }
-
-  if (!sqliteFactoryInstance) {
-    sqliteFactoryInstance = createSqliteRepositories(db);
-  }
-
-  return sqliteFactoryInstance;
+  return repositoryInstance;
 }
 
 /**
@@ -221,29 +141,27 @@ export function getUnifiedRepositories(db?: Kysely<Database>): UnifiedRepositori
  * Convenience method for IPC handlers that only need one repository.
  */
 export function getRepository<K extends keyof Omit<UnifiedRepositories, 'backend' | 'client'>>(
-  name: K,
-  db?: Kysely<Database>
+  name: K
 ): UnifiedRepositories[K] {
-  const repos = getUnifiedRepositories(db);
+  const repos = getUnifiedRepositories();
   return repos[name];
 }
 
 /**
- * Destroy all repository instances.
- * Call on app shutdown or when switching backends.
+ * Destroy repository instance.
+ * Call on app shutdown.
  */
 export function destroyUnifiedRepositories(): void {
-  sqliteFactoryInstance = null;
-  apiFactoryInstance = null;
+  repositoryInstance = null;
 }
 
 /**
- * Force recreation of repository instances.
- * Useful after configuration changes.
+ * Force recreation of repository instance.
+ * Useful after configuration changes or reconnection.
  */
-export function resetUnifiedRepositories(db?: Kysely<Database>): UnifiedRepositories {
+export function resetUnifiedRepositories(): UnifiedRepositories {
   destroyUnifiedRepositories();
-  return getUnifiedRepositories(db);
+  return getUnifiedRepositories();
 }
 
 // ============================================================================
@@ -254,10 +172,6 @@ export function resetUnifiedRepositories(db?: Kysely<Database>): UnifiedReposito
  * Check if API backend is ready (connected and authenticated)
  */
 export async function isApiBackendReady(): Promise<boolean> {
-  if (!isUsingApiBackend()) {
-    return false;
-  }
-
   try {
     const client = getDispatchClient();
     return client.isConnected() && client.isAuthenticated();
@@ -270,22 +184,11 @@ export async function isApiBackendReady(): Promise<boolean> {
  * Get backend status for UI display
  */
 export function getBackendStatus(): {
-  mode: 'sqlite' | 'api';
+  mode: 'api';
   configured: boolean;
   connected: boolean;
   hubUrl: string;
 } {
-  const useApi = isUsingApiBackend();
-
-  if (!useApi) {
-    return {
-      mode: 'sqlite',
-      configured: true,
-      connected: true,
-      hubUrl: '',
-    };
-  }
-
   try {
     const client = getDispatchClient();
     return {
@@ -302,4 +205,22 @@ export function getBackendStatus(): {
       hubUrl: config.dispatchHubUrl,
     };
   }
+}
+
+// ============================================================================
+// Backwards Compatibility (deprecated - will be removed)
+// ============================================================================
+
+/**
+ * @deprecated Use getRepositoryConfig() instead
+ */
+export function isUsingApiBackend(): boolean {
+  return true; // Always using API backend now
+}
+
+/**
+ * @deprecated Configuration is now API-only
+ */
+export function setRepositoryConfig(_updates: Partial<RepositoryConfig>): void {
+  console.warn('setRepositoryConfig is deprecated - app now always uses API backend');
 }

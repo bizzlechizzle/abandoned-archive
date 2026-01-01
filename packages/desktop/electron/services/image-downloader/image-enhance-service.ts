@@ -376,12 +376,16 @@ const SITE_PATTERNS: SitePattern[] = [
     generateCandidates: (url: URL) => {
       const candidates: string[] = [];
       // Imgur uses single-letter suffixes: a, b, s, t, m, l, h (small to huge)
-      const match = url.pathname.match(/^(.+\/[a-zA-Z0-9]+)[abmsltlh]\.(\w+)$/);
+      // Handle both /abcdefgh.jpg and /gallery/abcdefgh.jpg patterns
+      const match = url.pathname.match(/^(.*\/?)([a-zA-Z0-9]+)[abmsltlh]\.(\w+)$/);
       if (match) {
+        const prefix = match[1] || '/';
+        const id = match[2];
+        const ext = match[3];
         // Try without suffix (original)
-        candidates.push(`${url.origin}${match[1]}.${match[2]}`);
+        candidates.push(`${url.origin}${prefix}${id}.${ext}`);
         // Try 'h' suffix (huge)
-        candidates.push(`${url.origin}${match[1]}h.${match[2]}`);
+        candidates.push(`${url.origin}${prefix}${id}h.${ext}`);
       }
       return candidates;
     },

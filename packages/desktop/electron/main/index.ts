@@ -2,28 +2,18 @@ import { app, BrowserWindow, dialog, session, protocol, net } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { getDatabase, closeDatabase, getRawDatabase } from './database';
 import { registerIpcHandlers, shutdownDispatchClient } from './ipc-handlers';
 import { getHealthMonitor } from '../services/health-monitor';
-import { getRecoverySystem } from '../services/recovery-system';
 import { getConfigService } from '../services/config-service';
 import { getLogger } from '../services/logger-service';
-// OPT-037: Import integrity checker for GPS/address gap repair
-import { getIntegrityChecker } from '../services/integrity-checker';
-import { getBackupScheduler } from '../services/backup-scheduler';
 import { initBrowserViewManager, destroyBrowserViewManager } from '../services/browser-view-manager';
 import { startBookmarkAPIServer, stopBookmarkAPIServer } from '../services/bookmark-api-server';
 import { startWebSocketServer, stopWebSocketServer } from '../services/websocket-server';
 import { terminateDetachedBrowser } from '../services/detached-browser-service';
-import { getDatabaseArchiveService } from '../services/database-archive-service';
 import { stopOllama } from '../services/ollama-lifecycle-service';
 import { stopLiteLLM } from '../services/litellm-lifecycle-service';
 import { getPreprocessingService } from '../services/extraction/preprocessing-service';
-import { SQLiteWebSourcesRepository } from '../repositories/sqlite-websources-repository';
-import { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
-import { SQLiteSubLocationRepository } from '../repositories/sqlite-sublocation-repository';
-// CLI-first architecture: Bridge to @aa/services
-import { initCliBridge } from '../services/cli-bridge';
+import { getUnifiedRepositories, getBackendStatus } from '../repositories/unified-repository-factory';
 // Pipeline tools auto-update on startup
 import { updateAllPipelineTools } from '../services/pipeline-tools-updater';
 
@@ -239,15 +229,19 @@ function createWindow() {
 /**
  * Startup Orchestrator
  * Sequential initialization with proper error handling
+ *
+ * Architecture: API-Only Mode
+ * All data operations go through the Dispatch Hub's PostgreSQL database.
+ * There is no local SQLite storage - the desktop app is a thin client.
  */
 async function startupOrchestrator(): Promise<void> {
   const startTime = Date.now();
   const logger = getLogger();
-  logger.info('Main', 'Starting application initialization');
+  logger.info('Main', 'Starting application initialization (API-Only mode)');
 
   try {
     // Step 1: Load configuration
-    logger.info('Main', 'Step 1/5: Loading configuration');
+    logger.info('Main', 'Step 1/4: Loading configuration');
     const configService = getConfigService();
     await configService.load();
     logger.info('Main', 'Configuration loaded successfully');
@@ -276,72 +270,44 @@ async function startupOrchestrator(): Promise<void> {
       });
     }
 
-    // Step 2: Initialize database
-    logger.info('Main', 'Step 2/5: Initializing database');
-    const db = getDatabase();
-    logger.info('Main', 'Database initialized successfully');
+    // Step 2: Verify Dispatch Hub connection
+    logger.info('Main', 'Step 2/4: Verifying Dispatch Hub connection');
+    const backendStatus = getBackendStatus();
+    logger.info('Main', 'Dispatch Hub status', {
+      mode: backendStatus.mode,
+      configured: backendStatus.configured,
+      connected: backendStatus.connected,
+      hubUrl: backendStatus.hubUrl,
+    });
 
-    // Step 2b: Initialize CLI bridge for @aa/services integration
-    logger.info('Main', 'Step 2b: Initializing CLI bridge');
-    initCliBridge(getRawDatabase());
-    logger.info('Main', 'CLI bridge initialized successfully');
+    if (!backendStatus.configured) {
+      logger.warn('Main', 'Dispatch Hub not configured - some features may be unavailable');
+    }
 
     // Step 3: Initialize health monitoring
-    logger.info('Main', 'Step 3/5: Initializing health monitoring');
+    logger.info('Main', 'Step 3/4: Initializing health monitoring');
     const healthMonitor = getHealthMonitor();
     await healthMonitor.initialize();
     logger.info('Main', 'Health monitoring initialized successfully');
 
-    // Step 4: Check database health and recover if needed
-    logger.info('Main', 'Step 4/5: Checking database health');
-    const recoverySystem = getRecoverySystem();
-    const recoveryResult = await recoverySystem.checkAndRecover();
-
-    if (recoveryResult) {
-      logger.info('Main', 'Recovery performed', { action: recoveryResult.action });
-      if (!recoveryResult.success) {
-        logger.error('Main', 'Recovery failed, application may not function correctly');
-        // Note: showRecoveryDialog doesn't exist, recovery is handled internally
-      }
-    } else {
-      logger.info('Main', 'Database health check passed, no recovery needed');
-    }
-
-    // OPT-037: Step 4b - Check and fix GPS/address consistency gaps
-    logger.info('Main', 'Step 4b: Checking GPS/address consistency');
-    try {
-      const integrityChecker = getIntegrityChecker();
-      const gpsCheck = await integrityChecker.checkGpsAddressConsistency();
-      if (gpsCheck.found > 0) {
-        logger.info('Main', `Fixed ${gpsCheck.fixed}/${gpsCheck.found} GPS/address gaps`);
-      } else {
-        logger.info('Main', 'No GPS/address gaps found');
-      }
-    } catch (gpsCheckError) {
-      // Non-fatal: log warning but continue startup
-      logger.warn('Main', 'GPS/address consistency check failed', { message: (gpsCheckError as Error).message, stack: (gpsCheckError as Error).stack });
-    }
-
-    // Step 5: Register IPC handlers
-    logger.info('Main', 'Step 5/6: Registering IPC handlers');
+    // Step 4: Register IPC handlers
+    logger.info('Main', 'Step 4/4: Registering IPC handlers');
     registerIpcHandlers();
     logger.info('Main', 'IPC handlers registered successfully');
 
-    // Step 5b: Start Bookmark API Server for Research Browser extension
-    // OPT-109: Uses WebSourcesRepository (replaces deprecated BookmarksRepository)
+    // Step 4b: Start Bookmark API Server for Research Browser extension
+    // Uses API repositories from unified factory
     logger.info('Main', 'Starting Bookmark API Server');
-    const webSourcesRepo = new SQLiteWebSourcesRepository(db);
-    const locationsRepo = new SQLiteLocationRepository(db);
-    const subLocationsRepo = new SQLiteSubLocationRepository(db);
+    const repos = getUnifiedRepositories();
     try {
-      await startBookmarkAPIServer(webSourcesRepo, locationsRepo, subLocationsRepo, db);
+      await startBookmarkAPIServer(repos.websources, repos.locations, repos.sublocations);
       logger.info('Main', 'Bookmark API Server started successfully');
     } catch (error) {
       // Non-fatal: log warning but continue startup (research browser feature may not work)
       logger.warn('Main', 'Failed to start Bookmark API Server', { message: (error as Error).message, stack: (error as Error).stack });
     }
 
-    // Step 5c: Start WebSocket Server for real-time extension updates
+    // Step 4c: Start WebSocket Server for real-time extension updates
     logger.info('Main', 'Starting WebSocket Server');
     try {
       await startWebSocketServer();
@@ -349,35 +315,6 @@ async function startupOrchestrator(): Promise<void> {
     } catch (error) {
       // Non-fatal: extension will work without real-time updates
       logger.warn('Main', 'Failed to start WebSocket Server', { message: (error as Error).message, stack: (error as Error).stack });
-    }
-
-    // FIX 5.1: Step 6 - Auto backup on startup (if enabled)
-    const config = configService.get();
-    const backupScheduler = getBackupScheduler();
-    await backupScheduler.initialize();
-
-    if (config.backup.enabled && config.backup.backupOnStartup) {
-      logger.info('Main', 'Step 6/7: Creating startup backup');
-      try {
-        const backupResult = await backupScheduler.createAndVerifyBackup();
-        if (backupResult) {
-          logger.info('Main', 'Startup backup created successfully', { path: backupResult.filePath, verified: backupResult.verified });
-        }
-      } catch (backupError) {
-        // Non-fatal: log warning but continue startup
-        logger.warn('Main', 'Failed to create startup backup', { message: (backupError as Error).message, stack: (backupError as Error).stack });
-      }
-    } else {
-      logger.info('Main', 'Step 6/7: Startup backup skipped (disabled in config)');
-    }
-
-    // FIX 5.3: Step 7 - Start scheduled backups (if enabled)
-    if (config.backup.enabled && config.backup.scheduledBackup) {
-      const intervalMs = config.backup.scheduledBackupIntervalHours * 60 * 60 * 1000;
-      logger.info('Main', 'Step 7/7: Starting scheduled backups', { intervalHours: config.backup.scheduledBackupIntervalHours });
-      backupScheduler.startScheduledBackups(intervalMs);
-    } else {
-      logger.info('Main', 'Step 7/7: Scheduled backups disabled');
     }
 
     const duration = Date.now() - startTime;
@@ -413,10 +350,10 @@ app.whenReady().then(async () => {
       // SECURITY: Normalize path to prevent traversal attacks (../ sequences)
       const normalizedPath = path.normalize(filePath);
 
-      // SECURITY: Get allowed directories from settings
-      const db = getDatabase();
-      const archiveSetting = await db.selectFrom('settings').select('value').where('key', '=', 'archive_folder').executeTakeFirst();
-      const archiveFolder = archiveSetting?.value;
+      // SECURITY: Get allowed directories from config service
+      const configService = getConfigService();
+      const config = configService.get();
+      const archiveFolder = config.archiveFolder;
 
       // SECURITY: Define allowed base directories
       // - Archive folder (user-configured media storage)
@@ -589,24 +526,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async () => {
-  // Export database to archive folder before quit
-  try {
-    const archiveService = getDatabaseArchiveService();
-    const archiveConfigured = await archiveService.isArchiveConfigured();
-
-    if (archiveConfigured) {
-      console.log('Exporting database to archive before quit...');
-      const result = await archiveService.exportToArchive();
-      if (result.success) {
-        console.log('Database exported to archive successfully');
-      } else {
-        console.error('Database archive export failed:', result.error);
-      }
-    }
-  } catch (error) {
-    console.error('Failed to export database to archive:', error);
-  }
-
   // Close research browser (external Ungoogled Chromium - zero-detection mode)
   try {
     await terminateDetachedBrowser();
@@ -680,6 +599,4 @@ app.on('before-quit', async () => {
   } catch (error) {
     console.error('Failed to stop spaCy preprocessing server:', error);
   }
-
-  closeDatabase();
 });

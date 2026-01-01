@@ -10,7 +10,6 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "electron",
-      "better-sqlite3",
       "esbuild",
       "sharp",
       "7zip-bin",

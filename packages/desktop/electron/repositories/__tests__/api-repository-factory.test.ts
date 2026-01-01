@@ -440,8 +440,8 @@ describe('Repository Method Coverage', () => {
     expect(typeof factory.imports.findById).toBe('function');
 
     // Timeline repository core methods
-    expect(typeof factory.timeline.getEntries).toBe('function');
-    expect(typeof factory.timeline.getYearsWithMedia).toBe('function');
+    expect(typeof factory.timeline.getEvents).toBe('function');
+    expect(typeof factory.timeline.getYearsWithEvents).toBe('function');
 
     // Websources repository core methods
     expect(typeof factory.websources.create).toBe('function');

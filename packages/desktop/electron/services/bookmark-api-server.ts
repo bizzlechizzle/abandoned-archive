@@ -7,6 +7,9 @@
  * Migration Note (OPT-109): Now uses web_sources table instead of bookmarks.
  * HTTP API endpoint names preserved for extension backward compatibility.
  *
+ * Architecture: API-Only Mode
+ * All data operations go through the Dispatch Hub's PostgreSQL database.
+ *
  * Endpoints:
  * - GET  /api/status          - Health check
  * - POST /api/bookmark        - Save a web source (with optional subid)
@@ -22,17 +25,13 @@ import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
 import { getLogger } from './logger-service';
+import { getConfigService } from './config-service';
 import {
   notifyWebSourceSaved,
   notifyLocationsUpdated,
 } from './websocket-server';
 import { detectSourceType } from './source-type-detector';
-import { JobQueue, IMPORT_QUEUES } from './job-queue';
-import type { Kysely } from 'kysely';
-import type { Database } from '../main/database.types';
-import type { SQLiteWebSourcesRepository, WebSource } from '../repositories/sqlite-websources-repository';
-import type { SQLiteLocationRepository } from '../repositories/sqlite-location-repository';
-import type { SQLiteSubLocationRepository } from '../repositories/sqlite-sublocation-repository';
+import type { WebSourcesRepository, LocationRepository, SublocationRepository } from '../repositories/unified-repository-factory';
 
 // OPT-115: Extension capture data structure
 // OPT-121: Enhanced with session data for authenticated re-fetch
@@ -104,6 +103,18 @@ interface ExtensionCapture {
   viewport?: { width: number; height: number };
 }
 
+// Web source type from API repository
+interface WebSource {
+  source_id: string;
+  url: string;
+  title: string | null;
+  locid: string | null;
+  subid: string | null;
+  source_type: string;
+  created_at: string;
+  locnam?: string;
+}
+
 const PORT = 47123;
 const logger = getLogger();
 
@@ -111,36 +122,29 @@ const logger = getLogger();
 let cachedArchiveBasePath: string | null = null;
 
 /**
- * Get archive base path from settings or fallback to userData
- * OPT-121: Now properly reads from database settings
+ * Get archive base path from config service or fallback to userData
  */
 async function getArchiveBasePath(): Promise<string> {
   if (cachedArchiveBasePath) return cachedArchiveBasePath;
 
   const userData = app.getPath('userData');
 
-  // OPT-121: Try to read archive_folder from database settings
+  // Get archive folder from config service
   try {
-    const dbPath = path.join(userData, 'au-archive.db');
-    if (fs.existsSync(dbPath)) {
-      // Use dynamic import for better-sqlite3 since it's a native module
-      const Database = (await import('better-sqlite3')).default;
-      const db = new Database(dbPath, { readonly: true });
-      const result = db.prepare("SELECT value FROM settings WHERE key = 'archive_folder'").get() as { value: string } | undefined;
-      if (result?.value) {
-        cachedArchiveBasePath = result.value;
-        logger.info('BookmarkAPI', `[OPT-121] Using configured archive path: ${cachedArchiveBasePath}`);
-      }
-      db.close();
+    const configService = getConfigService();
+    const config = configService.get();
+    if (config.archiveFolder) {
+      cachedArchiveBasePath = config.archiveFolder;
+      logger.info('BookmarkAPI', `Using configured archive path: ${cachedArchiveBasePath}`);
     }
   } catch (err) {
-    logger.warn('BookmarkAPI', `[OPT-121] Could not read archive_folder from database: ${err}`);
+    logger.warn('BookmarkAPI', `Could not read archive_folder from config: ${err}`);
   }
 
   // Fallback to userData if not set
   if (!cachedArchiveBasePath) {
     cachedArchiveBasePath = path.join(userData, 'archive');
-    logger.info('BookmarkAPI', `[OPT-121] Using fallback archive path: ${cachedArchiveBasePath}`);
+    logger.info('BookmarkAPI', `Using fallback archive path: ${cachedArchiveBasePath}`);
   }
 
   // Ensure directory exists
@@ -270,11 +274,12 @@ async function processExtensionCapture(
     await webSourcesRepository.update(sourceId, updateData);
 
     // Store images metadata in web_source_images table
-    if (capture.images && capture.images.length > 0) {
+    if (capture.images && capture.images.length > 0 && 'insertImage' in webSourcesRepository) {
       try {
+        const repo = webSourcesRepository as { insertImage: (sourceId: string, index: number, data: Record<string, unknown>) => Promise<void> };
         for (let i = 0; i < capture.images.length; i++) {
           const img = capture.images[i];
-          await webSourcesRepository.insertImage(sourceId, i, {
+          await repo.insertImage(sourceId, i, {
             url: img.url,
             alt: img.alt || undefined,
             caption: img.caption || undefined,
@@ -325,12 +330,10 @@ async function processExtensionCapture(
   }
 }
 
-let webSourcesRepository: SQLiteWebSourcesRepository | null = null;
-let locationsRepository: SQLiteLocationRepository | null = null;
-let subLocationsRepository: SQLiteSubLocationRepository | null = null;
+let webSourcesRepository: WebSourcesRepository | null = null;
+let locationsRepository: LocationRepository | null = null;
+let subLocationsRepository: SublocationRepository | null = null;
 let server: http.Server | null = null;
-let jobQueue: JobQueue | null = null;
-let database: Kysely<Database> | null = null;
 
 /**
  * Parse JSON body from incoming request
@@ -394,7 +397,7 @@ async function handleRequest(
   res: http.ServerResponse
 ): Promise<void> {
   const url = new URL(req.url || '/', `http://localhost:${PORT}`);
-  const path = url.pathname;
+  const reqPath = url.pathname;
   const method = req.method || 'GET';
 
   // Handle CORS preflight
@@ -403,18 +406,18 @@ async function handleRequest(
     return;
   }
 
-  logger.info('BookmarkAPI', `${method} ${path}`);
+  logger.info('BookmarkAPI', `${method} ${reqPath}`);
 
   try {
     // GET /api/status - Check if app is running
-    if (method === 'GET' && path === '/api/status') {
+    if (method === 'GET' && reqPath === '/api/status') {
       sendJson(res, 200, { running: true, version: '2.0.0' });
       return;
     }
 
     // POST /api/bookmark - Save a web source (endpoint name kept for extension compat)
     // OPT-115: Now handles full page capture from extension
-    if (method === 'POST' && path === '/api/bookmark') {
+    if (method === 'POST' && reqPath === '/api/bookmark') {
       if (!webSourcesRepository) {
         sendJson(res, 500, { error: 'Web sources repository not initialized' });
         return;
@@ -428,7 +431,7 @@ async function handleRequest(
       }
 
       // Check for duplicate before creating
-      const existingSource = await webSourcesRepository.findByUrl(body.url);
+      const existingSource = await webSourcesRepository.findByUrl(body.url) as WebSource | null;
       if (existingSource) {
         // Return existing source info with duplicate flag for premium UX
         sendJson(res, 200, {
@@ -455,7 +458,7 @@ async function handleRequest(
           subid: typeof body.subid === 'string' ? body.subid : null,
           source_type: detectedType,
           auth_imp: null,
-        });
+        }) as WebSource;
 
         // OPT-115: Process extension capture data
         if (capture) {
@@ -485,7 +488,7 @@ async function handleRequest(
     }
 
     // POST /api/location - Create a new location from the extension
-    if (method === 'POST' && path === '/api/location') {
+    if (method === 'POST' && reqPath === '/api/location') {
       if (!locationsRepository) {
         sendJson(res, 500, { error: 'Locations repository not initialized' });
         return;
@@ -539,7 +542,7 @@ async function handleRequest(
     }
 
     // GET /api/locations?search=query - Search locations for autocomplete
-    if (method === 'GET' && path === '/api/locations') {
+    if (method === 'GET' && reqPath === '/api/locations') {
       if (!locationsRepository) {
         sendJson(res, 500, { error: 'Locations repository not initialized' });
         return;
@@ -559,7 +562,7 @@ async function handleRequest(
     }
 
     // GET /api/search?q=query - Unified search for locations AND sub-locations
-    if (method === 'GET' && path === '/api/search') {
+    if (method === 'GET' && reqPath === '/api/search') {
       if (!locationsRepository || !subLocationsRepository) {
         sendJson(res, 500, { error: 'Repositories not initialized' });
         return;
@@ -625,14 +628,14 @@ async function handleRequest(
     }
 
     // GET /api/recent?limit=5 - Get recent web sources (endpoint name kept for compat)
-    if (method === 'GET' && path === '/api/recent') {
+    if (method === 'GET' && reqPath === '/api/recent') {
       if (!webSourcesRepository) {
         sendJson(res, 500, { error: 'Web sources repository not initialized' });
         return;
       }
 
       const limit = parseInt(url.searchParams.get('limit') || '5', 10);
-      const sources = await webSourcesRepository.findRecent(limit);
+      const sources = await webSourcesRepository.findRecent(limit) as WebSource[];
 
       // Map to legacy format for extension compatibility
       sendJson(res, 200, { bookmarks: sources.map(mapToBookmarkResponse) });
@@ -640,7 +643,7 @@ async function handleRequest(
     }
 
     // GET /api/recent-locations?limit=5 - Get recently used/created locations
-    if (method === 'GET' && path === '/api/recent-locations') {
+    if (method === 'GET' && reqPath === '/api/recent-locations') {
       if (!webSourcesRepository || !locationsRepository) {
         sendJson(res, 500, { error: 'Repositories not initialized' });
         return;
@@ -651,7 +654,7 @@ async function handleRequest(
       const recentLocations: Array<{ locid: string; locnam: string; address_state: string | null }> = [];
 
       // First: Get locations from recent web sources (most recently used)
-      const recentSources = await webSourcesRepository.findRecent(50);
+      const recentSources = await webSourcesRepository.findRecent(50) as WebSource[];
       for (const source of recentSources) {
         if (source.locid && !seenLocids.has(source.locid)) {
           seenLocids.add(source.locid);
@@ -703,29 +706,19 @@ async function handleRequest(
 /**
  * Start the HTTP server
  *
- * @param webSourcesRepo - Web sources repository (OPT-109 replacement for bookmarks)
- * @param locationsRepo - Locations repository
- * @param subLocationsRepo - Sub-locations repository
- * @param db - Kysely database instance (OPT-115: needed for job queue)
+ * @param webSourcesRepo - Web sources repository (API-based)
+ * @param locationsRepo - Locations repository (API-based)
+ * @param subLocationsRepo - Sub-locations repository (API-based)
  */
 export function startBookmarkAPIServer(
-  webSourcesRepo: SQLiteWebSourcesRepository,
-  locationsRepo: SQLiteLocationRepository,
-  subLocationsRepo: SQLiteSubLocationRepository,
-  db?: Kysely<Database>
+  webSourcesRepo: WebSourcesRepository,
+  locationsRepo: LocationRepository,
+  subLocationsRepo: SublocationRepository
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     webSourcesRepository = webSourcesRepo;
     locationsRepository = locationsRepo;
     subLocationsRepository = subLocationsRepo;
-
-    // OPT-115: Job queue disabled - all processing through dispatch hub
-    // Websource archiving will be available when dispatch worker plugin is implemented
-    if (db) {
-      database = db;
-      // jobQueue = new JobQueue(db);
-      logger.info('BookmarkAPI', '[OPT-115] Job queue disabled - requires dispatch worker plugin');
-    }
 
     server = http.createServer((req, res) => {
       handleRequest(req, res).catch((error) => {
@@ -762,8 +755,6 @@ export function stopBookmarkAPIServer(): Promise<void> {
         webSourcesRepository = null;
         locationsRepository = null;
         subLocationsRepository = null;
-        jobQueue = null;
-        database = null;
         resolve();
       });
     } else {
