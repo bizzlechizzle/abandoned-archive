@@ -30,8 +30,42 @@ import {
   notifyWebSourceSaved,
   notifyLocationsUpdated,
 } from './websocket-server';
-import { detectSourceType } from './source-type-detector';
 import type { WebSourcesRepository, LocationRepository, SublocationRepository } from '../repositories/unified-repository-factory';
+
+import type { WebSourceType } from '../repositories/api-websources-repository';
+
+/**
+ * Simple source type detection from URL.
+ * Returns the most likely source type based on domain patterns.
+ */
+function detectSourceType(url: string): WebSourceType {
+  try {
+    const parsed = new URL(url);
+    const domain = parsed.hostname.toLowerCase();
+
+    // Social media
+    if (domain.includes('facebook.') || domain.includes('fb.com')) return 'social';
+    if (domain.includes('instagram.')) return 'social';
+    if (domain.includes('twitter.') || domain.includes('x.com')) return 'social';
+    if (domain.includes('reddit.')) return 'social';
+
+    // Video platforms
+    if (domain.includes('youtube.') || domain.includes('youtu.be')) return 'video';
+    if (domain.includes('vimeo.')) return 'video';
+
+    // Document/Archive
+    if (domain.includes('archive.org')) return 'archive';
+    if (parsed.pathname.endsWith('.pdf')) return 'document';
+
+    // Gallery (image-heavy sites)
+    if (domain.includes('flickr.') || domain.includes('imgur.')) return 'gallery';
+
+    // Default to article
+    return 'article';
+  } catch {
+    return 'article';
+  }
+}
 
 // OPT-115: Extension capture data structure
 // OPT-121: Enhanced with session data for authenticated re-fetch
@@ -276,19 +310,13 @@ async function processExtensionCapture(
     // Store images metadata in web_source_images table
     if (capture.images && capture.images.length > 0 && 'insertImage' in webSourcesRepository) {
       try {
-        const repo = webSourcesRepository as { insertImage: (sourceId: string, index: number, data: Record<string, unknown>) => Promise<void> };
         for (let i = 0; i < capture.images.length; i++) {
           const img = capture.images[i];
-          await repo.insertImage(sourceId, i, {
+          await webSourcesRepository.insertImage(sourceId, i, {
             url: img.url,
             alt: img.alt || undefined,
-            caption: img.caption || undefined,
-            credit: img.credit || undefined,
-            attribution: img.attribution || undefined,
-            srcsetVariants: img.srcset ? [img.srcset] : undefined,
             width: img.width || undefined,
             height: img.height || undefined,
-            isHero: img.isHero,
           });
         }
         logger.info('BookmarkAPI', `[OPT-115] Stored ${capture.images.length} image metadata records`);

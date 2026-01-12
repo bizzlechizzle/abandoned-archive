@@ -15,24 +15,16 @@
  * - api-dispatch.ts: dispatch:* handlers
  * - stats-settings.ts: stats:* and settings:* handlers
  * - shell-dialog.ts: shell:* and dialog:* handlers
- * - health.ts: health:* handlers
  * - research-browser.ts: research:* handlers (external browser)
  */
 
 import { getBackendStatus } from '../../repositories/unified-repository-factory';
 import { registerShellHandlers, registerDialogHandlers } from './shell-dialog';
-import { registerHealthHandlers } from './health';
 import { registerResearchBrowserHandlers } from './research-browser';
-import { registerStorageHandlers } from './storage';
-import { registerOllamaLifecycleHandlers } from './ollama-lifecycle';
 import {
   initializeBrowserImageCapture,
   cleanupBrowserImageCapture,
 } from '../../services/image-downloader/browser-image-capture';
-import { cleanupOrphanOllama, stopOllama } from '../../services/ollama-lifecycle-service';
-import { registerCredentialHandlers } from './credentials';
-import { registerLiteLLMHandlers, shutdownLiteLLM, cleanupOrphanLiteLLM } from './litellm';
-import { registerAIHandlers } from './ai';
 import { registerDispatchHandlers, initializeDispatchClient, shutdownDispatchClient } from './dispatch';
 // API-based handlers (all data operations go through Dispatch Hub)
 import { registerApiIpcHandlers, shutdownApiIpcHandlers } from './api-handlers';
@@ -62,28 +54,8 @@ export function registerIpcHandlers() {
   registerShellHandlers();
   registerDialogHandlers();
 
-  // Health monitoring
-  registerHealthHandlers();
-
   // Research browser (external Ungoogled Chromium)
   registerResearchBrowserHandlers();
-
-  // Storage monitoring (local disk space checks)
-  registerStorageHandlers();
-
-  // Credential management (local secure storage)
-  registerCredentialHandlers();
-
-  // LiteLLM Proxy Gateway
-  cleanupOrphanLiteLLM();
-  registerLiteLLMHandlers();
-
-  // AI Service (Unified Abstraction)
-  registerAIHandlers();
-
-  // Ollama lifecycle management
-  cleanupOrphanOllama();
-  registerOllamaLifecycleHandlers();
 
   // Browser Image Capture (network monitoring, context menu)
   initializeBrowserImageCapture({
@@ -112,12 +84,6 @@ export function shutdownExtractionHandlers() {
 export function setMonitoringMainWindow(_window: unknown) {
   // No-op in API mode - monitoring via dispatch hub
 }
-
-// Export Ollama lifecycle cleanup for app shutdown
-export { stopOllama as stopOllamaLifecycle };
-
-// Export LiteLLM lifecycle cleanup for app shutdown
-export { shutdownLiteLLM as stopLiteLLMLifecycle };
 
 // Export Dispatch client shutdown for app cleanup
 export { shutdownDispatchClient };

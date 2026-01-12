@@ -2,7 +2,7 @@
   import type { Location } from '@aa/core';
   import { LocationEntity } from '@aa/core';
   import AutocompleteInput from './AutocompleteInput.svelte';
-  import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
+  import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../utils/us-state-codes';
   import { DOCUMENTATION_OPTIONS, ACCESS_OPTIONS, GPS_SOURCE_OPTIONS } from '../constants/location-enums';
 
   // Field names that can be shown

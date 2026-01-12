@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import type { Location, LocationInput } from '@aa/core';
   import AutocompleteInput from './AutocompleteInput.svelte';
-  import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
+  import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../utils/us-state-codes';
   import { getCategoryForClass } from '../lib/type-hierarchy';
 
   interface Props {

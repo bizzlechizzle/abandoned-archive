@@ -12,7 +12,6 @@
   }
 
   let archivePath = $state('');
-  let deleteOriginals = $state(false);
   let currentUserId = $state<string | null>(null);
   let currentUsername = $state('default');
   let importMap = $state(true);
@@ -52,7 +51,6 @@
   let archiveExpanded = $state(false);
   let mapsExpanded = $state(false);
   let maintenanceExpanded = $state(false);
-  let databaseExpanded = $state(false);
   let healthExpanded = $state(false);
 
   // DESIGN_SYSTEM: Theme state (dark/light/system)
@@ -82,22 +80,12 @@
     missingFiles: number;
   } | null>(null);
 
-  // Database health state
-  let dbHealthy = $state(true);
-  let backupCount = $state(0);
-  let internalBackups = $state<Array<{ id: string; date: string; size: string; path: string }>>([]);
-  let showRestoreModal = $state(false);
-  let userExporting = $state(false);
-
   // PIN verification modal state
   let showPinModal = $state(false);
-  let pinAction = $state<'archive' | 'deleteOnImport' | 'startupPin' | null>(null);
+  let pinAction = $state<'archive' | 'startupPin' | null>(null);
   let pinInput = $state('');
   let pinError = $state('');
   let pinVerifying = $state(false);
-
-  // Delete warning modal state
-  let showDeleteWarning = $state(false);
 
   // Location picker modal state
   interface LocationBasic {
@@ -140,9 +128,7 @@
     oldestAccess: string | null;
     newestAccess: string | null;
   } | null>(null);
-  // OPT-053: DEPRECATED - kept for backwards compatibility but unused
-  let purgingProxies = $state(false);
-  let clearingProxies = $state(false);
+  // Proxy message for runPurgeCache feedback
   let proxyMessage = $state('');
 
   // P6: Darktable state removed per v010steps.md
@@ -221,25 +207,6 @@
   let validationProgress = $state<{ current: number; total: number; currentLocation: string } | null>(null);
   let bagValidationMessage = $state('');
 
-  // Database Archive Export state
-  let archiveExportStatus = $state<{
-    configured: boolean;
-    exported: boolean;
-    verified: boolean;
-    lastExport: {
-      exportedAt: string;
-      appVersion: string;
-      locationCount: number;
-      imageCount: number;
-      videoCount: number;
-      documentCount: number;
-      mapCount: number;
-      checksum: string;
-    } | null;
-  } | null>(null);
-  let archiveExporting = $state(false);
-  let archiveExportMessage = $state('');
-
   async function loadSettings() {
     try {
       loading = true;
@@ -250,7 +217,6 @@
       const settings = await window.electronAPI.settings.getAll();
 
       archivePath = settings.archive_folder || '';
-      deleteOriginals = settings.delete_on_import === 'true';
       currentUserId = settings.current_user_id || null;
       currentUsername = settings.current_user || 'default';
       appMode = (settings.app_mode as 'single' | 'multi') || 'single';
@@ -855,75 +821,6 @@
   }
 
   /**
-   * OPT-053: DEPRECATED - Proxies are now permanent (Immich model)
-   * This function calls a no-op handler for backwards compatibility
-   */
-  async function purgeOldProxies() {
-    if (!window.electronAPI?.media?.purgeOldProxies) {
-      proxyMessage = 'Proxy purge not available';
-      return;
-    }
-
-    try {
-      purgingProxies = true;
-      proxyMessage = 'Purging old proxies...';
-
-      const result = await window.electronAPI.media.purgeOldProxies(30);
-
-      if (result.deleted === 0) {
-        proxyMessage = 'No proxies older than 30 days found';
-      } else {
-        proxyMessage = `Purged ${result.deleted} old proxies (freed ${result.freedMB} MB)`;
-      }
-
-      await loadProxyCacheStats();
-
-      setTimeout(() => {
-        proxyMessage = '';
-      }, 5000);
-    } catch (error) {
-      console.error('Proxy purge failed:', error);
-      proxyMessage = 'Purge failed';
-    } finally {
-      purgingProxies = false;
-    }
-  }
-
-  /**
-   * OPT-053: DEPRECATED - Proxies are now permanent (Immich model)
-   * This function calls a no-op handler for backwards compatibility
-   */
-  async function clearAllProxies() {
-    if (!window.electronAPI?.media?.clearAllProxies) {
-      proxyMessage = 'Proxy clear not available';
-      return;
-    }
-
-    if (!confirm('Are you sure you want to clear all video proxies? They will be regenerated as needed.')) {
-      return;
-    }
-
-    try {
-      clearingProxies = true;
-      proxyMessage = 'Clearing all proxies...';
-
-      const result = await window.electronAPI.media.clearAllProxies();
-      proxyMessage = `Cleared ${result.deleted} proxies (freed ${result.freedMB} MB)`;
-
-      await loadProxyCacheStats();
-
-      setTimeout(() => {
-        proxyMessage = '';
-      }, 5000);
-    } catch (error) {
-      console.error('Proxy clear failed:', error);
-      proxyMessage = 'Clear failed';
-    } finally {
-      clearingProxies = false;
-    }
-  }
-
-  /**
    * Load reference maps list
    * OPT-048: Removed findCataloguedPoints() call - was O(N×M) blocking operation
    */
@@ -1196,7 +1093,7 @@
   }
 
   // PIN verification helpers
-  async function requestPinForAction(action: 'archive' | 'deleteOnImport' | 'startupPin') {
+  async function requestPinForAction(action: 'archive' | 'startupPin') {
     // Check if current user has a PIN set
     if (!currentUserId) {
       // No user logged in, proceed directly
@@ -1256,35 +1153,12 @@
     }
   }
 
-  function executePinAction(action: 'archive' | 'deleteOnImport' | 'startupPin') {
+  function executePinAction(action: 'archive' | 'startupPin') {
     if (action === 'archive') {
       selectArchiveFolder();
-    } else if (action === 'deleteOnImport') {
-      // If turning ON delete on import, show warning first
-      if (!deleteOriginals) {
-        showDeleteWarning = true;
-      } else {
-        // Turning off, no warning needed
-        toggleDeleteOnImport();
-      }
     } else if (action === 'startupPin') {
       toggleRequireLogin();
     }
-  }
-
-  async function toggleDeleteOnImport() {
-    deleteOriginals = !deleteOriginals;
-    showDeleteWarning = false;
-    // Auto-save the setting
-    if (window.electronAPI?.settings) {
-      await window.electronAPI.settings.set('delete_on_import', deleteOriginals.toString());
-      saveMessage = deleteOriginals ? 'Files will be deleted after import' : 'Original files will be preserved';
-      setTimeout(() => saveMessage = '', 3000);
-    }
-  }
-
-  function cancelDeleteWarning() {
-    showDeleteWarning = false;
   }
 
   // Location picker modal helpers
@@ -1537,187 +1411,6 @@
     }
   }
 
-  // Database functions (moved from DatabaseSettings component)
-  let backingUp = $state(false);
-  let backupMessage = $state('');
-  let restoring = $state(false);
-  let restoreMessage = $state('');
-
-  async function backupDatabase() {
-    try {
-      backingUp = true;
-      backupMessage = '';
-
-      const result = await window.electronAPI.database.backup();
-
-      if (result.success) {
-        backupMessage = `Backed up to: ${result.path}`;
-      } else {
-        backupMessage = result.message || 'Backup canceled';
-      }
-
-      setTimeout(() => { backupMessage = ''; }, 5000);
-    } catch (error) {
-      console.error('Error backing up database:', error);
-      backupMessage = 'Error backing up database';
-      setTimeout(() => { backupMessage = ''; }, 5000);
-    } finally {
-      backingUp = false;
-    }
-  }
-
-  async function restoreDatabase() {
-    try {
-      restoring = true;
-      restoreMessage = '';
-
-      const result = await window.electronAPI.database.restore();
-
-      if (result.success) {
-        restoreMessage = result.message;
-      } else {
-        restoreMessage = result.message || 'Restore canceled';
-        setTimeout(() => { restoreMessage = ''; }, 5000);
-      }
-    } catch (error) {
-      console.error('Error restoring database:', error);
-      restoreMessage = 'Error restoring database';
-      setTimeout(() => { restoreMessage = ''; }, 5000);
-    } finally {
-      restoring = false;
-    }
-  }
-
-  // User Backup: Export database to user-selected location
-  async function userBackupDatabase() {
-    if (!window.electronAPI?.database?.exportBackup) {
-      backupMessage = 'User backup not available';
-      setTimeout(() => { backupMessage = ''; }, 5000);
-      return;
-    }
-
-    try {
-      userExporting = true;
-      backupMessage = '';
-
-      const result = await window.electronAPI.database.exportBackup();
-
-      if (result.success) {
-        backupMessage = `Exported to: ${result.path}`;
-        await loadDatabaseHealth(); // Refresh stats
-      } else {
-        backupMessage = result.message || 'Export canceled';
-      }
-
-      setTimeout(() => { backupMessage = ''; }, 5000);
-    } catch (error) {
-      console.error('Error exporting database:', error);
-      backupMessage = 'Error exporting database';
-      setTimeout(() => { backupMessage = ''; }, 5000);
-    } finally {
-      userExporting = false;
-    }
-  }
-
-  // Open restore modal with list of internal backups
-  async function openRestoreModal() {
-    if (!window.electronAPI?.database?.listBackups) {
-      restoreMessage = 'Internal restore not available';
-      setTimeout(() => { restoreMessage = ''; }, 5000);
-      return;
-    }
-
-    try {
-      const result = await window.electronAPI.database.listBackups();
-      if (result.success) {
-        internalBackups = result.backups || [];
-        showRestoreModal = true;
-      } else {
-        restoreMessage = result.message || 'Failed to list backups';
-        setTimeout(() => { restoreMessage = ''; }, 5000);
-      }
-    } catch (error) {
-      console.error('Error listing backups:', error);
-      restoreMessage = 'Error listing backups';
-      setTimeout(() => { restoreMessage = ''; }, 5000);
-    }
-  }
-
-  // Restore from internal backup
-  async function restoreFromBackup(backupId: string) {
-    if (!window.electronAPI?.database?.restoreFromInternal) {
-      restoreMessage = 'Internal restore not available';
-      setTimeout(() => { restoreMessage = ''; }, 5000);
-      return;
-    }
-
-    try {
-      restoring = true;
-      showRestoreModal = false;
-      restoreMessage = '';
-
-      const result = await window.electronAPI.database.restoreFromInternal(backupId);
-
-      if (result.success) {
-        restoreMessage = result.message || 'Database restored. Please restart.';
-      } else {
-        restoreMessage = result.message || 'Restore failed';
-        setTimeout(() => { restoreMessage = ''; }, 5000);
-      }
-    } catch (error) {
-      console.error('Error restoring from backup:', error);
-      restoreMessage = 'Error restoring from backup';
-      setTimeout(() => { restoreMessage = ''; }, 5000);
-    } finally {
-      restoring = false;
-    }
-  }
-
-  // Load database health stats
-  async function loadDatabaseHealth() {
-    if (!window.electronAPI?.database?.getStats) return;
-    try {
-      const stats = await window.electronAPI.database.getStats();
-      dbHealthy = stats.integrityOk;
-      backupCount = stats.backupCount;
-    } catch (error) {
-      console.error('Failed to load database health:', error);
-    }
-  }
-
-  // Database Archive Export: Load archive status
-  async function loadArchiveExportStatus() {
-    if (!window.electronAPI?.database?.archiveStatus) return;
-    try {
-      archiveExportStatus = await window.electronAPI.database.archiveStatus();
-    } catch (error) {
-      console.error('Failed to load archive export status:', error);
-    }
-  }
-
-  // Database Archive Export: Trigger manual export
-  async function exportToArchive() {
-    if (!window.electronAPI?.database?.archiveExport || archiveExporting) return;
-    try {
-      archiveExporting = true;
-      archiveExportMessage = '';
-
-      const result = await window.electronAPI.database.archiveExport();
-
-      if (result.success) {
-        archiveExportMessage = `Exported to archive (${result.size})`;
-        // Refresh the status
-        await loadArchiveExportStatus();
-      } else {
-        archiveExportMessage = result.message || 'Export failed';
-      }
-    } catch (error) {
-      archiveExportMessage = 'Export failed: ' + (error instanceof Error ? error.message : 'Unknown error');
-    } finally {
-      archiveExporting = false;
-    }
-  }
-
   // Helper to format bytes to human readable
   function formatBytes(bytes: number): string {
     if (bytes === 0) return '0 B';
@@ -1839,9 +1532,7 @@
     loadProxyCacheStats();
     loadRefMaps();
     loadStorageStats();
-    loadDatabaseHealth();
     loadBagSummary();
-    loadArchiveExportStatus();
   });
 </script>
 
@@ -2193,17 +1884,6 @@
             </button>
           </div>
 
-          <!-- Delete on Import Row -->
-          <div class="flex items-center justify-between py-2 border-b border-gray-100">
-            <span class="text-sm font-medium text-gray-700">Delete Original Files on Import</span>
-            <button
-              onclick={() => requestPinForAction('deleteOnImport')}
-              class="text-sm text-accent hover:underline"
-            >
-              edit
-            </button>
-          </div>
-
           <!-- Startup PIN Row -->
           <div class="flex items-center justify-between py-2 border-b border-gray-100">
             <span class="text-sm font-medium text-gray-700">Startup PIN Required</span>
@@ -2213,121 +1893,6 @@
             >
               edit
             </button>
-          </div>
-
-          <!-- Database Sub-Accordion -->
-          <div>
-            <button
-              onclick={() => databaseExpanded = !databaseExpanded}
-              class="w-full flex items-center justify-between py-2 border-b border-gray-100 text-left hover:bg-gray-50 transition-colors"
-            >
-              <span class="text-sm font-medium text-gray-700">Database</span>
-              <svg
-                class="w-4 h-4 text-accent transition-transform duration-200 {databaseExpanded ? 'rotate-180' : ''}"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {#if databaseExpanded}
-            <div class="py-3">
-              <!-- Status pills inside accordion -->
-              <div class="flex items-center gap-2 mb-3">
-                <span class="text-xs px-1.5 py-0.5 rounded {dbHealthy ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
-                  {dbHealthy ? 'healthy' : 'needs attention'}
-                </span>
-                <span class="text-xs px-1.5 py-0.5 rounded {backupCount > 0 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}">
-                  {backupCount} backups
-                </span>
-              </div>
-
-              <!-- 4 database buttons -->
-              <div class="flex flex-wrap gap-2">
-                <button
-                  onclick={backupDatabase}
-                  disabled={backingUp || restoring || userExporting}
-                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
-                >
-                  {backingUp ? 'Backing up...' : 'Backup'}
-                </button>
-                <button
-                  onclick={userBackupDatabase}
-                  disabled={userExporting || backingUp || restoring}
-                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
-                >
-                  {userExporting ? 'Exporting...' : 'User Backup'}
-                </button>
-                <button
-                  onclick={openRestoreModal}
-                  disabled={restoring || backingUp || userExporting}
-                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
-                >
-                  Restore
-                </button>
-                <button
-                  onclick={restoreDatabase}
-                  disabled={restoring || backingUp || userExporting}
-                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
-                >
-                  {restoring ? 'Restoring...' : 'User Restore'}
-                </button>
-              </div>
-              {#if backupMessage}
-                <p class="text-sm mt-2 {backupMessage.includes('Error') || backupMessage.includes('canceled') ? 'text-red-600' : 'text-green-600'}">
-                  {backupMessage}
-                </p>
-              {/if}
-              {#if restoreMessage}
-                <p class="text-sm mt-2 {restoreMessage.includes('Error') || restoreMessage.includes('canceled') || restoreMessage.includes('Invalid') ? 'text-red-600' : 'text-green-600'}">
-                  {restoreMessage}
-                </p>
-              {/if}
-
-              <!-- Archive Export Section -->
-              <div class="mt-4 pt-3 border-t border-gray-200">
-                <div class="flex items-center justify-between mb-2">
-                  <span class="text-sm font-medium text-gray-700">Archive Snapshot</span>
-                  {#if archiveExportStatus?.configured}
-                    <span class="text-xs px-1.5 py-0.5 rounded {archiveExportStatus.verified ? 'bg-green-100 text-green-700' : archiveExportStatus.exported ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}">
-                      {archiveExportStatus.verified ? 'verified' : archiveExportStatus.exported ? 'exported' : 'none'}
-                    </span>
-                  {:else}
-                    <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
-                      not configured
-                    </span>
-                  {/if}
-                </div>
-
-                {#if archiveExportStatus?.lastExport}
-                  <p class="text-xs text-gray-500 mb-2">
-                    Last: {new Date(archiveExportStatus.lastExport.exportedAt).toLocaleString()}
-                  </p>
-                {/if}
-
-                <button
-                  onclick={exportToArchive}
-                  disabled={archiveExporting || !archiveExportStatus?.configured}
-                  class="px-3 py-1.5 text-sm bg-accent text-white rounded hover:opacity-90 transition disabled:opacity-50"
-                  title={!archiveExportStatus?.configured ? 'Set archive location first' : 'Export database to archive folder'}
-                >
-                  {archiveExporting ? 'Exporting...' : 'Export to Archive'}
-                </button>
-
-                {#if archiveExportMessage}
-                  <p class="text-sm mt-2 {archiveExportMessage.includes('failed') || archiveExportMessage.includes('Error') ? 'text-red-600' : 'text-green-600'}">
-                    {archiveExportMessage}
-                  </p>
-                {/if}
-
-                <p class="text-xs text-gray-400 mt-2">
-                  Auto-exports on backup and quit. Stored in archive/_database/
-                </p>
-              </div>
-            </div>
-            {/if}
           </div>
 
           <!-- Maps Sub-Accordion (Reference Maps) -->
@@ -2889,8 +2454,6 @@
         <p class="text-sm text-gray-600 mb-4">
           {#if pinAction === 'archive'}
             Enter your PIN to change the archive location.
-          {:else if pinAction === 'deleteOnImport'}
-            Enter your PIN to change the delete on import setting.
           {:else if pinAction === 'startupPin'}
             Enter your PIN to change the startup PIN requirement.
           {/if}
@@ -2928,90 +2491,3 @@
   </div>
 {/if}
 
-<!-- Delete Warning Modal -->
-{#if showDeleteWarning}
-  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
-      <!-- Header -->
-      <div class="p-4 border-b flex items-center gap-3">
-        <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-          <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-        </div>
-        <h2 class="text-lg font-semibold text-foreground">Permanent File Deletion</h2>
-      </div>
-
-      <!-- Content -->
-      <div class="p-4">
-        <p class="text-sm text-gray-700 mb-3">
-          Enabling this setting will <strong class="text-red-600">permanently delete original files</strong> after they are imported into the archive.
-        </p>
-        <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
-          <strong>Warning:</strong> There is no way to recover deleted files from this software. Make sure you have backups before enabling this feature.
-        </div>
-      </div>
-
-      <!-- Footer -->
-      <div class="p-4 border-t bg-gray-50 rounded-b-lg flex justify-end gap-2">
-        <button
-          onclick={cancelDeleteWarning}
-          class="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition"
-        >
-          Cancel
-        </button>
-        <button
-          onclick={toggleDeleteOnImport}
-          class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition"
-        >
-          Enable Deletion
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
-
-<!-- Restore from Backup Modal -->
-{#if showRestoreModal}
-  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[80vh] flex flex-col">
-      <!-- Header -->
-      <div class="p-4 border-b">
-        <h2 class="text-lg font-semibold text-foreground">Restore from Backup</h2>
-        <p class="text-sm text-gray-500 mt-1">Select a backup to restore</p>
-      </div>
-
-      <!-- Content -->
-      <div class="p-4 flex-1 overflow-y-auto">
-        {#if internalBackups.length > 0}
-          <div class="space-y-2">
-            {#each internalBackups as backup}
-              <button
-                onclick={() => restoreFromBackup(backup.id)}
-                disabled={restoring}
-                class="w-full text-left p-3 border rounded-lg hover:border-accent hover:bg-accent/5 transition disabled:opacity-50"
-              >
-                <div class="flex justify-between items-center">
-                  <span class="font-medium text-foreground">{backup.date}</span>
-                  <span class="text-sm text-gray-500">{backup.size}</span>
-                </div>
-              </button>
-            {/each}
-          </div>
-        {:else}
-          <p class="text-sm text-gray-500 text-center py-8">No internal backups available</p>
-        {/if}
-      </div>
-
-      <!-- Footer -->
-      <div class="p-4 border-t bg-gray-50 rounded-b-lg flex justify-end">
-        <button
-          onclick={() => showRestoreModal = false}
-          class="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}

@@ -760,7 +760,6 @@
             locid: location.locid,
             subid: subId || null,
             auth_imp: author,
-            deleteOriginals: false,
             is_contributed: contributed,
             contribution_source: source || null,
             // OPT-058: Unified progress across chunks

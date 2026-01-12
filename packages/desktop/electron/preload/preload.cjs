@@ -964,7 +964,7 @@ const api = {
       invokeLong("dateEngine:extractFromDocument")(input),
   },
 
-  // Document Intelligence Extraction (spaCy + Ollama + Cloud)
+  // Document Intelligence Extraction (via Dispatch Hub)
   extraction: {
     // Main extraction
     extract: (input) =>
@@ -991,14 +991,6 @@ const api = {
     // Health & diagnostics
     healthCheck: () =>
       invokeAuto("extraction:healthCheck")(),
-
-    // Ollama-specific
-    testOllamaConnection: (host, port) =>
-      invokeAuto("extraction:testOllamaConnection")(host, port),
-    listOllamaModels: (host, port) =>
-      invokeAuto("extraction:listOllamaModels")(host, port),
-    pullOllamaModel: (modelName, host, port) =>
-      invokeLong("extraction:pullOllamaModel")(modelName, host, port),
 
     // Queue management (OPT-120)
     queue: {
@@ -1162,172 +1154,6 @@ const api = {
       const listener = (_event, data) => callback(data);
       ipcRenderer.on("location:tags-aggregated", listener);
       return () => ipcRenderer.removeListener("location:tags-aggregated", listener);
-    },
-  },
-
-  // OPT-125: Ollama Lifecycle Management
-  // Seamless auto-start/stop of local Ollama
-  ollama: {
-    // Get current lifecycle status
-    getStatus: () =>
-      invokeAuto("ollama:getStatus")(),
-    // Ensure Ollama is running (starts if needed)
-    ensureRunning: () =>
-      invokeLong("ollama:ensureRunning")(),
-    // Stop Ollama (only if we started it)
-    stop: () =>
-      invokeAuto("ollama:stop")(),
-    // Check if Ollama is installed
-    checkInstalled: () =>
-      invokeAuto("ollama:checkInstalled")(),
-  },
-
-  // Credential Management (Migration 85)
-  // Secure API key storage using Electron safeStorage
-  credentials: {
-    // Store encrypted API key (auto-tests and enables provider)
-    store: (provider, apiKey) =>
-      invokeAuto("credentials:store")({ provider, apiKey }),
-    // Check if credential exists (never exposes key)
-    has: (provider) =>
-      invokeAuto("credentials:has")({ provider }),
-    // Delete stored credential (auto-disables provider)
-    delete: (provider) =>
-      invokeAuto("credentials:delete")({ provider }),
-    // List all providers with stored credentials
-    list: () =>
-      invokeAuto("credentials:list")(),
-    // Get credential info (last used, created date) without exposing key
-    info: (provider) =>
-      invokeAuto("credentials:info")({ provider }),
-    // Test connection with stored credentials
-    test: (provider) =>
-      invokeLong("credentials:test")({ provider }),
-  },
-
-  // LiteLLM Proxy Gateway (Migration 86)
-  // Unified AI gateway for cloud providers
-  litellm: {
-    // Get current proxy status
-    status: () =>
-      invokeAuto("litellm:status")(),
-    // Start LiteLLM proxy
-    start: () =>
-      invokeLong("litellm:start")(),
-    // Stop LiteLLM proxy
-    stop: () =>
-      invokeAuto("litellm:stop")(),
-    // Reload configuration (after credential changes)
-    reload: () =>
-      invokeAuto("litellm:reload")(),
-    // Test a model connection
-    test: (modelId) =>
-      invokeLong("litellm:test")({ modelId }),
-    // Get usage costs (if available)
-    costs: () =>
-      invokeAuto("litellm:costs")(),
-    // List available models
-    models: () =>
-      invokeAuto("litellm:models")(),
-    // Install LiteLLM venv (auto-setup for cloud providers)
-    install: () =>
-      invokeLong("litellm:install")(),
-    // Settings management
-    settings: {
-      get: () =>
-        invokeAuto("litellm:settings:get")(),
-      set: (key, value) =>
-        invokeAuto("litellm:settings:set")({ key, value }),
-    },
-    // Privacy settings
-    privacy: {
-      get: () =>
-        invokeAuto("litellm:privacy:get")(),
-      update: (updates) =>
-        invokeAuto("litellm:privacy:update")(updates),
-    },
-  },
-
-  // Cost Tracking (Migration 88)
-  // Track LLM usage costs for cloud providers
-  costs: {
-    // Record a new cost entry (called by extraction services)
-    record: (input) =>
-      invokeAuto("costs:record")(input),
-    // Get cost summary for a period
-    getSummary: (startDate, endDate) =>
-      invokeAuto("costs:getSummary")({ startDate, endDate }),
-    // Get daily cost breakdown
-    getDailyCosts: (days) =>
-      invokeAuto("costs:getDailyCosts")({ days }),
-    // Get current month's total cost
-    getCurrentMonth: () =>
-      invokeAuto("costs:getCurrentMonth")(),
-    // Check if current month exceeds budget
-    checkBudget: (monthlyBudget) =>
-      invokeAuto("costs:checkBudget")({ monthlyBudget }),
-    // Get costs for a specific location
-    getLocationCosts: (locid) =>
-      invokeAuto("costs:getLocationCosts")({ locid }),
-    // Get recent cost entries
-    getRecent: (limit) =>
-      invokeAuto("costs:getRecent")({ limit }),
-    // Get pricing info for a model
-    getModelPricing: (model) =>
-      invokeAuto("costs:getModelPricing")(model),
-    // Delete old cost entries
-    cleanup: (olderThanDays) =>
-      invokeAuto("costs:cleanup")({ olderThanDays }),
-  },
-
-  // AI Service (Unified Abstraction)
-  // Single entry point for all AI operations
-  ai: {
-    // Text completion (chat, extraction, summarization)
-    complete: (request) =>
-      invokeLong("ai:complete")(request),
-    // Image analysis (tagging, captioning)
-    analyzeImage: (request) =>
-      invokeLong("ai:analyzeImage")(request),
-    // Text embeddings
-    embed: (request) =>
-      invokeLong("ai:embed")(request),
-    // List available models
-    listModels: (filter) =>
-      invokeAuto("ai:models:list")(filter),
-    // Get single model
-    getModel: (modelId) =>
-      invokeAuto("ai:models:get")(modelId),
-    // Download model (ollama only)
-    downloadModel: (modelId) =>
-      invokeLong("ai:models:download")(modelId),
-    // Delete model
-    deleteModel: (modelId) =>
-      invokeAuto("ai:models:delete")(modelId),
-    // Health check
-    health: () =>
-      invokeAuto("ai:health")(),
-    // Refresh model registry (re-discover all models)
-    refreshModels: () =>
-      invokeAuto("ai:models:refresh")(),
-    // Get model registry summary
-    modelsSummary: () =>
-      invokeAuto("ai:models:summary")(),
-    // Event listeners for download progress
-    onDownloadProgress: (callback) => {
-      const listener = (_event, progress) => callback(progress);
-      ipcRenderer.on("ai:download:progress", listener);
-      return () => ipcRenderer.removeListener("ai:download:progress", listener);
-    },
-    onDownloadComplete: (callback) => {
-      const listener = (_event, data) => callback(data);
-      ipcRenderer.on("ai:download:complete", listener);
-      return () => ipcRenderer.removeListener("ai:download:complete", listener);
-    },
-    onDownloadError: (callback) => {
-      const listener = (_event, data) => callback(data);
-      ipcRenderer.on("ai:download:error", listener);
-      return () => ipcRenderer.removeListener("ai:download:error", listener);
     },
   },
 

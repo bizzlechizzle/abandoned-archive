@@ -19,7 +19,7 @@
   import AutocompleteInput from './AutocompleteInput.svelte';
   import ImportIntelligence from './ImportIntelligence.svelte';
   import DuplicateWarningPanel from './DuplicateWarningPanel.svelte';
-  import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../../electron/services/us-state-codes';
+  import { STATE_ABBREVIATIONS, getStateCodeFromName } from '../utils/us-state-codes';
   import { ACCESS_OPTIONS } from '../constants/location-enums';
   import { getTypeForSubtype } from '../lib/type-hierarchy';
   import { DUPLICATE_CONFIG } from '../lib/constants';

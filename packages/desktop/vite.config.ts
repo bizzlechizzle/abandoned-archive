@@ -148,10 +148,6 @@ export default defineConfig({
                 // BLAKE3 has native bindings with WASM fallback
                 // Must be external to use the correct CJS/Node entry point
                 'blake3',
-                // Puppeteer uses dynamic requires for browser detection
-                'puppeteer-core',
-                'puppeteer-extra',
-                'puppeteer-extra-plugin-stealth',
                 // ONNX Runtime has platform-specific native bindings
                 // Must be external to load correct darwin/arm64 binary
                 'onnxruntime-node',

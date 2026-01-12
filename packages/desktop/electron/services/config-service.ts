@@ -4,6 +4,8 @@ import { promises as fs } from 'fs';
 import { existsSync } from 'fs';
 
 export interface AppConfig {
+  // Archive folder path (set via settings)
+  archiveFolder?: string;
   backup: {
     enabled: boolean;
     maxBackups: number;

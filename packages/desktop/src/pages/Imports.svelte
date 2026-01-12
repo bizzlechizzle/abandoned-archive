@@ -44,7 +44,6 @@
   let importResult = $state<ImportSessionResult | null>(null);
   let recentImports = $state<ImportRecord[]>([]);
   let currentUser = $state('default');
-  let deleteOriginals = $state(false);
   let loading = $state(true);
   let progressCurrent = $state(0);
   let progressTotal = $state(0);
@@ -74,7 +73,6 @@
       locations = locs;
       recentImports = imports;
       currentUser = settings.current_user || 'default';
-      deleteOriginals = settings.delete_on_import === 'true';
 
       // Check if archive folder is configured
       archiveFolder = settings.archive_folder || '';
@@ -233,7 +231,6 @@
         files: filesForImport,
         locid: selectedLocation,
         auth_imp: currentUser,
-        deleteOriginals,
       })) as ImportSessionResult;
 
       importResult = result;
@@ -303,7 +300,6 @@
             files: filesForImport,
             locid: selectedLocation,
             auth_imp: author,
-            deleteOriginals,
             is_contributed: contributed,
             contribution_source: source || null,
             // OPT-058: Unified progress across chunks
@@ -407,14 +403,12 @@
     <ImportForm
       {locations}
       {selectedLocation}
-      {deleteOriginals}
       {isImporting}
       {isDragging}
       {importProgress}
       {progressCurrent}
       {progressTotal}
       onLocationChange={(locid) => (selectedLocation = locid)}
-      onDeleteOriginalsChange={(value) => (deleteOriginals = value)}
       onBrowse={handleBrowse}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

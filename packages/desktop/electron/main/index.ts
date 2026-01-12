@@ -3,16 +3,12 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { registerIpcHandlers, shutdownDispatchClient } from './ipc-handlers';
-import { getHealthMonitor } from '../services/health-monitor';
 import { getConfigService } from '../services/config-service';
 import { getLogger } from '../services/logger-service';
 import { initBrowserViewManager, destroyBrowserViewManager } from '../services/browser-view-manager';
 import { startBookmarkAPIServer, stopBookmarkAPIServer } from '../services/bookmark-api-server';
 import { startWebSocketServer, stopWebSocketServer } from '../services/websocket-server';
 import { terminateDetachedBrowser } from '../services/detached-browser-service';
-import { stopOllama } from '../services/ollama-lifecycle-service';
-import { stopLiteLLM } from '../services/litellm-lifecycle-service';
-import { getPreprocessingService } from '../services/extraction/preprocessing-service';
 import { getUnifiedRepositories, getBackendStatus } from '../repositories/unified-repository-factory';
 // Pipeline tools auto-update on startup
 import { updateAllPipelineTools } from '../services/pipeline-tools-updater';
@@ -241,7 +237,7 @@ async function startupOrchestrator(): Promise<void> {
 
   try {
     // Step 1: Load configuration
-    logger.info('Main', 'Step 1/4: Loading configuration');
+    logger.info('Main', 'Step 1/3: Loading configuration');
     const configService = getConfigService();
     await configService.load();
     logger.info('Main', 'Configuration loaded successfully');
@@ -271,7 +267,7 @@ async function startupOrchestrator(): Promise<void> {
     }
 
     // Step 2: Verify Dispatch Hub connection
-    logger.info('Main', 'Step 2/4: Verifying Dispatch Hub connection');
+    logger.info('Main', 'Step 2/3: Verifying Dispatch Hub connection');
     const backendStatus = getBackendStatus();
     logger.info('Main', 'Dispatch Hub status', {
       mode: backendStatus.mode,
@@ -284,18 +280,12 @@ async function startupOrchestrator(): Promise<void> {
       logger.warn('Main', 'Dispatch Hub not configured - some features may be unavailable');
     }
 
-    // Step 3: Initialize health monitoring
-    logger.info('Main', 'Step 3/4: Initializing health monitoring');
-    const healthMonitor = getHealthMonitor();
-    await healthMonitor.initialize();
-    logger.info('Main', 'Health monitoring initialized successfully');
-
-    // Step 4: Register IPC handlers
-    logger.info('Main', 'Step 4/4: Registering IPC handlers');
+    // Step 3: Register IPC handlers
+    logger.info('Main', 'Step 3/3: Registering IPC handlers');
     registerIpcHandlers();
     logger.info('Main', 'IPC handlers registered successfully');
 
-    // Step 4b: Start Bookmark API Server for Research Browser extension
+    // Start Bookmark API Server for Research Browser extension
     // Uses API repositories from unified factory
     logger.info('Main', 'Starting Bookmark API Server');
     const repos = getUnifiedRepositories();
@@ -307,7 +297,7 @@ async function startupOrchestrator(): Promise<void> {
       logger.warn('Main', 'Failed to start Bookmark API Server', { message: (error as Error).message, stack: (error as Error).stack });
     }
 
-    // Step 4c: Start WebSocket Server for real-time extension updates
+    // Start WebSocket Server for real-time extension updates
     logger.info('Main', 'Starting WebSocket Server');
     try {
       await startWebSocketServer();
@@ -558,45 +548,11 @@ app.on('before-quit', async () => {
     console.error('Failed to destroy browser view manager:', error);
   }
 
-  // Shutdown health monitoring
-  try {
-    const healthMonitor = getHealthMonitor();
-    await healthMonitor.shutdown();
-    console.log('Health monitoring shut down successfully');
-  } catch (error) {
-    console.error('Failed to shutdown health monitoring:', error);
-  }
-
-  // OPT-125: Stop Ollama if we started it (seamless lifecycle management)
-  try {
-    stopOllama();
-    console.log('Ollama stopped successfully');
-  } catch (error) {
-    console.error('Failed to stop Ollama:', error);
-  }
-
-  // Migration 86: Stop LiteLLM proxy if we started it
-  try {
-    await stopLiteLLM();
-    console.log('LiteLLM proxy stopped successfully');
-  } catch (error) {
-    console.error('Failed to stop LiteLLM proxy:', error);
-  }
-
   // Shutdown Dispatch client (disconnect from hub, close offline queue)
   try {
     shutdownDispatchClient();
     console.log('Dispatch client shut down successfully');
   } catch (error) {
     console.error('Failed to shutdown Dispatch client:', error);
-  }
-
-  // Stop spaCy preprocessing server if we started it
-  try {
-    const preprocessingService = getPreprocessingService();
-    await preprocessingService.shutdown();
-    console.log('spaCy preprocessing server stopped successfully');
-  } catch (error) {
-    console.error('Failed to stop spaCy preprocessing server:', error);
   }
 });
