@@ -123,6 +123,20 @@ export function registerApiLocationHandlers() {
     }
   });
 
+  // Alias for trackView - used by LocationDetail.svelte
+  ipcMain.handle('location:trackView', async (_event, id: unknown) => {
+    try {
+      const validatedId = Blake3IdSchema.parse(id);
+      const repo = getLocationRepo();
+      await repo.recordView(validatedId);
+      return 1; // Return view count increment
+    } catch (error) {
+      console.error('Error tracking view:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
+    }
+  });
+
   ipcMain.handle('location:nearby', async (_event, lat: number, lon: number, radiusKm?: number, limit?: number) => {
     try {
       const repo = getLocationRepo();
@@ -165,6 +179,46 @@ export function registerApiLocationHandlers() {
       return await repo.getSublocations(validatedId);
     } catch (error) {
       console.error('Error finding sublocations:', error);
+      if (error instanceof z.ZodError) {
+        throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message);
+    }
+  });
+
+  // Find sublocations with hero images - used by LocationDetail.svelte
+  ipcMain.handle('sublocation:findWithHeroImages', async (_event, locationId: unknown) => {
+    try {
+      const validatedId = Blake3IdSchema.parse(locationId);
+      const repo = getLocationRepo();
+      const sublocations = await repo.getSublocations(validatedId);
+      // Transform to match expected format with hero_thumb_path
+      // TODO: Implement hero image lookup from media table when available
+      return sublocations.map((sub) => ({
+        subid: sub.id,
+        locid: sub.locationId,
+        subnam: sub.name,
+        ssubname: sub.shortName || null,
+        type: sub.category || null,
+        status: sub.status || null,
+        is_primary: sub.isPrimary || false,
+        created_date: sub.createdAt,
+        created_by: null,
+        modified_date: sub.updatedAt || null,
+        modified_by: null,
+        akanam: sub.akaName || null,
+        historicalName: sub.historicalName || null,
+        gps_lat: sub.gpsLat || null,
+        gps_lng: sub.gpsLon || null,
+        gps_accuracy: sub.gpsAccuracy || null,
+        gps_source: sub.gpsSource || null,
+        gps_verified_on_map: sub.gpsVerifiedOnMap || false,
+        gps_captured_at: sub.gpsCapturedAt || null,
+        hero_thumb_path: null, // TODO: Look up from heroMediaId
+      }));
+    } catch (error) {
+      console.error('Error finding sublocations with hero images:', error);
       if (error instanceof z.ZodError) {
         throw new Error(`Validation error: ${error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')}`);
       }
