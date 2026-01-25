@@ -1,0 +1,25 @@
+
+export default new Map([
+["src/locations/als-toy-barn.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Fals-toy-barn.mdx&astroContentModuleFlag=true")],
+["src/locations/ayrshire-consolidated-school.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Fayrshire-consolidated-school.mdx&astroContentModuleFlag=true")],
+["src/locations/cadis-baptist-church.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Fcadis-baptist-church.mdx&astroContentModuleFlag=true")],
+["src/locations/columbus-school.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Fcolumbus-school.mdx&astroContentModuleFlag=true")],
+["src/locations/dw-winkelman-co-inc.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Fdw-winkelman-co-inc.mdx&astroContentModuleFlag=true")],
+["src/locations/charlotte-kenyon-elementary.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Fcharlotte-kenyon-elementary.mdx&astroContentModuleFlag=true")],
+["src/locations/endicott-johnson-fair-play-factory.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Fendicott-johnson-fair-play-factory.mdx&astroContentModuleFlag=true")],
+["src/locations/estonian-evangelical-martin-luther-church.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Festonian-evangelical-martin-luther-church.mdx&astroContentModuleFlag=true")],
+["src/locations/gary-united-states-post-office.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Fgary-united-states-post-office.mdx&astroContentModuleFlag=true")],
+["src/locations/congregation-bnai-israel-synagogue.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Fcongregation-bnai-israel-synagogue.mdx&astroContentModuleFlag=true")],
+["src/locations/i-94-speedway.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Fi-94-speedway.mdx&astroContentModuleFlag=true")],
+["src/locations/lafayette-hills-golf-country-club.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Flafayette-hills-golf-country-club.mdx&astroContentModuleFlag=true")],
+["src/locations/landwehr-century-farm.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Flandwehr-century-farm.mdx&astroContentModuleFlag=true")],
+["src/locations/moland-creamery.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Fmoland-creamery.mdx&astroContentModuleFlag=true")],
+["src/locations/richard-olmsted-complex.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Frichard-olmsted-complex.mdx&astroContentModuleFlag=true")],
+["src/locations/the-cadillac-house.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Fthe-cadillac-house.mdx&astroContentModuleFlag=true")],
+["src/locations/the-coliseum.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Fthe-coliseum.mdx&astroContentModuleFlag=true")],
+["src/locations/the-dog-house-barndominium.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Fthe-dog-house-barndominium.mdx&astroContentModuleFlag=true")],
+["src/locations/the-ransom-house.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Fthe-ransom-house.mdx&astroContentModuleFlag=true")],
+["src/locations/the-starcruiser-house.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Fthe-starcruiser-house.mdx&astroContentModuleFlag=true")],
+["src/locations/vista-heights-inn.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Fvista-heights-inn.mdx&astroContentModuleFlag=true")],
+["src/locations/wiscoy-school-district-9.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Flocations%2Fwiscoy-school-district-9.mdx&astroContentModuleFlag=true")]]);
+		

@@ -1,0 +1,225 @@
+{
+  "$ref": "#/definitions/blog",
+  "definitions": {
+    "blog": {
+      "type": "object",
+      "properties": {
+        "author": {
+          "type": "string",
+          "default": "Abandoned Upstate"
+        },
+        "pubDatetime": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "integer",
+              "format": "unix-time"
+            }
+          ]
+        },
+        "modDatetime": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "not": {}
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    {
+                      "type": "string",
+                      "format": "date"
+                    },
+                    {
+                      "type": "integer",
+                      "format": "unix-time"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "seoTitle": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "seoDescription": {
+          "type": "string"
+        },
+        "featured": {
+          "type": "boolean"
+        },
+        "featuredCaption": {
+          "type": "string"
+        },
+        "featuredDescription": {
+          "type": "string"
+        },
+        "displayTitleInLayout": {
+          "type": "boolean"
+        },
+        "draft": {
+          "type": "boolean"
+        },
+        "state": {
+          "type": "string"
+        },
+        "county": {
+          "type": "string"
+        },
+        "city": {
+          "type": "string"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "not": {}
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "category": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "built_year": {
+          "type": "number"
+        },
+        "abandoned_year": {
+          "type": "number"
+        },
+        "lastmod": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "not": {}
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    {
+                      "type": "string",
+                      "format": "date"
+                    },
+                    {
+                      "type": "integer",
+                      "format": "unix-time"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "others"
+          ]
+        },
+        "heroImage": {
+          "type": "string"
+        },
+        "heroImageAlt": {
+          "type": "string"
+        },
+        "heroImageCaption": {
+          "type": "string"
+        },
+        "seoImage": {
+          "type": "string"
+        },
+        "ogImage": {
+          "type": "string"
+        },
+        "galleryImages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "src": {
+                "type": "string"
+              },
+              "caption": {
+                "type": "string"
+              },
+              "seoCaption": {
+                "type": "string"
+              },
+              "historical": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "src",
+              "caption",
+              "seoCaption"
+            ],
+            "additionalProperties": false
+          },
+          "default": []
+        },
+        "canonicalURL": {
+          "type": "string"
+        },
+        "hideEditPost": {
+          "type": "boolean"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "$schema": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "pubDatetime",
+        "title",
+        "description"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}
